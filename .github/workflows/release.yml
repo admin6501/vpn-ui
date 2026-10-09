@@ -1,0 +1,37 @@
+name: Build initial release assets
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Build patched Xray and base geodata
+        run: GEO_LEAN=1 bash build/core/build.sh amd64
+      - name: Build panel and migration helper
+        run: |
+          mkdir -p dist
+          CGO_ENABLED=1 go build -trimpath -ldflags='-s -w' -o dist/vpn-ui-amd64 .
+          CGO_ENABLED=1 go build -trimpath -ldflags='-s -w' -o dist/pasarguard-db ./cmd/pasarguard-db
+          test "$(dist/vpn-ui-amd64 -v)" = "1.10.0"
+          dist/pasarguard-db /tmp/migration-schema
+      - name: Package migration and checksums
+        run: |
+          mkdir -p dist/migration
+          cp migration/migrate.sh migration/convert.py migration/preflight.py migration/INSTALL-MIGRATION.fa.md dist/migration/
+          cp dist/pasarguard-db dist/migration/pasarguard-db
+          cp dist/vpn-ui-amd64 dist/migration/vpn-ui-custom
+          cd dist/migration
+          zip -q ../vpn-ui-auto-migration.zip *
+          cd ..
+          sha256sum vpn-ui-amd64 vpn-ui-auto-migration.zip > SHA256SUMS
+      - name: Upload assets to the prepared release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload v1.10.0 dist/vpn-ui-amd64 dist/vpn-ui-auto-migration.zip dist/SHA256SUMS --clobber --repo "$GITHUB_REPOSITORY"
