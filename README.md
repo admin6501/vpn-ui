@@ -4,7 +4,7 @@ Initial experimental release: PasarGuard sample-backup migration, representative
 
 See [migration instructions](migration/INSTALL-MIGRATION.fa.md). Migration was tested on 319 users; live deployment/VPN connections and full PasarGuard representative feature parity have not been verified. This is not a complete replacement for every PasarGuard feature.
 
-Based on Sir-MmD/vpn-ui commit `9b5b5b1d18a8999aedceb5ba1756fb15194c84e2`, itself based on 3X-UI. Original licenses and attribution remain below. Linux amd64 release includes patched Xray and base geodata; other protocol backends require installed services or a full backend build.
+Based on Sir-MmD/vpn-ui commit `9b5b5b1d18a8999aedceb5ba1756fb15194c84e2`, itself based on 3X-UI. Original licenses and attribution remain below. Linux amd64 release requires glibc 2.34 or newer (for example Ubuntu 22.04+ or Debian 12+), and includes patched Xray and base geodata; other protocol backends require installed services or a full backend build.
 
 ---
 
