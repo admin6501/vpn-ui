@@ -1,0 +1,73 @@
+{{define "modals/representativeRoleModal"}}
+<a-modal id="representative-role-modal" v-model="pgRole.visible" title='{{ i18n "pages.resellers.role" }}'
+  @ok="pgRole.save" :confirm-loading="pgRole.loading" :mask-closable="false" :class="themeSwitcher.currentTheme">
+  <a-form layout="vertical">
+    <a-form-item label='{{ i18n "name" }}'><a-input v-model.trim="pgRole.name"></a-input></a-form-item>
+    <a-form-item label="دسترسی به کاربران">
+      <a-checkbox v-for="action in pgRole.actions" :key="action.key" v-model="pgRole.allowed[action.key]">[[ action.label ]]</a-checkbox>
+    </a-form-item>
+    <a-form-item label="حداکثر تعداد کاربران"><a-input-number v-model="pgRole.maxUsers" :min="0"></a-input-number></a-form-item>
+    <a-form-item label="حداقل حجم هر کاربر (گیگابایت)"><a-input-number v-model="pgRole.minGB" :min="0"></a-input-number></a-form-item>
+    <a-form-item label="حداکثر حجم هر کاربر (گیگابایت)"><a-input-number v-model="pgRole.maxGB" :min="0"></a-input-number></a-form-item>
+    <a-form-item label="قطع کاربران پس از اتمام سهمیهٔ نماینده"><a-switch v-model="pgRole.disconnectLimited"></a-switch></a-form-item>
+    <a-form-item label="قطع کاربران هنگام غیرفعال شدن نماینده"><a-switch v-model="pgRole.disconnectDisabled"></a-switch></a-form-item>
+    <a-form-item label="بستن دسترسی خواندن پس از اتمام سهمیه"><a-switch v-model="pgRole.disabledLimited"></a-switch></a-form-item>
+  </a-form>
+</a-modal>
+<script>
+const pgRole = {
+  visible: false, loading: false, id: 0, name: '', permissions: {}, limits: {}, features: {}, access: {}, allowed: {},
+  maxUsers: null, minGB: null, maxGB: null, disconnectLimited: true, disconnectDisabled: true, disabledLimited: false,
+  actions: [{key:'read',label:'مشاهده'}, {key:'create',label:'ساخت'}, {key:'update',label:'ویرایش'},
+    {key:'delete',label:'حذف'}, {key:'reset_usage',label:'ریست مصرف'}, {key:'revoke_sub',label:'لغو لینک اشتراک'}],
+  show(role) {
+    this.id = role ? role.id : 0; this.name = role ? role.name : '';
+    this.permissions = role ? JSON.parse(role.permissions) : {users:{}, system:{read:true}};
+    this.limits = role ? JSON.parse(role.limits) : {};
+    this.features = role ? JSON.parse(role.features) : {can_use_reset_strategy:true, can_use_next_plan:false};
+    this.access = role ? JSON.parse(role.access) : {require_template:false, allowed_group_ids:null, allowed_template_ids:null};
+    this.allowed = {};
+    for (const action of this.actions) {
+      const value = (this.permissions.users || {})[action.key];
+      this.allowed[action.key] = value === true || !!(value && value.scope > 0);
+    }
+    this.maxUsers = this.limits.max_users == null ? null : this.limits.max_users;
+    this.minGB = this.limits.data_limit_min == null ? null : this.limits.data_limit_min / ONE_GB_BYTES;
+    this.maxGB = this.limits.data_limit_max == null ? null : this.limits.data_limit_max / ONE_GB_BYTES;
+    this.disconnectLimited = role ? !!role.disconnect_users_when_limited : true;
+    this.disconnectDisabled = role ? !!role.disconnect_users_when_disabled : true;
+    this.disabledLimited = role ? !!role.disabled_when_limited : false;
+    this.visible = true;
+  },
+  async save() {
+    if (!this.name) return;
+    const users = this.permissions.users || {};
+    for (const action of this.actions) {
+      const current = users[action.key];
+      users[action.key] = this.allowed[action.key]
+        ? (current === true || (current && current.scope > 0) ? current : action.key === 'create' ? true : {scope:1})
+        : false;
+    }
+    this.permissions.users = users;
+    this.limits.max_users = this.maxUsers == null ? null : this.maxUsers;
+    this.limits.data_limit_min = this.minGB == null ? null : Math.round(this.minGB * ONE_GB_BYTES);
+    this.limits.data_limit_max = this.maxGB == null ? null : Math.round(this.maxGB * ONE_GB_BYTES);
+    this.loading = true;
+    try {
+      const msg = await HttpUtil.post('/panel/resellers/roles/' + (this.id ? 'update/' + this.id : 'add'), {
+        name:this.name, permissions:JSON.stringify(this.permissions), limits:JSON.stringify(this.limits),
+        features:JSON.stringify(this.features), access:JSON.stringify(this.access),
+        disabledWhenLimited:this.disabledLimited, disconnectUsersWhenLimited:this.disconnectLimited,
+        disconnectUsersWhenDisabled:this.disconnectDisabled,
+      });
+      if (msg && msg.success) {
+        const roles = await HttpUtil.get('/panel/resellers/roles');
+        if (roles && roles.success) resellerModal.roles = roles.obj || [];
+        this.visible = false;
+      }
+    } finally {this.loading = false;}
+  },
+};
+new Vue({delimiters:['[[',']]'],el:'#representative-role-modal',data:{pgRole}});
+</script>
+{{end}}
