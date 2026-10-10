@@ -1,10 +1,18 @@
 # VPN-UI — admin6501 fork
 
-Initial experimental release: PasarGuard sample-backup migration, representative ownership/consumption model, unique online-account counting, and no donation UI. Installation and updates use `admin6501/vpn-ui`.
+This fork includes: PasarGuard sample-backup migration, representative ownership/consumption model, unique online-account counting, and no donation UI. Installation and updates use `admin6501/vpn-ui`.
 
 See [migration instructions](migration/INSTALL-MIGRATION.fa.md). Migration was tested on 319 users; live deployment/VPN connections and full PasarGuard representative feature parity have not been verified. This is not a complete replacement for every PasarGuard feature.
 
-Based on Sir-MmD/vpn-ui commit `9b5b5b1d18a8999aedceb5ba1756fb15194c84e2`, itself based on 3X-UI. Original licenses and attribution remain below. Linux amd64 release requires glibc 2.34 or newer (for example Ubuntu 22.04+ or Debian 12+), and includes patched Xray and base geodata; other protocol backends require installed services or a full backend build.
+Based on Sir-MmD/vpn-ui commit `9b5b5b1d18a8999aedceb5ba1756fb15194c84e2`, itself based on 3X-UI. Original licenses and attribution remain below. The Linux amd64 release includes patched Xray, base geodata, and portable VPN daemon bundles. Host kernel support is still required; AmneziaWG builds its module through DKMS. Core setup reports failed prerequisites instead of declaring success.
+
+Migration on a server where vpn-ui is already installed with no users or inbounds:
+
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/admin6501/vpn-ui/main/migration/install.sh)
+```
+
+Choose Persian or English and enter the full PasarGuard backup path. The installer downloads and checks the release bundle, preserves destination web/TLS settings, and prints the imported administrator username. Use that administrator’s existing PasarGuard password. Already-migrated panels should update normally and re-run core setup for missing cores.
 
 ---
 
