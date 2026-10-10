@@ -73,3 +73,56 @@ func TestOverviewIdleTickClearsOnlineAccount(t *testing.T) {
 		t.Fatalf("idle snapshot retained: %+v %v", after, err)
 	}
 }
+
+func TestOverviewTimeExpiryIsNotQuotaDepletion(t *testing.T) {
+	accounts := newAccountsDB(t)
+	const email = "quota-is-not-expiry@example.com"
+	first, second := seedTwoInboundAccount(t, accounts, email)
+	db := database.GetDB()
+	if err := db.Model(&xray.ClientTraffic{}).Where("email = ?", email).Updates(map[string]any{"total": 10, "down": 10, "expiry_time": time.Now().Add(time.Hour).UnixMilli()}).Error; err != nil {
+		t.Fatal(err)
+	}
+	svc := &InboundService{}
+	stats, err := svc.GetClientStatsFor(&model.User{IsSuperAdmin: true})
+	if err != nil || stats.Depleted != 1 || stats.Expired != 0 {
+		t.Fatalf("quota exhaustion mislabeled as expiry: %+v %v", stats, err)
+	}
+	if err := db.Model(&xray.ClientTraffic{}).Where("email = ?", email).Update("expiry_time", time.Now().Add(-time.Hour).UnixMilli()).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(&model.Inbound{}).Where("id IN ?", []int{first.Id, second.Id}).Update("enable", false).Error; err != nil {
+		t.Fatal(err)
+	}
+	stats, err = svc.GetClientStatsFor(&model.User{IsSuperAdmin: true})
+	if err != nil || stats.Expired != 1 {
+		t.Fatalf("disabled inbounds hid account expiry: %+v %v", stats, err)
+	}
+}
+
+func TestOverviewOnlineEvidenceSurvivesMissingSharedTrafficRow(t *testing.T) {
+	accounts := newAccountsDB(t)
+	const email = "live-without-traffic-row@example.com"
+	first, _ := seedTwoInboundAccount(t, accounts, email)
+	db := database.GetDB()
+	if err := db.Where("email = ?", email).Delete(&xray.ClientTraffic{}).Error; err != nil {
+		t.Fatal(err)
+	}
+	svc := &InboundService{}
+	err, _, _, _, _ := svc.AddTraffic(nil, []*xray.ClientTraffic{{InboundId: first.Id, Email: email, Down: mb}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	stats, err := svc.GetClientStatsFor(&model.User{IsSuperAdmin: true})
+	if err != nil || stats.Online != 1 {
+		t.Fatalf("actual traffic shown as offline because billing row missing: %+v %v", stats, err)
+	}
+	var n int64
+	if err := db.Model(&xray.ClientTraffic{}).Where("email = ?", email).Count(&n).Error; err != nil || n != 0 {
+		t.Fatal("must not invent historical usage", err)
+	}
+	svc.ClearOnlineStatus()
+	stats, err = svc.GetClientStatsFor(&model.User{IsSuperAdmin: true})
+	if err != nil || stats.Online != 0 {
+		t.Fatalf("idle state retained: %+v %v", stats, err)
+	}
+}

@@ -3389,11 +3389,6 @@ func (s *InboundService) addClientTraffic(tx *gorm.DB, traffics []*xray.ClientTr
 		return err
 	}
 
-	// Avoid empty slice error
-	if len(dbClientTraffics) == 0 {
-		return nil
-	}
-
 	dbClientTraffics, err = s.adjustTraffics(tx, dbClientTraffics)
 	if err != nil {
 		return err
@@ -3560,6 +3555,48 @@ func (s *InboundService) addClientTraffic(tx *gorm.DB, traffics []*xray.ClientTr
 		}
 	}
 
+	// Liveness is measured traffic, not the presence of a historical billing row.
+	// An older inbound deletion may have removed that row while leaving the
+	// account and its working membership. Do not hide its live traffic as offline.
+	knownTraffic := make(map[string]bool, len(dbClientTraffics))
+	for _, row := range dbClientTraffics {
+		knownTraffic[accountKey(row.Email)] = true
+	}
+	missing := make(map[string]bool)
+	for _, traffic := range traffics {
+		key := accountKey(traffic.Email)
+		if traffic.Up+traffic.Down > 0 && !knownTraffic[key] {
+			missing[key] = true
+		}
+	}
+	if len(missing) > 0 {
+		emails := make([]string, 0, len(missing))
+		for key := range missing {
+			emails = append(emails, key)
+		}
+		var accounts []model.Account
+		if err := tx.Where("LOWER(TRIM(email)) IN ?", emails).Find(&accounts).Error; err != nil {
+			return err
+		}
+		for _, account := range accounts {
+			key := accountKey(account.Email)
+			onlineClients = append(onlineClients, account.Email)
+			for _, traffic := range traffics {
+				if accountKey(traffic.Email) != key || traffic.Up+traffic.Down <= 0 {
+					continue
+				}
+				pair := onlineMembershipKey(traffic.InboundId, account.Email)
+				if !onlineMembershipSet[pair] {
+					onlineMembershipSet[pair] = true
+					onlineMemberships = append(onlineMemberships, pair)
+				}
+			}
+		}
+		if len(accounts) > 0 {
+			logger.Warningf("%d active account(s) have missing shared traffic rows; restore accounting from a database backup", len(accounts))
+		}
+	}
+
 	// Set onlineUsers. Nil-checked like the empty-traffics path above: the VPN
 	// protocols report traffic through this same tick even when Xray never started,
 	// and an unguarded call there takes the whole traffic job down.
@@ -3568,9 +3605,11 @@ func (s *InboundService) addClientTraffic(tx *gorm.DB, traffics []*xray.ClientTr
 		p.SetOnlineMemberships(onlineMemberships)
 	}
 
-	err = tx.Save(dbClientTraffics).Error
-	if err != nil {
-		logger.Warning("AddClientTraffic update data ", err)
+	if len(dbClientTraffics) > 0 {
+		err = tx.Save(dbClientTraffics).Error
+		if err != nil {
+			logger.Warning("AddClientTraffic update data ", err)
+		}
 	}
 
 	// After the authoritative row, and never gating it: this is the display split,
@@ -5550,6 +5589,7 @@ type ClientStatsSummary struct {
 	Total    int `json:"total"`
 	Online   int `json:"online"`
 	Depleted int `json:"depleted"`
+	Expired  int `json:"expired"`
 	Expiring int `json:"expiring"`
 }
 
@@ -5599,6 +5639,7 @@ func (s *InboundService) GetClientStatsFor(user *model.User) (*ClientStatsSummar
 	// inbound), so without this an account on three inbounds would be counted as
 	// three depleted customers. Total and Online also count unique account identities.
 	countedDepletion := make(map[string]bool)
+	countedExpiry := make(map[string]bool)
 	for _, inbound := range inbounds {
 		clients, err := s.GetClients(inbound)
 		if err != nil {
@@ -5611,6 +5652,15 @@ func (s *InboundService) GetClientStatsFor(user *model.User) (*ClientStatsSummar
 			if !countedTotal[key] {
 				summary.Total++
 				countedTotal[key] = true
+			}
+		}
+		// Time expiry is distinct from quota depletion and remains an account
+		// property even when its remaining inbound is disabled.
+		for _, stat := range inbound.ClientStats {
+			key := accountKey(stat.Email)
+			if stat.ExpiryTime > 0 && stat.ExpiryTime <= now && !countedExpiry[key] {
+				summary.Expired++
+				countedExpiry[key] = true
 			}
 		}
 		if !inbound.Enable {

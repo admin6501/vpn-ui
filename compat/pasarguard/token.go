@@ -116,3 +116,23 @@ func Verify(token, secret string, now time.Time) (Payload, error) {
 func (p Payload) ValidAfter(createdAt, revokedAt time.Time) bool {
 	return !p.IssuedAt.Before(createdAt) && (revokedAt.IsZero() || !p.IssuedAt.Before(revokedAt))
 }
+
+// DisplayToken issues a stable v3 token for an imported binding. It does not
+// reconstruct the original issuance time of tokens absent from the backup.
+func DisplayToken(userID int, createdAt, revokedAt time.Time, secret string) (string, error) {
+	if userID <= 0 || createdAt.IsZero() || secret == "" {
+		return "", ErrToken
+	}
+	issuedAt := createdAt
+	if revokedAt.After(issuedAt) {
+		issuedAt = revokedAt
+	}
+	seconds := issuedAt.Unix()
+	if issuedAt.Nanosecond() > 0 {
+		seconds++
+	}
+	body := base64.RawURLEncoding.EncodeToString([]byte("v3," + strconv.Itoa(userID) + "," + strconv.FormatInt(seconds, 10)))
+	mac := hmac.New(sha256.New, []byte(secret))
+	mac.Write([]byte(body))
+	return body + "." + base64.RawURLEncoding.EncodeToString(mac.Sum(nil)), nil
+}

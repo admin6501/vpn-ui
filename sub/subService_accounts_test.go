@@ -15,6 +15,7 @@ import (
 	"github.com/mhsanaei/3x-ui/v2/database"
 	"github.com/mhsanaei/3x-ui/v2/database/model"
 	"github.com/mhsanaei/3x-ui/v2/logger"
+	"github.com/mhsanaei/3x-ui/v2/web/service"
 	"github.com/mhsanaei/3x-ui/v2/xray"
 )
 
@@ -844,5 +845,39 @@ func TestSubUsageKeepsTheMostRecentLastOnline(t *testing.T) {
 	usage.add("c@x", xray.ClientTraffic{LastOnline: 400}, false)
 	if usage.lastOnline != 900 {
 		t.Errorf("lastOnline = %d, want 900", usage.lastOnline)
+	}
+}
+
+// Complete imported accounts used to skip the migration pass without setting
+// its marker, then fall back to a deleted inbound traffic row as unlimited.
+func TestPasarGuardSubscriptionQuotaAfterMissingMarkerRepair(t *testing.T) {
+	newSubTestDB(t)
+	var files []struct{ File string }
+	if err := database.GetDB().Raw("PRAGMA database_list").Scan(&files).Error; err != nil || len(files) == 0 {
+		t.Fatal("database path unavailable", err)
+	}
+	t.Setenv("VPNUI_DB_FOLDER", filepath.Dir(files[0].File))
+	if err := database.InitDB(filepath.Join(filepath.Dir(files[0].File), "vpn-ui.db")); err != nil {
+		t.Fatal(err)
+	}
+	const email = "imported-ten-gb@example.com"
+	const subID = "native-imported-binding"
+	expiry := time.Now().Add(24 * time.Hour).UnixMilli()
+	client := subClient(email, subID)
+	client["totalGB"] = float64(10 * gb)
+	client["expiryTime"] = float64(expiry)
+	inbound := seedSubInbound(t, model.VLESS, 41001, "remaining-inbound", client)
+	account := seedAccount(t, email, 10*gb, expiry, inbound.Id)
+	if err := database.GetDB().Model(account).Update("sub_id", subID).Error; err != nil {
+		t.Fatal(err)
+	}
+	var svc service.AccountService
+	svc.MigrationAccounts()
+	if !svc.AccountsMigrated() {
+		t.Fatal("imported accounts not enabled")
+	}
+	_, _, traffic, err := subSvc().GetSubs(subID, "new.example.test")
+	if err != nil || traffic.Total != 10*gb || traffic.ExpiryTime != expiry {
+		t.Fatalf("ten GB account reported unlimited or expiry lost: total=%d expiry=%d err=%v", traffic.Total, traffic.ExpiryTime, err)
 	}
 }

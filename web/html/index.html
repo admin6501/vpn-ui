@@ -211,8 +211,8 @@
         </div>
         <div class="bo-person bo-person--depleted">
           <svg class="bo-person-ico" aria-hidden="true"><use href="#bo-i-user"></use></svg>
-          <span class="bo-person-val num">[[ userStats.depleted ]]</span>
-          <span class="bo-person-key">{{ i18n "depleted" }}</span>
+          <span class="bo-person-val num">[[ userStats.expired ]]</span>
+          <span class="bo-person-key">{{ i18n "pages.clients.summaryExpired" }}</span>
         </div>
       </div>
     </article>
@@ -1853,7 +1853,7 @@
       serverName: '',
       // '' means every interface, which is what the aggregate netIO already is.
       ifaceFilter: '',
-      userStats: { total: 0, online: 0, depleted: 0, expiring: 0 },
+      userStats: { total: 0, online: 0, depleted: 0, expired: 0, expiring: 0 },
       userStatsTimer: null,
       userStatsLoading: false,
     },

@@ -302,6 +302,9 @@ def convert(backup, schema, output, destination_db=None):
             for key,value in configured.items():
                 target.execute('DELETE FROM settings WHERE key=?',(key,))
                 insert(target,'settings',{'key':key,'value':value})
+            target.execute('DELETE FROM settings WHERE key=?', ('accountsMigratedAt',))
+            insert(target, 'settings', {'key': 'accountsMigratedAt',
+                'value': str(int(datetime.now(timezone.utc).timestamp() * 1000))})
             if target.execute('PRAGMA integrity_check').fetchone()[0] != 'ok':
                 raise ValueError('SQLite integrity check failed')
         target.close()

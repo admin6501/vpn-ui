@@ -55,3 +55,23 @@ func TestInvalidTokens(t *testing.T) {
 		}
 	}
 }
+
+func TestDisplayTokenUsesImportedIdentityAndRevocationBoundary(t *testing.T) {
+	created := time.Unix(1700000000, 500000000)
+	revoked := created.Add(time.Hour)
+	token, err := DisplayToken(123, created, revoked, "test-secret")
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload, err := Verify(token, "test-secret", revoked.Add(time.Hour))
+	if err != nil || payload.UserID != 123 || !payload.ValidAfter(created, revoked) {
+		t.Fatal("invalid display token", err)
+	}
+	again, _ := DisplayToken(123, created, revoked, "test-secret")
+	if token != again {
+		t.Fatal("display token changes between reads")
+	}
+	if _, err := Verify(token, "wrong", time.Now()); err == nil {
+		t.Fatal("wrong signing key accepted")
+	}
+}

@@ -1084,7 +1084,7 @@
       // case the icon is hidden for.
       async showAccountSub(row) {
         await this.getDefaultSettings();
-        qrModal.showSub(row.email, { subId: row.subId });
+        qrModal.showSub(row.email, { subId: row.legacySubId || row.subId });
       },
       // The account panel. It reads everything through this page (inbounds, stats,
       // exports), so it is handed the page rather than a copy of its state: a

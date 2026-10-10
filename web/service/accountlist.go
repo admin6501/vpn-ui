@@ -83,6 +83,7 @@ type AccountRow struct {
 	Email         string `json:"email"`
 	Enable        bool   `json:"enable"`
 	SubID         string `json:"subId"`
+	LegacySubID   string `json:"legacySubId,omitempty"`
 	Comment       string `json:"comment"`
 	TotalGB       int64  `json:"totalGB"`    // bytes, despite the name
 	ExpiryTime    int64  `json:"expiryTime"` // ms; negative = delayed start
@@ -302,6 +303,9 @@ func (s *AccountService) ListAccounts(user *model.User, page, size int, search, 
 	end := start + size
 	if end > total {
 		end = total
+	}
+	if err := attachImportedSubscriptionTokens(db, rows[start:end]); err != nil {
+		return nil, err
 	}
 	return &AccountListResult{
 		Rows: rows[start:end], Total: total, Page: page, Size: size,

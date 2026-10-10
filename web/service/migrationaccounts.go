@@ -100,7 +100,10 @@ func (s *AccountService) MigrationAccounts() {
 		logger.Warning("MigrationAccounts - could not determine whether a pass is needed: ", err)
 		return
 	}
-	if !needed {
+	// Imported databases can already contain every account and membership but
+	// still lack the completion marker. Verify the additive pass before enabling
+	// authoritative account reads instead of leaving them on the legacy model.
+	if !needed && s.AccountsMigrated() {
 		return
 	}
 
@@ -365,9 +368,22 @@ func (s *AccountService) verifyAccountsPass(tx *gorm.DB, report *AccountsMigrati
 		membershipsPerAccount[m.AccountId]++
 	}
 
-	// Check 2: every account has at least one membership (no orphans).
+	// Imported PasarGuard users may legitimately have no assigned inbound.
+	// Their signed subscription binding proves that they are imported accounts,
+	// rather than an accidental orphan created by this backfill.
+	var bindings []model.PasarGuardSubscription
+	if err := tx.Find(&bindings).Error; err != nil {
+		return err
+	}
+	imported := make(map[int]string, len(bindings))
+	for _, binding := range bindings {
+		imported[binding.AccountID] = binding.SubIDAtImport
+	}
 	for _, account := range accounts {
 		if membershipsPerAccount[account.Id] == 0 {
+			if token, ok := imported[account.Id]; ok && token != "" && token == account.SubID {
+				continue
+			}
 			return fmt.Errorf("verification failed: account %q (id %d) has no membership", account.Email, account.Id)
 		}
 	}

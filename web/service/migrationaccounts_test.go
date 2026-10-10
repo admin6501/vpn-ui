@@ -738,3 +738,18 @@ func TestMigrationAccountsMigratesDisabledClients(t *testing.T) {
 		t.Errorf("projected enable = %v, want false", got)
 	}
 }
+
+func TestMigrationAccountsVerifiesExistingImportedAccountsWithoutMarker(t *testing.T) {
+	svc := newAccountsDB(t)
+	seedTwoInboundAccount(t, svc, "imported-without-marker@example.com")
+	db := database.GetDB()
+	if err := db.Where("key = ?", accountsMigratedKey).Delete(&model.Setting{}).Error; err != nil {
+		t.Fatal(err)
+	}
+	before := snapshotUntouchedTables(t)
+	svc.MigrationAccounts()
+	if !svc.AccountsMigrated() {
+		t.Fatal("complete imported accounts remained on legacy read path")
+	}
+	assertAdditiveOnly(t, before)
+}
