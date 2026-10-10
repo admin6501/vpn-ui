@@ -109,5 +109,5 @@ cd vpn-ui
 [GPL-3.0](LICENSE). نام سازندگان و مجوزهای اصلی و کتابخانه‌ها حفظ شده است. راهنماهای زیرماژول‌ها
 مربوط به همان پروژه‌های بالادست هستند.
 
-ARM64 (aarch64): download `vpn-ui-arm64`; the online installer selects the architecture automatically.
-The installed executable keeps the compatibility path `/opt/vpn-ui/vpn-ui-amd64` on both architectures.
+برای ARM64 (aarch64)، فایل `vpn-ui-arm64` را دانلود کنید؛ نصب آنلاین معماری را خودکار تشخیص می‌دهد.
+مسیر نصب در هر دو معماری برای سازگاری `/opt/vpn-ui/vpn-ui-amd64` باقی می‌ماند.

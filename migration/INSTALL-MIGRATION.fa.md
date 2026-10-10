@@ -8,7 +8,7 @@ untouched.
 
 ## نصب و اجرای خودکار / Automatic migration
 
-پنل vpn-ui باید از قبل روی Linux amd64 نصب شده و فاقد کاربر و ورودی باشد. با root اجرا کنید:
+پنل vpn-ui باید از قبل روی Linux amd64 / arm64 نصب شده و فاقد کاربر و ورودی باشد. با root اجرا کنید:
 
 ```bash
 bash <(curl -fsSL https://raw.githubusercontent.com/admin6501/vpn-ui/main/migration/install.sh)
@@ -18,7 +18,7 @@ bash <(curl -fsSL https://raw.githubusercontent.com/admin6501/vpn-ui/main/migrat
 بررسی می‌کند. از نصب قبلی بکاپ می‌گیرد و در صورت شکست، آن را بازمی‌گرداند. رمز ورود همان رمز مدیر
 اصلی پاسارگارد است.
 
-vpn-ui must already be installed on Linux amd64 with no accounts or inbounds. Run the command above
+vpn-ui must already be installed on Linux amd64 / arm64 with no accounts or inbounds. Run the command above
 as root, choose Persian or English, then enter the full backup path. The installer downloads and
 verifies the release bundle. Migration backs up the existing installation and rolls back on failure.
 Sign in using the imported main administrator's existing PasarGuard password.
@@ -31,7 +31,7 @@ VPNUI_MIGRATION_LANG=en bash <(curl -fsSL https://raw.githubusercontent.com/admi
 
 # مهاجرت خودکار نصب خالی vpn-ui
 
-بستهٔ اسکریپت‌ها را روی سرور مقصد Linux amd64 استخراج کنید؛ Python 3 و unzip باید از قبل نصب باشند.
+بستهٔ اسکریپت‌ها را روی سرور مقصد Linux amd64 / arm64 استخراج کنید؛ Python 3 و unzip باید از قبل نصب باشند.
 vpn-ui باید قبلاً نصب شده، خالی و دامنه و گواهی‌های پنل و اشتراک آن تنظیم شده باشند. فقط نصب‌های
 systemd پشتیبانی می‌شوند. گواهی‌های فعلی در محل خود می‌مانند؛ فایل بکاپ دیتابیس حاوی خود گواهی‌ها
 نیست.

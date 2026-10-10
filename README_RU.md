@@ -20,7 +20,7 @@ sudo bash deploy.sh
 ## Офлайн-установка
 
 Загрузите vpn-ui-amd64, install-offline.sh и SHA256SUMS из релиза и перенесите в одну папку.
-Требуются Linux amd64, root и systemd. Некоторым протоколам нужны заранее установленные системные
+Требуются Linux amd64 / arm64, root и systemd. Некоторым протоколам нужны заранее установленные системные
 пакеты и модули ядра.
 
 ```bash
@@ -53,5 +53,5 @@ domain/IP needs a new base URL.
 **License:** [GPL-3.0](LICENSE). Based on [Sir-MmD/vpn-ui](https://github.com/Sir-MmD/vpn-ui) and
 [3X-UI](https://github.com/MHSanaei/3x-ui); original attribution is preserved.
 
-ARM64 (aarch64): download `vpn-ui-arm64`; the online installer selects the architecture automatically.
-The installed executable keeps the compatibility path `/opt/vpn-ui/vpn-ui-amd64` on both architectures.
+Для ARM64 (aarch64) скачайте `vpn-ui-arm64`; онлайн-установщик определяет архитектуру автоматически.
+Путь установленного файла остаётся `/opt/vpn-ui/vpn-ui-amd64` для совместимости.

@@ -18,7 +18,7 @@ sudo bash deploy.sh
 ## 离线安装
 
 从发行版下载 vpn-ui-amd64、install-offline.sh 和 SHA256SUMS，并放入服务器的同一目录。需要 Linux
-amd64、root 和 systemd。部分协议需要预先安装系统软件包和内核模块。
+amd64 / arm64、root 和 systemd。部分协议需要预先安装系统软件包和内核模块。
 
 ```bash
 sudo bash install-offline.sh ./vpn-ui-amd64
@@ -48,5 +48,5 @@ domain/IP needs a new base URL.
 **License:** [GPL-3.0](LICENSE). Based on [Sir-MmD/vpn-ui](https://github.com/Sir-MmD/vpn-ui) and
 [3X-UI](https://github.com/MHSanaei/3x-ui); original attribution is preserved.
 
-ARM64 (aarch64): download `vpn-ui-arm64`; the online installer selects the architecture automatically.
-The installed executable keeps the compatibility path `/opt/vpn-ui/vpn-ui-amd64` on both architectures.
+ARM64（aarch64）服务器请下载 `vpn-ui-arm64`；在线安装程序会自动选择架构。
+为保持兼容，两种架构的安装路径均为 `/opt/vpn-ui/vpn-ui-amd64`。

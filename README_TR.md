@@ -20,7 +20,7 @@ sudo bash deploy.sh
 ## Çevrimdışı kurulum
 
 Sürümden vpn-ui-amd64, install-offline.sh ve SHA256SUMS dosyalarını indirip aynı dizine aktarın.
-Linux amd64, root ve systemd gerekir. Bazı protokoller önceden kurulmuş sistem paketleri ve çekirdek
+Linux amd64 / arm64, root ve systemd gerekir. Bazı protokoller önceden kurulmuş sistem paketleri ve çekirdek
 modülleri gerektirir.
 
 ```bash
@@ -52,5 +52,5 @@ domain/IP needs a new base URL.
 **License:** [GPL-3.0](LICENSE). Based on [Sir-MmD/vpn-ui](https://github.com/Sir-MmD/vpn-ui) and
 [3X-UI](https://github.com/MHSanaei/3x-ui); original attribution is preserved.
 
-ARM64 (aarch64): download `vpn-ui-arm64`; the online installer selects the architecture automatically.
-The installed executable keeps the compatibility path `/opt/vpn-ui/vpn-ui-amd64` on both architectures.
+ARM64 (aarch64) için `vpn-ui-arm64` indirin; çevrimiçi kurucu mimariyi otomatik algılar.
+Uyumluluk için kurulum yolu her iki mimaride `/opt/vpn-ui/vpn-ui-amd64` olarak kalır.

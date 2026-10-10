@@ -19,7 +19,7 @@ sudo bash deploy.sh
 ## التثبيت دون إنترنت
 
 نزّل vpn-ui-amd64 وinstall-offline.sh وSHA256SUMS من الإصدار، وانقلها إلى المجلد نفسه. يتطلب Linux
-amd64 وroot وsystemd. قد تتطلب بعض البروتوكولات حزم النظام ووحدات النواة المثبتة مسبقاً.
+amd64 / arm64 وroot وsystemd. قد تتطلب بعض البروتوكولات حزم النظام ووحدات النواة المثبتة مسبقاً.
 
 ```bash
 sudo bash install-offline.sh ./vpn-ui-amd64
@@ -50,5 +50,5 @@ domain/IP needs a new base URL.
 **License:** [GPL-3.0](LICENSE). Based on [Sir-MmD/vpn-ui](https://github.com/Sir-MmD/vpn-ui) and
 [3X-UI](https://github.com/MHSanaei/3x-ui); original attribution is preserved.
 
-ARM64 (aarch64): download `vpn-ui-arm64`; the online installer selects the architecture automatically.
-The installed executable keeps the compatibility path `/opt/vpn-ui/vpn-ui-amd64` on both architectures.
+على ARM64 (aarch64)، نزّل `vpn-ui-arm64`؛ يختار المثبت عبر الإنترنت المعمارية تلقائياً.
+يبقى مسار التنفيذ `/opt/vpn-ui/vpn-ui-amd64` في المعماريتين للحفاظ على التوافق.
