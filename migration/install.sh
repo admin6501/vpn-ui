@@ -12,7 +12,11 @@ fi
 export VPNUI_MIGRATION_LANG=$LANGUAGE
 say() { if [[ $LANGUAGE == fa ]]; then printf '%s\n' "$2"; else printf '%s\n' "$1"; fi; }
 [[ $EUID == 0 ]] || { say 'Run this command as root.' 'این دستور را با کاربر root اجرا کنید.' >&2; exit 1; }
-[[ $(uname -s) == Linux && $(uname -m) == x86_64 ]] || { say 'This bundle requires Linux amd64.' 'این بسته برای Linux amd64 است.' >&2; exit 1; }
+[[ $(uname -s) == Linux ]] || { say 'Linux is required.' 'سیستم‌عامل باید Linux باشد.' >&2; exit 1; }
+case $(uname -m) in
+    x86_64|amd64|aarch64|arm64) ;;
+    *) say 'This bundle requires Linux amd64 or arm64.' 'این بسته برای Linux amd64 یا arm64 است.' >&2; exit 1 ;;
+esac
 if ! command -v python3 >/dev/null || ! command -v curl >/dev/null; then
     say 'Installing Python and curl…' 'در حال نصب پایتون و curl…'
     if command -v apt-get >/dev/null; then apt-get update; apt-get install -y python3 curl ca-certificates;
