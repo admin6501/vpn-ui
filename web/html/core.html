@@ -1163,12 +1163,14 @@
       headStateClass() {
         if (this.provisionRunning) return 'head-running';
         if (this.rebootRequired && this.runKind === 'setup') return 'head-warn';
+        if (this.provisionDone && this.provisionResult.some(s => !s.ok)) return 'head-warn';
         if (this.provisionDone) return 'head-ok';
         return 'head-idle';
       },
       headStateIcon() {
         if (this.provisionRunning) return 'loading';
         if (this.rebootRequired && this.runKind === 'setup') return 'warning';
+        if (this.provisionDone && this.provisionResult.some(s => !s.ok)) return 'warning';
         if (this.provisionDone) return 'check';
         return this.runKind === 'uninstall' ? 'delete' : 'thunderbolt';
       },
@@ -1185,6 +1187,7 @@
         }
         if (this.provisionRunning) return '{{ i18n "pages.core.setupRunning" }}';
         if (this.rebootRequired) return '{{ i18n "pages.core.rebootTitle" }}';
+        if (this.provisionDone && this.provisionResult.some(s => !s.ok)) return '{{ i18n "pages.core.setupFailed" }}';
         if (this.provisionDone) return '{{ i18n "pages.core.setupDone" }}';
         return '{{ i18n "pages.core.runSetup" }}';
       },

@@ -1474,21 +1474,29 @@ func (s *CoreService) StartProvision(cores []string) bool {
 	already := s.installedCoreNames()
 
 	go func() {
+		var failed bool
 		var cs CoreService // CoreService is zero-value usable and stateless
 		mods, pkg := cs.runProvisionSteps(func(st ProvisionStep) {
 			provisionRun.mu.Lock()
 			provisionRun.steps = append(provisionRun.steps, st)
+			if !st.OK {
+				failed = true
+			}
 			provisionRun.mu.Unlock()
 		}, selected)
+		// Never record a requested core as installed without its prerequisites.
+		verified, missing := verifiedProvisionedCores(selected, mods, corePrerequisitePresent)
+		for _, name := range missing {
+			failed = true
+			provisionRun.mu.Lock()
+			provisionRun.steps = append(provisionRun.steps, ProvisionStep{Name: "verify " + name, OK: false, Msg: "Required daemon or kernel module is missing; inspect the failed setup steps."})
+			provisionRun.mu.Unlock()
+		}
 		var ss SettingService
-		if err := ss.SetVpnProvisioned(true); err != nil {
+		if err := ss.SetVpnProvisioned(!failed); err != nil {
 			logger.Warning("failed to persist vpnProvisioned flag:", err)
 		}
-		// Record the cores this host is now set up for: what it already had plus
-		// what this run added. Additive, so "add one core" never drops the rest,
-		// and a core absent from the list is what makes the Core Settings page
-		// offer it under "Add core".
-		if err := ss.SetProvisionedProtocols(orderedCoreNames(append(already, selected...))); err != nil {
+		if err := ss.SetProvisionedProtocols(orderedCoreNames(append(unselectedCoreNames(already, selected), verified...))); err != nil {
 			logger.Warning("failed to persist provisionedProtocols:", err)
 		}
 

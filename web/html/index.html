@@ -2898,7 +2898,7 @@
         return { running: '#52c41a', idle: '#1890ff', stopped: '#faad14', not_installed: '#8c8c8c', error: '#f5222d' }[state] || '#8c8c8c';
       },
       coreStateText(state) {
-        return { running: 'Running', idle: 'Idle', stopped: 'Stopped', not_installed: 'Not installed', error: 'Error', unknown: '-' }[state] || state;
+        return { running: '{{ i18n "pages.core.stateRunning" }}', idle: '{{ i18n "pages.core.stateIdle" }}', stopped: '{{ i18n "pages.core.stateStopped" }}', not_installed: '{{ i18n "pages.core.stateNotInstalled" }}', error: '{{ i18n "pages.core.stateError" }}', unknown: '-' }[state] || state;
       },
       openGeofiles() {
         this.geofilesModal.visible = true;

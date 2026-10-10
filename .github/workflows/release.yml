@@ -1,4 +1,4 @@
-name: Build initial release assets
+name: Build release assets
 on:
   workflow_dispatch:
 permissions:
@@ -8,25 +8,36 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: recursive
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
           cache: true
       - name: Build patched Xray and base geodata
         run: GEO_LEAN=1 bash build/core/build.sh amd64
+      - name: Cache portable VPN backends
+        id: backend-cache
+        uses: actions/cache@v4
+        with:
+          path: backend/bin/amd64
+          key: backend-amd64-${{ hashFiles('build/backend/**', '.gitmodules') }}-v1
+      - name: Build all portable VPN backends
+        if: steps.backend-cache.outputs.cache-hit != 'true'
+        run: bash build/backend/build.sh amd64
       - name: Build panel and migration helper
         run: |
           mkdir -p dist
           CGO_ENABLED=1 go build -tags netgo,osusergo -trimpath -ldflags='-s -w -linkmode external -extldflags "-static"' -o dist/vpn-ui-amd64 .
           CGO_ENABLED=1 go build -tags netgo,osusergo -trimpath -ldflags='-s -w -linkmode external -extldflags "-static"' -o dist/pasarguard-db ./cmd/pasarguard-db
-          test "$(dist/vpn-ui-amd64 -v)" = "1.10.2"
+          test "$(dist/vpn-ui-amd64 -v)" = "1.10.3"
           dist/pasarguard-db /tmp/migration-schema
       - name: Verify ownership transfer and online counts
-        run: go test -tags netgo,osusergo ./web/service ./web/controller -run 'TestAccountOwnershipTransfer|TestPasarGuard|TestOverview'
+        run: go test -tags netgo,osusergo ./web/service ./web/controller -run 'TestAccountOwnershipTransfer|TestPasarGuard|TestOverview|TestVerifiedProvisioned'
       - name: Package migration and checksums
         run: |
           mkdir -p dist/migration
-          cp migration/migrate.sh migration/convert.py migration/preflight.py migration/INSTALL-MIGRATION.fa.md dist/migration/
+          cp migration/migrate.sh migration/convert.py migration/preflight.py migration/INSTALL-MIGRATION.fa.md migration/install.sh dist/migration/
           cp dist/pasarguard-db dist/migration/pasarguard-db
           cp dist/vpn-ui-amd64 dist/migration/vpn-ui-custom
           cd dist/migration
@@ -36,4 +47,4 @@ jobs:
       - name: Upload assets to the prepared release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload v1.10.2 dist/vpn-ui-amd64 dist/vpn-ui-auto-migration.zip dist/SHA256SUMS --clobber --repo "$GITHUB_REPOSITORY"
+        run: gh release upload v1.10.3 dist/vpn-ui-amd64 dist/vpn-ui-auto-migration.zip dist/SHA256SUMS --clobber --repo "$GITHUB_REPOSITORY"

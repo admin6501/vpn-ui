@@ -156,7 +156,7 @@
                        of twelve identical ones. -->
                   <template slot="ownerCol" slot-scope="text, row">
  <span>[[ row.ownerUsername || '—' ]]</span>
- <a-button v-if="canTransferOwnership" size="small" @click="openOwnerTransfer(row)">تغییر مالک</a-button>
+ <a-button v-if="canTransferOwnership" size="small" @click="openOwnerTransfer(row)">{{ i18n "pages.client.changeOwner" }}</a-button>
  </template>
  <template slot="accountCol" slot-scope="text, row">
                     <div class="bo-lg-who">
@@ -428,8 +428,8 @@
         </transition>
       </a-spin>
       {{template "component/bulkOpsModal" .}}
-<a-modal v-model="ownerTransfer.visible" title="تغییر مالک کاربر" @ok="saveOwnerTransfer" :confirm-loading="ownerTransfer.loading" :class="themeSwitcher.currentTheme">
- <p>کاربر پس از انتقال در فهرست مالک جدید نمایش داده می‌شود. مصرف قبلی برای نمایندهٔ قبلی محفوظ می‌ماند.</p>
+<a-modal v-model="ownerTransfer.visible" title="{{ i18n "pages.client.ownerTitle" }}" @ok="saveOwnerTransfer" :confirm-loading="ownerTransfer.loading" :class="themeSwitcher.currentTheme">
+ <p>{{ i18n "pages.client.ownerDescription" }}</p>
  <a-select v-model="ownerTransfer.ownerId" :style="{width: '100%'}">
  <a-select-option v-for="owner in ownerTransfer.choices" :key="owner.id" :value="owner.id">[[ owner.username ]]</a-select-option>
  </a-select>
@@ -572,7 +572,7 @@
         }, extra || {});
         return [
           col('email', '{{ i18n "pages.clients.email" }}', 'accountCol', { width: 230 }),
-          col('owner', 'مالک / نماینده', 'ownerCol', { width: 180 }),
+          col('owner', '{{ i18n "pages.client.owner" }}', 'ownerCol', { width: 180 }),
           col('used', '{{ i18n "pages.clients.quota" }}', 'dataCol', { width: 170 }),
           col('expiry', '{{ i18n "pages.clients.expiry" }}', 'expiresCol', { width: 150 }),
           col('inbounds', '{{ i18n "pages.clients.inbounds" }}', 'servingCol'),

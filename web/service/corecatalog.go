@@ -597,3 +597,65 @@ func bundledDaemonNames() []string {
 	}
 	return out
 }
+
+// Kernel modules supplied by a newly installed kernel are pending reboot, not failures.
+func verifiedProvisionedCores(selected, pending []string, present func(string, string) bool) (ready, missing []string) {
+	wait := map[string]bool{}
+	for _, m := range pending {
+		wait[m] = true
+	}
+	for _, c := range specsFor(selected) {
+		ok := true
+		for _, d := range c.daemons {
+			ok = present("daemon", d) && ok
+		}
+		for _, m := range c.modules {
+			ok = (wait[m] || present("module", m)) && ok
+		}
+		for _, f := range c.feats {
+			switch f {
+			case featPppd, featAccel, featStrongswan:
+				ok = present("feature", f) && ok
+			}
+		}
+		if ok {
+			ready = append(ready, c.name)
+		} else {
+			missing = append(missing, c.name)
+		}
+	}
+	return
+}
+
+func corePrerequisitePresent(kind, name string) bool {
+	switch kind {
+	case "daemon":
+		return daemonInstalled(name)
+	case "module":
+		return moduleLoaded(name)
+	case "feature":
+		switch name {
+		case featPppd:
+			return daemonInstalled("pppd") || backend.HasPppdBundle()
+		case featAccel:
+			return daemonInstalled("accel-pppd") || backend.HasAccelBundle()
+		case featStrongswan:
+			return daemonInstalled("charon") || backend.HasStrongswanBundle() || ipsecAvailable()
+		}
+	}
+	return false
+}
+
+func unselectedCoreNames(already, selected []string) []string {
+	attempted := map[string]bool{}
+	for _, name := range selected {
+		attempted[name] = true
+	}
+	var kept []string
+	for _, name := range already {
+		if !attempted[name] {
+			kept = append(kept, name)
+		}
+	}
+	return kept
+}

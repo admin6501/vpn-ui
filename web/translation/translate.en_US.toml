@@ -110,6 +110,7 @@
 "link" = "Manage"
 
 [pages.core]
+"setupFailed" = "Setup finished with errors; review the failed steps"
 "title" = "Core Settings"
 "subtitle" = "Status and control of every backend core"
 "cores" = "Cores"
@@ -552,6 +553,10 @@
 
 "useManagedCert" = "Certificate"
 [pages.client]
+"changeOwner" = "Change owner"
+"ownerTitle" = "Change account owner"
+"ownerDescription" = "The account moves to the new owner’s list. Previous usage remains charged to the previous reseller."
+"owner" = "Owner / reseller"
 "add" = "Add Client"
 "edit" = "Edit Client"
 "freeze" = "Freeze"
