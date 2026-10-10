@@ -113,7 +113,7 @@ DL_URL="https://github.com/$REPO/releases/latest/download/$ASSET"
 MODE="install"; OLD_VER=""
 if [[ -e "$DEST" ]]; then
     MODE="update"
-    OLD_VER="$("$DEST" -v 2>/dev/null | tr -d '[:space:]')"
+    OLD_VER="$("$DEST" -v 2>/dev/null | tr -d '[:space:]' || true)"
     if [[ -z "$OLD_VER" && ! -f "$DB" ]]; then
         MODE="install"
         warn "existing binary cannot run and no panel database exists; recovering an incomplete fresh installation."
