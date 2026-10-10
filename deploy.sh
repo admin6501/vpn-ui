@@ -114,6 +114,10 @@ MODE="install"; OLD_VER=""
 if [[ -e "$DEST" ]]; then
     MODE="update"
     OLD_VER="$("$DEST" -v 2>/dev/null | tr -d '[:space:]')"
+    if [[ -z "$OLD_VER" && ! -f "$DB" ]]; then
+        MODE="install"
+        warn "existing binary cannot run and no panel database exists; recovering an incomplete fresh installation."
+    fi
 fi
 
 if   command -v curl >/dev/null 2>&1; then DL="curl"
