@@ -13,3 +13,10 @@ func TestVerifiedProvisionedCores(t *testing.T) {
 		t.Fatalf("reboot must not hide missing binaries: %v %v", ready, missing)
 	}
 }
+
+func TestVerifiedProvisionedKernelCores(t *testing.T) {
+	ready, missing := verifiedProvisionedCores([]string{"wgc", "awg", "gre"}, nil, func(kind, name string) bool { return kind != "kernelCore" || name == "wgc" })
+	if len(ready) != 1 || ready[0] != "wgc" || len(missing) != 2 {
+		t.Fatalf("unavailable kernel cores recorded as installed: %v %v", ready, missing)
+	}
+}

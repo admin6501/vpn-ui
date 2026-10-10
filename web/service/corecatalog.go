@@ -606,6 +606,9 @@ func verifiedProvisionedCores(selected, pending []string, present func(string, s
 	}
 	for _, c := range specsFor(selected) {
 		ok := true
+		if c.name == "wgc" || c.name == "awg" || c.name == "gre" {
+			ok = present("kernelCore", c.name)
+		}
 		for _, d := range c.daemons {
 			ok = present("daemon", d) && ok
 		}
@@ -629,6 +632,16 @@ func verifiedProvisionedCores(selected, pending []string, present func(string, s
 
 func corePrerequisitePresent(kind, name string) bool {
 	switch kind {
+	case "kernelCore":
+		var cs CoreService
+		switch name {
+		case "wgc":
+			return cs.wgcService.WireguardAvailable()
+		case "awg":
+			return cs.awgService.AmneziawgAvailable()
+		case "gre":
+			return cs.greService.GreAvailable()
+		}
 	case "daemon":
 		return daemonInstalled(name)
 	case "module":

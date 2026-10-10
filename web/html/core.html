@@ -295,7 +295,7 @@
             [[ c.title ]]
             <a-tag v-if="c.installed" color="green" class="picker-tag">{{ i18n "pages.core.installedTag" }}</a-tag>
           </span>
-          <span class="picker-sub">[[ c.desc ]]</span>
+          <span class="picker-sub">[[ coreDescription(c) ]]</span>
           <span class="picker-note" v-if="rowNote(c)">
             <a-icon type="info-circle"></a-icon>[[ rowNote(c) ]]
           </span>
@@ -929,6 +929,9 @@
           add: '{{ i18n "pages.core.pickerAddTitle" }}',
           uninstall: '{{ i18n "pages.core.pickerUninstallTitle" }}',
         })[this.pickerMode];
+      },
+      coreDescription(c) {
+        return { l2tp: '{{ i18n "pages.core.descl2tp" }}', pptp: '{{ i18n "pages.core.descpptp" }}', openvpn: '{{ i18n "pages.core.descopenvpn" }}', openconnect: '{{ i18n "pages.core.descopenconnect" }}', sstp: '{{ i18n "pages.core.descsstp" }}', ikev2: '{{ i18n "pages.core.descikev2" }}', wgc: '{{ i18n "pages.core.descwgc" }}', awg: '{{ i18n "pages.core.descawg" }}', gre: '{{ i18n "pages.core.descgre" }}', mtproto: '{{ i18n "pages.core.descmtproto" }}', ssh: '{{ i18n "pages.core.descssh" }}', xray: '{{ i18n "pages.core.descxray" }}', radius: '{{ i18n "pages.core.descradius" }}' }[c.name] || c.desc;
       },
       pickerDesc() {
         return ({
