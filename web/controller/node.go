@@ -85,10 +85,10 @@ func NewNodeController(g *gin.RouterGroup) {
 	})
 	nodes.POST("/add", func(c *gin.Context) {
 		var body struct {
-			Name    string `json:"name"`
-			Address string `json:"address"`
+			Name    string `json:"name" form:"name"`
+			Address string `json:"address" form:"address"`
 		}
-		if e := c.ShouldBindJSON(&body); e != nil {
+		if e := c.ShouldBind(&body); e != nil {
 			jsonMsg(c, "", e)
 			return
 		}
@@ -98,12 +98,12 @@ func NewNodeController(g *gin.RouterGroup) {
 	nodes.POST("/:id/update", func(c *gin.Context) {
 		id, e := strconv.Atoi(c.Param("id"))
 		var body struct {
-			Name    string `json:"name"`
-			Address string `json:"address"`
-			Enable  bool   `json:"enable"`
+			Name    string `json:"name" form:"name"`
+			Address string `json:"address" form:"address"`
+			Enable  bool   `json:"enable" form:"enable"`
 		}
 		if e == nil {
-			e = c.ShouldBindJSON(&body)
+			e = c.ShouldBind(&body)
 		}
 		if e == nil {
 			e = (&service.NodeService{}).Update(id, body.Name, body.Address, body.Enable)
@@ -128,10 +128,10 @@ func NewNodeController(g *gin.RouterGroup) {
 	nodes.POST("/:id/install", func(c *gin.Context) {
 		id, e := strconv.Atoi(c.Param("id"))
 		var body struct {
-			Cores []string `json:"cores"`
+			Cores []string `json:"cores" form:"cores"`
 		}
 		if e == nil {
-			e = c.ShouldBindJSON(&body)
+			e = c.ShouldBind(&body)
 		}
 		if e == nil {
 			e = (&service.NodeService{}).InstallCores(id, body.Cores)

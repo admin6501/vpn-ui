@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"encoding/json"
 	"fmt"
 	"github.com/gin-gonic/gin"
 	"github.com/mhsanaei/3x-ui/v2/database"
@@ -10,6 +11,7 @@ import (
 	"github.com/mhsanaei/3x-ui/v2/web/service"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 )
@@ -64,5 +66,44 @@ func TestNodeAdministrationRejectsRepresentative(t *testing.T) {
 	database.GetDB().Model(&model.RemoteNode{}).Count(&count)
 	if count != 0 || w.Code == 200 && !strings.Contains(w.Body.String(), `"success":false`) {
 		t.Fatal("representative changed node infrastructure", w.Code, w.Body.String())
+	}
+}
+
+func TestNodeBrowserFormPostsCreateUpdateAndInstall(t *testing.T) {
+	f := newIdorFixture(t)
+	f.ali.IsSuperAdmin = true
+	router := gin.New()
+	router.Use(withUser(f.ali))
+	NewNodeController(router.Group("/panel"))
+	post := func(path string, body url.Values) *httptest.ResponseRecorder {
+		t.Helper()
+		req := httptest.NewRequest("POST", path, strings.NewReader(body.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded; charset=UTF-8")
+		req.Header.Set("X-Requested-With", "XMLHttpRequest")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+		var msg struct {
+			Success bool `json:"success"`
+		}
+		if json.Unmarshal(w.Body.Bytes(), &msg) != nil || !msg.Success {
+			t.Fatalf("browser form request failed: %s %s", path, w.Body.String())
+		}
+		return w
+	}
+	post("/panel/nodes/add", url.Values{"name": {"Germany"}, "address": {"de.example.com"}})
+	var node model.RemoteNode
+	if err := database.GetDB().Where("name = ?", "Germany").First(&node).Error; err != nil {
+		t.Fatal(err)
+	}
+	post(fmt.Sprintf("/panel/nodes/%d/update", node.ID), url.Values{"name": {"Renamed"}, "address": {"de2.example.com"}, "enable": {"false"}})
+	database.GetDB().First(&node, node.ID)
+	if node.Enable || node.Name != "Renamed" || node.Address != "de2.example.com" {
+		t.Fatal("form update did not bind")
+	}
+	post(fmt.Sprintf("/panel/nodes/%d/install", node.ID), url.Values{"cores": {"xray", "openvpn"}})
+	database.GetDB().First(&node, node.ID)
+	var cores []string
+	if err := json.Unmarshal([]byte(node.RequestedCores), &cores); err != nil || len(cores) != 2 || node.CoreGeneration != 1 {
+		t.Fatal("repeated form core fields did not bind", err)
 	}
 }

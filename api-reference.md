@@ -1688,7 +1688,8 @@ protocol `externalProxy` settings are a different feature.
 
 ## Dedicated nodes
 
-The browser API `/panel/nodes` requires the main (super) administrator. Paths are
+The browser API `/panel/nodes` requires the main (super) administrator.
+POST bodies accept JSON or URL-encoded form fields; array form fields repeat the key. Paths are
 relative to the panel's configured web base path:
 
 | Method | Path | Purpose |

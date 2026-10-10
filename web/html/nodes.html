@@ -53,10 +53,12 @@
 </a-modal>
 {{ template "page/shell_end" .}}
 {{ template "page/body_scripts" .}}
+{{ template "component/aSidebar" .}}
+{{ template "component/aThemeSwitch" .}}
 <script>
 const app = new Vue({
-  el:'#app',delimiters:['[[',']]'],
-  data:{themeSwitcher, nodes:[], formVisible:false, commandVisible:false, coresVisible:false, busy:false, form:{}, pairing:'', command:'', current:null, selected:[], timer:null, https:location.protocol==='https:'},
+  el:'#app',delimiters:['[[',']]'],mixins:[MediaQueryMixin],
+  data:{themeSwitcher, pageTitle:'{{ i18n "pages.nodes.title" }}',pageClass:'',nodes:[], formVisible:false, commandVisible:false, coresVisible:false, busy:false, form:{}, pairing:'', command:'', current:null, selected:[], timer:null, https:location.protocol==='https:'},
   computed:{
     catalog(){return this.current && this.current.report ? (this.current.report.catalog || []).filter(c=>c.name!=='radius') : []},
     queued(){return this.current && this.current.report && Number(this.current.report.generation || 0)<Number(this.current.node.coreGeneration)}
