@@ -17,7 +17,7 @@ sudo bash install-offline.sh ./vpn-ui-amd64
 sudo bash install-offline.sh --lang en ./vpn-ui-amd64
 ```
 
-Linux amd64، Bash، systemd فعال و ابزارهای پایهٔ سیستم (از جمله coreutils و awk) لازم‌اند. باینری
+Linux amd64 یا arm64، Bash، systemd فعال و ابزارهای پایهٔ سیستم (از جمله coreutils و awk) لازم‌اند. باینری
 شامل Xray، هسته‌های قابل‌حمل و داده‌های عمومی، ایران و روسیه است. برای برخی پروتکل‌ها، nftables،
 iproute2، هدرهای کرنل/DKMS یا ماژول‌های WireGuard/AmneziaWG/PPP باید از قبل فراهم شوند. نصب پنل با
 دو فایل انجام می‌شود؛ این دو فایل جایگزین بسته‌های سیستم‌عامل نیستند. آن بسته‌ها را قبل از محدود شدن
@@ -75,7 +75,7 @@ with `SHA256SUMS`. Run:
 sudo bash install-offline.sh --lang en ./vpn-ui-amd64
 ```
 
-Requires Linux amd64, Bash, an active systemd system and standard utilities (coreutils/awk). The
+Requires Linux amd64 or arm64, Bash, an active systemd system and standard utilities (coreutils/awk). The
 installer asks Yes/No before optional apt installation. No (the default, including EOF) keeps
 installation local without downloads. Yes refreshes apt indexes and installs host prerequisites,
 requiring connectivity. apt failures are reported and local installation continues. This happens
@@ -124,3 +124,15 @@ choose a replacement generic kernel or reboot the server. Check module availabil
 after installing. Non-apt distributions skip this optional step.
 
 [فهرست مستندات / Documentation index](INDEX.md)
+
+## ARM64 / aarch64
+
+برای سرور ARM64 فایل `vpn-ui-arm64` را دانلود کنید و اجرا کنید:
+
+```bash
+sudo bash install-offline.sh ./vpn-ui-arm64
+```
+
+On ARM64, download `vpn-ui-arm64` instead of `vpn-ui-amd64`. The installed path remains
+`/opt/vpn-ui/vpn-ui-amd64` for menu and migration compatibility; the executable and bundled cores
+are native ARM64.

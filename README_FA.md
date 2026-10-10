@@ -28,7 +28,7 @@ L2TP/IPsec، PPTP، SSTP، IKEv2 و WireGuard/AmneziaWG در دسترس‌اند
 
 ## نصب آنلاین
 
-باینری منتشرشده مخصوص **Linux amd64** است؛ **root و systemd** لازم است. Ubuntu 24.04 یا Debian 12/13
+باینری منتشرشده مخصوص **Linux amd64 / arm64** است؛ **root و systemd** لازم است. Ubuntu 24.04 یا Debian 12/13
 پیشنهاد می‌شود. تمام توزیع‌ها و پروتکل‌ها در این فورک آزمایش عملی نشده‌اند و Ubuntu 22.04 رسماً در
 بالادست پشتیبانی نمی‌شود.
 
@@ -108,3 +108,6 @@ cd vpn-ui
 
 [GPL-3.0](LICENSE). نام سازندگان و مجوزهای اصلی و کتابخانه‌ها حفظ شده است. راهنماهای زیرماژول‌ها
 مربوط به همان پروژه‌های بالادست هستند.
+
+ARM64 (aarch64): download `vpn-ui-arm64`; the online installer selects the architecture automatically.
+The installed executable keeps the compatibility path `/opt/vpn-ui/vpn-ui-amd64` on both architectures.

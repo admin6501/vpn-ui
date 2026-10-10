@@ -56,16 +56,21 @@ offer_apt_prerequisites() {
 [[ ${BASH_SOURCE[0]} == "$0" ]] || return 0
 
 if [[ ${1:-} == --help ]]; then
-    printf 'sudo bash install-offline.sh [--lang fa|en] [/path/vpn-ui-amd64]\nVPNUI_PUBLIC_IP=server-ip (optional, for the printed URL)\n'; exit 0
+    printf 'sudo bash install-offline.sh [--lang fa|en] [/path/vpn-ui-{amd64,arm64}]\nVPNUI_PUBLIC_IP=server-ip (optional, for the printed URL)\n'; exit 0
 fi
 [[ $lang == fa || $lang == en ]] || die 'زبان باید fa یا en باشد.' 'Language must be fa or en.'
 [[ $EUID == 0 ]] || die 'اسکریپت را با sudo یا کاربر root اجرا کنید.' 'Run with sudo or as root.'
-[[ $(uname -s) == Linux && $(uname -m) == x86_64 ]] || die 'این بسته فقط Linux amd64 است.' 'This release supports Linux amd64 only.'
+[[ $(uname -s) == Linux ]] || die 'این بسته فقط Linux است.' 'Linux is required.'
+case $(uname -m) in
+    x86_64|amd64) asset=vpn-ui-amd64 ;;
+    aarch64|arm64) asset=vpn-ui-arm64 ;;
+    *) die 'معماری پشتیبانی نمی‌شود.' 'Supported architectures: amd64 and arm64.' ;;
+esac
 [[ -d /run/systemd/system ]] || die 'systemd باید مدیر سرویس فعال سیستم باشد.' 'A running systemd system is required.'
 for command in systemctl install cp mv mktemp timeout sha256sum awk readlink; do
     command -v "$command" >/dev/null || die "پیش‌نیاز موجود نیست: $command" "Missing prerequisite: $command"
 done
-source_binary=${1:-"$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/vpn-ui-amd64"}
+source_binary=${1:-"$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/$asset"}
 [[ -f $source_binary && ! -L $source_binary ]] || die 'فایل باینری محلی پیدا نشد.' 'Local binary not found (symlinks are not accepted).'
 source_binary=$(readlink -f -- "$source_binary")
 base=/opt/vpn-ui
@@ -76,7 +81,7 @@ trap 'rm -rf -- "$stage"' EXIT
 install -m 700 -- "$source_binary" "$stage/vpn-ui-amd64"
 checksums="$(dirname -- "$source_binary")/SHA256SUMS"
 if [[ -f $checksums ]]; then
-    expected=$(awk '$2 == "vpn-ui-amd64" {print $1}' "$checksums")
+    expected=$(awk -v asset="$asset" '$2 == asset {print $1}' "$checksums")
     [[ $expected =~ ^[a-fA-F0-9]{64}$ ]] || die 'چک‌سام باینری معتبر نیست.' 'Missing or ambiguous binary checksum.'
     actual=$(sha256sum "$stage/vpn-ui-amd64"); actual=${actual%% *}
     [[ ${expected,,} == "$actual" ]] || die 'چک‌سام باینری تطابق ندارد.' 'Binary checksum mismatch.'

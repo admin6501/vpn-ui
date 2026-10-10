@@ -5,7 +5,15 @@ permissions:
   contents: write
 jobs:
   release:
-    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -17,7 +25,7 @@ jobs:
       - name: Verify optional apt prerequisite prompts without real package installation
         run: bash test_unit/offline_prerequisites_test.sh
       - name: Build patched Xray and complete geodata
-        run: GEO_LEAN=0 bash build/core/build.sh amd64
+        run: GEO_LEAN=0 bash build/core/build.sh ${{ matrix.arch }}
       - name: Verify all six bundled geodata files
         run: |
           for file in geoip.dat geosite.dat geoip_IR.dat geosite_IR.dat geoip_RU.dat geosite_RU.dat; do
@@ -28,16 +36,18 @@ jobs:
         id: backend-cache
         uses: actions/cache@v4
         with:
-          path: backend/bin/amd64
-          key: backend-amd64-${{ hashFiles('build/backend/**', '.gitmodules') }}-v1
+          path: backend/bin/${{ matrix.arch }}
+          key: backend-${{ matrix.arch }}-${{ hashFiles('build/backend/**', '.gitmodules') }}-v1
       - name: Build all portable VPN backends
         if: steps.backend-cache.outputs.cache-hit != 'true'
-        run: bash build/backend/build.sh amd64
+        run: bash build/backend/build.sh ${{ matrix.arch }}
       - name: Build panel
         run: |
           mkdir -p dist
-          CGO_ENABLED=1 go build -tags netgo,osusergo -trimpath -ldflags='-s -w -linkmode external -extldflags "-static"' -o dist/vpn-ui-amd64 .
-          test "$(dist/vpn-ui-amd64 -v)" = "1.0.0"
+          CGO_ENABLED=1 go build -tags netgo,osusergo -trimpath -ldflags='-s -w -linkmode external -extldflags "-static"' -o dist/vpn-ui-${{ matrix.arch }} .
+          test "$(dist/vpn-ui-${{ matrix.arch }} -v)" = "1.0.0"
+          file dist/vpn-ui-${{ matrix.arch }}
+          go test ./corebundle -run TestExtractXray -count=1
       - name: Verify ownership transfer and online counts
         run: go test -tags netgo,osusergo ./web/service ./web/controller -run 'TestAccountOwnershipTransfer|TestPasarGuard|TestOverview|TestVerifiedProvisioned|TestOffline'
       - name: Verify offline refresh guard
@@ -64,10 +74,10 @@ jobs:
           cd ..
           cp ../install-offline.sh .
           bash -n install-offline.sh
-          sha256sum vpn-ui-amd64 vpn-ui-auto-migration.zip install-offline.sh > SHA256SUMS
+          sha256sum vpn-ui-${{ matrix.arch }} vpn-ui-auto-migration.zip install-offline.sh > SHA256SUMS
       - name: Verify fresh installation and update without installer network access
         run: |
-          sudo unshare --net bash install-offline.sh --lang en "$PWD/dist/vpn-ui-amd64" > /tmp/offline-install.log 2>&1
+          sudo unshare --net bash install-offline.sh --lang en "$PWD/dist/vpn-ui-${{ matrix.arch }}" > /tmp/offline-install.log 2>&1
           sudo systemctl is-active --quiet vpn-ui
           USER_BEFORE=$(sudo env VPNUI_OFFLINE=1 /opt/vpn-ui/vpn-ui-amd64 info --get username)
           PORT_BEFORE=$(sudo env VPNUI_OFFLINE=1 /opt/vpn-ui/vpn-ui-amd64 info --get port)
@@ -77,7 +87,7 @@ jobs:
             sleep 1
           done
           curl -fsS "http://127.0.0.1:$PORT_BEFORE$WEB_PATH" -o /dev/null
-          sudo unshare --net bash install-offline.sh --lang en "$PWD/dist/vpn-ui-amd64" > /tmp/offline-update.log 2>&1
+          sudo unshare --net bash install-offline.sh --lang en "$PWD/dist/vpn-ui-${{ matrix.arch }}" > /tmp/offline-update.log 2>&1
           test "$USER_BEFORE" = "$(sudo env VPNUI_OFFLINE=1 /opt/vpn-ui/vpn-ui-amd64 info --get username)"
           test "$PORT_BEFORE" = "$(sudo env VPNUI_OFFLINE=1 /opt/vpn-ui/vpn-ui-amd64 info --get port)"
           sudo systemctl is-active --quiet vpn-ui
@@ -100,7 +110,24 @@ jobs:
             if test -f "$logfile"; then sudo tail -50 "$logfile" | sed -E 's/(Password:).*/\1 [redacted]/'; fi
           done
           sudo journalctl -u vpn-ui -n 60 --no-pager || true
-      - name: Upload assets to the prepared release
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.arch }}
+          path: dist/*
+          retention-days: 2
+  publish:
+    needs: release
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: release-*
+          path: dist
+          merge-multiple: true
+      - name: Publish both architectures with combined checksums
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload v1.0.0 dist/vpn-ui-amd64 dist/vpn-ui-auto-migration.zip dist/install-offline.sh dist/SHA256SUMS --clobber --repo "$GITHUB_REPOSITORY"
+        run: |
+          cd dist
+          sha256sum vpn-ui-amd64 vpn-ui-arm64 vpn-ui-auto-migration.zip install-offline.sh > SHA256SUMS
+          gh release upload v1.0.0 vpn-ui-amd64 vpn-ui-arm64 vpn-ui-auto-migration.zip install-offline.sh SHA256SUMS --clobber --repo "$GITHUB_REPOSITORY"

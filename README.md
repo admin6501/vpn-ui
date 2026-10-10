@@ -32,7 +32,7 @@ accounting bridge.
 
 ## Installation
 
-The published binary is **Linux amd64**, requires **root and systemd**, and installs under
+The published binary is **Linux amd64 / arm64**, requires **root and systemd**, and installs under
 `/opt/vpn-ui`. Prefer Ubuntu 24.04 or Debian 12/13. The upstream targets additional distributions,
 but this fork has not completed the full VM/protocol matrix on every distribution. Ubuntu 22.04 is
 not officially supported upstream.
@@ -127,3 +127,6 @@ implementation. ACME issuance/renewal needs internet even though its client is b
 [GPL-3.0](LICENSE). Original project and third-party copyright/license notices remain intact.
 Vendored/submodule READMEs document their respective upstream components, not this fork's
 release/install process.
+
+ARM64 (aarch64): download `vpn-ui-arm64`; the online installer selects the architecture automatically.
+The installed executable keeps the compatibility path `/opt/vpn-ui/vpn-ui-amd64` on both architectures.

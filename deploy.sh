@@ -99,8 +99,13 @@ hr
 command -v systemctl >/dev/null 2>&1 || die "systemctl not found — this host isn't running systemd."
 
 arch="$(uname -m)"
-[[ "$arch" == "x86_64" || "$arch" == "amd64" ]] || \
-    die "unsupported host architecture '$arch': this release contains Linux amd64 only. Use an x86_64 server; installation stopped before downloading or changing files."
+case "$arch" in
+    x86_64|amd64) ASSET=vpn-ui-amd64 ;;
+    aarch64|arm64) ASSET=vpn-ui-arm64 ;;
+    *) die "unsupported host architecture '$arch': Linux amd64 and arm64 are supported." ;;
+esac
+# Keep the installed path stable for the management menu and existing databases.
+DL_URL="https://github.com/$REPO/releases/latest/download/$ASSET"
 
 # Fresh install vs in-place update: an already-installed binary means UPDATE. On
 # update we must NOT re-randomize credentials (that would lock the operator out of

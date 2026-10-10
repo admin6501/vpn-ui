@@ -36,7 +36,7 @@ func TestExtractXray(t *testing.T) {
 		t.Fatalf("extracted core is not executable: %v", fi.Mode())
 	}
 	// Only exec on the native architecture — a cross-built bundle won't run here.
-	if runtime.GOARCH == "amd64" {
+	if runtime.GOARCH == "amd64" || runtime.GOARCH == "arm64" {
 		out, err := exec.Command(path, "-version").CombinedOutput()
 		if err != nil {
 			t.Fatalf("core -version failed: %v\n%s", err, out)

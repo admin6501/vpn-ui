@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Run from the unpacked migration bundle. Supports Linux amd64 + systemd.
+# Run from the unpacked migration bundle. Supports Linux amd64/arm64 + systemd.
 set -Eeuo pipefail
 umask 077
 HERE=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
@@ -18,7 +18,7 @@ BACKUP=${1:-}
 if [[ -z $BACKUP ]]; then say 'Full path to PasarGuard backup:' 'مسیر کامل بکاپ پاسارگارد:'; read -r BACKUP </dev/tty; fi
 [[ -f $BACKUP ]] || { say 'Backup file not found.' 'فایل بکاپ پیدا نشد.' >&2; exit 1; }
 command -v python3 >/dev/null || { say 'python3 is required.' 'python3 لازم است.' >&2; exit 1; }
-[[ $(uname -m) == x86_64 ]] || { say 'This bundle requires Linux amd64.' 'این بسته برای Linux amd64 است.' >&2; exit 1; }
+[[ $(uname -m) == x86_64 || $(uname -m) == aarch64 ]] || { say 'This bundle requires Linux amd64 or arm64.' 'این بسته برای Linux amd64 یا arm64 است.' >&2; exit 1; }
 UNIT=${VPNUI_SERVICE:-vpn-ui.service}
 [[ $UNIT =~ ^[a-zA-Z0-9_.@-]+$ ]] || { say 'Invalid service name.' 'نام سرویس نامعتبر است.' >&2; exit 1; }
 command -v systemctl >/dev/null || { say 'systemd is required.' 'systemd لازم است.' >&2; exit 1; }

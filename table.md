@@ -1,6 +1,6 @@
 # Distribution and architecture reference
 
-The published release binary is **Linux amd64** and requires a running **systemd** system and root
+The published release binary is **Linux amd64 / arm64** and requires a running **systemd** system and root
 access. Ubuntu 24.04 and Debian 12/13 are recommended. The table lists upstream target
 distributions, not a full test certification of this fork.
 

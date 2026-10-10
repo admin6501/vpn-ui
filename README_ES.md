@@ -51,3 +51,6 @@ domain/IP needs a new base URL.
 
 **License:** [GPL-3.0](LICENSE). Based on [Sir-MmD/vpn-ui](https://github.com/Sir-MmD/vpn-ui) and
 [3X-UI](https://github.com/MHSanaei/3x-ui); original attribution is preserved.
+
+ARM64 (aarch64): download `vpn-ui-arm64`; the online installer selects the architecture automatically.
+The installed executable keeps the compatibility path `/opt/vpn-ui/vpn-ui-amd64` on both architectures.
