@@ -32,7 +32,7 @@ func TestRepresentativeRolesPagesRenderBothLanguages(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		for _, page := range []string{"resellers.html"} {
+		for _, page := range []string{"resellers.html", "nodes.html"} {
 			var output bytes.Buffer
 			data := map[string]any{"base_path": "/test/", "title": "pages.resellers.title", "perms": map[string]bool{"superAdmin": true, "manageResellers": true}}
 			if err := tpl.ExecuteTemplate(&output, page, data); err != nil {

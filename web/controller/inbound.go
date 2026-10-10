@@ -56,6 +56,11 @@ func (a *InboundController) initRouter(g *gin.RouterGroup) {
 	ownsClient := requireClientAccess()
 	read := requirePerm(model.PermAccessInbounds)
 
+	g.GET("/nodes", requirePerm(model.PermCreateInbound), func(c *gin.Context) {
+		var nodes []model.RemoteNode
+		err := database.GetDB().Select("id,name,address,enable").Order("id").Find(&nodes).Error
+		jsonObj(c, nodes, err)
+	})
 	g.GET("/list", read, a.getInbounds)
 	// The reseller's own balance, for the chip the inbounds page refreshes after
 	// every operation. Gated on the read bit rather than on the role: it answers
@@ -618,6 +623,17 @@ func (a *InboundController) getClientTrafficsById(c *gin.Context) {
 // map to no core and are never gated.
 //
 // The UI guards this too; this is defense-in-depth against a direct API call.
+func coreMissingForInbound(c *gin.Context, inbound *model.Inbound) bool {
+	if inbound.NodeID == 0 {
+		return coreMissingForProtocol(c, inbound.Protocol)
+	}
+	if err := (&service.NodeService{}).ProtocolReady(inbound.NodeID, inbound.Protocol); err != nil {
+		jsonMsg(c, "", err)
+		return true
+	}
+	return false
+}
+
 func coreMissingForProtocol(c *gin.Context, protocol model.Protocol) bool {
 	var coreService service.CoreService
 	if !coreService.ProtocolNeedsSetup(string(protocol)) {
@@ -643,7 +659,7 @@ func (a *InboundController) addInbound(c *gin.Context) {
 		return
 	}
 
-	if coreMissingForProtocol(c, inbound.Protocol) {
+	if coreMissingForInbound(c, inbound) {
 		return
 	}
 
@@ -846,7 +862,7 @@ func (a *InboundController) updateInbound(c *gin.Context) {
 	// edited back into service. Gated on the RESULT being enabled rather than on the
 	// edit itself: turning a stranded inbound off has to stay possible (the enable
 	// toggle posts through this same route), or the only way out would be deleting it.
-	if inbound.Enable && coreMissingForProtocol(c, inbound.Protocol) {
+	if inbound.Enable && coreMissingForInbound(c, inbound) {
 		return
 	}
 	// The GRE form posts no port, so keep the one already stored: UpdateInbound rebuilds
@@ -2061,7 +2077,7 @@ func (a *InboundController) importInbound(c *gin.Context) {
 	}
 	// Import is a create by another name, and it was the one path with no gate at all:
 	// an exported inbound for a core this host never installed came straight in.
-	if coreMissingForProtocol(c, inbound.Protocol) {
+	if coreMissingForInbound(c, inbound) {
 		return
 	}
 
@@ -2365,7 +2381,16 @@ func (a *InboundController) downloadOvpn(c *gin.Context) {
 		return
 	}
 
-	content, err := a.openvpnService.GenerateClientConfig(inbound, proto, browserHost(c))
+	address := browserHost(c)
+	if inbound.NodeID != 0 {
+		var n model.RemoteNode
+		if e := database.GetDB().First(&n, inbound.NodeID).Error; e != nil {
+			jsonMsg(c, "", e)
+			return
+		}
+		address = n.Address
+	}
+	content, err := a.openvpnService.GenerateClientConfig(inbound, proto, address)
 	if err != nil {
 		jsonMsg(c, "Failed to generate client config", err)
 		return

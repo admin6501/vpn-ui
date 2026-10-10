@@ -25,6 +25,8 @@ import (
 // AccountMembershipView is one inbound an account is served on, named the way an
 // operator recognises it rather than by id alone.
 type AccountMembershipView struct {
+	NodeID    int    `json:"nodeId"`
+	NodeName  string `json:"nodeName,omitempty"`
 	InboundId int    `json:"inboundId"`
 	Protocol  string `json:"protocol"`
 	Remark    string `json:"remark"`
@@ -386,7 +388,14 @@ func (s *AccountService) membershipViews() (map[int][]AccountMembershipView, err
 
 	var inbounds []model.Inbound
 	if err := db.Model(&model.Inbound{}).
-		Select("id", "protocol", "remark", "port", "enable").Find(&inbounds).Error; err != nil {
+		Select("id", "node_id", "protocol", "remark", "port", "enable").Find(&inbounds).Error; err != nil {
+		return nil, err
+	}
+	ptrs := []*model.Inbound{}
+	for i := range inbounds {
+		ptrs = append(ptrs, &inbounds[i])
+	}
+	if err := attachNodeAddresses(db, ptrs); err != nil {
 		return nil, err
 	}
 	byId := make(map[int]*model.Inbound, len(inbounds))
@@ -443,7 +452,7 @@ func (s *AccountService) membershipViews() (map[int][]AccountMembershipView, err
 		}
 		view := AccountMembershipView{
 			InboundId: inbound.Id, Protocol: string(inbound.Protocol),
-			Remark: inbound.Remark, Port: inbound.Port, Enable: inbound.Enable,
+			Remark: inbound.Remark, Port: inbound.Port, Enable: inbound.Enable, NodeID: inbound.NodeID, NodeName: inbound.NodeName,
 			Slot: m.Slot,
 		}
 		if ids := identityByInbound[inbound.Id]; ids != nil {

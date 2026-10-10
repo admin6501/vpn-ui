@@ -231,7 +231,7 @@ func (s *XrayService) GetXrayConfig() (*xray.Config, error) {
 	}
 
 	for _, inbound := range inbounds {
-		if !inbound.Enable {
+		if !inbound.Enable || inbound.NodeID != 0 {
 			continue
 		}
 		// Skip L2TP/PPTP/OpenVPN/OpenConnect/SSTP/IKEv2/WireGuard/MTProto inbounds, they

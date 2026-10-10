@@ -54,3 +54,7 @@ domain/IP needs a new base URL.
 
 En ARM64 (aarch64), descarga `vpn-ui-arm64`; el instalador en línea detecta la arquitectura.
 La ruta instalada sigue siendo `/opt/vpn-ui/vpn-ui-amd64` para mantener la compatibilidad.
+
+## Multi-location nodes
+
+Dedicated nodes and central core installation: [English guide](docs/NODES.md) | [فارسی](docs/NODES.fa.md).

@@ -103,7 +103,7 @@ type sshClient struct {
 func (s *SshService) GetSshInbounds() ([]*model.Inbound, error) {
 	db := database.GetDB()
 	var inbounds []*model.Inbound
-	err := db.Model(model.Inbound{}).Where("protocol = ?", model.SSH).Find(&inbounds).Error
+	err := db.Model(model.Inbound{}).Where("node_id = 0").Where("protocol = ?", model.SSH).Find(&inbounds).Error
 	if err != nil {
 		return nil, err
 	}
@@ -475,6 +475,9 @@ func (s *SshService) RenderClientConfigs(inbound *model.Inbound, email, endpoint
 		host := endpointHost
 		if l := strings.TrimSpace(inbound.Listen); l != "" && l != "0.0.0.0" {
 			host = l
+		}
+		if inbound.NodeAddress != "" {
+			host = inbound.NodeAddress
 		}
 		targets = append(targets, endpointTarget{host: host, port: inbound.Port})
 	}

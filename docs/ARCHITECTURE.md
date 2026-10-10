@@ -130,3 +130,13 @@ flowchart TB
   IKE ==> XRAY
   ACCT -.- XRAY
 ```
+
+## Dedicated nodes
+
+`cmd/vpn-ui-node` reuses the data-plane runtime without panel/admin HTTP listeners.
+`nodewire` is the versioned enrollment/snapshot/report protocol; `nodeagent` persists
+report delivery and polls central HTTPS. `web/service/node.go` scopes assignments
+and commits cumulative high-water marks with shared billing in one transaction.
+`web/service/node_worker.go` projects snapshots without resetting local meters.
+An inbound `node_id` of zero denotes the central server; runtime queries exclude
+remote inbounds. See [node operation and accounting limits](NODES.md).

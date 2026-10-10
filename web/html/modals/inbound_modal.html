@@ -112,6 +112,7 @@
         // show() can reset it: reopening the dialog on whichever section the last
         // edit happened to end on is disorienting.
         section: "identity",
+        nodes: [],
         // Measured field counts per section id, filled in from the DOM after each
         // render (see measureSections). Empty until the first measure, and the rail
         // treats "not measured yet" as "show it", so nothing flickers out of view
@@ -130,6 +131,7 @@
             confirm = (inbound, dbInbound) => { },
             isEdit = false,
         }) {
+            HttpUtil.get("/panel/api/inbounds/nodes").then(msg => { if (msg && msg.success) this.nodes = msg.obj || []; }).catch(() => {});
             this.title = title;
             this.okText = okText;
             if (inbound) {
@@ -1315,6 +1317,7 @@
                 inModal.loading(true);
                 try {
                     const data = {
+                        nodeId: dbInbound.nodeId,
                         up: dbInbound.up,
                         down: dbInbound.down,
                         total: dbInbound.total,

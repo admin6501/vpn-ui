@@ -1815,3 +1815,93 @@ revokeSub = "لغو لینک اشتراک"
 
 ownUsers = "کاربران خود نماینده"
 allUsers = "همهٔ کاربران"
+
+[pages.nodes.title]
+other = "نودها و لوکیشن‌ها"
+
+[pages.nodes.help]
+other = "نود را اضافه کنید، دستور نصبش را روی سرور لوکیشن اجرا کنید و سپس هسته‌های لازم را همین‌جا نصب کنید. ورودی‌های نود را به همان حساب کاربر اضافه کنید."
+
+[pages.nodes.add]
+other = "افزودن نود"
+
+[pages.nodes.empty]
+other = "هنوز نودی اضافه نشده"
+
+[pages.nodes.online]
+other = "متصل"
+
+[pages.nodes.offline]
+other = "قطع ارتباط یا غیرفعال"
+
+[pages.nodes.installCommand]
+other = "دستور نصب نود"
+
+[pages.nodes.cores]
+other = "مدیریت هسته‌ها"
+
+[pages.nodes.deleteConfirm]
+other = "نود حذف شود؟ ابتدا ورودی‌های آن را حذف کنید."
+
+[pages.nodes.reboot]
+other = "یکی از پیش‌نیازهای کرنل نیاز به ریبوت دستی همین نود دارد."
+
+[pages.nodes.name]
+other = "نام لوکیشن"
+
+[pages.nodes.nameExample]
+other = "آلمان / فرانکفورت"
+
+[pages.nodes.address]
+other = "دامنه یا آی‌پی عمومی نود"
+
+[pages.nodes.pairHelp]
+other = "این دستور را با دسترسی روت روی سرور لوکیشن اجرا کنید. کد اتصال یک‌بارمصرف است و ۱۵ دقیقه اعتبار دارد. تا انتخاب شما در پنل، هسته‌ای نصب نمی‌شود."
+
+[pages.nodes.https]
+other = "برای اتصال نود، پنل مرکزی را با HTTPS باز کنید. برای گواهی خصوصی، گزینه CA-file اسکریپت نصب را استفاده کنید."
+
+[pages.nodes.coreHelp]
+other = "فقط هسته‌های موردنیاز همین نود را انتخاب کنید. ایکس‌ری در صورت نیاز به‌عنوان پیش‌نیاز مسیریابی و محاسبه مصرف نصب می‌شود. بسته‌های موردنیاز کرنل ممکن است به اینترنت نیاز داشته باشند."
+
+[pages.nodes.installSelected]
+other = "نصب هسته‌های انتخاب‌شده"
+
+[pages.nodes.installed]
+other = "هسته‌های نصب‌شده"
+
+[pages.nodes.queued]
+other = "در انتظار دریافت درخواست توسط نود"
+
+[pages.nodes.installing]
+other = "در حال نصب"
+
+[pages.nodes.copied]
+other = "دستور کپی شد"
+
+[pages.nodes.selectCopy]
+other = "دستور را انتخاب و کپی کنید"
+
+[pages.nodes.running]
+other = "در حال اجرا"
+
+[pages.nodes.stopped]
+other = "متوقف"
+
+[pages.nodes.idle]
+other = "نصب شده؛ بدون ورودی فعال"
+
+[pages.nodes.notInstalled]
+other = "نصب نشده"
+
+[pages.nodes.error]
+other = "خطا"
+
+[pages.nodes.server]
+other = "سرور / لوکیشن"
+
+[pages.nodes.local]
+other = "همین سرور"
+
+[pages.nodes.copy]
+other = "کپی دستور"

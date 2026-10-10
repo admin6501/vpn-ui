@@ -494,7 +494,7 @@ func loadSpeedLimitPolicies() []speedLimitPolicy {
 	}
 	var inbounds []*model.Inbound
 	err := db.Model(model.Inbound{}).
-		Where("enable = ?", true).
+		Where("node_id = 0").Where("enable = ?", true).
 		Find(&inbounds).Error
 	if err != nil {
 		logger.Warning("speed limit: load inbounds failed:", err)

@@ -5,6 +5,7 @@
 | Topic                                                    | Guide                                                                                        |
 | -------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
 | Installation, migration and features                     | [English README](../README.md), [راهنمای فارسی](../README_FA.md)                             |
+| Dedicated multi-location nodes and central core installation | [Node guide](NODES.md), [راهنمای نود](NODES.fa.md) |
 | Local binary installation and optional apt prerequisites | [Offline installation](OFFLINE-INSTALL.md)                                                   |
 | PasarGuard ZIP conversion                                | [Migration guide](../migration/INSTALL-MIGRATION.fa.md)                                      |
 | Menu and binary CLI commands                             | [Management CLI](../management-cli-plan.md)                                                  |

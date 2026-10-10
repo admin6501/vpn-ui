@@ -111,7 +111,7 @@ func checkL2tpSharedConflicts(inbound *model.Inbound, excludeId int) error {
 		return nil // malformed settings fail elsewhere with a better message
 	}
 
-	others, err := enabledInboundsOfProtocol(model.L2TP, excludeId)
+	others, err := enabledInboundsOfProtocolOnNode(model.L2TP, excludeId, inbound.NodeID)
 	if err != nil {
 		return nil // never block a save because the conflict check itself failed
 	}
@@ -177,7 +177,7 @@ func checkIkev2SharedConflicts(inbound *model.Inbound, excludeId int) error {
 	if mine.Dns1 == "" {
 		return nil
 	}
-	others, err := enabledInboundsOfProtocol(model.IKEV2, excludeId)
+	others, err := enabledInboundsOfProtocolOnNode(model.IKEV2, excludeId, inbound.NodeID)
 	if err != nil {
 		return nil
 	}
@@ -205,12 +205,15 @@ func CheckSharedDaemonConflicts(inbound *model.Inbound, excludeId int) error {
 }
 
 func enabledInboundsOfProtocol(protocol model.Protocol, excludeId int) ([]*model.Inbound, error) {
+	return enabledInboundsOfProtocolOnNode(protocol, excludeId, 0)
+}
+func enabledInboundsOfProtocolOnNode(protocol model.Protocol, excludeId, nodeID int) ([]*model.Inbound, error) {
 	db := database.GetDB()
 	if db == nil {
 		return nil, fmt.Errorf("no database")
 	}
 	var out []*model.Inbound
-	q := db.Model(model.Inbound{}).Where("protocol = ? AND enable = ?", protocol, true).Order("id")
+	q := db.Model(model.Inbound{}).Where("node_id = ?", nodeID).Where("protocol = ? AND enable = ?", protocol, true).Order("id")
 	if excludeId > 0 {
 		q = q.Where("id != ?", excludeId)
 	}

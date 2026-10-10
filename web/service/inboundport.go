@@ -125,6 +125,9 @@ func (s *InboundService) checkPortConflicts(inbound *model.Inbound, ignoreId int
 	if err := s.checkPortsAgainstInbounds(inbound, claims, ignoreId); err != nil {
 		return err
 	}
+	if inbound.NodeID != 0 {
+		return nil
+	}
 	if err := checkPortsAgainstPanel(claims); err != nil {
 		return err
 	}
@@ -140,7 +143,7 @@ func (s *InboundService) checkPortsAgainstInbounds(inbound *model.Inbound, claim
 		return nil
 	}
 	var others []*model.Inbound
-	q := db.Model(model.Inbound{})
+	q := db.Model(model.Inbound{}).Where("node_id = ?", inbound.NodeID)
 	if ignoreId > 0 {
 		q = q.Where("id != ?", ignoreId)
 	}

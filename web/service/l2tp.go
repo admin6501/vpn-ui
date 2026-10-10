@@ -71,7 +71,7 @@ func (s *L2tpService) getRadiusSecret() string {
 func (s *L2tpService) GetL2tpInbounds() ([]*model.Inbound, error) {
 	db := database.GetDB()
 	var inbounds []*model.Inbound
-	err := db.Model(model.Inbound{}).Where("protocol = ?", "l2tp").Find(&inbounds).Error
+	err := db.Model(model.Inbound{}).Where("node_id = 0").Where("protocol = ?", "l2tp").Find(&inbounds).Error
 	return inbounds, err
 }
 

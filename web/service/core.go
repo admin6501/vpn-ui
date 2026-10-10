@@ -418,7 +418,7 @@ func xrayProtocolInbounds() map[string]any {
 	}
 	if err := db.Model(model.Inbound{}).
 		Select("protocol, count(*) as n").
-		Where("protocol IN (?) AND enable = ?", xrayServedProtocols, true).
+		Where("node_id = 0").Where("protocol IN (?) AND enable = ?", xrayServedProtocols, true).
 		Group("protocol").Scan(&rows).Error; err != nil {
 		logger.Warning("counting Xray-served protocol inbounds: ", err)
 		return out
@@ -1508,7 +1508,7 @@ func (s *CoreService) StartProvision(cores []string) bool {
 		// a forced xray restart binds the per-inbound dokodemo ports. When a reboot
 		// IS required (kernel modules only load into the freshly booted kernel) this
 		// is skipped: the post-reboot panel start runs the same Init* path.
-		if len(mods) == 0 {
+		if len(mods) == 0 && os.Getenv("VPNUI_NODE_AGENT") != "1" {
 			cs.l2tpService.InitL2tp()
 			cs.pptpService.InitPptp()
 			cs.openvpnService.InitOpenVpn()

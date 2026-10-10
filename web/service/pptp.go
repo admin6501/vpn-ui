@@ -66,7 +66,7 @@ func (s *PptpService) getRadiusSecret() string {
 func (s *PptpService) GetPptpInbounds() ([]*model.Inbound, error) {
 	db := database.GetDB()
 	var inbounds []*model.Inbound
-	err := db.Model(model.Inbound{}).Where("protocol = ?", "pptp").Find(&inbounds).Error
+	err := db.Model(model.Inbound{}).Where("node_id = 0").Where("protocol = ?", "pptp").Find(&inbounds).Error
 	return inbounds, err
 }
 

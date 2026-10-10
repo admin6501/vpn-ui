@@ -132,6 +132,9 @@ func (s *CoreService) deleteCoreInbounds(names []string) (int, error) {
 	}
 	removed := 0
 	for _, in := range all {
+		if in.NodeID != 0 {
+			continue
+		}
 		if !wanted[protocolCoreName(string(in.Protocol))] {
 			continue
 		}

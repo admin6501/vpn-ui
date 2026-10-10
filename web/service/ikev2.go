@@ -186,7 +186,7 @@ func (s *Ikev2Service) getRadiusSecret() string {
 func (s *Ikev2Service) GetIkev2Inbounds() ([]*model.Inbound, error) {
 	db := database.GetDB()
 	var inbounds []*model.Inbound
-	err := db.Model(model.Inbound{}).Where("protocol = ?", "ikev2").Find(&inbounds).Error
+	err := db.Model(model.Inbound{}).Where("node_id = 0").Where("protocol = ?", "ikev2").Find(&inbounds).Error
 	return inbounds, err
 }
 

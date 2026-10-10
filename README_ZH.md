@@ -50,3 +50,7 @@ domain/IP needs a new base URL.
 
 ARM64（aarch64）服务器请下载 `vpn-ui-arm64`；在线安装程序会自动选择架构。
 为保持兼容，两种架构的安装路径均为 `/opt/vpn-ui/vpn-ui-amd64`。
+
+## Multi-location nodes
+
+Dedicated nodes and central core installation: [English guide](docs/NODES.md) | [فارسی](docs/NODES.fa.md).

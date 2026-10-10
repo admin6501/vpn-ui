@@ -54,3 +54,7 @@ domain/IP needs a new base URL.
 
 ARM64 (aarch64) için `vpn-ui-arm64` indirin; çevrimiçi kurucu mimariyi otomatik algılar.
 Uyumluluk için kurulum yolu her iki mimaride `/opt/vpn-ui/vpn-ui-amd64` olarak kalır.
+
+## Multi-location nodes
+
+Dedicated nodes and central core installation: [English guide](docs/NODES.md) | [فارسی](docs/NODES.fa.md).

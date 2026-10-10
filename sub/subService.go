@@ -209,7 +209,25 @@ func (s *SubService) getInboundsBySubId(subId string) ([]*model.Inbound, error) 
 	if err != nil {
 		return nil, err
 	}
-	return inbounds, nil
+	for _, inbound := range inbounds {
+		if inbound.NodeID != 0 {
+			var node model.RemoteNode
+			if err := db.First(&node, inbound.NodeID).Error; err != nil {
+				return nil, err
+			}
+			inbound.NodeAddress = node.Address
+			if !node.Enable {
+				inbound.Enable = false
+			}
+		}
+	}
+	active := inbounds[:0]
+	for _, inbound := range inbounds {
+		if inbound.Enable {
+			active = append(active, inbound)
+		}
+	}
+	return active, nil
 }
 
 // getClientTraffics finds an email's row among an inbound's preloaded stats. The
@@ -397,7 +415,7 @@ func (s *SubService) genMtprotoLink(inbound *model.Inbound, email string) string
 			endpoints = append(endpoints, endpoint{host: ep.Dest, port: ep.Port})
 		}
 	default:
-		endpoints = append(endpoints, endpoint{host: s.address, port: inbound.Port})
+		endpoints = append(endpoints, endpoint{host: s.resolveInboundAddress(inbound), port: inbound.Port})
 	}
 
 	var links []string
@@ -421,7 +439,7 @@ func (s *SubService) genSshLink(inbound *model.Inbound, email string) string {
 	if inbound.Protocol != model.SSH {
 		return ""
 	}
-	cfgs, err := s.sshService.RenderClientConfigs(inbound, email, s.address)
+	cfgs, err := s.sshService.RenderClientConfigs(inbound, email, s.resolveInboundAddress(inbound))
 	if err != nil {
 		return ""
 	}
@@ -458,10 +476,7 @@ func (s *SubService) genConnectionCard(inbound *model.Inbound, email string) str
 	}
 	c := clients[idx]
 
-	server := s.address
-	if l := strings.TrimSpace(inbound.Listen); l != "" && l != "0.0.0.0" {
-		server = l
-	}
+	server := s.resolveInboundAddress(inbound)
 
 	// What goes in the URI's credential slot: the account's own secret, so the card
 	// carries no filler. ikev2 in psk/eap-tls mode has an email-only account with no
@@ -542,10 +557,10 @@ func (s *SubService) genWireguardLink(inbound *model.Inbound, email string) stri
 	var err error
 	switch inbound.Protocol {
 	case model.WGC:
-		params, err = s.wgcService.RenderClientParams(inbound, email, s.address)
+		params, err = s.wgcService.RenderClientParams(inbound, email, s.resolveInboundAddress(inbound))
 	case model.AWG:
 		var awgParams []service.AwgClientParams
-		awgParams, err = s.awgService.RenderClientParams(inbound, email, s.address)
+		awgParams, err = s.awgService.RenderClientParams(inbound, email, s.resolveInboundAddress(inbound))
 		for _, p := range awgParams {
 			params = append(params, p.WgcClientParams)
 		}
@@ -923,7 +938,7 @@ func (s *SubService) genHysteriaLink(inbound *model.Inbound, email string) strin
 	}
 
 	// No external proxy configured — fall back to the request host.
-	link := fmt.Sprintf("%s://%s@%s:%d", protocol, auth, s.address, inbound.Port)
+	link := fmt.Sprintf("%s://%s@%s:%d", protocol, auth, s.resolveInboundAddress(inbound), inbound.Port)
 	url, _ := url.Parse(link)
 	q := url.Query()
 	for k, v := range params {
@@ -1154,6 +1169,9 @@ func (s *SubService) buildEndpointLinks(
 }
 
 func (s *SubService) resolveInboundAddress(inbound *model.Inbound) string {
+	if inbound.NodeID != 0 && inbound.NodeAddress != "" {
+		return inbound.NodeAddress
+	}
 	if inbound.Listen == "" || inbound.Listen == "0.0.0.0" || inbound.Listen == "::" || inbound.Listen == "::0" {
 		return s.address
 	}

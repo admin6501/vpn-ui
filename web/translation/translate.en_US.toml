@@ -1803,3 +1803,93 @@ revokeSub = "Revoke subscription"
 
 ownUsers = "Own users"
 allUsers = "All users"
+
+[pages.nodes.title]
+other = "Nodes / locations"
+
+[pages.nodes.help]
+other = "Add a node, run its installation command on the remote server, then install the required cores here. Assign inbounds to that node and add them to the same customer account."
+
+[pages.nodes.add]
+other = "Add node"
+
+[pages.nodes.empty]
+other = "No nodes connected"
+
+[pages.nodes.online]
+other = "Connected"
+
+[pages.nodes.offline]
+other = "Disconnected / disabled"
+
+[pages.nodes.installCommand]
+other = "Node installation command"
+
+[pages.nodes.cores]
+other = "Manage cores"
+
+[pages.nodes.deleteConfirm]
+other = "Delete this node? Remove its inbounds first."
+
+[pages.nodes.reboot]
+other = "A kernel dependency requires a manual reboot on this node."
+
+[pages.nodes.name]
+other = "Location name"
+
+[pages.nodes.nameExample]
+other = "Germany / Frankfurt"
+
+[pages.nodes.address]
+other = "Public domain or IP of the node"
+
+[pages.nodes.pairHelp]
+other = "Run this command as root on the remote server. The single-use pairing code expires in 15 minutes. No VPN core is installed until you request one here."
+
+[pages.nodes.https]
+other = "Open the central panel with HTTPS before connecting nodes. For a private certificate, use the installer CA-file option."
+
+[pages.nodes.coreHelp]
+other = "Select only the cores needed on this node. Xray is installed as the routing/accounting dependency when a VPN core needs it. Required kernel packages may need network access."
+
+[pages.nodes.installSelected]
+other = "Install selected cores"
+
+[pages.nodes.installed]
+other = "Installed cores"
+
+[pages.nodes.queued]
+other = "Waiting for the node to receive the request"
+
+[pages.nodes.installing]
+other = "Installing"
+
+[pages.nodes.copied]
+other = "Command copied"
+
+[pages.nodes.selectCopy]
+other = "Select and copy the command"
+
+[pages.nodes.running]
+other = "Running"
+
+[pages.nodes.stopped]
+other = "Stopped"
+
+[pages.nodes.idle]
+other = "Installed, no active inbound"
+
+[pages.nodes.notInstalled]
+other = "Not installed"
+
+[pages.nodes.error]
+other = "Error"
+
+[pages.nodes.server]
+other = "Server / location"
+
+[pages.nodes.local]
+other = "This server"
+
+[pages.nodes.copy]
+other = "Copy command"

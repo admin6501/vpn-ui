@@ -55,3 +55,7 @@ domain/IP needs a new base URL.
 
 Для ARM64 (aarch64) скачайте `vpn-ui-arm64`; онлайн-установщик определяет архитектуру автоматически.
 Путь установленного файла остаётся `/opt/vpn-ui/vpn-ui-amd64` для совместимости.
+
+## Multi-location nodes
+
+Dedicated nodes and central core installation: [English guide](docs/NODES.md) | [فارسی](docs/NODES.fa.md).

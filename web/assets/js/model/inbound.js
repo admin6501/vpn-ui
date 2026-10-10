@@ -3012,7 +3012,7 @@ class Inbound extends XrayCommonClass {
     }
 
     genWireguardLinks(remark = '', remarkModel = '-ieo') {
-        const addr = !ObjectUtil.isEmpty(this.listen) && this.listen !== "0.0.0.0" ? this.listen : location.hostname;
+        const addr = this.nodeAddress || (!ObjectUtil.isEmpty(this.listen) && this.listen !== "0.0.0.0" ? this.listen : location.hostname);
         const separationChar = remarkModel.charAt(0);
         let links = [];
         this.settings.peers.forEach((p, index) => {
@@ -3022,7 +3022,7 @@ class Inbound extends XrayCommonClass {
     }
 
     genWireguardConfigs(remark = '', remarkModel = '-ieo') {
-        const addr = !ObjectUtil.isEmpty(this.listen) && this.listen !== "0.0.0.0" ? this.listen : location.hostname;
+        const addr = this.nodeAddress || (!ObjectUtil.isEmpty(this.listen) && this.listen !== "0.0.0.0" ? this.listen : location.hostname);
         const separationChar = remarkModel.charAt(0);
         let links = [];
         this.settings.peers.forEach((p, index) => {
@@ -3059,7 +3059,7 @@ class Inbound extends XrayCommonClass {
     genAllLinks(remark = '', remarkModel = '-ieo', client) {
         let result = [];
         let email = client ? client.email : '';
-        let addr = !ObjectUtil.isEmpty(this.listen) && this.listen !== "0.0.0.0" ? this.listen : location.hostname;
+        let addr = this.nodeAddress || (!ObjectUtil.isEmpty(this.listen) && this.listen !== "0.0.0.0" ? this.listen : location.hostname);
         let port = this.port;
         // MTProto: one link per mode the INBOUND accepts, so an account yields several.
         // The same 16-byte secret is reused across modes (only the prefix differs), so a
@@ -3102,7 +3102,7 @@ class Inbound extends XrayCommonClass {
     }
 
     genInboundLinks(remark = '', remarkModel = '-ieo') {
-        let addr = !ObjectUtil.isEmpty(this.listen) && this.listen !== "0.0.0.0" ? this.listen : location.hostname;
+        let addr = this.nodeAddress || (!ObjectUtil.isEmpty(this.listen) && this.listen !== "0.0.0.0" ? this.listen : location.hostname);
         if (this.clients) {
             let links = [];
             this.clients.forEach((client) => {

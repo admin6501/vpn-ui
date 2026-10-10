@@ -3,6 +3,9 @@ class DBInbound {
     constructor(data) {
         this.id = 0;
         this.userId = 0;
+        this.nodeId = 0;
+        this.nodeAddress = "";
+        this.nodeName = "";
         this.up = 0;
         this.down = 0;
         this.total = 0;
@@ -110,6 +113,7 @@ class DBInbound {
     }
 
     get address() {
+        if (this.nodeAddress) return this.nodeAddress;
         let address = location.hostname;
         if (!ObjectUtil.isEmpty(this.listen) && this.listen !== "0.0.0.0") {
             address = this.listen;
@@ -173,6 +177,7 @@ class DBInbound {
         };
 
         this._cachedInbound = Inbound.fromJson(config);
+        this._cachedInbound.nodeAddress = this.nodeAddress;
         return this._cachedInbound;
     }
 

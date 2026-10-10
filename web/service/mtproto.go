@@ -485,7 +485,7 @@ const mtprotoSystemAccount = "telemt-system"
 func (s *MtprotoService) GetMtprotoInbounds() ([]*model.Inbound, error) {
 	db := database.GetDB()
 	var inbounds []*model.Inbound
-	err := db.Model(model.Inbound{}).Where("protocol = ?", model.MTPROTO).Find(&inbounds).Error
+	err := db.Model(model.Inbound{}).Where("node_id = 0").Where("protocol = ?", model.MTPROTO).Find(&inbounds).Error
 	if err != nil {
 		return nil, err
 	}

@@ -51,6 +51,7 @@ func (a *XUIController) initRouter(g *gin.RouterGroup) {
 	a.settingController = NewSettingController(g)
 	a.xraySettingController = NewXraySettingController(g)
 	a.coreController = NewCoreController(g)
+	NewNodeController(g)
 	a.adminController = NewAdminController(g)
 	a.resellerController = NewResellerController(g)
 }

@@ -188,7 +188,7 @@ func awgIfaceName(id int) string { return fmt.Sprintf("%s%d", awgIfacePrefix, id
 func (s *AwgService) GetAwgInbounds() ([]*model.Inbound, error) {
 	db := database.GetDB()
 	var inbounds []*model.Inbound
-	err := db.Model(model.Inbound{}).Where("protocol = ?", "awg").Find(&inbounds).Error
+	err := db.Model(model.Inbound{}).Where("node_id = 0").Where("protocol = ?", "awg").Find(&inbounds).Error
 	return inbounds, err
 }
 
@@ -669,6 +669,9 @@ func (s *AwgService) RenderClientConfigs(inbound *model.Inbound, email, endpoint
 		if l := strings.TrimSpace(inbound.Listen); l != "" && l != "0.0.0.0" {
 			host = l
 		}
+		if inbound.NodeAddress != "" {
+			host = inbound.NodeAddress
+		}
 		targets = append(targets, endpointTarget{host: host, port: inbound.Port})
 	}
 
@@ -789,6 +792,9 @@ func (s *AwgService) RenderClientParams(inbound *model.Inbound, email, endpointH
 		host := endpointHost
 		if l := strings.TrimSpace(inbound.Listen); l != "" && l != "0.0.0.0" {
 			host = l
+		}
+		if inbound.NodeAddress != "" {
+			host = inbound.NodeAddress
 		}
 		targets = append(targets, endpointTarget{host: host, port: inbound.Port})
 	}

@@ -52,3 +52,7 @@ domain/IP needs a new base URL.
 
 على ARM64 (aarch64)، نزّل `vpn-ui-arm64`؛ يختار المثبت عبر الإنترنت المعمارية تلقائياً.
 يبقى مسار التنفيذ `/opt/vpn-ui/vpn-ui-amd64` في المعماريتين للحفاظ على التوافق.
+
+## Multi-location nodes
+
+Dedicated nodes and central core installation: [English guide](docs/NODES.md) | [فارسی](docs/NODES.fa.md).

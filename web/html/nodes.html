@@ -1,0 +1,82 @@
+{{ template "page/head_start" .}}
+{{ template "page/head_end" .}}
+{{ template "page/body_start" .}}
+{{ template "page/shell_start" .}}
+<a-card title='{{ i18n "pages.nodes.title" }}'>
+  <a-alert type="info" show-icon message='{{ i18n "pages.nodes.help" }}' style="margin-bottom:16px"></a-alert>
+  <a-button type="primary" icon="plus" @click="edit(null)">{{ i18n "pages.nodes.add" }}</a-button>
+  <a-button icon="reload" @click="load()"></a-button>
+  <a-empty v-if="!nodes.length" description='{{ i18n "pages.nodes.empty" }}'></a-empty>
+  <a-card v-for="item in nodes" :key="item.node.id" :title="item.node.name" style="margin-top:16px">
+    <a-tag :color="item.node.enable && item.online ? 'green' : 'red'">[[ item.online && item.node.enable ? '{{ i18n "pages.nodes.online" }}' : '{{ i18n "pages.nodes.offline" }}' ]]</a-tag>
+    <span>[[ item.node.address ]] · [[ item.node.architecture ]]</span>
+    <div style="margin-top:12px">
+      <a-button @click="edit(item.node)">{{ i18n "edit" }}</a-button>
+      <a-button v-if="!item.paired" @click="pair(item.node.id)">{{ i18n "pages.nodes.installCommand" }}</a-button>
+      <a-button @click="openCores(item)">{{ i18n "pages.nodes.cores" }}</a-button>
+      <a-popconfirm title='{{ i18n "pages.nodes.deleteConfirm" }}' @confirm="remove(item.node.id)"><a-button type="danger">{{ i18n "delete" }}</a-button></a-popconfirm>
+    </div>
+    <a-alert v-if="item.node.lastError" type="warning" :message="item.node.lastError" style="margin-top:12px"></a-alert>
+    <a-alert v-if="item.report && item.report.provision && item.report.provision.rebootRequired" type="warning" show-icon message='{{ i18n "pages.nodes.reboot" }}' style="margin-top:12px"></a-alert>
+  </a-card>
+</a-card>
+<a-modal v-model="formVisible" :title="form.id ? '{{ i18n "edit" }}' : '{{ i18n "pages.nodes.add" }}'" @ok="save" :confirm-loading="busy" :class="themeSwitcher.currentTheme">
+  <a-form layout="vertical">
+    <a-form-item label='{{ i18n "pages.nodes.name" }}'><a-input v-model.trim="form.name" placeholder='{{ i18n "pages.nodes.nameExample" }}'></a-input></a-form-item>
+    <a-form-item label='{{ i18n "pages.nodes.address" }}'><a-input v-model.trim="form.address" placeholder="node.example.com"></a-input></a-form-item>
+    <a-form-item v-if="form.id" label='{{ i18n "enable" }}'><a-switch v-model="form.enable"></a-switch></a-form-item>
+  </a-form>
+</a-modal>
+<a-modal v-model="commandVisible" title='{{ i18n "pages.nodes.installCommand" }}' :footer="null" :width="760" :class="themeSwitcher.currentTheme">
+  <a-alert type="info" message='{{ i18n "pages.nodes.pairHelp" }}' style="margin-bottom:12px"></a-alert>
+  <a-alert v-if="!https" type="warning" message='{{ i18n "pages.nodes.https" }}' style="margin-bottom:12px"></a-alert>
+  <a-textarea :value="command" :rows="5" readonly dir="ltr"></a-textarea>
+  <a-button type="primary" @click="copyCommand" style="margin-top:12px">{{ i18n "pages.nodes.copy" }}</a-button>
+</a-modal>
+<a-modal v-model="coresVisible" :title="current ? current.node.name : ''" @ok="installCores" :confirm-loading="busy" :width="800" :class="themeSwitcher.currentTheme" ok-text='{{ i18n "pages.nodes.installSelected" }}'>
+  <a-alert type="info" message='{{ i18n "pages.nodes.coreHelp" }}' style="margin-bottom:12px"></a-alert>
+  <a-checkbox-group v-model="selected" style="display:flex;flex-wrap:wrap;gap:12px">
+    <a-checkbox value="xray">Xray (VLESS / VMess / Trojan / Shadowsocks / Hysteria / TUIC / AnyTLS / Naive / WireGuard)</a-checkbox>
+    <a-checkbox v-for="core in catalog" :key="core.name" :value="core.name">[[ core.title ]]</a-checkbox>
+  </a-checkbox-group>
+  <div v-if="current && current.report" style="margin-top:16px">
+    <p>{{ i18n "pages.nodes.installed" }}: [[ (current.report.installed || []).join(', ') || '—' ]]</p>
+    <a-tag v-if="queued" color="blue">{{ i18n "pages.nodes.queued" }}</a-tag>
+    <a-tag v-if="current.report.provision && current.report.provision.running" color="blue">{{ i18n "pages.nodes.installing" }}</a-tag>
+    <a-list :data-source="current.report.cores || []">
+      <a-list-item slot="renderItem" slot-scope="core"><span>[[ core.name ]]</span><span>[[ state(core.state) ]]</span><span>[[ core.detail ]]</span></a-list-item>
+    </a-list>
+    <a-list :data-source="current.report.provision ? current.report.provision.steps || [] : []">
+      <a-list-item slot="renderItem" slot-scope="step"><a-tag :color="step.warn ? 'orange' : step.ok ? 'green' : 'red'">[[ step.name ]]</a-tag><span>[[ step.msg ]]</span></a-list-item>
+    </a-list>
+  </div>
+</a-modal>
+{{ template "page/shell_end" .}}
+{{ template "page/body_scripts" .}}
+<script>
+const app = new Vue({
+  el:'#app',delimiters:['[[',']]'],
+  data:{themeSwitcher, nodes:[], formVisible:false, commandVisible:false, coresVisible:false, busy:false, form:{}, pairing:'', command:'', current:null, selected:[], timer:null, https:location.protocol==='https:'},
+  computed:{
+    catalog(){return this.current && this.current.report ? (this.current.report.catalog || []).filter(c=>c.name!=='radius') : []},
+    queued(){return this.current && this.current.report && Number(this.current.report.generation || 0)<Number(this.current.node.coreGeneration)}
+  },
+  methods:{
+    async load(){const msg=await HttpUtil.get('/panel/nodes/list');if(msg && msg.success){this.nodes=msg.obj || [];if(this.current)this.current=this.nodes.find(item=>item.node.id===this.current.node.id)||null}},
+    edit(node){this.form=node ? {id:node.id,name:node.name,address:node.address,enable:node.enable} : {name:'',address:'',enable:true};this.formVisible=true},
+    async post(url,body){return HttpUtil.post(url,body)},
+    async save(){if(!this.form.name || !this.form.address)return;this.busy=true;try{const msg=await this.post(this.form.id ? '/panel/nodes/'+this.form.id+'/update' : '/panel/nodes/add',this.form);if(msg && msg.success){this.formVisible=false;if(!this.form.id)this.showCommand(msg.obj.pairToken);await this.load()}}finally{this.busy=false}},
+    quote(value){return "'"+String(value).replace(/'/g,"'\\''")+"'"},
+    showCommand(token){const panel=location.origin+basePath;this.command='bash <(curl -fsSL https://raw.githubusercontent.com/admin6501/vpn-ui/main/install-node.sh) --panel-url '+this.quote(panel)+' --pair-token '+this.quote(token);this.commandVisible=true},
+    async pair(id){const msg=await this.post('/panel/nodes/'+id+'/pair');if(msg && msg.success)this.showCommand(msg.obj.pairToken)},
+    async copyCommand(){try{await navigator.clipboard.writeText(this.command);this.$message.success('{{ i18n "pages.nodes.copied" }}')}catch(error){this.$message.info('{{ i18n "pages.nodes.selectCopy" }}')}},
+    async remove(id){const msg=await this.post('/panel/nodes/'+id+'/delete');if(msg && msg.success)await this.load()},
+    openCores(item){this.current=item;this.selected=[];this.coresVisible=true},
+    async installCores(){if(!this.current || !this.selected.length)return;this.busy=true;try{const msg=await this.post('/panel/nodes/'+this.current.node.id+'/install',{cores:this.selected});if(msg && msg.success){this.selected=[];await this.load()}}finally{this.busy=false}},
+    state(value){const states={running:'{{ i18n "pages.nodes.running" }}',stopped:'{{ i18n "pages.nodes.stopped" }}',idle:'{{ i18n "pages.nodes.idle" }}',not_installed:'{{ i18n "pages.nodes.notInstalled" }}',error:'{{ i18n "pages.nodes.error" }}'};return states[value] || value}
+  },
+  mounted(){this.load();this.timer=setInterval(()=>this.load(),5000)},
+  beforeDestroy(){clearInterval(this.timer)}
+});
+</script>
+{{ template "page/body_end" .}}

@@ -246,7 +246,7 @@ func greCatName(local net.IP) string {
 func (s *GreService) GetGreInbounds() ([]*model.Inbound, error) {
 	db := database.GetDB()
 	var inbounds []*model.Inbound
-	err := db.Model(model.Inbound{}).Where("protocol = ?", "gre").Find(&inbounds).Error
+	err := db.Model(model.Inbound{}).Where("node_id = 0").Where("protocol = ?", "gre").Find(&inbounds).Error
 	return inbounds, err
 }
 
@@ -1269,6 +1269,9 @@ func (s *GreService) RenderPeerConfigs(inbound *model.Inbound, email, endpointHo
 	server := endpointHost
 	if ip := s.localIPFor(inbound); ip != nil {
 		server = ip.String()
+	}
+	if inbound.NodeAddress != "" {
+		server = inbound.NodeAddress
 	}
 	blockNet, _ := greBlockFor(inbound, settings)
 	gw := greGateway(blockNet)

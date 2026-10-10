@@ -184,7 +184,7 @@ func wgIfaceName(id int) string { return fmt.Sprintf("%s%d", wgIfacePrefix, id) 
 func (s *WgcService) GetWgcInbounds() ([]*model.Inbound, error) {
 	db := database.GetDB()
 	var inbounds []*model.Inbound
-	err := db.Model(model.Inbound{}).Where("protocol = ?", "wg-c").Find(&inbounds).Error
+	err := db.Model(model.Inbound{}).Where("node_id = 0").Where("protocol = ?", "wg-c").Find(&inbounds).Error
 	return inbounds, err
 }
 
@@ -728,6 +728,9 @@ func (s *WgcService) RenderClientConfigs(inbound *model.Inbound, email, endpoint
 		if l := strings.TrimSpace(inbound.Listen); l != "" && l != "0.0.0.0" {
 			host = l
 		}
+		if inbound.NodeAddress != "" {
+			host = inbound.NodeAddress
+		}
 		targets = append(targets, endpointTarget{host: host, port: inbound.Port})
 	}
 
@@ -803,13 +806,13 @@ func (s *WgcService) RenderClientConfigs(inbound *model.Inbound, email, endpoint
 // rather than the text (e.g. the Clash subscription's `type: wireguard` proxy). Keep it
 // in lock-step with RenderClientConfigs: they share the target/device loop.
 type WgcClientParams struct {
-	Name         string   // per-device/endpoint label, fed to the subscription remark
-	PrivateKey   string   // client device private key
-	Address      string   // client address CIDR, e.g. 10.7.8.8/32
-	PublicKey    string   // server public key
-	PreSharedKey string   // empty when PSK is off
-	Host         string   // endpoint host the client dials
-	Port         int      // endpoint port
+	Name         string // per-device/endpoint label, fed to the subscription remark
+	PrivateKey   string // client device private key
+	Address      string // client address CIDR, e.g. 10.7.8.8/32
+	PublicKey    string // server public key
+	PreSharedKey string // empty when PSK is off
+	Host         string // endpoint host the client dials
+	Port         int    // endpoint port
 	MTU          int
 	DNS          []string
 	AllowedIPs   []string
@@ -843,6 +846,9 @@ func (s *WgcService) RenderClientParams(inbound *model.Inbound, email, endpointH
 		host := endpointHost
 		if l := strings.TrimSpace(inbound.Listen); l != "" && l != "0.0.0.0" {
 			host = l
+		}
+		if inbound.NodeAddress != "" {
+			host = inbound.NodeAddress
 		}
 		targets = append(targets, endpointTarget{host: host, port: inbound.Port})
 	}

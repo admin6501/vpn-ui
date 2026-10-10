@@ -302,14 +302,16 @@ func inboundRanges(ib *model.Inbound) []string {
 // usedVpnSubnets returns the set of /24 prefixes owned by every VPN inbound
 // except excludeId. OpenVPN inbounds own both their UDP (10.2.x) and mirrored
 // TCP (10.3.x) subnets.
-func usedVpnSubnets(excludeId int) map[string]bool {
+func usedVpnSubnets(excludeId int) map[string]bool { return usedVpnSubnetsOnNode(excludeId, 0) }
+
+func usedVpnSubnetsOnNode(excludeId, nodeID int) map[string]bool {
 	used := map[string]bool{}
 	db := database.GetDB()
 	if db == nil {
 		return used
 	}
 	var inbounds []*model.Inbound
-	db.Where("protocol IN ?", []string{"l2tp", "pptp", "openvpn", "openconnect", "sstp", "ikev2", "wg-c", "awg", "gre"}).Find(&inbounds)
+	db.Where("node_id = ?", nodeID).Where("protocol IN ?", []string{"l2tp", "pptp", "openvpn", "openconnect", "sstp", "ikev2", "wg-c", "awg", "gre"}).Find(&inbounds)
 	for _, ib := range inbounds {
 		if ib.Id == excludeId {
 			continue
@@ -418,7 +420,7 @@ func normalizeRanges(inbound *model.Inbound, excludeId int) error {
 		clientCount = hs + 1
 	}
 	userLimit := decodeUserLimit(raw)
-	used := usedVpnSubnets(excludeId)
+	used := usedVpnSubnetsOnNode(excludeId, inbound.NodeID)
 
 	var normalized []string
 	var err error
@@ -1075,7 +1077,7 @@ func maxVpnAccounts(inbound *model.Inbound) (int, bool) {
 
 	// Free /24s available to this inbound: its own (excludeId) plus any that no other
 	// inbound of the family owns.
-	used := usedVpnSubnets(inbound.Id)
+	used := usedVpnSubnetsOnNode(inbound.Id, inbound.NodeID)
 	base := protocolBase(proto)
 	free := 0
 	for n := 2; n <= 254; n++ {

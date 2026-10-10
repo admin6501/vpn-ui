@@ -230,6 +230,9 @@ type ResellerClient struct {
 
 // Inbound represents an Xray inbound configuration with traffic statistics and settings.
 type Inbound struct {
+	NodeID               int    `json:"nodeId" form:"nodeId" gorm:"default:0;index"`
+	NodeAddress          string `json:"nodeAddress,omitempty" gorm:"-"`
+	NodeName             string `json:"nodeName,omitempty" gorm:"-"`
 	Id                   int    `json:"id" form:"id" gorm:"primaryKey;autoIncrement"`                                                    // Unique identifier
 	UserId               int    `json:"-"`                                                                                               // Associated user ID
 	Up                   int64  `json:"up" form:"up"`                                                                                    // Upload traffic in bytes

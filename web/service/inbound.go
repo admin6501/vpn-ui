@@ -268,6 +268,9 @@ func (s *InboundService) getInboundsWhere(ids []int) ([]*model.Inbound, error) {
 	// Preload("ClientStats") this replaces: that is a has-many on
 	// client_traffics.inbound_id, and with one row per account panel-wide it showed
 	// each account under a single inbound holding the whole account's traffic.
+	if err := attachNodeAddresses(db, inbounds); err != nil {
+		return nil, err
+	}
 	if err := s.attachClientStats(db, inbounds); err != nil {
 		return nil, err
 	}
@@ -386,6 +389,9 @@ func (s *InboundService) GetAllInbounds() ([]*model.Inbound, error) {
 		return nil, err
 	}
 	// Every account this inbound serves, carrying its share. See getInboundsWhere.
+	if err := attachNodeAddresses(db, inbounds); err != nil {
+		return nil, err
+	}
 	if err := s.attachClientStats(db, inbounds); err != nil {
 		return nil, err
 	}
@@ -421,7 +427,11 @@ func (s *InboundService) GetInboundsByTrafficReset(period string) ([]*model.Inbo
 }
 
 func (s *InboundService) checkPortExist(listen string, port int, ignoreId int) (bool, error) {
-	db := database.GetDB()
+	return s.checkPortExistOnNode(0, listen, port, ignoreId)
+}
+
+func (s *InboundService) checkPortExistOnNode(nodeID int, listen string, port int, ignoreId int) (bool, error) {
+	db := database.GetDB().Where("node_id = ?", nodeID)
 	if listen == "" || listen == "0.0.0.0" || listen == "::" || listen == "::0" {
 		db = db.Model(model.Inbound{}).Where("port = ?", port)
 	} else {
@@ -472,7 +482,7 @@ func (s *InboundService) NormalizeGrePort(inbound *model.Inbound, id int) error 
 	}
 
 	if inbound.Port >= 1 && inbound.Port <= 65535 {
-		exist, err := s.checkPortExist(inbound.Listen, inbound.Port, id)
+		exist, err := s.checkPortExistOnNode(inbound.NodeID, inbound.Listen, inbound.Port, id)
 		if err != nil {
 			return err
 		}
@@ -1317,6 +1327,9 @@ func (s *InboundService) AddInbound(inbound *model.Inbound) (*model.Inbound, boo
 	// Before anything parses the settings, so the emails checked below and the ones
 	// persisted are the same strings.
 	inbound.Settings = normalizeClientEmails(inbound.Settings)
+	if err := validateNodeInbound(inbound); err != nil {
+		return inbound, false, err
+	}
 
 	if err := s.validateInboundConfig(inbound); err != nil {
 		return inbound, false, err
@@ -1326,7 +1339,7 @@ func (s *InboundService) AddInbound(inbound *model.Inbound) (*model.Inbound, boo
 	if err := CheckSharedDaemonConflicts(inbound, 0); err != nil {
 		return inbound, false, err
 	}
-	exist, err := s.checkPortExist(inbound.Listen, inbound.Port, 0)
+	exist, err := s.checkPortExistOnNode(inbound.NodeID, inbound.Listen, inbound.Port, 0)
 	if err != nil {
 		return inbound, false, err
 	}
@@ -1450,6 +1463,7 @@ func (s *InboundService) AddInbound(inbound *model.Inbound) (*model.Inbound, boo
 		}
 	}()
 
+	inbound.Tag = nodeInboundTag(inbound.NodeID, inbound.Tag)
 	err = tx.Save(inbound).Error
 	if err == nil {
 		if len(inbound.ClientStats) == 0 {
@@ -1464,7 +1478,7 @@ func (s *InboundService) AddInbound(inbound *model.Inbound) (*model.Inbound, boo
 	}
 
 	needRestart := false
-	if inbound.Enable {
+	if inbound.Enable && inbound.NodeID == 0 {
 		if hasDerivedXrayInbound(inbound.Protocol) {
 			// Its dokodemo (VPN) or socks inbound (relay) is added by the full restart
 			// the caller triggers. Neither can be built from this inbound's own
@@ -1507,7 +1521,7 @@ func (s *InboundService) DelInbound(id int) (bool, error) {
 
 	var tag string
 	needRestart := false
-	result := db.Model(model.Inbound{}).Select("tag").Where("id = ? and enable = ?", id, true).First(&tag)
+	result := db.Model(model.Inbound{}).Select("tag").Where("id = ? and enable = ? AND node_id = 0", id, true).First(&tag)
 	if result.Error == nil {
 		s.xrayApi.Init(p.GetAPIPort())
 		err1 := s.xrayApi.DelInbound(tag)
@@ -1596,6 +1610,9 @@ func (s *InboundService) GetInbound(id int) (*model.Inbound, error) {
 	if err != nil {
 		return nil, err
 	}
+	if err := attachNodeAddresses(db, []*model.Inbound{inbound}); err != nil {
+		return nil, err
+	}
 	return inbound, nil
 }
 
@@ -1606,6 +1623,9 @@ func (s *InboundService) UpdateInbound(inbound *model.Inbound) (*model.Inbound, 
 	// Before anything parses the settings, so the emails checked below and the ones
 	// persisted are the same strings.
 	inbound.Settings = normalizeClientEmails(inbound.Settings)
+	if err := validateNodeInbound(inbound); err != nil {
+		return inbound, false, err
+	}
 
 	if err := s.validateInboundConfig(inbound); err != nil {
 		return inbound, false, err
@@ -1613,7 +1633,7 @@ func (s *InboundService) UpdateInbound(inbound *model.Inbound) (*model.Inbound, 
 	if err := CheckSharedDaemonConflicts(inbound, inbound.Id); err != nil {
 		return inbound, false, err
 	}
-	exist, err := s.checkPortExist(inbound.Listen, inbound.Port, inbound.Id)
+	exist, err := s.checkPortExistOnNode(inbound.NodeID, inbound.Listen, inbound.Port, inbound.Id)
 	if err != nil {
 		return inbound, false, err
 	}
@@ -1784,6 +1804,7 @@ func (s *InboundService) UpdateInbound(inbound *model.Inbound) (*model.Inbound, 
 		}
 	}
 
+	oldInbound.NodeID = inbound.NodeID
 	oldInbound.Up = inbound.Up
 	oldInbound.Down = inbound.Down
 	oldInbound.Total = inbound.Total
@@ -1813,8 +1834,11 @@ func (s *InboundService) UpdateInbound(inbound *model.Inbound) (*model.Inbound, 
 		oldInbound.Tag = fmt.Sprintf("inbound-%v:%v", inbound.Listen, inbound.Port)
 	}
 
+	oldInbound.Tag = nodeInboundTag(oldInbound.NodeID, oldInbound.Tag)
 	needRestart := false
-	if hasDerivedXrayInbound(oldInbound.Protocol) {
+	if oldInbound.NodeID != 0 {
+		// The agent pulls this committed change; do not call the local core.
+	} else if hasDerivedXrayInbound(oldInbound.Protocol) {
 		// Leave the running dokodemo (VPN) or socks inbound (relay) in place. The live
 		// del/add API would drop it and be unable to recreate it, cutting the clients'
 		// internet until a full restart that an unchanged config will not trigger. The
@@ -3366,9 +3390,13 @@ func (s *InboundService) addInboundTraffic(tx *gorm.DB, traffics []*xray.Traffic
 }
 
 func (s *InboundService) addClientTraffic(tx *gorm.DB, traffics []*xray.ClientTraffic) (err error) {
+	return s.addClientTrafficFor(tx, traffics, true)
+}
+
+func (s *InboundService) addClientTrafficFor(tx *gorm.DB, traffics []*xray.ClientTraffic, updateOnline bool) (err error) {
 	if len(traffics) == 0 {
 		// Empty onlineUsers
-		if p != nil {
+		if p != nil && updateOnline {
 			p.SetOnlineClients(make([]string, 0))
 			// Cleared with it, or the last tick that DID see traffic keeps every
 			// membership it lit showing live for as long as the panel stays up.
@@ -3600,7 +3628,7 @@ func (s *InboundService) addClientTraffic(tx *gorm.DB, traffics []*xray.ClientTr
 	// Set onlineUsers. Nil-checked like the empty-traffics path above: the VPN
 	// protocols report traffic through this same tick even when Xray never started,
 	// and an unguarded call there takes the whole traffic job down.
-	if p != nil {
+	if p != nil && updateOnline {
 		p.SetOnlineClients(onlineClients)
 		p.SetOnlineMemberships(onlineMemberships)
 	}
@@ -5280,6 +5308,9 @@ func (s *InboundService) SearchInbounds(query string) ([]*model.Inbound, error) 
 		return nil, err
 	}
 	// Every account this inbound serves, carrying its share. See getInboundsWhere.
+	if err := attachNodeAddresses(db, inbounds); err != nil {
+		return nil, err
+	}
 	if err := s.attachClientStats(db, inbounds); err != nil {
 		return nil, err
 	}
@@ -5703,13 +5734,22 @@ func (s *InboundService) ClearOnlineStatus() {
 }
 
 func (s *InboundService) GetOnlineClients() []string {
-	// Nil-checked like the other p accesses: Xray may never have started (a
-	// VPN-only deployment, or a failed core), and an unguarded deref panics the
-	// request rather than reporting an empty list.
-	if p == nil {
-		return []string{}
+	var result []string
+	if p != nil {
+		result = append(result, p.GetOnlineClients()...)
 	}
-	return p.GetOnlineClients()
+	remote, _ := nodeOnline(database.GetDB())
+	result = append(result, remote...)
+	seen := map[string]bool{}
+	unique := []string{}
+	for _, email := range result {
+		key := accountKey(email)
+		if !seen[key] {
+			seen[key] = true
+			unique = append(unique, email)
+		}
+	}
+	return unique
 }
 
 // onlineMembershipKey is the wire form of one (inbound, account) liveness pair.
@@ -5727,10 +5767,21 @@ func onlineMembershipKey(inboundId int, email string) string {
 // lamp on the Clients page lights, and all three want "is this customer connected"
 // rather than "where". Only the per-membership view needs this.
 func (s *InboundService) GetOnlineMemberships() []string {
-	if p == nil {
-		return []string{}
+	var result []string
+	if p != nil {
+		result = append(result, p.GetOnlineMemberships()...)
 	}
-	return p.GetOnlineMemberships()
+	_, remote := nodeOnline(database.GetDB())
+	result = append(result, remote...)
+	seen := map[string]bool{}
+	unique := []string{}
+	for _, pair := range result {
+		if !seen[pair] {
+			seen[pair] = true
+			unique = append(unique, pair)
+		}
+	}
+	return unique
 }
 
 func (s *InboundService) GetClientsLastOnline() (map[string]int64, error) {

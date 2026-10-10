@@ -2,7 +2,7 @@
 # Exercise the real helper with fake apt executables; never installs host packages.
 set -Eeuo pipefail
 TASK_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
-source "$TASK_ROOT/install-offline.sh"
+source "$TASK_ROOT/${PREREQUISITE_SCRIPT:-install-offline.sh}"
 lang=en
 APT_TEST_DIR=$(mktemp -d)
 trap 'rm -rf "$APT_TEST_DIR"' EXIT

@@ -301,6 +301,7 @@ func (s *Server) initRouter() (*gin.Engine, error) {
 
 	g := engine.Group(basePath)
 
+	controller.RegisterNodeAgentRoutes(g)
 	s.index = controller.NewIndexController(g)
 	s.panel = controller.NewXUIController(g)
 	s.api = controller.NewAPIController(g, s.customGeoService)
@@ -329,7 +330,7 @@ func (s *Server) initRouter() (*gin.Engine, error) {
 
 // startTask schedules background jobs (Xray checks, traffic jobs, cron
 // jobs) which the panel relies on for periodic maintenance and monitoring.
-func (s *Server) startTask() {
+func (s *Server) startRuntimeTasks() {
 	// Before ANY Init* below touches the host: work out what on this box was already
 	// here and what vpn-ui put here, and write it down. The Init* calls create netdevs
 	// and rewrite shared config files, and the reconcilers that follow delete whatever
@@ -443,6 +444,10 @@ func (s *Server) startTask() {
 	// check client ips from log file every 10 sec
 	s.cron.AddJob("@every 10s", job.NewCheckClientIpJob())
 
+}
+
+func (s *Server) startTask() {
+	s.startRuntimeTasks()
 	// check client ips from log file every day
 	s.cron.AddJob("@daily", job.NewClearLogsJob())
 

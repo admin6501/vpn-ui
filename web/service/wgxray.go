@@ -7,9 +7,9 @@ import (
 	"strings"
 
 	"github.com/mhsanaei/3x-ui/v2/database"
-	"github.com/mhsanaei/3x-ui/v2/util/common"
 	"github.com/mhsanaei/3x-ui/v2/database/model"
 	"github.com/mhsanaei/3x-ui/v2/logger"
+	"github.com/mhsanaei/3x-ui/v2/util/common"
 
 	"golang.zx2c4.com/wireguard/wgctrl/wgtypes"
 )
@@ -466,6 +466,9 @@ type WgxrayClientConfig struct {
 // adding ::/0 to a tunnel whose inside has no IPv6 sends the client's v6 traffic into
 // a black hole, and adding neither leaks it past the tunnel entirely.
 func RenderWireguardXrayConfigs(inbound *model.Inbound, email, endpointHost string) ([]WgxrayClientConfig, error) {
+	if inbound != nil && inbound.NodeAddress != "" {
+		endpointHost = inbound.NodeAddress
+	}
 	if inbound == nil || inbound.Protocol != model.WireGuard {
 		return nil, common.NewError("not an Xray wireguard inbound")
 	}

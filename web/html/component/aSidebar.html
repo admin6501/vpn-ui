@@ -94,6 +94,11 @@
                     {{ end }}
                     {{ if .perms.superAdmin }}
                     {
+                        key: '{{ .base_path }}panel/nodes',
+                        icon: 'global',
+                        title: '{{ i18n "pages.nodes.title"}}'
+                    },
+                    {
                         key: '{{ .base_path }}panel/admins',
                         icon: 'team',
                         title: '{{ i18n "menu.admins"}}'

@@ -23,7 +23,9 @@ jobs:
           go-version-file: go.mod
           cache: true
       - name: Verify optional apt prerequisite prompts without real package installation
-        run: bash test_unit/offline_prerequisites_test.sh
+        run: |
+          bash test_unit/offline_prerequisites_test.sh
+          PREREQUISITE_SCRIPT=install-node.sh bash test_unit/offline_prerequisites_test.sh
       - name: Build patched Xray and complete geodata
         run: GEO_LEAN=0 bash build/core/build.sh ${{ matrix.arch }}
       - name: Verify all six bundled geodata files
@@ -46,8 +48,14 @@ jobs:
           mkdir -p dist
           CGO_ENABLED=1 go build -tags netgo,osusergo -trimpath -ldflags='-s -w -linkmode external -extldflags "-static"' -o dist/vpn-ui-${{ matrix.arch }} .
           test "$(dist/vpn-ui-${{ matrix.arch }} -v)" = "1.0.0"
-          file dist/vpn-ui-${{ matrix.arch }}
+          CGO_ENABLED=1 go build -tags netgo,osusergo -trimpath -ldflags='-s -w -linkmode external -extldflags "-static"' -o dist/vpn-ui-node-${{ matrix.arch }} ./cmd/vpn-ui-node
+          test "$(dist/vpn-ui-node-${{ matrix.arch }} -v)" = "1.0.0"
+          file dist/vpn-ui-${{ matrix.arch }} dist/vpn-ui-node-${{ matrix.arch }}
           go test ./corebundle -run TestExtractXray -count=1
+      - name: Verify dedicated node authentication, billing, subscriptions and real data plane
+        run: |
+          go test ./nodeagent ./web/service ./web/controller ./sub -run 'TestNode' -count=1
+          RUN_NODE_INTEGRATION=1 go test ./nodeagent -run '^TestNodeRealDataPlane$' -count=1 -timeout 120s
       - name: Verify ownership transfer and online counts
         run: go test -tags netgo,osusergo ./web/service ./web/controller -run 'TestAccountOwnershipTransfer|TestPasarGuard|TestOverview|TestVerifiedProvisioned|TestOffline|TestMigrationAccountsVerifiesExistingImported'
       - name: Verify imported subscription quotas and legacy credentials
@@ -74,9 +82,9 @@ jobs:
           cd dist/migration
           zip -q ../vpn-ui-auto-migration.zip *
           cd ..
-          cp ../install-offline.sh .
-          bash -n install-offline.sh
-          sha256sum vpn-ui-${{ matrix.arch }} vpn-ui-auto-migration.zip install-offline.sh > SHA256SUMS
+          cp ../install-offline.sh ../install-node.sh .
+          bash -n install-offline.sh install-node.sh
+          sha256sum vpn-ui-${{ matrix.arch }} vpn-ui-node-${{ matrix.arch }} vpn-ui-auto-migration.zip install-offline.sh install-node.sh > SHA256SUMS
       - name: Verify fresh installation and update without installer network access
         run: |
           sudo unshare --net bash install-offline.sh --lang en "$PWD/dist/vpn-ui-${{ matrix.arch }}" > /tmp/offline-install.log 2>&1
@@ -131,5 +139,5 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           cd dist
-          sha256sum vpn-ui-amd64 vpn-ui-arm64 vpn-ui-auto-migration.zip install-offline.sh > SHA256SUMS
-          gh release upload v1.0.0 vpn-ui-amd64 vpn-ui-arm64 vpn-ui-auto-migration.zip install-offline.sh SHA256SUMS --clobber --repo "$GITHUB_REPOSITORY"
+          sha256sum vpn-ui-amd64 vpn-ui-arm64 vpn-ui-node-amd64 vpn-ui-node-arm64 vpn-ui-auto-migration.zip install-offline.sh install-node.sh > SHA256SUMS
+          gh release upload v1.0.0 vpn-ui-amd64 vpn-ui-arm64 vpn-ui-node-amd64 vpn-ui-node-arm64 vpn-ui-auto-migration.zip install-offline.sh install-node.sh SHA256SUMS --clobber --repo "$GITHUB_REPOSITORY"

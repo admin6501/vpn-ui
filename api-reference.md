@@ -1685,3 +1685,26 @@ protocol `externalProxy` settings are a different feature.
 [representatives](web/controller/reseller.go), [account routes](web/controller/clients.go),
 [ownership service](web/service/accountowner.go), [permission policy](database/model/permission.go).
 [Documentation index](docs/INDEX.md).
+
+## Dedicated nodes
+
+The browser API `/panel/nodes` requires the main (super) administrator. Paths are
+relative to the panel's configured web base path:
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| GET | `/panel/nodes/list` | Node status and reported core/provisioning state |
+| POST | `/panel/nodes/add` | JSON `{name,address}`; returns a single-use pairing token |
+| POST | `/panel/nodes/:id/update` | JSON `{name,address,enable}` |
+| POST | `/panel/nodes/:id/install` | JSON `{cores:["xray","openvpn"]}`; queues only selected cores |
+| POST | `/panel/nodes/:id/pair` | New code for an unpaired node; paired credentials are retained |
+| POST | `/panel/nodes/:id/delete` | Allowed only after removing its assigned inbounds |
+| GET | `/panel/api/inbounds/nodes` | Location choices for administrators allowed to create inbounds |
+
+Inbound create/update bodies include `nodeId` (`0` = central server). Changing an
+existing inbound's server is rejected; attach accounts to a new inbound instead.
+The `/node-agent` endpoints are an internal, versioned agent protocol scoped by
+per-node bearer credentials, not general administrative APIs. Do not use browser
+cookies or disclose pairing tokens/agent configuration files.
+
+See [node setup and accounting limits](docs/NODES.md).

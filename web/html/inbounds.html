@@ -1238,6 +1238,7 @@
       },
       async cloneInbound(baseInbound, dbInbound) {
         const data = {
+          nodeId: dbInbound.nodeId,
           up: dbInbound.up,
           down: dbInbound.down,
           total: dbInbound.total,
@@ -1310,6 +1311,7 @@
       async addInbound(inbound, dbInbound) {
         if (!this.validateInboundForm(inbound)) return;
         const data = {
+          nodeId: dbInbound.nodeId,
           up: dbInbound.up,
           down: dbInbound.down,
           total: dbInbound.total,
@@ -1346,6 +1348,7 @@
       async updateInbound(inbound, dbInbound) {
         if (!this.validateInboundForm(inbound)) return;
         const data = {
+          nodeId: dbInbound.nodeId,
           up: dbInbound.up,
           down: dbInbound.down,
           total: dbInbound.total,
@@ -1414,6 +1417,7 @@
         dbInbound.enable = state;
         let inbound = dbInbound.toInbound();
         const data = {
+          nodeId: dbInbound.nodeId,
           up: dbInbound.up,
           down: dbInbound.down,
           total: dbInbound.total,
@@ -1482,7 +1486,7 @@
         // Core Settings. `data` is a plain object for add/clone and FormData for
         // update, so data.protocol only matches creates; the server gates the rest.
         const core = data && !(data instanceof FormData) ? this.protocolCoreName(data.protocol) : '';
-        if (typeof url === 'string' && url.endsWith('/inbounds/add') && core) {
+        if (typeof url === 'string' && url.endsWith('/inbounds/add') && core && !Number(data.nodeId)) {
           // Not provisioned at all -> general message; provisioned but this core is not
           // installed (never set up, or uninstalled since) -> core-specific message.
           // Both use the SAME modal (matching the initial setup prompt), not a toast.
