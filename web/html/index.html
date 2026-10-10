@@ -1854,6 +1854,8 @@
       // '' means every interface, which is what the aggregate netIO already is.
       ifaceFilter: '',
       userStats: { total: 0, online: 0, depleted: 0, expiring: 0 },
+      userStatsTimer: null,
+      userStatsLoading: false,
     },
     computed: {
       // geofileStatus keyed by file name, for the Geofiles list. Empty until the
@@ -2245,10 +2247,13 @@
         } catch (e) { /* best-effort */ }
       },
       async fetchUserStats() {
+        if (this.userStatsLoading) return;
+        this.userStatsLoading = true;
         try {
           const msg = await HttpUtil.get('/panel/api/server/userStats');
           if (msg && msg.success && msg.obj) this.userStats = msg.obj;
-        } catch (e) { /* best-effort */ }
+        } catch (e) { /* retry on the next tick */ }
+        finally { this.userStatsLoading = false; }
       },
       // The modal's row/level/syslog controls and its refresh icon go through
       // here, so they re-run the loader that opened it instead of always
@@ -3422,6 +3427,9 @@
         }, 2000);
       },
     },
+    beforeDestroy() {
+      clearInterval(this.userStatsTimer);
+    },
     async mounted() {
       if (window.location.protocol !== "https:" && !SecAlertDismissal.isDismissed()) {
         this.showAlert = true;
@@ -3441,6 +3449,7 @@
       await this.getCoreStatuses();
       this.checkDistroSupport();
       this.fetchUserStats();
+      this.userStatsTimer = setInterval(() => this.fetchUserStats(), 10000);
       this.fetchServerName();
       this.fetchPanelLocation();
       // Up front, not only in openGeofiles(), so the badges are already there when

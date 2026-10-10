@@ -21,16 +21,19 @@
     </a-space>
   </template>
   <tr-qr-modal class="qr-modal">
-    <template v-if="app.subSettings?.enable && qrModal.subId">
+    <template v-if="qrModal.subSettings.enable && qrModal.subId">
       <tr-qr-box class="qr-box">
         <a-tag color="purple" class="qr-tag"><span>{{ i18n "pages.settings.subSettings"}}</span></a-tag>
+        <a-input :value="genSubLink(qrModal.subId)" readonly dir="ltr" style="width: 280px; max-width: 100%">
+          <a-icon slot="addonAfter" type="copy" @click="copy(genSubLink(qrModal.subId))" style="cursor: pointer"></a-icon>
+        </a-input>
         <tr-qr-bg class="qr-bg-sub">
           <tr-qr-bg-inner class="qr-bg-sub-inner">
             <canvas @click="copy(genSubLink(qrModal.client.subId))" id="qrCode-sub" class="qr-cv"></canvas>
           </tr-qr-bg-inner>
         </tr-qr-bg>
       </tr-qr-box>
-      <tr-qr-box class="qr-box" v-if="app.subSettings.subJsonEnable">
+      <tr-qr-box class="qr-box" v-if="qrModal.subSettings.subJsonEnable">
         <a-tag color="purple" class="qr-tag"><span>{{ i18n "pages.settings.subSettings"}} Json</span></a-tag>
         <tr-qr-bg class="qr-bg-sub">
           <tr-qr-bg-inner class="qr-bg-sub-inner">
@@ -105,7 +108,9 @@
     qrcodes: [],
     visible: false,
     subId: '',
+    subSettings: { enable: false, subURI: '', subJsonURI: '', subJsonEnable: false },
     show: function (title = '', dbInbound, client) {
+      this.subSettings = Object.assign({}, app.subSettings);
       this.title = title;
       this.dbInbound = dbInbound;
       this.inbound = dbInbound.toInbound();
@@ -147,6 +152,7 @@
     // any one. qrcodes is left empty on purpose: a per-inbound link here would
     // have to pick an inbound, and picking one would misrepresent the rest.
     showSub: function (title, client) {
+      this.subSettings = Object.assign({}, app.subSettings);
       this.title = title;
       this.client = client;
       this.subId = (client && client.subId) || '';
@@ -238,8 +244,10 @@
           })
       },
       setQrCode(elementId, content) {
+        const element = document.getElementById(elementId);
+        if (!element || !content) return;
         new QRious({
-          element: document.querySelector('#' + elementId),
+          element,
           size: 400,
           value: content,
           background: 'white',
@@ -250,10 +258,10 @@
         });
       },
       genSubLink(subID) {
-        return app.subSettings.subURI + subID;
+        return qrModal.subSettings.subURI + subID;
       },
       genSubJsonLink(subID) {
-        return app.subSettings.subJsonURI + subID;
+        return qrModal.subSettings.subJsonURI + subID;
       },
       revertOverflow() {
         const elements = document.querySelectorAll(".qr-tag");
@@ -281,7 +289,7 @@
       if (qrModal.client && qrModal.client.subId) {
         qrModal.subId = qrModal.client.subId;
         this.setQrCode("qrCode-sub", this.genSubLink(qrModal.subId));
-        if (app.subSettings.subJsonEnable) {
+        if (qrModal.subSettings.subJsonEnable) {
           this.setQrCode("qrCode-subJson", this.genSubJsonLink(qrModal.subId));
         }
       }

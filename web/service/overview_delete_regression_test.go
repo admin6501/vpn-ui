@@ -1,0 +1,75 @@
+package service
+
+import (
+	"github.com/mhsanaei/3x-ui/v2/database"
+	"github.com/mhsanaei/3x-ui/v2/database/model"
+	"github.com/mhsanaei/3x-ui/v2/xray"
+	"testing"
+	"time"
+)
+
+func TestOverviewDeleteHomeInboundPreservesAccountUsage(t *testing.T) {
+	accounts := newAccountsDB(t)
+	email := "delete-home@example.com"
+	first, second := seedTwoInboundAccount(t, accounts, email)
+	db := database.GetDB()
+	expiry := time.Now().Add(-time.Hour).UnixMilli()
+	if err := db.Model(&xray.ClientTraffic{}).Where("email = ?", email).Updates(map[string]any{"inbound_id": first.Id, "down": 12345, "all_time": 23456, "expiry_time": expiry}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(&model.Inbound{}).Where("id = ?", first.Id).Update("enable", false).Error; err != nil {
+		t.Fatal(err)
+	}
+	svc := &InboundService{}
+	if _, err := svc.DelInbound(first.Id); err != nil {
+		t.Fatal(err)
+	}
+	var traffic xray.ClientTraffic
+	if err := db.Where("email = ?", email).First(&traffic).Error; err != nil {
+		t.Fatal(err)
+	}
+	if traffic.Down != 12345 || traffic.AllTime != 23456 || traffic.InboundId != second.Id {
+		t.Fatalf("shared usage lost or not rehomed: %+v", traffic)
+	}
+	stats, err := svc.GetClientStatsFor(&model.User{IsSuperAdmin: true})
+	if err != nil || stats.Total != 1 || stats.Depleted != 1 {
+		t.Fatalf("expired account disappeared after deleting home inbound: %+v %v", stats, err)
+	}
+}
+
+func TestOverviewExpiredAccountWithMissingTrafficRow(t *testing.T) {
+	accounts := newAccountsDB(t)
+	email := "already-deleted-home@example.com"
+	seedTwoInboundAccount(t, accounts, email)
+	db := database.GetDB()
+	if err := db.Model(&model.Account{}).Where("email = ?", email).Update("expiry_time", time.Now().Add(-time.Hour).UnixMilli()).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Where("email = ?", email).Delete(&xray.ClientTraffic{}).Error; err != nil {
+		t.Fatal(err)
+	}
+	stats, err := (&InboundService{}).GetClientStatsFor(&model.User{IsSuperAdmin: true})
+	if err != nil || stats.Depleted != 1 {
+		t.Fatalf("account expiry hidden without historical usage: %+v %v", stats, err)
+	}
+}
+
+func TestOverviewIdleTickClearsOnlineAccount(t *testing.T) {
+	accounts := newAccountsDB(t)
+	email := "idle-overview@example.com"
+	first, _ := seedTwoInboundAccount(t, accounts, email)
+	svc := &InboundService{}
+	err, _, _, _, _ := svc.AddTraffic(nil, []*xray.ClientTraffic{{InboundId: first.Id, Email: email, Down: mb}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	before, err := svc.GetClientStatsFor(&model.User{IsSuperAdmin: true})
+	if err != nil || before.Online != 1 {
+		t.Fatalf("setup not online: %+v %v", before, err)
+	}
+	svc.ClearOnlineStatus()
+	after, err := svc.GetClientStatsFor(&model.User{IsSuperAdmin: true})
+	if err != nil || after.Online != 0 || len(svc.GetOnlineMemberships()) != 0 {
+		t.Fatalf("idle snapshot retained: %+v %v", after, err)
+	}
+}

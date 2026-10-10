@@ -269,6 +269,7 @@ func (j *XrayTrafficJob) Run() {
 
 	// Skip DB update if no traffic to process
 	if len(traffics) == 0 && len(clientTraffics) == 0 {
+		j.inboundService.ClearOnlineStatus()
 		return
 	}
 

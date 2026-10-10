@@ -219,6 +219,21 @@ func (s *InboundService) attachClientStats(db *gorm.DB, inbounds []*model.Inboun
 		byEmail[accountKey(traffics[i].Email)] = &traffics[i]
 	}
 
+	// Older inbound deletion could remove the shared traffic row. Account quota
+	// and expiry remain authoritative; render those instead of hiding the account.
+	// Missing historical usage cannot be reconstructed from account metadata.
+	var accounts []model.Account
+	if err := db.Find(&accounts).Error; err != nil {
+		return err
+	}
+	for _, account := range accounts {
+		key := accountKey(account.Email)
+		if byEmail[key] == nil {
+			byEmail[key] = &xray.ClientTraffic{Email: account.Email, Enable: account.Enable,
+				Total: account.TotalGB, ExpiryTime: account.ExpiryTime, Reset: account.Reset}
+		}
+	}
+
 	// The inbound is joined as well as the account, so each share arrives knowing
 	// which protocol holds it. An INNER join on both sides is the point: a share
 	// whose inbound is gone is not a membership any more, and counting it would go

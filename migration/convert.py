@@ -282,6 +282,21 @@ def convert(backup, schema, output, destination_db=None):
                         'subEnable','subListen','subDomain','subPort','subPath','subURI','subCertFile','subKeyFile',
                         'subJsonEnable','subJsonPath','subClashEnable','subClashPath']
                 configured = {key: destination_settings[key] for key in keys if key in destination_settings}
+                # Migration imports subscription users into a fresh installation:
+                # enable their listener, preserving the destination domain and port.
+                configured['subEnable'] = 'true'
+                configured.setdefault('subPort', '2097')
+                configured.setdefault('subPath', '/sub/')
+                if destination_settings.get('subEnable') != 'true' and not configured.get('subCertFile') and not configured.get('subKeyFile'):
+                    cert = configured.get('webCertFile', '')
+                    key = configured.get('webKeyFile', '')
+                    if cert and key:
+                        configured['subCertFile'] = cert
+                        configured['subKeyFile'] = key
+                if not configured.get('subDomain') and configured.get('webDomain'):
+                    configured['subDomain'] = configured['webDomain']
+                if configured['subPort'] == configured.get('webPort'):
+                    raise ValueError('Panel and subscription listener ports must differ')
                 for key in keys:
                     target.execute('DELETE FROM settings WHERE key=?',(key,))
             for key,value in configured.items():

@@ -1522,8 +1522,20 @@ func (s *InboundService) DelInbound(id int) (bool, error) {
 		logger.Debug("No enabled inbound founded to removing by api", tag)
 	}
 
-	// Delete client traffics of inbounds
-	err := db.Where("inbound_id = ?", id).Delete(xray.ClientTraffic{}).Error
+	// A traffic row belongs to the account, not its historical home inbound.
+	// Move surviving accounts to another membership (or park them at zero).
+	err := db.Exec(`UPDATE client_traffics SET inbound_id = COALESCE(
+        (SELECT MIN(ai.inbound_id) FROM account_inbounds ai
+         JOIN accounts a ON a.id = ai.account_id
+         JOIN inbounds i ON i.id = ai.inbound_id
+         WHERE lower(a.email) = lower(client_traffics.email) AND ai.inbound_id != ?), 0)
+        WHERE inbound_id = ? AND EXISTS
+        (SELECT 1 FROM accounts a WHERE lower(a.email) = lower(client_traffics.email))`, id, id).Error
+	if err != nil {
+		return false, err
+	}
+	// Legacy rows without an account still follow the legacy inbound lifecycle.
+	err = db.Where("inbound_id = ?", id).Delete(xray.ClientTraffic{}).Error
 	if err != nil {
 		return false, err
 	}
@@ -1543,7 +1555,14 @@ func (s *InboundService) DelInbound(id int) (bool, error) {
 		return false, err
 	}
 	for _, client := range clients {
-		err := s.DelClientIPs(db, client.Email)
+		served, err := s.emailServedOutside(db, id, client.Email)
+		if err != nil {
+			return false, err
+		}
+		if served {
+			continue
+		}
+		err = s.DelClientIPs(db, client.Email)
 		if err != nil {
 			return false, err
 		}
@@ -5623,6 +5642,14 @@ func (s *InboundService) GetClientStatsFor(user *model.User) (*ClientStatsSummar
 		}
 	}
 	return summary, nil
+}
+
+// ClearOnlineStatus clears the previous traffic snapshot on an idle collection tick.
+func (s *InboundService) ClearOnlineStatus() {
+	if p != nil {
+		p.SetOnlineClients(nil)
+		p.SetOnlineMemberships(nil)
+	}
 }
 
 func (s *InboundService) GetOnlineClients() []string {

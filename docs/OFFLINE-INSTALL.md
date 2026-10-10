@@ -136,3 +136,12 @@ sudo bash install-offline.sh ./vpn-ui-arm64
 On ARM64, download `vpn-ui-arm64` instead of `vpn-ui-amd64`. The installed path remains
 `/opt/vpn-ui/vpn-ui-amd64` for menu and migration compatibility; the executable and bundled cores
 are native ARM64.
+
+## Account overview and imported subscriptions
+
+The overview refreshes account counts every ten seconds. Deleting an inbound preserves the shared
+usage of accounts served by other inbounds. Expiry remains visible when a historical traffic row
+is missing; missing historical usage still requires a database backup for exact recovery.
+The subscription dialog shows a copyable URL alongside the QR code. New PasarGuard migrations
+enable subscriptions and inherit the destination panel certificate for an unconfigured listener.
+An already enabled subscription listener retains its own TLS settings.

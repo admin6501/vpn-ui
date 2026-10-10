@@ -1082,7 +1082,8 @@
       // One URL for the whole account. Passing the row itself would hand the modal
       // an object with no subId when the account has none, which is exactly the
       // case the icon is hidden for.
-      showAccountSub(row) {
+      async showAccountSub(row) {
+        await this.getDefaultSettings();
         qrModal.showSub(row.email, { subId: row.subId });
       },
       // The account panel. It reads everything through this page (inbounds, stats,
