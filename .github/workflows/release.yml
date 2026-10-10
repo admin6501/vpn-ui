@@ -1,0 +1,104 @@
+name: Build release assets
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Build patched Xray and complete geodata
+        run: GEO_LEAN=0 bash build/core/build.sh amd64
+      - name: Verify all six bundled geodata files
+        run: |
+          for file in geoip.dat geosite.dat geoip_IR.dat geosite_IR.dat geoip_RU.dat geosite_RU.dat; do
+            test -s "corebundle/core/$file"
+            test "$(stat -c %s "corebundle/core/$file")" -gt 1048576
+          done
+      - name: Cache portable VPN backends
+        id: backend-cache
+        uses: actions/cache@v4
+        with:
+          path: backend/bin/amd64
+          key: backend-amd64-${{ hashFiles('build/backend/**', '.gitmodules') }}-v1
+      - name: Build all portable VPN backends
+        if: steps.backend-cache.outputs.cache-hit != 'true'
+        run: bash build/backend/build.sh amd64
+      - name: Build panel
+        run: |
+          mkdir -p dist
+          CGO_ENABLED=1 go build -tags netgo,osusergo -trimpath -ldflags='-s -w -linkmode external -extldflags "-static"' -o dist/vpn-ui-amd64 .
+          test "$(dist/vpn-ui-amd64 -v)" = "1.0.0"
+      - name: Verify ownership transfer and online counts
+        run: go test -tags netgo,osusergo ./web/service ./web/controller -run 'TestAccountOwnershipTransfer|TestPasarGuard|TestOverview|TestVerifiedProvisioned|TestOffline'
+      - name: Verify offline refresh guard
+        run: go test ./web/job -run 'TestOffline' -count=1
+      - name: Verify representative role management
+        run: go test ./web/controller ./web -run 'TestRepresentativeRole' -count=1
+      - name: Verify Persian forms and Telegram language reload
+        run: |
+          go test ./web -run 'TestPersianInboundFormsRender|TestAllTemplatesParse|TestEditedTemplatesParse|TestTranslationsAreValidToml'
+          go test -race ./web/locale ./web/service -run 'TestEnglishFallback|TestPersianBot|TestBotLocaleReload|TestTelegram' -count=1
+      - name: Verify actual TCP and UDP socket lifetimes
+        run: |
+          go test ./util/sys ./web/service -run 'TestSocketCounts|TestConnection' -count=1
+          node --check web/assets/js/model/inbound.js
+          node --check web/assets/js/model/outbound.js
+      - name: Package migration and checksums
+        run: |
+          mkdir -p dist/migration
+          cp migration/migrate.sh migration/convert.py migration/preflight.py migration/INSTALL-MIGRATION.fa.md migration/install.sh migration/config.json dist/migration/
+          test ! -e dist/migration/vpn-ui-custom
+          test ! -e dist/migration/pasarguard-db
+          cd dist/migration
+          zip -q ../vpn-ui-auto-migration.zip *
+          cd ..
+          cp ../install-offline.sh .
+          bash -n install-offline.sh
+          sha256sum vpn-ui-amd64 vpn-ui-auto-migration.zip install-offline.sh > SHA256SUMS
+      - name: Verify fresh installation and update without installer network access
+        run: |
+          sudo unshare --net bash install-offline.sh --lang en "$PWD/dist/vpn-ui-amd64" > /tmp/offline-install.log 2>&1
+          sudo systemctl is-active --quiet vpn-ui
+          USER_BEFORE=$(sudo env VPNUI_OFFLINE=1 /opt/vpn-ui/vpn-ui-amd64 info --get username)
+          PORT_BEFORE=$(sudo env VPNUI_OFFLINE=1 /opt/vpn-ui/vpn-ui-amd64 info --get port)
+          WEB_PATH=$(sudo env VPNUI_OFFLINE=1 /opt/vpn-ui/vpn-ui-amd64 info --get webBasePath)
+          for attempt in $(seq 1 30); do
+            if curl -fsS "http://127.0.0.1:$PORT_BEFORE$WEB_PATH" -o /dev/null; then break; fi
+            sleep 1
+          done
+          curl -fsS "http://127.0.0.1:$PORT_BEFORE$WEB_PATH" -o /dev/null
+          sudo unshare --net bash install-offline.sh --lang en "$PWD/dist/vpn-ui-amd64" > /tmp/offline-update.log 2>&1
+          test "$USER_BEFORE" = "$(sudo env VPNUI_OFFLINE=1 /opt/vpn-ui/vpn-ui-amd64 info --get username)"
+          test "$PORT_BEFORE" = "$(sudo env VPNUI_OFFLINE=1 /opt/vpn-ui/vpn-ui-amd64 info --get port)"
+          sudo systemctl is-active --quiet vpn-ui
+          mkdir -p /tmp/offline-rollback-test
+          printf '#!/usr/bin/env bash\nif [[ ${1:-} == -v ]]; then echo 1.0.0; exit 0; fi\nexit 19\n' > /tmp/offline-rollback-test/vpn-ui-amd64
+          chmod +x /tmp/offline-rollback-test/vpn-ui-amd64
+          BINARY_BEFORE=$(sudo sha256sum /opt/vpn-ui/vpn-ui-amd64 | cut -d ' ' -f 1)
+          if sudo unshare --net bash install-offline.sh --lang en /tmp/offline-rollback-test/vpn-ui-amd64 > /tmp/offline-rollback.log 2>&1; then
+            echo "Fault injection unexpectedly succeeded"; exit 1
+          fi
+          test "$BINARY_BEFORE" = "$(sudo sha256sum /opt/vpn-ui/vpn-ui-amd64 | cut -d ' ' -f 1)"
+          test "$USER_BEFORE" = "$(sudo env VPNUI_OFFLINE=1 /opt/vpn-ui/vpn-ui-amd64 info --get username)"
+          test "$PORT_BEFORE" = "$(sudo env VPNUI_OFFLINE=1 /opt/vpn-ui/vpn-ui-amd64 info --get port)"
+          sudo systemctl is-active --quiet vpn-ui
+          sudo systemctl stop vpn-ui
+      - name: Diagnose offline installation failures
+        if: failure()
+        run: |
+          for logfile in /tmp/offline-install.log /tmp/offline-update.log /tmp/offline-rollback.log; do
+            if test -f "$logfile"; then sudo tail -50 "$logfile" | sed -E 's/(Password:).*/\1 [redacted]/'; fi
+          done
+          sudo journalctl -u vpn-ui -n 60 --no-pager || true
+      - name: Upload assets to the prepared release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload v1.0.0 dist/vpn-ui-amd64 dist/vpn-ui-auto-migration.zip dist/install-offline.sh dist/SHA256SUMS --clobber --repo "$GITHUB_REPOSITORY"

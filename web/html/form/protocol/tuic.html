@@ -1,0 +1,124 @@
+{{define "form/tuic"}}
+<a-collapse activeKey="0" v-for="(client, index) in inbound.settings.tuics.slice(0,1)" v-if="!isEdit">
+    <a-collapse-panel header='{{ i18n "pages.inbounds.client" }}'>
+        {{template "form/client"}}
+    </a-collapse-panel>
+</a-collapse>
+<a-collapse v-else>
+    <a-collapse-panel :header="'{{ i18n "pages.client.clientCount"}} : ' + inbound.settings.tuics.length">
+        <table width="100%">
+            <tr class="client-table-header">
+                <th>{{ i18n "pages.inbounds.email" }}</th>
+                <th>UUID</th>
+                <th>{{ i18n "pages.inboundForm.password" }}</th>
+            </tr>
+            <tr v-for="(client, index) in inbound.settings.tuics"
+                :class="index % 2 == 1 ? 'client-table-odd-row' : ''">
+                <td>[[ client.email ]]</td>
+                <td>[[ client.id ]]</td>
+                <td>[[ client.password ]]</td>
+            </tr>
+        </table>
+    </a-collapse-panel>
+</a-collapse>
+<a-form
+    :colon="false"
+    :label-col="{ md: {span:8} }"
+    :wrapper-col="{ md: {span:14} }"
+>
+    <!-- Not a nicety: TUIC runs on QUIC, and QUIC refuses a handshake when the two
+         sides agree on no ALPN. The server is pinned to h3, so a client that leaves
+         ALPN blank (the default in sing-box, mihomo and the Rust tuic-client alike)
+         dies with "tls: no application protocol" and no hint about which side is
+         wrong. The generated links carry alpn=h3; a hand-written config must too. -->
+    <a-alert
+        type="warning"
+        show-icon
+        :style="{ marginBottom: '16px' }"
+        message="Clients must set ALPN to h3"
+        description="This server accepts only the h3 ALPN. Most TUIC clients ship with ALPN empty, and an empty ALPN fails the QUIC handshake with an opaque TLS error rather than an auth error, so it reads like a wrong password or a bad certificate. The share links and subscriptions generated here already include alpn=h3. If someone configures a client by hand, that field is the one to check first."
+    ></a-alert>
+
+    <a-form-item>
+        <template slot="label">
+            <a-tooltip>
+                <template slot="title">{{ i18n "pages.inboundForm.quicCongestionControllerForThisListenerBbr" }}</template>{{ i18n "pages.inboundForm.congestionControl" }}<a-icon type="question-circle"></a-icon>
+            </a-tooltip>
+        </template>
+        <a-select
+            v-model="inbound.settings.congestionControl"
+            :style="{ width: '160px' }"
+            :dropdown-class-name="themeSwitcher.currentTheme"
+        >
+            <a-select-option value="cubic">Cubic</a-select-option>
+            <a-select-option value="bbr">BBR</a-select-option>
+            <a-select-option value="new_reno">New Reno</a-select-option>
+        </a-select>
+    </a-form-item>
+
+    <a-form-item>
+        <template slot="label">
+            <a-tooltip>
+                <template slot="title">{{ i18n "pages.inboundForm.howLongAFreshlyOpenedConnectionMay" }}</template>{{ i18n "pages.inboundForm.authTimeout" }}<a-icon type="question-circle"></a-icon>
+            </a-tooltip>
+        </template>
+        <a-input-number
+            v-model.number="inbound.settings.authTimeout"
+            :min="1"
+            :max="600"
+            :style="{ width: '110px' }"
+        ></a-input-number>
+        <span :style="{ marginLeft: '8px', color: '#888' }">{{ i18n "pages.inboundForm.seconds" }}</span>
+    </a-form-item>
+
+    <a-form-item>
+        <template slot="label">
+            <a-tooltip>
+                <template slot="title">
+                    How long the server keeps the state for one UDP association with no
+                    traffic on it. Too low breaks long-lived UDP sessions such as a game
+                    lobby or a voice call; too high just holds memory for sessions nobody
+                    is using.
+                </template>{{ i18n "pages.inboundForm.udpTimeout" }}<a-icon type="question-circle"></a-icon>
+            </a-tooltip>
+        </template>
+        <a-input-number
+            v-model.number="inbound.settings.udpTimeout"
+            :min="1"
+            :max="3600"
+            :style="{ width: '110px' }"
+        ></a-input-number>
+        <span :style="{ marginLeft: '8px', color: '#888' }">{{ i18n "pages.inboundForm.seconds" }}</span>
+    </a-form-item>
+
+    <a-form-item>
+        <template slot="label">
+            <a-tooltip>
+                <template slot="title">{{ i18n "pages.inboundForm.intervalBetweenKeepalivePacketsOnAnIdle" }}</template>{{ i18n "pages.inboundForm.heartbeat" }}<a-icon type="question-circle"></a-icon>
+            </a-tooltip>
+        </template>
+        <a-input-number
+            v-model.number="inbound.settings.heartbeat"
+            :min="1"
+            :max="600"
+            :style="{ width: '110px' }"
+        ></a-input-number>
+        <span :style="{ marginLeft: '8px', color: '#888' }">{{ i18n "pages.inboundForm.seconds" }}</span>
+    </a-form-item>
+
+    <a-form-item>
+        <template slot="label">
+            <a-tooltip>
+                <template slot="title">
+                    Let a returning client send its first request in the opening packet,
+                    saving one round trip on every reconnect. The cost is real: 0-RTT data
+                    is replayable, and the fixed-size early handshake is a stable pattern
+                    for a censor to match on. Off is the right default; turn it on only
+                    where the latency matters more than either risk.
+                </template>{{ i18n "pages.inboundForm.0RttHandshake" }}<a-icon type="question-circle"></a-icon>
+            </a-tooltip>
+        </template>
+        <a-switch v-model="inbound.settings.zeroRttHandshake"></a-switch>
+    </a-form-item>
+</a-form>
+{{end}}
