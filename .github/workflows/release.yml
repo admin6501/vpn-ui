@@ -19,7 +19,7 @@ jobs:
           mkdir -p dist
           CGO_ENABLED=1 go build -tags netgo,osusergo -trimpath -ldflags='-s -w -linkmode external -extldflags "-static"' -o dist/vpn-ui-amd64 .
           CGO_ENABLED=1 go build -tags netgo,osusergo -trimpath -ldflags='-s -w -linkmode external -extldflags "-static"' -o dist/pasarguard-db ./cmd/pasarguard-db
-          test "$(dist/vpn-ui-amd64 -v)" = "1.10.1"
+          test "$(dist/vpn-ui-amd64 -v)" = "1.10.2"
           dist/pasarguard-db /tmp/migration-schema
       - name: Verify ownership transfer and online counts
         run: go test -tags netgo,osusergo ./web/service ./web/controller -run 'TestAccountOwnershipTransfer|TestPasarGuard|TestOverview'
@@ -36,4 +36,4 @@ jobs:
       - name: Upload assets to the prepared release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload v1.10.1 dist/vpn-ui-amd64 dist/vpn-ui-auto-migration.zip dist/SHA256SUMS --clobber --repo "$GITHUB_REPOSITORY"
+        run: gh release upload v1.10.2 dist/vpn-ui-amd64 dist/vpn-ui-auto-migration.zip dist/SHA256SUMS --clobber --repo "$GITHUB_REPOSITORY"

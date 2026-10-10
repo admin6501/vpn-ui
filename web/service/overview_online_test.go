@@ -36,8 +36,8 @@ func TestOverviewCountsOnlineAccountOnceAcrossFiveInbounds(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if stats.Total != 5 {
-		t.Fatalf("fixture must contain five client entries, got %d", stats.Total)
+	if stats.Total != 1 {
+		t.Fatalf("one account on five inbounds must count once in Total, got %d", stats.Total)
 	}
 	if stats.Online != 1 {
 		t.Fatalf("one account on five inbounds counted as %d online", stats.Online)

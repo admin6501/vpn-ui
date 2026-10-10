@@ -5572,13 +5572,13 @@ func (s *InboundService) GetClientStatsFor(user *model.User) (*ClientStatsSummar
 
 	// Online counts distinct accounts, even when several visible inbounds serve them.
 	countedOnline := make(map[string]bool)
+	countedTotal := make(map[string]bool)
 	summary := &ClientStatsSummary{}
 	now := time.Now().UnixMilli()
 	// An ACCOUNT is depleted once, however many inbounds serve it. ClientStats now
 	// lists it under every one of them (it used to appear only under its home
 	// inbound), so without this an account on three inbounds would be counted as
-	// three depleted customers. Deliberately not applied to Total, which has always
-	// counted client ENTRIES and must keep answering the same question.
+	// three depleted customers. Total and Online also count unique account identities.
 	countedDepletion := make(map[string]bool)
 	for _, inbound := range inbounds {
 		clients, err := s.GetClients(inbound)
@@ -5587,7 +5587,13 @@ func (s *InboundService) GetClientStatsFor(user *model.User) (*ClientStatsSummar
 			logger.Warning("get clients for stats failed on inbound", inbound.Id, ":", err)
 			continue
 		}
-		summary.Total += len(clients)
+		for _, client := range clients {
+			key := accountKey(client.Email)
+			if !countedTotal[key] {
+				summary.Total++
+				countedTotal[key] = true
+			}
+		}
 		if !inbound.Enable {
 			continue
 		}

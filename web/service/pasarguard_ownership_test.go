@@ -52,6 +52,10 @@ func TestPasarGuardSampleOwnershipIsolation(t *testing.T) {
 	checked := 0
 	for _, u := range users {
 		if u.IsSuperAdmin {
+			stats, err := (&InboundService{}).GetClientStatsFor(&u)
+			if err != nil || stats.Total != len(expected) {
+				t.Fatalf("overview total=%+v, expected %d unique imported accounts, err=%v", stats, len(expected), err)
+			}
 			continue
 		}
 		if err = db.First(&u.RepresentativeRole, u.RepresentativeRoleID).Error; err != nil {
