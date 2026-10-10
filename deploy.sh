@@ -100,7 +100,7 @@ command -v systemctl >/dev/null 2>&1 || die "systemctl not found — this host i
 
 arch="$(uname -m)"
 [[ "$arch" == "x86_64" || "$arch" == "amd64" ]] || \
-    warn "host architecture is '$arch' — this installs the amd64 build, which may not run here."
+    die "unsupported host architecture '$arch': this release contains Linux amd64 only. Use an x86_64 server; installation stopped before downloading or changing files."
 
 # Fresh install vs in-place update: an already-installed binary means UPDATE. On
 # update we must NOT re-randomize credentials (that would lock the operator out of
