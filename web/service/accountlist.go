@@ -77,15 +77,17 @@ type AccountCredentials struct {
 
 // AccountRow is one line of the Clients table.
 type AccountRow struct {
-	Id         int    `json:"id"`
-	Email      string `json:"email"`
-	Enable     bool   `json:"enable"`
-	SubID      string `json:"subId"`
-	Comment    string `json:"comment"`
-	TotalGB    int64  `json:"totalGB"`    // bytes, despite the name
-	ExpiryTime int64  `json:"expiryTime"` // ms; negative = delayed start
-	Reset      int    `json:"reset"`
-	LimitIP    int    `json:"limitIp"`
+	OwnerID       int    `json:"ownerId"`
+	OwnerUsername string `json:"ownerUsername"`
+	Id            int    `json:"id"`
+	Email         string `json:"email"`
+	Enable        bool   `json:"enable"`
+	SubID         string `json:"subId"`
+	Comment       string `json:"comment"`
+	TotalGB       int64  `json:"totalGB"`    // bytes, despite the name
+	ExpiryTime    int64  `json:"expiryTime"` // ms; negative = delayed start
+	Reset         int    `json:"reset"`
+	LimitIP       int    `json:"limitIp"`
 	// TgID is the Telegram chat the bot notifies. Reported so the Clients form can
 	// edit it without a second read; 0 means the account is not linked.
 	TgID int64 `json:"tgId"`
@@ -117,10 +119,11 @@ type AccountRow struct {
 
 // AccountListResult is one page of the Clients table.
 type AccountListResult struct {
-	Rows  []AccountRow `json:"rows"`
-	Total int          `json:"total"` // rows matching the search, before paging
-	Page  int          `json:"page"`
-	Size  int          `json:"size"`
+	CanTransferOwnership bool         `json:"canTransferOwnership"`
+	Rows                 []AccountRow `json:"rows"`
+	Total                int          `json:"total"` // rows matching the search, before paging
+	Page                 int          `json:"page"`
+	Size                 int          `json:"size"`
 	// Sort echoes back the ordering that was actually applied, normalised. The menu
 	// ticks its selected item from THIS rather than from what it asked for, so a key
 	// the server does not know falls back visibly instead of leaving the menu
@@ -198,6 +201,18 @@ func (s *AccountService) ListAccounts(user *model.User, page, size int, search, 
 		owner[accountKey(rc.Email)] = rc.UserId
 	}
 
+	var admins []model.User
+	if err := db.Select("id,username,is_super_admin").Find(&admins).Error; err != nil {
+		return nil, err
+	}
+	names := map[int]string{}
+	rootID := 0
+	for _, admin := range admins {
+		names[admin.Id] = admin.Username
+		if admin.IsSuperAdmin && rootID == 0 {
+			rootID = admin.Id
+		}
+	}
 	visible, err := s.visibilityFilter(user)
 	if err != nil {
 		return nil, err
@@ -229,6 +244,11 @@ func (s *AccountService) ListAccounts(user *model.User, page, size int, search, 
 			UserLimitOverride: account.UserLimitOverride,
 			Memberships:       mine, OwnedByReseller: owner[key],
 		}
+		row.OwnerID = owner[key]
+		if row.OwnerID == 0 {
+			row.OwnerID = rootID
+		}
+		row.OwnerUsername = names[row.OwnerID]
 		if len(mine) == 0 {
 			// Nothing serves it, so no settings blob carries its credentials and this
 			// row is the only place the edit form can read them from.
@@ -285,7 +305,7 @@ func (s *AccountService) ListAccounts(user *model.User, page, size int, search, 
 	}
 	return &AccountListResult{
 		Rows: rows[start:end], Total: total, Page: page, Size: size,
-		Sort: sortKey,
+		Sort: sortKey, CanTransferOwnership: user.IsSuperAdmin,
 	}, nil
 }
 

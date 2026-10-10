@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"github.com/mhsanaei/3x-ui/v2/web/service"
 	"strconv"
 
 	"github.com/mhsanaei/3x-ui/v2/web/session"
@@ -39,6 +40,8 @@ func (a *ClientsController) initRouter(g *gin.RouterGroup) {
 	// The rows are then narrowed per caller inside ListAccounts.
 	g.GET("/list", a.list)
 	g.GET("/assignable", a.assignable)
+	g.GET("/owners", requireSuperAdmin(), a.owners)
+	g.POST("/transferOwner", requireSuperAdmin(), a.transferOwner)
 }
 
 // list returns one page of accounts the caller may see.
@@ -78,4 +81,26 @@ func (a *ClientsController) assignable(c *gin.Context) {
 		return
 	}
 	jsonObj(c, rows, nil)
+}
+
+func (a *ClientsController) owners(c *gin.Context) {
+	rows, err := accountService.OwnershipChoices(session.GetLoginUser(c))
+	jsonObj(c, rows, err)
+}
+func (a *ClientsController) transferOwner(c *gin.Context) {
+	id, err := strconv.Atoi(c.PostForm("accountId"))
+	if err != nil {
+		jsonMsg(c, "Invalid account", err)
+		return
+	}
+	owner, err := strconv.Atoi(c.PostForm("ownerId"))
+	if err != nil {
+		jsonMsg(c, "Invalid owner", err)
+		return
+	}
+	err = accountService.TransferOwnership(session.GetLoginUser(c), id, owner)
+	if err == nil {
+		(&service.XrayService{}).SetToNeedRestart()
+	}
+	jsonMsg(c, "", err)
 }

@@ -154,7 +154,11 @@
                        the label it used to spell out lives in its tooltip, which is
                        where a glyph's meaning belongs when the glyph is in a column
                        of twelve identical ones. -->
-                  <template slot="accountCol" slot-scope="text, row">
+                  <template slot="ownerCol" slot-scope="text, row">
+ <span>[[ row.ownerUsername || '—' ]]</span>
+ <a-button v-if="canTransferOwnership" size="small" @click="openOwnerTransfer(row)">تغییر مالک</a-button>
+ </template>
+ <template slot="accountCol" slot-scope="text, row">
                     <div class="bo-lg-who">
                       <a-tooltip>
                         <template slot="title">[[ stateLabel(row) ]]</template>
@@ -424,6 +428,12 @@
         </transition>
       </a-spin>
       {{template "component/bulkOpsModal" .}}
+<a-modal v-model="ownerTransfer.visible" title="تغییر مالک کاربر" @ok="saveOwnerTransfer" :confirm-loading="ownerTransfer.loading" :class="themeSwitcher.currentTheme">
+ <p>کاربر پس از انتقال در فهرست مالک جدید نمایش داده می‌شود. مصرف قبلی برای نمایندهٔ قبلی محفوظ می‌ماند.</p>
+ <a-select v-model="ownerTransfer.ownerId" :style="{width: '100%'}">
+ <a-select-option v-for="owner in ownerTransfer.choices" :key="owner.id" :value="owner.id">[[ owner.username ]]</a-select-option>
+ </a-select>
+</a-modal>
 {{template "page/shell_end" . }}
 
 {{template "page/body_scripts" .}}
@@ -450,6 +460,7 @@
 {{template "modals/greConfigModal"}}
 {{template "modals/sshConfigModal"}}
 {{template "modals/clientMembershipModal" .}}
+
 
 <script>
   const app = new Vue({
@@ -490,6 +501,8 @@
       density: localStorage.getItem("clientsDensity") === "compact" ? "compact" : "comfortable",
       isRefreshEnabled: localStorage.getItem("isRefreshEnabled") === "true",
       refreshInterval: Number(localStorage.getItem("refreshInterval")) || 5000,
+      canTransferOwnership: false,
+      ownerTransfer: { visible: false, loading: false, row: null, ownerId: null, choices: [] },
       onlineClients: [],
       // The same liveness, per (inbound, account): "<inboundId>:<email>", with
       // inbound 0 for a session whose source inbound the collector could not name.
@@ -559,6 +572,7 @@
         }, extra || {});
         return [
           col('email', '{{ i18n "pages.clients.email" }}', 'accountCol', { width: 230 }),
+          col('owner', 'مالک / نماینده', 'ownerCol', { width: 180 }),
           col('used', '{{ i18n "pages.clients.quota" }}', 'dataCol', { width: 170 }),
           col('expiry', '{{ i18n "pages.clients.expiry" }}', 'expiresCol', { width: 150 }),
           col('inbounds', '{{ i18n "pages.clients.inbounds" }}', 'servingCol'),
@@ -815,12 +829,26 @@
         };
       },
 
+      async openOwnerTransfer(row) {
+        const msg = await HttpUtil.get('/panel/api/clients/owners');
+        if (!msg || !msg.success) return;
+        this.ownerTransfer = { visible: true, loading: false, row, ownerId: row.ownerId, choices: msg.obj || [] };
+      },
+      async saveOwnerTransfer() {
+        if (!this.ownerTransfer.ownerId) return;
+        this.ownerTransfer.loading = true;
+        try {
+          const msg = await HttpUtil.post('/panel/api/clients/transferOwner', { accountId: this.ownerTransfer.row.id, ownerId: this.ownerTransfer.ownerId });
+          if (msg && msg.success) { this.ownerTransfer.visible = false; await this.loadClients(); }
+        } finally { this.ownerTransfer.loading = false; }
+      },
       async loadClients() {
         const q = `?page=${this.pagination.current}&size=${this.pagination.pageSize}`
           + `&search=${encodeURIComponent(this.search || '')}`
           + `&sort=${encodeURIComponent(this.sortKey)}`;
         const msg = await HttpUtil.get('/panel/api/clients/list' + q);
         if (!msg || !msg.success) return;
+        this.canTransferOwnership = !!(msg.obj && msg.obj.canTransferOwnership);
         this.clients = (msg.obj && msg.obj.rows) || [];
         this.pagination.total = (msg.obj && msg.obj.total) || 0;
         // Taken from the ANSWER, not from what was asked. The server falls back to
