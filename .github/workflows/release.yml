@@ -14,8 +14,14 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
-      - name: Build patched Xray and base geodata
-        run: GEO_LEAN=1 bash build/core/build.sh amd64
+      - name: Build patched Xray and complete geodata
+        run: GEO_LEAN=0 bash build/core/build.sh amd64
+      - name: Verify all six bundled geodata files
+        run: |
+          for file in geoip.dat geosite.dat geoip_IR.dat geosite_IR.dat geoip_RU.dat geosite_RU.dat; do
+            test -s "corebundle/core/$file"
+            test "$(stat -c %s "corebundle/core/$file")" -gt 1048576
+          done
       - name: Cache portable VPN backends
         id: backend-cache
         uses: actions/cache@v4
@@ -30,7 +36,7 @@ jobs:
           mkdir -p dist
           CGO_ENABLED=1 go build -tags netgo,osusergo -trimpath -ldflags='-s -w -linkmode external -extldflags "-static"' -o dist/vpn-ui-amd64 .
           CGO_ENABLED=1 go build -tags netgo,osusergo -trimpath -ldflags='-s -w -linkmode external -extldflags "-static"' -o dist/pasarguard-db ./cmd/pasarguard-db
-          test "$(dist/vpn-ui-amd64 -v)" = "1.10.3"
+          test "$(dist/vpn-ui-amd64 -v)" = "1.10.4"
           dist/pasarguard-db /tmp/migration-schema
       - name: Verify ownership transfer and online counts
         run: go test -tags netgo,osusergo ./web/service ./web/controller -run 'TestAccountOwnershipTransfer|TestPasarGuard|TestOverview|TestVerifiedProvisioned'
@@ -47,4 +53,4 @@ jobs:
       - name: Upload assets to the prepared release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload v1.10.3 dist/vpn-ui-amd64 dist/vpn-ui-auto-migration.zip dist/SHA256SUMS --clobber --repo "$GITHUB_REPOSITORY"
+        run: gh release upload v1.10.4 dist/vpn-ui-amd64 dist/vpn-ui-auto-migration.zip dist/SHA256SUMS --clobber --repo "$GITHUB_REPOSITORY"

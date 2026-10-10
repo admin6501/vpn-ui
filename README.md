@@ -4,7 +4,7 @@ This fork includes: PasarGuard sample-backup migration, representative ownership
 
 See [migration instructions](migration/INSTALL-MIGRATION.fa.md). Migration was tested on 319 users; live deployment/VPN connections and full PasarGuard representative feature parity have not been verified. This is not a complete replacement for every PasarGuard feature.
 
-Based on Sir-MmD/vpn-ui commit `9b5b5b1d18a8999aedceb5ba1756fb15194c84e2`, itself based on 3X-UI. Original licenses and attribution remain below. The Linux amd64 release includes patched Xray, base geodata, and portable VPN daemon bundles. Host kernel support is still required; AmneziaWG builds its module through DKMS. Core setup reports failed prerequisites instead of declaring success.
+Based on Sir-MmD/vpn-ui commit `9b5b5b1d18a8999aedceb5ba1756fb15194c84e2`, itself based on 3X-UI. Original licenses and attribution remain below. The Linux amd64 release includes patched Xray, all six geodata files (base, Iran and Russia), and portable VPN daemon bundles. Host kernel support is still required; AmneziaWG builds its module through DKMS. Core setup reports failed prerequisites instead of declaring success.
 
 Migration on a server where vpn-ui is already installed with no users or inbounds:
 
