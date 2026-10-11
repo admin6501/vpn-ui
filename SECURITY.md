@@ -8,6 +8,7 @@ This update fixes confirmed issues in the panel:
 - Signed login cookies are bound to current credentials and two-factor settings.
   Password changes and disabling an administrator revoke previous sessions;
   logout revokes every session for that account, including copied cookies.
+  Existing WebSockets revalidate credentials before sending each update.
 - Existing authenticators cannot be replaced using a new authenticator's code.
   First-time authenticator enrollment requires the current password.
 - Login and credential-change requests have bounded bodies and rate limits.

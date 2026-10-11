@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/mhsanaei/3x-ui/v2/database/model"
 	"github.com/mhsanaei/3x-ui/v2/logger"
 	"github.com/mhsanaei/3x-ui/v2/util/common"
 	"github.com/mhsanaei/3x-ui/v2/web/middleware"
@@ -83,7 +84,8 @@ func (w *WebSocketController) HandleWebSocket(c *gin.Context) {
 	logger.Debugf("WebSocket client %s registered from %s", clientID, getRemoteIp(c))
 
 	// Start goroutines for reading and writing
-	go w.writePump(client, conn)
+	snapshot := *user
+	go w.writePump(client, conn, &snapshot)
 	go w.readPump(client, conn)
 }
 
@@ -126,7 +128,7 @@ func (w *WebSocketController) readPump(client *websocket.Client, conn *ws.Conn) 
 }
 
 // writePump pumps messages from the hub to the WebSocket connection
-func (w *WebSocketController) writePump(client *websocket.Client, conn *ws.Conn) {
+func (w *WebSocketController) writePump(client *websocket.Client, conn *ws.Conn, snapshot *model.User) {
 	ticker := time.NewTicker(pingPeriod)
 	defer func() {
 		if r := common.Recover("WebSocket writePump panic"); r != nil {
@@ -139,6 +141,9 @@ func (w *WebSocketController) writePump(client *websocket.Client, conn *ws.Conn)
 	for {
 		select {
 		case message, ok := <-client.Send:
+			if !session.IsCurrentUserSession(snapshot) {
+				return
+			}
 			conn.SetWriteDeadline(time.Now().Add(writeWait))
 			if !ok {
 				// Hub closed the channel
@@ -154,6 +159,9 @@ func (w *WebSocketController) writePump(client *websocket.Client, conn *ws.Conn)
 			}
 
 		case <-ticker.C:
+			if !session.IsCurrentUserSession(snapshot) {
+				return
+			}
 			conn.SetWriteDeadline(time.Now().Add(writeWait))
 			if err := conn.WriteMessage(ws.PingMessage, nil); err != nil {
 				logger.Debugf("WebSocket ping error for client %s: %v", client.ID, err)

@@ -167,3 +167,16 @@ func ClearSession(c *gin.Context) {
 		SameSite: http.SameSiteLaxMode,
 	})
 }
+
+// IsCurrentUserSession revalidates a captured login for long-lived connections.
+// The snapshot is taken at authentication; changes must not inherit new credentials.
+func IsCurrentUserSession(snapshot *model.User) bool {
+	if snapshot == nil || database.GetDB() == nil {
+		return false
+	}
+	var current model.User
+	if database.GetDB().First(&current, snapshot.Id).Error != nil || !current.Enable {
+		return false
+	}
+	return subtle.ConstantTimeCompare([]byte(authBinding(snapshot)), []byte(authBinding(&current))) == 1
+}

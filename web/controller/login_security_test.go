@@ -5,12 +5,14 @@ import (
 	"github.com/gin-contrib/sessions"
 	"github.com/gin-contrib/sessions/cookie"
 	"github.com/gin-gonic/gin"
+	ws "github.com/gorilla/websocket"
 	"github.com/mhsanaei/3x-ui/v2/database"
 	"github.com/mhsanaei/3x-ui/v2/database/model"
 	"github.com/mhsanaei/3x-ui/v2/logger"
 	"github.com/mhsanaei/3x-ui/v2/util/crypto"
 	"github.com/mhsanaei/3x-ui/v2/web/locale"
 	"github.com/mhsanaei/3x-ui/v2/web/session"
+	"github.com/mhsanaei/3x-ui/v2/web/websocket"
 	"github.com/xlzd/gotp"
 	"net/http"
 	"net/http/httptest"
@@ -180,5 +182,53 @@ func TestSecurityFailedLoginDoesNotLogPasswords(t *testing.T) {
 	}
 	if !strings.Contains(logs, "nonexistent-security-admin") {
 		t.Fatal("login attempt was not logged")
+	}
+}
+
+func TestSecurityOpenWebSocketRevokesBeforeSendingData(t *testing.T) {
+	newPermTestDB(t)
+	db := database.GetDB()
+	for _, field := range []string{"password", "session_version", "enable", "two_factor_token"} {
+		t.Run(field, func(t *testing.T) {
+			user := model.User{Username: "ws-security-" + field, Password: "test-hash", Enable: true, IsSuperAdmin: true}
+			if err := db.Create(&user).Error; err != nil {
+				t.Fatal(err)
+			}
+			messages := make(chan []byte, 2)
+			r := gin.New()
+			r.GET("/ws", func(c *gin.Context) {
+				conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
+				if err != nil {
+					return
+				}
+				(&WebSocketController{}).writePump(&websocket.Client{ID: "security-test", Send: messages}, conn, &user)
+			})
+			server := httptest.NewServer(r)
+			defer server.Close()
+			conn, _, err := ws.DefaultDialer.Dial("ws"+strings.TrimPrefix(server.URL, "http")+"/ws", nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer conn.Close()
+			conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+			messages <- []byte("valid-message")
+			if _, msg, err := conn.ReadMessage(); err != nil || string(msg) != "valid-message" {
+				t.Fatal("valid session did not receive data")
+			}
+			value := any("changed")
+			if field == "enable" {
+				value = false
+			}
+			if field == "session_version" {
+				value = int64(1)
+			}
+			if err := db.Model(&model.User{}).Where("id=?", user.Id).UpdateColumn(field, value).Error; err != nil {
+				t.Fatal(err)
+			}
+			messages <- []byte("must-not-leak")
+			if _, _, err := conn.ReadMessage(); err == nil {
+				t.Fatal("revoked websocket received sensitive data")
+			}
+		})
 	}
 }
