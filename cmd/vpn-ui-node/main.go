@@ -20,7 +20,7 @@ func main() {
 		return
 	}
 	if os.Geteuid() != 0 {
-		log.Fatal("Run as root / با دسترسی روت اجرا کنید")
+		log.Fatal("Run as root.")
 	}
 	command := "run"
 	if len(os.Args) > 1 {
