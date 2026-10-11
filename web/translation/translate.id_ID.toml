@@ -613,7 +613,7 @@ frozen = "Beku"
 [pages.clients]
 "protocolCount" = "Jumlah protokol"
 "limitSupportHint" = "Batas hanya berlaku pada protokol terpilih yang mendukungnya. Batas IP menghitung alamat sumber bersamaan, bukan perangkat di balik NAT yang sama."
-"sortTraffic" = "Trafik terpakai (terbanyak dahulu)"
+"sortTraffic" = "Persentase trafik tersisa (terendah dahulu)"
 "sortDays" = "Sisa hari (paling sedikit dahulu)"
 "sortName" = "Nama"
 "summaryTarget" = "Masuk"

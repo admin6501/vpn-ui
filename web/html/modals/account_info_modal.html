@@ -283,6 +283,16 @@
       app: null,
       exporting: '',
     },
+    watch: {
+      'accountInfoModal.visible'(visible) {
+        clearInterval(this._onlineTimer);
+        if (visible) {
+          this.refreshOnline();
+          this._onlineTimer = setInterval(() => this.refreshOnline(), 10000);
+        }
+      },
+    },
+    beforeDestroy() { clearInterval(this._onlineTimer); },
     computed: {
       row() { return this.accountInfoModal.row; },
       subSettings() { return (this.app && this.app.subSettings) || { enable: false }; },
@@ -369,6 +379,15 @@
       },
     },
     methods: {
+      async refreshOnline() {
+        if (!this.app || this._onlinePending) return;
+        this._onlinePending = true;
+        try {
+          if (this.app.loadOnlineState) await this.app.loadOnlineState();
+          else await Promise.all([this.app.getOnlineUsers(), this.app.getOnlineMemberships(), this.app.getLastOnlineMap()]);
+        } catch (error) { console.warn('Online status refresh failed', error); }
+        finally { this._onlinePending = false; }
+      },
       cardsFor(id) { return this.accountInfoModal.cards[id] || []; },
       firstCard(id) { return this.cardsFor(id)[0] || null; },
 

@@ -53,9 +53,10 @@
                         </template>
                         <span class="bo-status-pill num" v-if="total.deactive.length">[[ total.deactive.length ]]</span>
                       </a-popover>
-                      <span class="bo-status-pill bo-status-pill--error num"
-                        :title="'{{ i18n "pages.clients.summaryExpired" }}'"
-                        v-if="accountSummary && accountSummary.expired">[[ accountSummary.expired ]]</span>
+                      <a-popover title='{{ i18n "pages.clients.summaryExpired" }}' :overlay-class-name="themeSwitcher.currentTheme">
+                        <template slot="content"><div v-for="email in (accountSummary && accountSummary.expiredEmails) || []" :key="email">[[ email ]]</div></template>
+                        <span class="bo-status-pill bo-status-pill--error num" v-if="accountSummary && accountSummary.expired">[[ accountSummary.expired ]]</span>
+                      </a-popover>
                       <a-popover title='{{ i18n "depletingSoon" }}' :overlay-class-name="themeSwitcher.currentTheme">
                         <template slot="content">
                           <div v-for="clientEmail in total.expiring"><span>[[ clientEmail ]]</span></div>
@@ -473,16 +474,11 @@
                         </div>
                       </a-popover>
                     </template>
-                    <!-- One segmented bar in place of five popover tags. The five
-                         numbers were only ever read to answer "is anything wrong
-                         on this inbound", so the bar answers it at a glance and
-                         the line under it says which categories in words. The
-                         per-account email lists those popovers carried live on
-                         the Clients page, which owns accounts. -->
+                    <!-- Category segments and the summary expose client names on hover. -->
                     <template slot="accounts" slot-scope="text, dbInbound">
                       <template v-if="clientCount[dbInbound.id]">
                         <div class="bo-il-top">
-                          <span class="bo-il-n num">[[
+                          <span class="bo-il-n num" :title="accountNames(dbInbound)">[[
                             clientCount[dbInbound.id].clients ]]</span>
                           <span class="bo-il-online num"
                             v-if="clientCount[dbInbound.id].online.length">[[
@@ -491,10 +487,10 @@
                         </div>
                         <div class="bo-il-acc">
                           <i v-for="seg in accountSegments(dbInbound)"
-                            :key="seg.name" :class="'bo-il-acc--' + seg.name"
+                            :key="seg.name" :title="seg.emails.join('\n')" :class="'bo-il-acc--' + seg.name"
                             :style="{ flex: seg.n }"></i>
                         </div>
-                        <span class="bo-il-sub">[[ accountNote(dbInbound) ]]</span>
+                        <span class="bo-il-sub" :title="accountNames(dbInbound)">[[ accountNote(dbInbound) ]]</span>
                       </template>
                       <!-- No account list at all: a single-user protocol, or one
                            whose peers Xray synthesises rather than stores. Not an
@@ -572,7 +568,7 @@
                             <template v-if="clientCount[dbInbound.id]">
                               <div class="bo-il-rule"></div>
                               <div class="bo-il-top">
-                                <span class="bo-il-n num">[[
+                                <span class="bo-il-n num" :title="accountNames(dbInbound)">[[
                                   clientCount[dbInbound.id].clients ]] {{ i18n
                                   "clients" }}</span>
                                 <span class="bo-il-online num"
@@ -582,11 +578,11 @@
                               </div>
                               <div class="bo-il-acc">
                                 <i v-for="seg in accountSegments(dbInbound)"
-                                  :key="seg.name"
+                                  :key="seg.name" :title="seg.emails.join('\n')"
                                   :class="'bo-il-acc--' + seg.name"
                                   :style="{ flex: seg.n }"></i>
                               </div>
-                              <span class="bo-il-sub">[[ accountNote(dbInbound)
+                              <span class="bo-il-sub" :title="accountNames(dbInbound)">[[ accountNote(dbInbound)
                                 ]]</span>
                             </template>
                             <div class="bo-il-rule"></div>
@@ -900,6 +896,10 @@
           return;
         }
         this.onlineMemberships = msg.obj != null ? msg.obj : [];
+        this.dbInbounds.forEach(record => {
+          const inbound = record.toInbound();
+          if (Array.isArray(inbound.clients) && !(record.isSS && !inbound.isSSMultiUser)) this.$set(this.clientCount, record.id, this.getClientCounts(record, inbound));
+        });
       },
       async getLastOnlineMap() {
         const msg = await HttpUtil.post('/panel/api/inbounds/lastOnline');
@@ -995,22 +995,19 @@
                 deactive.push(client.email);
               }
             });
-            clientStats.forEach(stats => {
-              const exhausted = stats.total > 0 && (stats.up + stats.down) >= stats.total;
-              const expired = stats.expiryTime > 0 && stats.expiryTime <= now;
-              if (expired || exhausted) {
-                depleted.push(stats.email);
-              } else {
-                const expiringSoon = (stats.expiryTime > 0 && (stats.expiryTime - now < this.expireDiff)) ||
-                  (stats.total > 0 && (stats.total - (stats.up + stats.down) < this.trafficDiff));
-                if (expiringSoon) expiring.push(stats.email);
-              }
-            });
-          } else {
-            clients.forEach(client => {
-              deactive.push(client.email);
-            });
           }
+          clientStats.forEach(stats => {
+            const exhausted = stats.total > 0 && (stats.up + stats.down) >= stats.total;
+            const expired = stats.expiryTime > 0 && stats.expiryTime <= now;
+            if (expired || exhausted) {
+              depleted.push(stats.email);
+            } else {
+              const expiringSoon = (stats.expiryTime > 0 && (stats.expiryTime - now < this.expireDiff)) ||
+                (stats.total > 0 && (stats.total - (stats.up + stats.down) < this.trafficDiff));
+              if (expiringSoon) expiring.push(stats.email);
+            }
+          });
+          if (!dbInbound.enable) clients.forEach(client => deactive.push(client.email));
         }
         return {
           clients: clientCount,
@@ -1693,16 +1690,20 @@
         const expiring = c.expiring.length;
         const idle = Math.max(0, c.clients - online - off - depleted - expiring);
         return [
-          { name: 'online', n: online },
-          { name: 'idle', n: idle },
-          { name: 'expiring', n: expiring },
-          { name: 'depleted', n: depleted },
-          { name: 'off', n: off },
+          { name: 'online', n: online, emails: c.online },
+          { name: 'idle', n: idle, emails: [] },
+          { name: 'expiring', n: expiring, emails: c.expiring },
+          { name: 'depleted', n: depleted, emails: c.depleted },
+          { name: 'off', n: off, emails: c.deactive },
         ].filter(seg => seg.n > 0);
       },
       // The bar in words, under it. Only the categories that are not empty, so
       // an inbound with nothing wrong says so in one word instead of printing
       // three zeroes for the reader to check.
+      accountNames(dbInbound) {
+        const c = this.clientCount[dbInbound.id];
+        return c ? [...new Set([...c.depleted, ...c.expiring, ...c.deactive])].join('\n') : '';
+      },
       accountNote(dbInbound) {
         const c = this.clientCount[dbInbound.id];
         if (!c) return '';

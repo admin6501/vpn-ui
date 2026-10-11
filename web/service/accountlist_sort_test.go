@@ -145,13 +145,28 @@ func TestAccountSortNameIsCaseInsensitiveAndStable(t *testing.T) {
 }
 
 func TestAccountSortTrafficAndDays(t *testing.T) {
-	rows := []AccountRow{{Id: 1, Email: "light", Up: 5, Down: 10}, {Id: 2, Email: "heavy", Up: 2, Down: 100}, {Id: 3, Email: "middle", Up: 30, Down: 10}}
-	if got := sortAccountRows(rows, nil, nil, AccountSortTraffic); got != AccountSortTraffic || !equal(names(rows), []string{"heavy", "middle", "light"}) {
+	rows := []AccountRow{{Id: 1, Email: "light", TotalGB: 20, Up: 5, Down: 10}, {Id: 2, Email: "heavy", TotalGB: 1000, Up: 2, Down: 100}, {Id: 3, Email: "middle", TotalGB: 100, Up: 30, Down: 10}}
+	if got := sortAccountRows(rows, nil, nil, AccountSortTraffic); got != AccountSortTraffic || !equal(names(rows), []string{"light", "middle", "heavy"}) {
 		t.Fatalf("traffic: %v", names(rows))
 	}
 	now := time.Now().UnixMilli()
 	rows = []AccountRow{{Id: 1, Email: "unlimited"}, {Id: 2, Email: "later", ExpiryTime: now + 86400000*5}, {Id: 3, Email: "expired", ExpiryTime: now - 86400000}, {Id: 4, Email: "delayed", ExpiryTime: -86400000 * 2}, {Id: 5, Email: "soon", ExpiryTime: now + 86400000}}
 	if got := sortAccountRows(rows, nil, nil, AccountSortDays); got != AccountSortDays || !equal(names(rows), []string{"expired", "soon", "delayed", "later", "unlimited"}) {
 		t.Fatalf("days: %v", names(rows))
+	}
+}
+
+func TestAccountSortTrafficQuotaEdges(t *testing.T) {
+	rows := []AccountRow{
+		{Id: 1, Email: "unlimited", Up: 10000},
+		{Id: 2, Email: "empty", TotalGB: 100},
+		{Id: 3, Email: "over", TotalGB: 100, Up: 200},
+		{Id: 4, Email: "full", TotalGB: 100, Down: 100},
+		{Id: 5, Email: "large", TotalGB: 1<<63 - 1, Up: 1 << 62},
+		{Id: 6, Email: "half", TotalGB: 100, Up: 50},
+	}
+	sortAccountRows(rows, nil, nil, AccountSortTraffic)
+	if !equal(names(rows), []string{"full", "over", "large", "half", "empty", "unlimited"}) {
+		t.Fatal(names(rows))
 	}
 }

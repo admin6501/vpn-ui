@@ -1380,21 +1380,21 @@ func (s *MtprotoService) CollectTraffic() []*xray.ClientTraffic {
 				emails[c.Email] = c.Email
 			}
 		}
-		up, down := s.scrapeMetrics(mtprotoMetricsPort(inbound))
+		up, down, live := s.scrapeMetricsState(mtprotoMetricsPort(inbound))
 		for user, email := range emails {
 			u, d := up[user], down[user]
-			if u == 0 && d == 0 {
+			if u == 0 && d == 0 && !live[user] {
 				continue
 			}
 			key := fmt.Sprintf("%d/%s", inbound.Id, user)
 			du, dd := s.delta(key, u, d)
-			if du == 0 && dd == 0 {
+			if du == 0 && dd == 0 && !live[user] {
 				continue
 			}
 			// Stamped with the inbound the bytes were scraped from. The delta key
 			// above is already per inbound, so the record was the only place the
 			// source was being dropped.
-			out = append(out, &xray.ClientTraffic{Email: email, InboundId: inbound.Id, Up: du, Down: dd})
+			out = append(out, &xray.ClientTraffic{Email: email, InboundId: inbound.Id, Up: du, Down: dd, Online: live[user]})
 		}
 	}
 	return out
@@ -1426,13 +1426,19 @@ func (s *MtprotoService) delta(key string, up, down int64) (int64, int64) {
 // per-user byte counters. from_client is the client's UPLOAD, to_client its
 // DOWNLOAD, matching client_traffics.up/down.
 func (s *MtprotoService) scrapeMetrics(port int) (map[string]int64, map[string]int64) {
+	up, down, _ := s.scrapeMetricsState(port)
+	return up, down
+}
+
+func (s *MtprotoService) scrapeMetricsState(port int) (map[string]int64, map[string]int64, map[string]bool) {
 	up := map[string]int64{}
 	down := map[string]int64{}
+	live := map[string]bool{}
 
 	client := &http.Client{Timeout: 3 * time.Second}
 	resp, err := client.Get(fmt.Sprintf("http://127.0.0.1:%d/metrics", port))
 	if err != nil {
-		return up, down
+		return up, down, live
 	}
 	defer resp.Body.Close()
 	// ReadAll, not a single Read: one Read is not guaranteed to fill the buffer, so
@@ -1441,7 +1447,7 @@ func (s *MtprotoService) scrapeMetrics(port int) (map[string]int64, map[string]i
 	// LimitReader so a wedged endpoint can't balloon the panel's heap.
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
 	if err != nil {
-		return up, down
+		return up, down, live
 	}
 	for _, line := range strings.Split(string(body), "\n") {
 		if strings.HasPrefix(line, "#") {
@@ -1452,13 +1458,15 @@ func (s *MtprotoService) scrapeMetrics(port int) (map[string]int64, map[string]i
 			continue
 		}
 		switch name {
+		case "telemt_user_connections_current":
+			live[user] = val > 0
 		case "telemt_user_octets_from_client":
 			up[user] = val
 		case "telemt_user_octets_to_client":
 			down[user] = val
 		}
 	}
-	return up, down
+	return up, down, live
 }
 
 // parsePromUserMetric pulls (metric, user-label, value) out of one Prometheus

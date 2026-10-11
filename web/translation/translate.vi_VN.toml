@@ -614,7 +614,7 @@ frozen = "Đông lạnh"
 [pages.clients]
 "protocolCount" = "Số giao thức"
 "limitSupportHint" = "Giới hạn chỉ áp dụng cho giao thức đã chọn có hỗ trợ. Giới hạn IP đếm địa chỉ nguồn đồng thời, không đếm thiết bị vật lý sau cùng một NAT."
-"sortTraffic" = "Lưu lượng đã dùng (nhiều nhất trước)"
+"sortTraffic" = "Phần trăm lưu lượng còn lại (ít nhất trước)"
 "sortDays" = "Số ngày còn lại (ít nhất trước)"
 "sortName" = "Tên"
 "summaryTarget" = "Vào"

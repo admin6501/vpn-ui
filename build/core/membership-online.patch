@@ -1,0 +1,133 @@
+diff --git a/app/dispatcher/default.go b/app/dispatcher/default.go
+index b3828fb7..305cc2f8 100644
+--- a/app/dispatcher/default.go
++++ b/app/dispatcher/default.go
+@@ -2,6 +2,7 @@ package dispatcher
+ 
+ import (
+ 	"context"
++	"encoding/base64"
+ 	"strings"
+ 	"sync"
+ 	"time"
+@@ -161,6 +162,9 @@ func (d *DefaultDispatcher) getLink(ctx context.Context) (*transport.Link, *tran
+ 
+ 	if user != nil && len(user.Email) > 0 {
+ 		p := d.policy.ForLevel(user.Level)
++		if p.Stats.UserUplink || p.Stats.UserDownlink {
++			trackMembershipOnline(ctx, d.stats, sessionInbound.Tag, user.Email)
++		}
+ 		if p.Stats.UserUplink {
+ 			name := "user>>>" + user.Email + ">>>traffic>>>uplink"
+ 			if c, _ := stats.GetOrRegisterCounter(d.stats, name); c != nil {
+@@ -219,6 +223,9 @@ func WrapLink(ctx context.Context, policyManager policy.Manager, statsManager st
+ 
+ 	if user != nil && len(user.Email) > 0 {
+ 		p := policyManager.ForLevel(user.Level)
++		if p.Stats.UserUplink || p.Stats.UserDownlink {
++			trackMembershipOnline(ctx, statsManager, sessionInbound.Tag, user.Email)
++		}
+ 		if p.Stats.UserUplink {
+ 			name := "user>>>" + user.Email + ">>>traffic>>>uplink"
+ 			if c, _ := stats.GetOrRegisterCounter(statsManager, name); c != nil {
+@@ -242,6 +249,19 @@ func WrapLink(ctx context.Context, policyManager policy.Manager, statsManager st
+ 	return link
+ }
+ 
++// Membership liveness is independent of byte counters: an idle connection remains
++// online until its context closes. Multiple streams share a reference-counted key.
++func trackMembershipOnline(ctx context.Context, sm stats.Manager, tag, email string) {
++	if tag == "" || email == "" {
++		return
++	}
++	key := base64.RawURLEncoding.EncodeToString([]byte(tag)) + "." + base64.RawURLEncoding.EncodeToString([]byte(email))
++	if om, _ := stats.GetOrRegisterOnlineMap(sm, "membership>>>online"); om != nil {
++		om.AddIP(key)
++		context.AfterFunc(ctx, func() { om.RemoveIP(key) })
++	}
++}
++
+ func trackOnlineIP(ctx context.Context, sm stats.Manager, email, ip string) {
+ 	name := "user>>>" + email + ">>>online"
+ 	if om, _ := stats.GetOrRegisterOnlineMap(sm, name); om != nil {
+diff --git a/app/stats/command/command.go b/app/stats/command/command.go
+index aa7d6600..0f83e49b 100644
+--- a/app/stats/command/command.go
++++ b/app/stats/command/command.go
+@@ -89,7 +89,7 @@ func (s *statsServer) GetUsersStats(ctx context.Context, request *GetUsersStatsR
+ 	userMap := make(map[string]*UserStat)
+ 
+ 	s.stats.VisitOnlineMaps(func(name string, om feature_stats.OnlineMap) bool {
+-		if om.Count() == 0 {
++		if name == "membership>>>online" || om.Count() == 0 {
+ 			return true
+ 		}
+ 
+diff --git a/app/stats/stats.go b/app/stats/stats.go
+index 68fb9be1..03a7d414 100644
+--- a/app/stats/stats.go
++++ b/app/stats/stats.go
+@@ -180,7 +180,7 @@ func (m *Manager) GetAllOnlineUsers() []string {
+ 
+ 	usersOnline := make([]string, 0, len(m.onlineMaps))
+ 	for user, om := range m.onlineMaps {
+-		if om.Count() > 0 {
++		if user != "membership>>>online" && om.Count() > 0 {
+ 			usersOnline = append(usersOnline, user)
+ 		}
+ 	}
+diff --git a/app/dispatcher/membership_online_test.go b/app/dispatcher/membership_online_test.go
+new file mode 100644
+index 0000000..976af3d
+--- /dev/null
++++ b/app/dispatcher/membership_online_test.go
+@@ -0,0 +1,49 @@
++package dispatcher
++
++import (
++	"context"
++	corestats "github.com/xtls/xray-core/app/stats"
++	"github.com/xtls/xray-core/features/stats"
++	"testing"
++	"time"
++)
++
++func TestMembershipOnlineReferenceCountsAndDisconnect(t *testing.T) {
++	sm, err := corestats.NewManager(context.Background(), &corestats.Config{})
++	if err != nil {
++		t.Fatal(err)
++	}
++	a, ca := context.WithCancel(context.Background())
++	defer ca()
++	b, cb := context.WithCancel(context.Background())
++	defer cb()
++	c, cc := context.WithCancel(context.Background())
++	defer cc()
++	trackMembershipOnline(a, sm, "naive-1", "same@example.com")
++	trackMembershipOnline(b, sm, "naive-1", "same@example.com")
++	trackMembershipOnline(c, sm, "tuic-2", "same@example.com")
++	om := sm.GetOnlineMap("membership>>>online")
++	if om == nil || om.Count() != 2 {
++		t.Fatal("multiple streams must count once per membership")
++	}
++	if len(sm.GetAllOnlineUsers()) != 0 {
++		t.Fatal("membership keys leaked into account online users")
++	}
++	ca()
++	// A second live stream on the same membership keeps the reference alive.
++	cb()
++	waitMembershipCount(t, om, 1)
++	cc()
++	waitMembershipCount(t, om, 0)
++}
++
++func waitMembershipCount(t *testing.T, om stats.OnlineMap, want int) {
++	t.Helper()
++	deadline := time.Now().Add(time.Second)
++	for om.Count() != want && time.Now().Before(deadline) {
++		time.Sleep(time.Millisecond)
++	}
++	if om.Count() != want {
++		t.Fatalf("active memberships: got %d, want %d", om.Count(), want)
++	}
++}

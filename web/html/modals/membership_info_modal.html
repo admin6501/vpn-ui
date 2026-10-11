@@ -32,6 +32,7 @@
         [[ enabled ? '{{ i18n "enable" }}' : '{{ i18n "disabled" }}' ]]
       </span>
       <span class="ai-chip">[[ email ]]</span>
+      <span class="ai-chip" :class="online ? 'ok' : ''">[[ onlineText ]]</span>
       <span class="mi-head-sp"></span>
       <!-- This membership only, the same pair the account panel puts on each row. -->
       <a-tooltip>
@@ -163,12 +164,24 @@
     delimiters: ['[[', ']]'],
     el: '#membership-info-modal',
     data: { themeSwitcher, membershipInfoModal, app: null },
+    watch: {
+      'membershipInfoModal.visible'(visible) {
+        clearInterval(this._onlineTimer);
+        if (visible) {
+          this.refreshOnline();
+          this._onlineTimer = setInterval(() => this.refreshOnline(), 10000);
+        }
+      },
+    },
+    beforeDestroy() { clearInterval(this._onlineTimer); },
     computed: {
       record() { return this.membershipInfoModal.record; },
       client() { return this.membershipInfoModal.client; },
       cards() { return this.membershipInfoModal.cards || []; },
       first() { return this.cards[0] || null; },
       email() { return (this.client && this.client.email) || ''; },
+      online() { return !!(this.app && this.record && this.app.membershipOnline(this.record, this.email)); },
+      onlineText() { return this.app && this.record ? this.app.membershipOnlineText(this.record, this.email) : '{{ i18n "offline" }}'; },
       enabled() { return !!(this.client && this.client.enable); },
       used() {
         if (!this.app || !this.record || !this.client) return '';
@@ -176,6 +189,15 @@
       },
     },
     methods: {
+      async refreshOnline() {
+        if (!this.app || this._onlinePending) return;
+        this._onlinePending = true;
+        try {
+          if (this.app.loadOnlineState) await this.app.loadOnlineState();
+          else await Promise.all([this.app.getOnlineUsers(), this.app.getOnlineMemberships(), this.app.getLastOnlineMap()]);
+        } catch (error) { console.warn('Online status refresh failed', error); }
+        finally { this._onlinePending = false; }
+      },
       // Same builder the exports and the account panel use, so all three agree.
       async load() {
         const m = this.membershipInfoModal;

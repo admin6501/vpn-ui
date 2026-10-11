@@ -90,9 +90,17 @@ func stampSourceInbound(records []*xray.ClientTraffic, idByEmail map[string]int)
 func appendUnrecorded(existing, fallback []*xray.ClientTraffic) []*xray.ClientTraffic {
 	recorded := make(map[string]bool, len(existing))
 	for _, t := range existing {
+		if t.Online && t.Up == 0 && t.Down == 0 {
+			continue
+		}
 		recorded[t.Email] = true
 	}
 	for _, t := range fallback {
+		// Keep the relay's exact session evidence even when its bytes are billed by Xray.
+		// A zero-byte liveness record never creates a second charge.
+		if t.Online {
+			existing = append(existing, &xray.ClientTraffic{Email: t.Email, InboundId: t.InboundId, Online: true})
+		}
 		if recorded[t.Email] {
 			continue
 		}

@@ -5,10 +5,12 @@ package xray
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"math"
 	"regexp"
+	"strings"
 	"time"
 
 	"github.com/mhsanaei/3x-ui/v2/logger"
@@ -440,7 +442,16 @@ func (x *XrayAPI) GetTraffic(reset bool) ([]*Traffic, []*ClientTraffic, error) {
 			processClientTraffic(matches, stat.Value, emailTrafficMap)
 		}
 	}
-	return mapToSlice(tagTrafficMap), mapToSlice(emailTrafficMap), nil
+	records := mapToSlice(emailTrafficMap)
+	// Older cores may not expose this map yet; byte-based detection remains a fallback.
+	live, liveErr := (*x.StatsServiceClient).GetStatsOnlineIpList(ctx, &statsService.GetStatsRequest{Name: "membership>>>online"})
+	if liveErr == nil {
+		for _, record := range records {
+			record.OnlineSnapshot = true
+		}
+		records = append(records, membershipOnlineRecords(live.GetIps())...)
+	}
+	return mapToSlice(tagTrafficMap), records, nil
 }
 
 // trafficStatRegex splits an Xray traffic stat name into direction, tag and link.
@@ -509,4 +520,24 @@ func mapToSlice[T any](m map[string]*T) []*T {
 		result = append(result, v)
 	}
 	return result
+}
+
+func membershipOnlineRecords(keys map[string]int64) []*ClientTraffic {
+	records := []*ClientTraffic{}
+	for key := range keys {
+		tag64, email64, ok := strings.Cut(key, ".")
+		if !ok {
+			continue
+		}
+		tag, err := base64.RawURLEncoding.DecodeString(tag64)
+		if err != nil || len(tag) == 0 {
+			continue
+		}
+		email, err := base64.RawURLEncoding.DecodeString(email64)
+		if err != nil || len(email) == 0 {
+			continue
+		}
+		records = append(records, &ClientTraffic{Email: string(email), InboundTag: string(tag), Online: true})
+	}
+	return records
 }

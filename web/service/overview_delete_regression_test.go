@@ -198,7 +198,7 @@ func TestOverviewRetainedAccountsStayScopedToOwner(t *testing.T) {
 		{model.User{Id: 43}, 0},
 	} {
 		stats, err := svc.GetClientStatsFor(&test.user)
-		if err != nil || stats.Total != test.want || stats.Expired != test.want {
+		if err != nil || stats.Total != test.want || stats.Expired != test.want || len(stats.ExpiredEmails) != test.want {
 			t.Fatalf("owner scope for %+v: %+v %v", test.user, stats, err)
 		}
 	}

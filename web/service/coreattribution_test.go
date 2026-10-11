@@ -481,3 +481,46 @@ func TestPerInboundUsageRendersForEveryProtocol(t *testing.T) {
 		})
 	}
 }
+
+func TestMembershipOnlineExactTagsSurviveAmbiguousTrafficWithoutBilling(t *testing.T) {
+	svc := newAccountsDB(t)
+	const email = "exact@example.com"
+	first := seedTaggedInbound(t, model.NAIVE, 48201, []map[string]any{{"email": email, "enable": true, "password": "password", "naiveUsername": "login"}})
+	second := seedTaggedInbound(t, model.TUIC, 48202, nil)
+	seedAccountOn(t, svc, email, first, second)
+	seedAccountTraffic(t, email, first.Id)
+	for _, in := range []*model.Inbound{first, second} {
+		record := &xray.ClientTraffic{Email: email, Online: true, InboundTag: in.Tag}
+		attributeCoreRecords(database.GetDB(), nil, []*xray.ClientTraffic{record})
+		if !record.Online || record.InboundId != in.Id {
+			t.Fatalf("lost exact protocol identity: %+v", record)
+		}
+		err, _, _, _, _ := (&InboundService{}).AddTraffic(nil, []*xray.ClientTraffic{record})
+		if err != nil {
+			t.Fatal(err)
+		}
+		pairs := (&InboundService{}).GetOnlineMemberships()
+		if !equal(pairs, []string{onlineMembershipKey(in.Id, email)}) {
+			t.Fatal(pairs)
+		}
+		usage := membershipUsageOf(t, email, in.Id)
+		if usage.Up+usage.Down != 0 {
+			t.Fatal("liveness was charged as traffic")
+		}
+	}
+	invalid := &xray.ClientTraffic{Email: email, Online: true, InboundTag: "not-assigned"}
+	attributeCoreRecords(database.GetDB(), nil, []*xray.ClientTraffic{invalid})
+	if invalid.Online || invalid.InboundId != 0 {
+		t.Fatal("unknown tag accepted")
+	}
+	// Closing all connections clears liveness despite bytes buffered in this tick.
+	raw := coreRecord(email, 10, 20)
+	raw.OnlineSnapshot = true
+	err, _, _, _, _ := (&InboundService{}).AddTraffic(nil, []*xray.ClientTraffic{raw})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len((&InboundService{}).GetOnlineMemberships()) != 0 {
+		t.Fatal("traffic resurrected a closed connection")
+	}
+}

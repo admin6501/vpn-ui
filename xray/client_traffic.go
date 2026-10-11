@@ -3,7 +3,11 @@ package xray
 // ClientTraffic represents traffic statistics and limits for a specific client.
 // It tracks upload/download usage, expiry times, and online status for inbound clients.
 type ClientTraffic struct {
-	Id int `json:"id" form:"id" gorm:"primaryKey;autoIncrement"`
+	// Collector-only liveness evidence; never charged or stored as quota.
+	OnlineSnapshot bool   `json:"-" gorm:"-"`
+	Online         bool   `json:"online,omitempty" gorm:"-"`
+	InboundTag     string `json:"inboundTag,omitempty" gorm:"-"`
+	Id             int    `json:"id" form:"id" gorm:"primaryKey;autoIncrement"`
 	// InboundId is the account's HOME inbound: whichever one it was created on.
 	//
 	// It is not "the inbound this account is served on", and must not be used as

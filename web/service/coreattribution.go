@@ -49,8 +49,8 @@ type coreCandidate struct {
 	Email    string
 }
 
-// attributeCoreRecords stamps the source inbound onto the core-counted records that
-// arrived without one, in place.
+// attributeCoreRecords resolves exact live-connection tags and stamps the source
+// inbound onto core-counted byte records where attribution is unambiguous.
 //
 // inboundTraffics is the same tick's per-inbound totals (the other half of the one
 // QueryStats call these records came from), and is what makes rule 3 above possible.
@@ -69,6 +69,10 @@ func attributeCoreRecords(tx *gorm.DB, inboundTraffics []*xray.Traffic, records 
 	// that already knows its source is never second-guessed.
 	pending := map[string][]*xray.ClientTraffic{}
 	for _, record := range records {
+		if record != nil && record.Online && record.InboundTag != "" {
+			pending[accountKey(record.Email)] = append(pending[accountKey(record.Email)], record)
+			continue
+		}
 		if record == nil || !record.CoreCounted || record.InboundId != 0 {
 			continue
 		}
@@ -128,11 +132,21 @@ func attributeCoreRecords(tx *gorm.DB, inboundTraffics []*xray.Traffic, records 
 
 	for key, pendingRecords := range pending {
 		inboundId := attributableInbound(candidates[key], active)
-		if inboundId == 0 {
-			continue
-		}
 		for _, record := range pendingRecords {
-			record.InboundId = inboundId
+			if record.Online && record.InboundTag != "" {
+				// Validate both account membership and tag; never infer other memberships.
+				for _, candidate := range candidates[key] {
+					if candidate.Tag == record.InboundTag {
+						record.InboundId = candidate.Id
+						break
+					}
+				}
+				if record.InboundId == 0 {
+					record.Online = false
+				}
+			} else if inboundId != 0 {
+				record.InboundId = inboundId
+			}
 		}
 	}
 }

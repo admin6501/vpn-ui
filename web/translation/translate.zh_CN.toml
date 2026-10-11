@@ -614,7 +614,7 @@ frozen = "冻结"
 [pages.clients]
 "protocolCount" = "协议数量"
 "limitSupportHint" = "限制仅适用于支持该功能的已选协议。IP限制统计同时连接的来源地址，不是同一NAT后的物理设备数量。"
-"sortTraffic" = "已用流量（从多到少）"
+"sortTraffic" = "剩余流量百分比（从低到高）"
 "sortDays" = "剩余天数（从少到多）"
 "sortName" = "名称"
 "summaryTarget" = "入站"

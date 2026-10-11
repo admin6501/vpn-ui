@@ -3516,7 +3516,7 @@ func (s *InboundService) addClientTrafficFor(tx *gorm.DB, traffics []*xray.Clien
 	// Callers that must not double-report the same bytes de-duplicate before they get here
 	// (see the relay handling in web/job/xray_traffic_job.go).
 	for dbTraffic_index := range dbClientTraffics {
-		moved := int64(0)
+		connected := false
 		for traffic_index := range traffics {
 			if dbClientTraffics[dbTraffic_index].Email == traffics[traffic_index].Email {
 				rawUp := traffics[traffic_index].Up
@@ -3559,11 +3559,11 @@ func (s *InboundService) addClientTrafficFor(tx *gorm.DB, traffics []*xray.Clien
 					traffics[traffic_index].InboundId,
 					dbClientTraffics[dbTraffic_index].Email,
 					billedUp, billedDown, rawUp+rawDown)
-				// Bytes on the wire are the whole of the liveness signal here, exactly
-				// as they are for the account-wide flag below. Measured bytes, not
-				// billed: a multiplier of zero is a pricing decision and must not make
-				// a connected customer look offline.
-				if rawUp+rawDown > 0 {
+				// New cores report live connection references independently of billing.
+				// Older cores and tunnel collectors retain measured-byte detection.
+				// Buffered bytes must not resurrect a connection absent from a live snapshot.
+				if (!traffics[traffic_index].OnlineSnapshot && rawUp+rawDown > 0) || traffics[traffic_index].Online {
+					connected = true
 					key := onlineMembershipKey(
 						traffics[traffic_index].InboundId,
 						dbClientTraffics[dbTraffic_index].Email)
@@ -3572,12 +3572,11 @@ func (s *InboundService) addClientTrafficFor(tx *gorm.DB, traffics []*xray.Clien
 						onlineMemberships = append(onlineMemberships, key)
 					}
 				}
-				moved += rawUp + rawDown
 			}
 		}
 		// Online is a property of the client, not of each record: marked once here so a
 		// client carrying two records in one tick is not listed twice.
-		if moved > 0 {
+		if connected {
 			onlineClients = append(onlineClients, dbClientTraffics[dbTraffic_index].Email)
 			dbClientTraffics[dbTraffic_index].LastOnline = time.Now().UnixMilli()
 		}
@@ -3593,7 +3592,7 @@ func (s *InboundService) addClientTrafficFor(tx *gorm.DB, traffics []*xray.Clien
 	missing := make(map[string]bool)
 	for _, traffic := range traffics {
 		key := accountKey(traffic.Email)
-		if traffic.Up+traffic.Down > 0 && !knownTraffic[key] {
+		if ((!traffic.OnlineSnapshot && traffic.Up+traffic.Down > 0) || traffic.Online) && !knownTraffic[key] {
 			missing[key] = true
 		}
 	}
@@ -3610,7 +3609,7 @@ func (s *InboundService) addClientTrafficFor(tx *gorm.DB, traffics []*xray.Clien
 			key := accountKey(account.Email)
 			onlineClients = append(onlineClients, account.Email)
 			for _, traffic := range traffics {
-				if accountKey(traffic.Email) != key || traffic.Up+traffic.Down <= 0 {
+				if accountKey(traffic.Email) != key || ((traffic.OnlineSnapshot || traffic.Up+traffic.Down <= 0) && !traffic.Online) {
 					continue
 				}
 				pair := onlineMembershipKey(traffic.InboundId, account.Email)
@@ -5656,18 +5655,19 @@ func (s *InboundService) MigrationSubIds() {
 // caller owns, how many are connected right now, how many have run out of traffic
 // or time, and how many are close to it.
 type ClientStatsSummary struct {
-	Total    int `json:"total"`
-	Online   int `json:"online"`
-	Depleted int `json:"depleted"`
-	Expired  int `json:"expired"`
-	Expiring int `json:"expiring"`
+	Total         int      `json:"total"`
+	Online        int      `json:"online"`
+	Depleted      int      `json:"depleted"`
+	Expired       int      `json:"expired"`
+	ExpiredEmails []string `json:"expiredEmails"`
+	Expiring      int      `json:"expiring"`
 }
 
 // GetClientStatsFor uses the same account visibility as the Clients page. Each
 // sellable account counts once, including retained accounts with no inbounds.
 // Traffic rows supply effective limits; missing rows fall back to account metadata.
 func (s *InboundService) GetClientStatsFor(user *model.User) (*ClientStatsSummary, error) {
-	summary := &ClientStatsSummary{}
+	summary := &ClientStatsSummary{ExpiredEmails: []string{}}
 	if user == nil {
 		return summary, nil
 	}
@@ -5743,6 +5743,7 @@ func (s *InboundService) GetClientStatsFor(user *model.User) (*ClientStatsSummar
 		exhausted := stat.Total > 0 && stat.Up+stat.Down >= stat.Total
 		if expired {
 			summary.Expired++
+			summary.ExpiredEmails = append(summary.ExpiredEmails, account.Email)
 		}
 		// Depleted retains the historical combined unavailable counter. Expired is
 		// strictly time-based, and must never include quota-only exhaustion.

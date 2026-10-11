@@ -613,7 +613,7 @@ frozen = "Dondurulmuş"
 [pages.clients]
 "protocolCount" = "Protokol sayısı"
 "limitSupportHint" = "Sınırlar yalnızca bunları destekleyen seçili protokollere uygulanır. IP sınırı aynı NAT arkasındaki cihazları değil, eşzamanlı kaynak adreslerini sayar."
-"sortTraffic" = "Kullanılan trafik (en yüksek önce)"
+"sortTraffic" = "Kalan trafik yüzdesi (en düşük önce)"
 "sortDays" = "Kalan günler (en az önce)"
 "sortName" = "Ad"
 "summaryTarget" = "Gelen"

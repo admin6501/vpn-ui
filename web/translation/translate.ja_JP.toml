@@ -613,7 +613,7 @@ frozen = "冷凍"
 [pages.clients]
 "protocolCount" = "プロトコル数"
 "limitSupportHint" = "制限は対応する選択済みプロトコルにのみ適用されます。IP制限は同時接続元アドレスを数え、同じNAT配下の物理端末は識別しません。"
-"sortTraffic" = "使用トラフィック（多い順）"
+"sortTraffic" = "残り通信量の割合（少ない順）"
 "sortDays" = "残り日数（少ない順）"
 "sortName" = "名前"
 "summaryTarget" = "インバウンド"

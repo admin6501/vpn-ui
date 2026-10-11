@@ -34,6 +34,13 @@ jobs:
       - name: Verify Hysteria account validation and revocation
         working-directory: third_party/Xray-core
         run: go test -race ./transport/internet/hysteria ./proxy/hysteria/account -run "TestManagedEmpty|TestRevokedHysteria|TestDuplicateHysteria|TestHysteriaAuth" -count=1
+      - name: Verify exact membership liveness and disconnect cleanup
+        working-directory: third_party/Xray-core
+        run: go test -race ./app/dispatcher ./app/stats ./app/stats/command -count=1
+      - name: Verify client online identity, expiry tooltips and quota ordering
+        run: |
+          go test ./web/service ./web/job ./xray -run 'TestMembershipOnline|TestMtprotoMetrics|TestAppendUnrecorded|TestCoreTraffic|TestAccountSort|TestOverview' -count=1
+          node test_unit/client_online_info_test.cjs
       - name: Verify authentication, sessions, origins and private backups
         run: go test -race ./database ./web/session ./web/middleware ./web/controller ./web/service -run '^TestSecurity' -count=1
       - name: Verify administrator, representative and node access boundaries

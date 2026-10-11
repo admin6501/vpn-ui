@@ -34,8 +34,10 @@ and edit account settings without using the first inbound as an anchor. Disablin
 one inbound or membership leaves the account and its other memberships intact.
 Account-wide quota, expiry and the global enable switch still apply to all memberships.
 
-Clients can also be sorted by used traffic (highest first) or remaining days
-(soonest expiry first). Delayed-start days are included; unlimited expiry sorts last.
+Clients can also be sorted by remaining traffic percentage (lowest first), calculated
+from each account’s own quota, or remaining days (soonest expiry first). Unlimited
+quotas sort last; delayed-start days are included. Client Info refreshes online status
+every 10 seconds while open.
 Hysteria2 uses HTTP/3, including its raw, JSON and Clash subscription profiles.
 
 ## Protocols and dependencies

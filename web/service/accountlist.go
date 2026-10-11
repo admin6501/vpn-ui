@@ -2,6 +2,7 @@ package service
 
 import (
 	"encoding/json"
+	"math/bits"
 	"sort"
 	"strings"
 	"time"
@@ -383,8 +384,20 @@ func sortAccountRows(rows []AccountRow, createdAt map[int]int64, online map[stri
 	less := func(a, b *AccountRow) bool {
 		switch sortKey {
 		case AccountSortTraffic:
-			if usage(a) != usage(b) {
-				return usage(a) > usage(b)
+			// Unlimited accounts have no depletion percentage and sort last.
+			if (a.TotalGB > 0) != (b.TotalGB > 0) {
+				return a.TotalGB > 0
+			}
+			if a.TotalGB > 0 {
+				ua, ub := min(usage(a), uint64(a.TotalGB)), min(usage(b), uint64(b.TotalGB))
+				ah, al := bits.Mul64(ua, uint64(b.TotalGB))
+				bh, bl := bits.Mul64(ub, uint64(a.TotalGB))
+				if ah != bh {
+					return ah > bh
+				}
+				if al != bl {
+					return al > bl
+				}
 			}
 			if accountKey(a.Email) != accountKey(b.Email) {
 				return accountKey(a.Email) < accountKey(b.Email)

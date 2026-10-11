@@ -81,3 +81,12 @@ func TestAppendUnrecordedHandlesEmptyInputs(t *testing.T) {
 		t.Errorf("appendUnrecorded(base, nil) = %v; want the base untouched", got)
 	}
 }
+
+func TestAppendUnrecordedKeepsExactRelayLivenessWithoutDoubleBilling(t *testing.T) {
+	base := []*xray.ClientTraffic{ct("shared", 10, 20)}
+	relay := []*xray.ClientTraffic{{Email: "shared", InboundId: 17, Online: true, Up: 10, Down: 20}}
+	got := appendUnrecorded(base, relay)
+	if totals(got)["shared"] != 30 || len(got) != 2 || !got[1].Online || got[1].InboundId != 17 || got[1].Up+got[1].Down != 0 {
+		t.Fatalf("lost session or double-billed: %+v", got)
+	}
+}

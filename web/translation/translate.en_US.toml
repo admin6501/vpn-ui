@@ -613,7 +613,7 @@ kernelRuntime = "OS kernel"
 [pages.clients]
 "protocolCount" = "Protocol count"
 "limitSupportHint" = "Limits apply only to supported selected protocols. IP limits count simultaneous source addresses, not physical devices behind the same NAT."
-"sortTraffic" = "Traffic used (highest first)"
+"sortTraffic" = "Remaining traffic % (lowest first)"
 "sortDays" = "Days remaining (soonest first)"
 "sortName" = "Name"
 "summaryTarget" = "Inbound"

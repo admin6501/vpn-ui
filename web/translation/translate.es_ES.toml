@@ -614,7 +614,7 @@ frozen = "Congelado"
 [pages.clients]
 "protocolCount" = "Número de protocolos"
 "limitSupportHint" = "Los límites solo se aplican a los protocolos seleccionados compatibles. El límite de IP cuenta direcciones de origen simultáneas, no dispositivos detrás del mismo NAT."
-"sortTraffic" = "Tráfico utilizado (mayor primero)"
+"sortTraffic" = "Tráfico restante % (menor primero)"
 "sortDays" = "Días restantes (menor primero)"
 "sortName" = "Nombre"
 "summaryTarget" = "Entrante"
