@@ -78,6 +78,7 @@ jobs:
       - name: Verify actual TCP and UDP socket lifetimes
         run: |
           go test ./util/sys ./web/service -run 'TestSocketCounts|TestConnection' -count=1
+          node test_unit/inbound_stats_test.js
           node --check web/assets/js/model/inbound.js
           node --check web/assets/js/model/outbound.js
       - name: Package migration and checksums

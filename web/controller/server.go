@@ -160,10 +160,7 @@ func (a *ServerController) startTask() {
 // status returns the current server status information.
 func (a *ServerController) status(c *gin.Context) { jsonObj(c, a.lastStatus, nil) }
 
-// userStats returns the overview's account roll-up (total, online, depleted and
-// expiring) for the logged-in admin. The inbounds page derives the same four
-// numbers in the browser from the full inbound list; the overview wants only the
-// counts, so it gets them without shipping every client.
+// userStats supplies the same scoped account counters to Overview and Inbounds.
 func (a *ServerController) userStats(c *gin.Context) {
 	stats, err := a.inboundService.GetClientStatsFor(session.GetLoginUser(c))
 	if err != nil {

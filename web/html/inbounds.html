@@ -46,19 +46,16 @@
                     <span class="bo-stat-cell-label">{{ i18n "clients" }}</span>
                     <span class="bo-stat-cell-value" :style="{ display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center' }">
                       <a-back-top :target="() => document.querySelector('.bo-main')" visibility-height="200"></a-back-top>
-                      <span class="bo-status-pill bo-status-pill--ok num">[[ total.clients ]]</span>
+                      <span class="bo-status-pill bo-status-pill--ok num">[[ accountSummary ? accountSummary.total : total.clients ]]</span>
                       <a-popover title='{{ i18n "disabled" }}' :overlay-class-name="themeSwitcher.currentTheme">
                         <template slot="content">
                           <div v-for="clientEmail in total.deactive"><span>[[ clientEmail ]]</span></div>
                         </template>
                         <span class="bo-status-pill num" v-if="total.deactive.length">[[ total.deactive.length ]]</span>
                       </a-popover>
-                      <a-popover title='{{ i18n "depleted" }}' :overlay-class-name="themeSwitcher.currentTheme">
-                        <template slot="content">
-                          <div v-for="clientEmail in total.depleted"><span>[[ clientEmail ]]</span></div>
-                        </template>
-                        <span class="bo-status-pill bo-status-pill--error num" v-if="total.depleted.length">[[ total.depleted.length ]]</span>
-                      </a-popover>
+                      <span class="bo-status-pill bo-status-pill--error num"
+                        :title="'{{ i18n "pages.clients.summaryExpired" }}'"
+                        v-if="accountSummary && accountSummary.expired">[[ accountSummary.expired ]]</span>
                       <a-popover title='{{ i18n "depletingSoon" }}' :overlay-class-name="themeSwitcher.currentTheme">
                         <template slot="content">
                           <div v-for="clientEmail in total.expiring"><span>[[ clientEmail ]]</span></div>
@@ -778,6 +775,8 @@
       sslCertificates: [],
       defaultKey: '',
       clientCount: [],
+      accountSummary: null,
+      accountSummaryLoading: false,
       onlineClients: [],
       // "<inboundId>:<email>" for each pair seen in the last traffic tick. Consumed
       // by membershipOnline (component/clientActions.html), which is what the
@@ -826,6 +825,16 @@
       loading(spinning = true) {
         this.loadingStates.spinning = spinning;
       },
+      async refreshAccountSummary() {
+        if (this.accountSummaryLoading) return;
+        this.accountSummaryLoading = true;
+        try {
+          const summary = await HttpUtil.get('/panel/api/server/userStats');
+          if (summary && summary.success && summary.obj) this.accountSummary = summary.obj;
+        } finally {
+          this.accountSummaryLoading = false;
+        }
+      },
       async getDBInbounds() {
         this.refreshing = true;
         const msg = await HttpUtil.get('/panel/api/inbounds/list');
@@ -839,6 +848,7 @@
         await this.getOnlineMemberships();
 
         this.setInbounds(msg.obj);
+
         setTimeout(() => {
           this.refreshing = false;
         }, 500);
@@ -927,6 +937,7 @@
         this.missingProtocols = Array.isArray(settings.missingProtocols) ? settings.missingProtocols : [];
       },
       setInbounds(dbInbounds) {
+        this.refreshAccountSummary();
         this.inbounds.splice(0);
         this.dbInbounds.splice(0);
         this.clientCount.splice(0);
@@ -935,7 +946,7 @@
           to_inbound = dbInbound.toInbound()
           this.inbounds.push(to_inbound);
           this.dbInbounds.push(dbInbound);
-          if ([Protocols.VMESS, Protocols.VLESS, Protocols.TROJAN, Protocols.SHADOWSOCKS, Protocols.ANYTLS, Protocols.TUIC, Protocols.NAIVE, Protocols.L2TP, Protocols.PPTP, Protocols.OPENVPN, Protocols.OPENCONNECT, Protocols.SSTP, Protocols.IKEV2, Protocols.WGC, Protocols.AWG, Protocols.MTPROTO, Protocols.SSH].includes(inbound.protocol)) {
+          if (Array.isArray(to_inbound.clients)) {
             if (dbInbound.isSS && (!to_inbound.isSSMultiUser)) {
               continue;
             }
@@ -957,9 +968,9 @@
       // accounts is the Clients page's job.
       getClientCounts(dbInbound, inbound) {
         let clientCount = 0, active = [], deactive = [], depleted = [], expiring = [], online = [];
-        clients = inbound.clients;
-        clientStats = dbInbound.clientStats
-        now = new Date().getTime()
+        const clients = inbound.clients;
+        const clientStats = dbInbound.clientStats || [];
+        const now = Date.now();
         if (clients) {
           clientCount = clients.length;
           if (dbInbound.enable) {
@@ -2027,13 +2038,15 @@
       },
       total() {
         let down = 0, up = 0, allTime = 0;
-        let clients = 0, deactive = [], depleted = [], expiring = [];
+        const identities = new Set();
+        let deactive = [], depleted = [], expiring = [];
         this.dbInbounds.forEach(dbInbound => {
           down += dbInbound.down;
           up += dbInbound.up;
           allTime += (dbInbound.allTime || (dbInbound.up + dbInbound.down));
           if (this.clientCount[dbInbound.id]) {
-            clients += this.clientCount[dbInbound.id].clients;
+            const inbound = dbInbound.toInbound();
+            (inbound.clients || []).forEach(client => identities.add(String(client.email || '').trim().toLowerCase()));
             deactive = deactive.concat(this.clientCount[dbInbound.id].deactive);
             depleted = depleted.concat(this.clientCount[dbInbound.id].depleted);
             expiring = expiring.concat(this.clientCount[dbInbound.id].expiring);
@@ -2043,10 +2056,10 @@
           down: down,
           up: up,
           allTime: allTime,
-          clients: clients,
-          deactive: deactive,
-          depleted: depleted,
-          expiring: expiring,
+          clients: identities.size,
+          deactive: Array.from(new Map(deactive.map(email => [email.trim().toLowerCase(), email])).values()),
+          depleted: Array.from(new Map(depleted.map(email => [email.trim().toLowerCase(), email])).values()),
+          expiring: Array.from(new Map(expiring.map(email => [email.trim().toLowerCase(), email])).values()),
         };
       }
     },

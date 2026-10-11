@@ -126,3 +126,80 @@ func TestOverviewOnlineEvidenceSurvivesMissingSharedTrafficRow(t *testing.T) {
 		t.Fatalf("idle state retained: %+v %v", stats, err)
 	}
 }
+
+func TestOverviewRetainedAccountsMatchClientsWithoutInbounds(t *testing.T) {
+	accounts := newAccountsDB(t)
+	const email = "retained-expired@example.com"
+	first, second := seedTwoInboundAccount(t, accounts, email)
+	db := database.GetDB()
+	if err := db.Model(&xray.ClientTraffic{}).Where("email = ?", email).Update("expiry_time", time.Now().Add(-time.Hour).UnixMilli()).Error; err != nil {
+		t.Fatal(err)
+	}
+	if _, err := accounts.ApplyMemberships(email, nil, nil, true); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Delete(&model.Inbound{}, []int{first.Id, second.Id}).Error; err != nil {
+		t.Fatal(err)
+	}
+	root := &model.User{IsSuperAdmin: true}
+	list, err := accounts.ListAccounts(root, 1, 100, "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	stats, err := (&InboundService{}).GetClientStatsFor(root)
+	if err != nil || stats.Total != list.Total || stats.Total != 1 || stats.Expired != 1 || stats.Online != 0 {
+		t.Fatalf("retained accounts disagree with Clients: %+v, list=%+v, error=%v", stats, list, err)
+	}
+}
+
+func TestOverviewCountsSharedExpiryAndQuotaOnce(t *testing.T) {
+	accounts := newAccountsDB(t)
+	const email = "shared-expired@example.com"
+	first, second := seedTwoInboundAccount(t, accounts, email)
+	db := database.GetDB()
+	svc := &InboundService{}
+	if err := db.Model(&xray.ClientTraffic{}).Where("email = ?", email).Updates(map[string]any{"expiry_time": time.Now().Add(-time.Hour).UnixMilli(), "total": 10, "down": 10}).Error; err != nil {
+		t.Fatal(err)
+	}
+	stats, err := svc.GetClientStatsFor(&model.User{IsSuperAdmin: true})
+	if err != nil || stats.Total != 1 || stats.Expired != 1 || stats.Depleted != 1 {
+		t.Fatalf("shared identity counted twice: %+v %v", stats, err)
+	}
+	if err := db.Model(&model.Inbound{}).Where("id IN ?", []int{first.Id, second.Id}).Update("enable", false).Error; err != nil {
+		t.Fatal(err)
+	}
+	stats, err = svc.GetClientStatsFor(&model.User{IsSuperAdmin: true})
+	if err != nil || stats.Total != 1 || stats.Expired != 1 {
+		t.Fatalf("disabled memberships changed account counters: %+v %v", stats, err)
+	}
+}
+
+func TestOverviewRetainedAccountsStayScopedToOwner(t *testing.T) {
+	accounts := newAccountsDB(t)
+	const email = "owned-retained@example.com"
+	seedTwoInboundAccount(t, accounts, email)
+	db := database.GetDB()
+	if err := db.Create(&model.ResellerClient{Email: email, UserId: 42}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if _, err := accounts.ApplyMemberships(email, nil, nil, true); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(&xray.ClientTraffic{}).Where("email = ?", email).Update("expiry_time", time.Now().Add(-time.Hour).UnixMilli()).Error; err != nil {
+		t.Fatal(err)
+	}
+	svc := &InboundService{}
+	for _, test := range []struct {
+		user model.User
+		want int
+	}{
+		{model.User{Id: 42, IsReseller: true}, 1},
+		{model.User{Id: 43, IsReseller: true}, 0},
+		{model.User{Id: 43}, 0},
+	} {
+		stats, err := svc.GetClientStatsFor(&test.user)
+		if err != nil || stats.Total != test.want || stats.Expired != test.want {
+			t.Fatalf("owner scope for %+v: %+v %v", test.user, stats, err)
+		}
+	}
+}

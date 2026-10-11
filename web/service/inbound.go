@@ -5624,102 +5624,99 @@ type ClientStatsSummary struct {
 	Expiring int `json:"expiring"`
 }
 
-// GetClientStatsFor counts the caller's accounts by state. It is the server-side
-// twin of the tally the inbounds page builds in the browser, and follows the same
-// rules so the two pages cannot disagree:
-//
-//   - clients on a DISABLED inbound still count towards the total, but are neither
-//     online, depleted nor expiring;
-//   - depleted wins over expiring, so the two never double-count the same account;
-//   - the warning windows come from the expireDiff/trafficDiff settings, in the
-//     days and GB the settings form stores them as.
-//
-// Scoping is inherited from GetInboundsFor, so an admin sees only their own
-// accounts. That also scopes "online": the panel-wide online list is narrowed to
-// the emails on the inbounds the caller can see.
+// GetClientStatsFor uses the same account visibility as the Clients page. Each
+// sellable account counts once, including retained accounts with no inbounds.
+// Traffic rows supply effective limits; missing rows fall back to account metadata.
 func (s *InboundService) GetClientStatsFor(user *model.User) (*ClientStatsSummary, error) {
-	inbounds, err := s.GetInboundsFor(user)
+	summary := &ClientStatsSummary{}
+	if user == nil {
+		return summary, nil
+	}
+	db := database.GetDB()
+	var accountService AccountService
+	memberships, err := accountService.membershipViews()
 	if err != nil {
 		return nil, err
 	}
-
-	var settingService SettingService
-	expireDiff, err := settingService.GetExpireDiff()
+	visible, err := accountService.visibilityFilter(user)
 	if err != nil {
 		return nil, err
 	}
-	trafficDiff, err := settingService.GetTrafficDiff()
+	var accounts []model.Account
+	if err := db.Find(&accounts).Error; err != nil {
+		return nil, err
+	}
+	var traffic []xray.ClientTraffic
+	if err := db.Find(&traffic).Error; err != nil {
+		return nil, err
+	}
+	usage := make(map[string]xray.ClientTraffic, len(traffic))
+	for _, row := range traffic {
+		usage[accountKey(row.Email)] = row
+	}
+	var settings SettingService
+	expireDiff, err := settings.GetExpireDiff()
 	if err != nil {
 		return nil, err
 	}
-	expireWindow := int64(expireDiff) * 86400000     // days -> milliseconds
-	trafficWindow := int64(trafficDiff) * 1073741824 // GB -> bytes
-
+	trafficDiff, err := settings.GetTrafficDiff()
+	if err != nil {
+		return nil, err
+	}
+	expireWindow := int64(expireDiff) * 86400000
+	trafficWindow := int64(trafficDiff) * 1073741824
 	online := make(map[string]bool)
 	for _, email := range s.GetOnlineClients() {
 		online[accountKey(email)] = true
 	}
-
-	// Online counts distinct accounts, even when several visible inbounds serve them.
-	countedOnline := make(map[string]bool)
-	countedTotal := make(map[string]bool)
-	summary := &ClientStatsSummary{}
-	now := time.Now().UnixMilli()
-	// An ACCOUNT is depleted once, however many inbounds serve it. ClientStats now
-	// lists it under every one of them (it used to appear only under its home
-	// inbound), so without this an account on three inbounds would be counted as
-	// three depleted customers. Total and Online also count unique account identities.
-	countedDepletion := make(map[string]bool)
-	countedExpiry := make(map[string]bool)
+	// Online requires an enabled inbound visible to this operator.
+	serving := make(map[string]bool)
+	inbounds, err := s.GetInboundsFor(user)
+	if err != nil {
+		return nil, err
+	}
 	for _, inbound := range inbounds {
-		clients, err := s.GetClients(inbound)
-		if err != nil {
-			// One inbound with unparsable settings must not blank the whole roll-up.
-			logger.Warning("get clients for stats failed on inbound", inbound.Id, ":", err)
-			continue
-		}
-		for _, client := range clients {
-			key := accountKey(client.Email)
-			if !countedTotal[key] {
-				summary.Total++
-				countedTotal[key] = true
-			}
-		}
-		// Time expiry is distinct from quota depletion and remains an account
-		// property even when its remaining inbound is disabled.
-		for _, stat := range inbound.ClientStats {
-			key := accountKey(stat.Email)
-			if stat.ExpiryTime > 0 && stat.ExpiryTime <= now && !countedExpiry[key] {
-				summary.Expired++
-				countedExpiry[key] = true
-			}
-		}
 		if !inbound.Enable {
 			continue
 		}
+		clients, err := s.GetClients(inbound)
+		if err != nil {
+			continue
+		}
 		for _, client := range clients {
-			key := accountKey(client.Email)
-			if client.Enable && online[key] && !countedOnline[key] {
-				summary.Online++
-				countedOnline[key] = true
+			if client.Enable {
+				serving[accountKey(client.Email)] = true
 			}
 		}
-		for _, stat := range inbound.ClientStats {
-			if countedDepletion[accountKey(stat.Email)] {
-				continue
-			}
-			countedDepletion[accountKey(stat.Email)] = true
-			exhausted := stat.Total > 0 && (stat.Up+stat.Down) >= stat.Total
-			expired := stat.ExpiryTime > 0 && stat.ExpiryTime <= now
-			if exhausted || expired {
-				summary.Depleted++
-				continue
-			}
-			nearExpiry := stat.ExpiryTime > 0 && stat.ExpiryTime-now < expireWindow
-			nearQuota := stat.Total > 0 && stat.Total-(stat.Up+stat.Down) < trafficWindow
-			if nearExpiry || nearQuota {
-				summary.Expiring++
-			}
+	}
+	now := time.Now().UnixMilli()
+	for _, account := range accounts {
+		if !visible(&account, memberships[account.Id]) {
+			continue
+		}
+		summary.Total++
+		key := accountKey(account.Email)
+		stat, ok := usage[key]
+		if !ok {
+			stat = xray.ClientTraffic{Enable: account.Enable, Total: account.TotalGB, ExpiryTime: account.ExpiryTime}
+		}
+		expired := stat.ExpiryTime > 0 && stat.ExpiryTime <= now
+		exhausted := stat.Total > 0 && stat.Up+stat.Down >= stat.Total
+		if expired {
+			summary.Expired++
+		}
+		// Depleted retains the historical combined unavailable counter. Expired is
+		// strictly time-based, and must never include quota-only exhaustion.
+		if expired || exhausted {
+			summary.Depleted++
+			continue
+		}
+		if stat.Enable && serving[key] && online[key] {
+			summary.Online++
+		}
+		if (stat.ExpiryTime > 0 && stat.ExpiryTime-now < expireWindow) ||
+			(stat.Total > 0 && stat.Total-stat.Up-stat.Down < trafficWindow) {
+			summary.Expiring++
 		}
 	}
 	return summary, nil
