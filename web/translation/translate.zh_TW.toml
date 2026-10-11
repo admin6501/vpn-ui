@@ -927,6 +927,9 @@ noLog = "尚無狀態。"
 loadDefault = "載入預設值"
 apply = "申請"
 [pages.xray]
+"generatedConfig" = "節點最終設定"
+"generatedConfigHint" = "包含節點入站的執行設定僅供檢視。請透過範本和入站表單修改設定。"
+"generatedConfigUnavailable" = "執行檔案不可用或超過顯示限制。請更新節點代理，並在 Xray 啟動後重新整理。"
 "title" = "Xray 配置"
 "save" = "儲存"
 "restart" = "重新啟動 Xray"
@@ -1235,6 +1238,7 @@ vpnOutImportKept = "不在檔案中，因此保留儲存的值："
 
 
 [pages.settings.ssl]
+"externalCertificate" = "由面板外部管理"
 "noneTitle" = "還沒有憑證"
 "noneDesc" = "本伺服器目前透過普通 HTTP 連線，瀏覽器會發出警告。輸入使用者連到它所用的位址，我們將向 Let's Encrypt 取得一張免費憑證。"
 "healthValid" = "還有 {days} 天有效"

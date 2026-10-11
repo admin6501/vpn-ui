@@ -36,12 +36,8 @@
      empty console.
 -->
 
-<!-- NOTHING ABOUT acme.sh APPEARS HERE ANY MORE. A certificate that deploy.sh or
-     the vpn-ui.sh menu installed is taken over automatically, at boot and again
-     when this tab opens (sslSync), and acme.sh's own cron is retired as part of
-     that once it has nothing left to renew. The page used to carry a warning and a
-     Stop button for a situation the operator did not create and could not have
-     avoided; now it is simply handled and the certificate shows up as a row. -->
+<!-- Both managed and externally renewed certificates are listed. External rows
+     describe the current listeners without moving their paths or changing cron. -->
 
 <!-- ====================================================================
      1. THE TABLE. One row per certificate this host holds.
@@ -77,6 +73,7 @@
                 <span class="ssl-name" :title="row.title">[[ row.name ]]</span>
                 <span v-if="row.extraNames" class="ssl-more">[[ sslMoreNames(row) ]]</span>
                 <span class="ssl-flags">
+                    <a-tag v-if="row.kind === 'external'">{{ i18n "pages.settings.ssl.externalCertificate" }}</a-tag>
                     <a-tag v-if="row.staging" color="red">{{ i18n "pages.settings.ssl.stagingTag" }}</a-tag>
                     <a-tag v-if="row.selfSigned" color="orange">{{ i18n "pages.settings.ssl.selfSigned" }}</a-tag>
                     <a-tag v-if="row.keyMismatch" color="red">{{ i18n "pages.settings.ssl.keyMismatch" }}</a-tag>
@@ -97,7 +94,7 @@
                 <span class="ssl-nick" :class="{ 'ssl-nick-empty': !row.nickname }"
                     :title="row.nickname">[[ row.nickname ]]</span>
                 <a-tooltip :title="sslNicknameTip(row)">
-                    <a-button size="small" class="ssl-nick-btn" :disabled="ssl.busy"
+                    <a-button size="small" class="ssl-nick-btn" :disabled="ssl.busy || row.kind !== 'managed'"
                         @click="sslEditNickname(row)">
                         <a-icon type="edit"></a-icon>
                     </a-button>
@@ -120,7 +117,7 @@
                  panel stops doing it unattended, which is a thing an operator
                  renewing through their own tooling genuinely wants. -->
             <span class="ssl-col-mid">
-                <a-switch size="small" :checked="row.autoRenew" :disabled="ssl.busy"
+                <a-switch size="small" :checked="row.autoRenew" :disabled="ssl.busy || row.kind !== 'managed'"
                     :loading="ssl.busy" @change="sslToggleAutoRenew(row, $event)"></a-switch>
             </span>
 
@@ -148,7 +145,7 @@
                     :overlay-class-name="themeSwitcher.currentTheme">
                     <a-button size="small" class="ssl-menu-btn"><a-icon type="ellipsis"></a-icon></a-button>
                     <a-menu slot="overlay">
-                        <a-menu-item :disabled="ssl.running" @click="sslAskRenew(row)">
+                        <a-menu-item :disabled="ssl.running || row.kind !== 'managed'" @click="sslAskRenew(row)">
                             <a-icon type="reload"></a-icon>{{ i18n "pages.settings.ssl.renew" }}
                         </a-menu-item>
                         <a-menu-divider></a-menu-divider>

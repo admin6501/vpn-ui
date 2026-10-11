@@ -907,6 +907,9 @@ kernelRuntime = "OS kernel"
 "telegramBotLanguage" = "Telegram Bot Language"
 
 [pages.xray]
+"generatedConfig" = "Final node configuration"
+"generatedConfigHint" = "Read-only runtime configuration, including the node’s inbounds. Edit settings using the template and inbound forms."
+"generatedConfigUnavailable" = "The runtime file is unavailable or exceeds the display limit. Update the node agent and refresh after Xray starts."
 "title" = "Xray Configs"
 "save" = "Save"
 "restart" = "Restart Xray"
@@ -1236,6 +1239,7 @@ kernelRuntime = "OS kernel"
 
 
 [pages.settings.ssl]
+"externalCertificate" = "Managed outside this panel"
 "noneTitle" = "No certificate yet"
 "noneDesc" = "This server is reached over plain HTTP, so browsers warn about it. Type the address people use to reach it and we will get a free certificate from Let's Encrypt."
 "healthValid" = "Valid for {days} more days"

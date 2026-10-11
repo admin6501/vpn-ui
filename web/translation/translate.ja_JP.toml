@@ -927,6 +927,9 @@ noLog = "まだステータスがありません。"
 loadDefault = "デフォルトをロード"
 apply = "適用する"
 [pages.xray]
+"generatedConfig" = "ノードの最終設定"
+"generatedConfigHint" = "ノードのインバウンドを含む実行時設定は読み取り専用です。設定はテンプレートとインバウンドのフォームで編集してください。"
+"generatedConfigUnavailable" = "実行時ファイルがないか、表示上限を超えています。ノードエージェントを更新し、Xrayの起動後に再読み込みしてください。"
 "title" = "Xray 設定"
 "save" = "保存"
 "restart" = "Xray 再起動"
@@ -1235,6 +1238,7 @@ vpnOutImportKept = "ファイルにないため、保存された値が保持さ
 
 
 [pages.settings.ssl]
+"externalCertificate" = "このパネルの外部で管理"
 "noneTitle" = "証明書はまだありません"
 "noneDesc" = "このサーバーは平文 HTTP で接続されるため、ブラウザーが警告を出します。接続に使うアドレスを入力すれば、Let's Encrypt から無料の証明書を取得します。"
 "healthValid" = "あと{days}日有効です"

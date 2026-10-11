@@ -1,0 +1,23 @@
+const {chromium}=require('playwright');
+(async()=>{const browser=await chromium.launch({executablePath:process.env.NODE_UI_CHROME||'/usr/bin/chromium',headless:true,args:['--no-sandbox']});try{
+ const page=await browser.newPage();page.setDefaultTimeout(10000);
+ await page.addInitScript(()=>{window.__activeIntervals=new Set();const set=window.setInterval.bind(window),clear=window.clearInterval.bind(window);window.setInterval=(...args)=>{const id=set(...args);window.__activeIntervals.add(id);return id};window.clearInterval=id=>{window.__activeIntervals.delete(id);return clear(id)}});const errors=[];page.on('pageerror',error=>{errors.push(error.message);console.error(error.message)});page.on('console',message=>{if(message.type()==='error')console.error(message.text())});
+ await page.context().addCookies([{url:process.env.OVERVIEW_SSL_URL,name:'lang',value:process.env.NODE_UI_LANG}]);
+ await page.goto(process.env.OVERVIEW_SSL_URL+'overview',{waitUntil:'networkidle'});
+ await page.waitForFunction(()=>typeof app!=='undefined' && !!app.$el);
+ await page.evaluate(async()=>{app.loadingStates.fetched=true;await app.$nextTick();});
+ await page.waitForFunction(()=>!!app.$el.querySelector('.bo-tile'));
+ await page.evaluate(async()=>{app.coreStatuses=[{name:'xray',state:'running'},{name:'radius',state:'running'},...Array.from({length:12},(_,i)=>({name:'unused'+i,state:i%2?'idle':'not_installed'}))];await app.$nextTick();});
+ if(!await page.evaluate(()=>app.healthSummary==='2 / 2' && app.allCoresHealthy))throw Error('Overview counts unused capabilities as required services');
+ await page.evaluate(async()=>{app.coreStatuses.push({name:'openvpn',state:'not_installed',enabledInbounds:1});await app.$nextTick();});
+ if(!await page.evaluate(()=>app.healthSummary==='2 / 3' && !app.allCoresHealthy))throw Error('Overview hides missing required service');
+ if(!await page.evaluate(()=>{if(!window.__activeIntervals.has(app.coreStatusesTimer))return false;app.startPolling();const first=app.statusPollingTimer;app.startPolling();if(first!==app.statusPollingTimer)return false;const core=app.coreStatusesTimer;app.$destroy();return app.statusPollingTimer===null && !window.__activeIntervals.has(core)}))throw Error('Overview poll lifecycle leaks or duplicates timers');
+ await page.goto(process.env.OVERVIEW_SSL_URL+'settings',{waitUntil:'networkidle'});
+ await page.waitForFunction(()=>typeof app!=='undefined' && !!app.ssl);
+ await page.evaluate(async()=>{app.loadingStates.fetched=true;app.selectSection('7');app.ssl.status={profiles:[],legacyRenewal:true,adoptable:[{certPath:'/cert/fullchain.pem',usedByPanel:true,usedBySub:true,hasAcmeState:true,info:{identifiers:['panel.example.test'],issuer:'Test CA',remainingNanos:30*86400*1e9,lifetimeNanos:90*86400*1e9,keyMatchesLeaf:true,hasIntermediates:true}}]};await app.$nextTick();});
+ if(!await page.evaluate(()=>app.sslRows().length===1 && app.sslRows()[0].usedByPanel && app.sslRows()[0].usedBySub))throw Error('SSL manager hides external serving certificate');
+ if(!await page.locator('.ssl-name').filter({hasText:'panel.example.test'}).count())throw Error('External certificate row did not render');
+  if(!await page.evaluate(()=>{const switches=Array.from(app.$el.querySelectorAll('.ssl-row .ant-switch'));return switches.length===3 && switches.every(button=>button.disabled)}))throw Error('external row enables managed-certificate actions');
+ if(errors.length)throw Error(errors.join('\n'));
+ console.log('Overview and SSL manager rendered and verified in '+process.env.NODE_UI_LANG);
+}finally{await browser.close()}})().catch(error=>{console.error(error);process.exit(1)});

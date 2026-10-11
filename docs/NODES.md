@@ -122,3 +122,5 @@ Each installed core has its own Start, Stop, Restart, Configuration and Remove c
 Xray templates must preserve the reserved API inbound, API routing and traffic counters used for central accounting. The node validates a generated candidate before replacing the active template. Editing an `inbound-N.json` target changes only that inbound's listener, protocol and transport settings; clients stay under central account management. Reset applies to daemon-file overrides, not direct inbound edits.
 
 The node installer uses English for all prompts, status messages and errors.
+
+In the node Xray editor, Advanced → Final node configuration displays the actual generated runtime file with enabled node inbounds. This view is read-only; edit managed inbounds using their forms and core settings using the template. It requires an updated node agent and an existing runtime file.

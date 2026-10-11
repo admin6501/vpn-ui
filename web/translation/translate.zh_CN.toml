@@ -928,6 +928,9 @@ noLog = "尚无状态。"
 loadDefault = "加载默认值"
 apply = "申请"
 [pages.xray]
+"generatedConfig" = "节点最终配置"
+"generatedConfigHint" = "包含节点入站的运行配置仅供查看。请通过模板和入站表单修改设置。"
+"generatedConfigUnavailable" = "运行文件不可用或超过显示限制。请更新节点代理，并在 Xray 启动后刷新。"
 "title" = "Xray 配置"
 "save" = "保存"
 "restart" = "重新启动 Xray"
@@ -1236,6 +1239,7 @@ vpnOutImportKept = "不在文件中，因此保留存储的值："
 
 
 [pages.settings.ssl]
+"externalCertificate" = "由面板外部管理"
 "noneTitle" = "还没有证书"
 "noneDesc" = "本服务器目前通过普通 HTTP 访问，浏览器会发出警告。输入用户访问它所用的地址，我们将从 Let's Encrypt 获取一张免费证书。"
 "healthValid" = "还有 {days} 天有效"

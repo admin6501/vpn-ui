@@ -490,20 +490,8 @@
       // --- The row model ------------------------------------------------------
       // One row per certificate this panel manages.
       //
-      // ONLY managed ones, because certificates installed by deploy.sh and the
-      // vpn-ui.sh menu are taken over at startup now (main.go, before the TLS
-      // listener is built) rather than waiting behind a button on this page.
-      //
-      // NOT ADOPTED FROM HERE, deliberately. The TLS reloader is pinned to the
-      // path it was constructed with for the life of the process, so adopting from
-      // a running panel would rewrite the setting without moving the listener: the
-      // panel would keep serving the old path while its renewals went into the
-      // store. Anything that turns up after boot is taken over on the next start,
-      // which is the same moment it could begin being served anyway.
-      //
-      // A profile holding nothing is deliberately not a row either. It is a
-      // directory waiting for an issuance, and drawing it would put "no
-      // certificate yet" in a table of certificates.
+      // External pairs stay visible if automatic adoption cannot proceed. Their
+      // actions remain read-only, so viewing does not change live TLS paths or cron.
       sslRows() {
         const st = this.ssl.status;
         if (!st) return [];
@@ -545,6 +533,24 @@
           });
         });
 
+        (st.adoptable || []).forEach(c => {
+          const a = c.info;
+          if (!a) return;
+          const ids = a.identifiers || [];
+          rows.push({
+            key: 'external:' + c.certPath, kind: 'external', profile: null,
+            name: ids[0] || c.certPath, title: c.certPath,
+            identifiers: ids, extraNames: Math.max(0, ids.length - 1),
+            issuer: a.issuer || '', nickname: '',
+            level: this.sslHealthLevel(a), health: this.sslHealthText(a),
+            lifePct: this.sslLifePct(a), staging: !!a.staging,
+            selfSigned: !!a.selfSigned, keyMismatch: !a.keyMatchesLeaf,
+            chainIncomplete: !a.hasIntermediates,
+            usedByPanel: !!c.usedByPanel, usedBySub: !!c.usedBySub,
+            autoRenew: !!(c.hasAcmeState && st.legacyRenewal),
+            assignable: false, deletable: false,
+          });
+        });
         return rows;
       },
       sslMoreNames(row) {

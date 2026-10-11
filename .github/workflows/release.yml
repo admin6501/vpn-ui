@@ -62,13 +62,15 @@ jobs:
           /tmp/vpn-ui-browser-tests/node_modules/.bin/playwright install --with-deps chromium
           export NODE_PATH=/tmp/vpn-ui-browser-tests/node_modules
           export NODE_UI_CHROME=$(node -e 'console.log(require("playwright").chromium.executablePath())')
-          RUN_NODE_UI_BROWSER=1 go test ./web -run '^TestNodePageBrowserRuntime$' -count=1 -timeout 300s
+          RUN_NODE_UI_BROWSER=1 go test ./web -run '^Test(NodePageBrowserRuntime|OverviewSSLBrowserRuntime)$' -count=1 -timeout 360s
       - name: Verify ownership transfer and online counts
         run: go test -tags netgo,osusergo ./web/service ./web/controller -run 'TestAccountOwnershipTransfer|TestPasarGuard|TestOverview|TestVerifiedProvisioned|TestOffline|TestMigrationAccountsVerifiesExistingImported'
       - name: Verify imported subscription quotas and legacy credentials
         run: go test ./sub ./compat/pasarguard -run 'TestPasarGuard|TestGetSubs|TestExistingSubscriptionFormats|TestInvalidTokens|TestDisplayToken' -count=1
       - name: Verify offline refresh guard
-        run: go test ./web/job -run 'TestOffline' -count=1
+        run: |
+          go test ./web/job -run 'TestOffline' -count=1
+          go test ./web/service -run 'TestSSL|TestOverviewRequiredCores|TestOverviewCentralXrayTags' -count=1
       - name: Verify representative role management
         run: go test ./web/controller ./web -run 'TestRepresentativeRole' -count=1
       - name: Verify complete translation catalogs, component locales and Telegram language reload
@@ -79,6 +81,7 @@ jobs:
         run: |
           go test ./util/sys ./web/service -run 'TestSocketCounts|TestConnection' -count=1
           node test_unit/inbound_stats_test.js
+          node test_unit/overview_ssl_stats_test.cjs
           node --check web/assets/js/model/inbound.js
           node --check web/assets/js/model/outbound.js
       - name: Package migration and checksums

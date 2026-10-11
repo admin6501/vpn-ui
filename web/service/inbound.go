@@ -4142,7 +4142,8 @@ func (s *InboundService) EnableStateByEmail() (map[string]bool, error) {
 func (s *InboundService) GetInboundTags() (string, error) {
 	db := database.GetDB()
 	var inboundTags []string
-	err := db.Model(model.Inbound{}).Select("tag").Find(&inboundTags).Error
+	// Central routing must not offer tags that only exist on remote nodes.
+	err := db.Model(model.Inbound{}).Where("node_id = 0").Select("tag").Find(&inboundTags).Error
 	if err != nil && err != gorm.ErrRecordNotFound {
 		return "", err
 	}

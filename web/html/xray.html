@@ -319,6 +319,7 @@ if (window.nodeXrayId) axios.interceptors.request.use(config => {
       nodeConfigError: '',
       nodeConfigPending: false,
       nodeMetadata: null,
+      nodeGeneratedConfig: '',
       pageClass: 'xray-page',
       isDarkTheme: themeSwitcher.isDarkTheme,
       loadingStates: {
@@ -502,6 +503,7 @@ if (window.nodeXrayId) axios.interceptors.request.use(config => {
           if (item.report.configError) throw new Error(item.report.configError);
           const target=(item.report.configTargets || []).find(target=>target.core==='xray' && target.file==='config.json');
           if (!target) throw new Error('{{ i18n "pages.nodes.noConfig" }}');
+          this.nodeGeneratedConfig=target.generated ? JSON.stringify(JSON.parse(target.generated),null,2) : '';
           const config=JSON.parse(target.current);
           this.xraySetting=JSON.stringify(config,null,2);this.oldXraySetting=this.xraySetting;
           this.loadingStates.fetched=true;this.saveBtnDisable=true;
@@ -517,6 +519,8 @@ if (window.nodeXrayId) axios.interceptors.request.use(config => {
           const pending=await this.nodeReadReport(0,false);
           const item=await this.nodeReadReport(pending.node.configGeneration);
           if (item.report.configError) throw new Error(item.report.configError);
+          const target=(item.report.configTargets || []).find(target=>target.core==='xray' && target.file==='config.json');
+          this.nodeGeneratedConfig=target && target.generated ? JSON.stringify(JSON.parse(target.generated),null,2) : '';
           this.oldXraySetting=submitted;this.saveBtnDisable=this.xraySetting===submitted;
         } catch(error) {this.nodeConfigError=error.message}
         finally {this.loading(false);this.nodeConfigPending=false}
@@ -786,9 +790,10 @@ if (window.nodeXrayId) axios.interceptors.request.use(config => {
         }
         textAreaObj = document.getElementById('xraySetting');
         textAreaObj.value = this[this.advSettings];
-        this.cm = CodeMirror.fromTextArea(textAreaObj, this.cmOptions);
+        this.cm = CodeMirror.fromTextArea(textAreaObj, { ...this.cmOptions, readOnly: this.advSettings === 'nodeGeneratedConfig' });
         this.cm.on('change', editor => {
-          value = editor.getValue();
+          if (this.advSettings === 'nodeGeneratedConfig') return;
+          const value = editor.getValue();
           if (this.isJsonString(value)) {
             this[this.advSettings] = value;
           }
@@ -1695,6 +1700,13 @@ if (window.nodeXrayId) axios.interceptors.request.use(config => {
         SecAlertDismissal.dismiss();
         this.showAlert = false;
       }
+    },
+    watch: {
+      nodeGeneratedConfig(value) {
+        if (this.cm && this.advSettings === 'nodeGeneratedConfig' && this.cm.getValue() !== value) {
+          this.cm.setValue(value);
+        }
+      },
     },
     async mounted() {
       // 'tpl-basic' was the strip's default-active-key. The five keys after it

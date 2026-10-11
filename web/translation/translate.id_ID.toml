@@ -927,6 +927,9 @@ noLog = "Belum ada status."
 loadDefault = "Muat default"
 apply = "Terapkan"
 [pages.xray]
+"generatedConfig" = "Konfigurasi akhir node"
+"generatedConfigHint" = "Konfigurasi saat berjalan, termasuk inbound node, hanya dapat dibaca. Ubah pengaturan melalui templat dan formulir inbound."
+"generatedConfigUnavailable" = "Berkas saat berjalan tidak tersedia atau melebihi batas tampilan. Perbarui agen node dan muat ulang setelah Xray berjalan."
 "title" = "Konfigurasi Xray"
 "save" = "Simpan"
 "restart" = "Mulai ulang Xray"
@@ -1235,6 +1238,7 @@ vpnOutImportKept = "Tidak ada di file, jadi nilai yang disimpan disimpan:"
 
 
 [pages.settings.ssl]
+"externalCertificate" = "Dikelola di luar panel ini"
 "noneTitle" = "Belum ada sertifikat"
 "noneDesc" = "Server ini dijangkau lewat HTTP biasa, jadi peramban memperingatkannya. Ketik alamat yang dipakai untuk menjangkaunya dan kami akan mengambil sertifikat gratis dari Let's Encrypt."
 "healthValid" = "Masih berlaku {days} hari lagi"

@@ -928,6 +928,9 @@ noLog = "Chưa có trạng thái."
 loadDefault = "Tải mặc định"
 apply = "Áp dụng"
 [pages.xray]
+"generatedConfig" = "Cấu hình cuối cùng của nút"
+"generatedConfigHint" = "Cấu hình đang chạy, gồm các kết nối vào của nút, chỉ cho phép đọc. Chỉnh sửa thiết lập qua mẫu và biểu mẫu kết nối vào."
+"generatedConfigUnavailable" = "Tệp đang chạy không có sẵn hoặc vượt giới hạn hiển thị. Cập nhật tác nhân nút và tải lại sau khi Xray khởi động."
 "title" = "Cài đặt Xray"
 "save" = "Lưu cài đặt"
 "restart" = "Khởi động lại Xray"
@@ -1236,6 +1239,7 @@ vpnOutImportKept = "Không có trong tệp nên giá trị được lưu trữ �
 
 
 [pages.settings.ssl]
+"externalCertificate" = "Được quản lý bên ngoài bảng điều khiển này"
 "noneTitle" = "Chưa có chứng chỉ"
 "noneDesc" = "Máy chủ này được truy cập bằng HTTP thường nên trình duyệt sẽ cảnh báo. Nhập địa chỉ dùng để truy cập nó và chúng tôi sẽ lấy một chứng chỉ miễn phí từ Let's Encrypt."
 "healthValid" = "Còn hiệu lực {days} ngày nữa"

@@ -313,7 +313,7 @@
       </div>
       <div class="bo-svc-grid">
         <button type="button" class="bo-svc-chip" v-for="c in vpnCoreStatuses()" :key="c.name"
-          :data-state="coreStateKey(c.state)"
+          :data-state="Number(c.enabledInbounds) > 0 && coreStateKey(c.state) === 'off' ? 'error' : coreStateKey(c.state)"
           :aria-label="coreLabel(c.name) + ': ' + coreStateText(c.state)"
           @click="openCore(c.name)">
           <span class="bo-svc-led"></span>
@@ -1774,6 +1774,10 @@
         url: '{{ i18n "pages.index.customGeoValidationUrl" }}',
       },
       coreStatuses: [],
+      coreStatusesTimer: null,
+      coreStatusesLoading: false,
+      statusPollingTimer: null,
+      statusPollLoading: false,
       panelUpdate: { checking: false, checked: false, available: false, latest: '', current: '', notes: '', publishedAt: '', url: '', updating: false, cancelling: false, error: '', percent: 0, phase: '', speed: 0, bytes: 0, total: 0 },
       // The dialog that asks which of the two manual-update sources to use. It holds
       // nothing else: whichever is picked hands straight over to that source's own
@@ -2082,26 +2086,30 @@
         ];
       },
       coreStateCounts() {
-        const cores = this.vpnCoreStatuses();
+        // Count actual daemons once; unused protocol capabilities are not services
+        // expected to be running. Idle cores remain available in the cards below.
+        const cores = this.coreStatuses.filter(c => ['running', 'stopped', 'error'].includes(c.state) || Number(c.enabledInbounds) > 0);
         const n = (k) => cores.filter(c => this.coreStateKey(c.state) === k).length;
         return {
           total: cores.length,
           running: n('running'), idle: n('idle'),
-          stopped: n('stopped'), error: n('error'), off: n('off'),
+          stopped: n('stopped'), error: n('error') + cores.filter(c => Number(c.enabledInbounds) > 0 && !['running', 'stopped', 'error'].includes(c.state)).length, off: n('off'),
         };
       },
       allCoresHealthy() {
-        return this.coreStateCounts.error === 0;
+        return this.coreStatuses.length > 0 && this.coreStateCounts.error === 0 && this.coreStateCounts.stopped === 0;
       },
       // Counts rather than prose, so the tile stays honest without needing new
       // translated strings for every health phrasing.
       healthSummary() {
         const c = this.coreStateCounts;
-        return c.running + ' / ' + c.total;
+        return this.coreStatuses.length ? c.running + ' / ' + c.total : '-';
       },
       vpnSummary() {
         const c = this.coreStateCounts;
-        return [c.running, c.idle, c.stopped + c.error].join(' / ');
+        if (!this.coreStatuses.length) return '-';
+        return ['running', 'stopped', 'error'].filter(state => c[state] > 0)
+          .map(state => c[state] + ' ' + this.coreStateText(state)).join(' · ') || '0';
       },
       xrayPillClass() {
         return {
@@ -2361,11 +2369,13 @@
       // anyway put a permission error on screen at every dashboard load. The
       // card that consumes this is hidden for the same callers.
       async getCoreStatuses() {
-        if (!PERMS.accessCoreSettings) return;
+        if (!PERMS.accessCoreSettings || this.coreStatusesLoading) return;
+        this.coreStatusesLoading = true;
         try {
           const msg = await HttpUtil.get('/panel/core/status');
           if (msg && msg.success && msg.obj) this.coreStatuses = msg.obj.cores || [];
         } catch (e) { /* dashboard card is best-effort */ }
+        finally { this.coreStatusesLoading = false; }
       },
       // Announces, once, that the panel came back from an in-panel update. The
       // server owns the "once": reading /updateResult consumes the record it
@@ -3411,24 +3421,34 @@
           },
         });
       },
+      stopPolling() {
+        clearInterval(this.statusPollingTimer);
+        this.statusPollingTimer = null;
+      },
       startPolling() {
-        // Fallback polling mechanism
-        const pollInterval = setInterval(async () => {
+        // Repeated WebSocket errors must not create overlapping polling loops.
+        if (this._isDestroyed || this.statusPollingTimer) return;
+        this.statusPollingTimer = setInterval(async () => {
           if (window.wsClient && window.wsClient.isConnected) {
-            clearInterval(pollInterval);
+            this.stopPolling();
             return;
           }
+          if (this.statusPollLoading) return;
+          this.statusPollLoading = true;
           try {
             await this.getStatus();
-            await this.getCoreStatuses();
           } catch (e) {
             console.error(e);
+          } finally {
+            this.statusPollLoading = false;
           }
         }, 2000);
       },
     },
     beforeDestroy() {
+      this.stopPolling();
       clearInterval(this.userStatsTimer);
+      clearInterval(this.coreStatusesTimer);
     },
     async mounted() {
       if (window.location.protocol !== "https:" && !SecAlertDismissal.isDismissed()) {
@@ -3447,6 +3467,7 @@
       // Initial status fetch
       await this.getStatus();
       await this.getCoreStatuses();
+      this.coreStatusesTimer = setInterval(() => this.getCoreStatuses(), 10000);
       this.checkDistroSupport();
       this.fetchUserStats();
       this.userStatsTimer = setInterval(() => this.fetchUserStats(), 10000);
@@ -3471,6 +3492,7 @@
       // Setup WebSocket for real-time updates
       if (window.wsClient) {
         window.wsClient.connect();
+        window.wsClient.on('connected', () => this.stopPolling());
         
         // Listen for status updates
         window.wsClient.on('status', (payload) => {

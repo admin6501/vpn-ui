@@ -50,7 +50,7 @@ const {chromium}=require('playwright');
   });
   await page.route('**/panel/nodes/list',async route=>{
    const response=await route.fetch();const body=await response.json();
-   for(const item of body.obj||[]){item.paired=true;item.online=true;item.report={coreActionSupported:true,coreActionGeneration:String(item.node.coreActionGeneration),coreActionError:'',cores:[{name:'xray',state:'running',detail:''}],controlSupported:true,runtimeRunning:!item.node.paused,controlGeneration:String(item.node.controlGeneration),configGeneration:String(item.node.configGeneration),installed:['xray','openvpn'],configError:'',configTargets:[currentCore==='xray' ? {core:'xray',inbound:0,file:'config.json',label:'Xray template',current:submitted || JSON.stringify(defaults)} : {core:'openvpn',inbound:0,file:'server.conf',label:'server.conf',format:'conf',current:'# fixture\nport 1194'}]};}
+   for(const item of body.obj||[]){item.paired=true;item.online=true;item.report={coreActionSupported:true,coreActionGeneration:String(item.node.coreActionGeneration),coreActionError:'',cores:[{name:'xray',state:'running',detail:''}],controlSupported:true,runtimeRunning:!item.node.paused,controlGeneration:String(item.node.controlGeneration),configGeneration:String(item.node.configGeneration),installed:['xray','openvpn'],configError:'',configTargets:[currentCore==='xray' ? {core:'xray',inbound:0,file:'config.json',label:'Xray template',generated:JSON.stringify({...defaults,inbounds:[...(defaults.inbounds || []),{tag:'turkey-node-vless',protocol:'vless',port:24443,settings:{clients:[]}}]}),current:submitted || JSON.stringify(defaults)} : {core:'openvpn',inbound:0,file:'server.conf',label:'server.conf',format:'conf',current:'# fixture\nport 1194'}]};}
    await route.fulfill({response,json:body});
   });
   await page.evaluate(()=>app.load());
@@ -77,6 +77,13 @@ const {chromium}=require('playwright');
   if(!submitted || JSON.parse(submitted).routing.domainStrategy!=='IPOnDemand')throw Error('graphical node edit not submitted');
   if(!await page.evaluate(async()=>{try{await axios.post('/panel/xray/update',{xraySetting:'{}'});return false}catch(error){return true}}))throw Error('node editor did not reject central write');
   if(centralRequests.length)throw Error('node editor called central Xray API');
+  await page.evaluate(async()=>{app.selectSection('tpl-advanced');await app.$nextTick();app.advSettings='nodeGeneratedConfig';app.changeCode();});
+  await page.waitForFunction(()=>app.cm && app.cm.getValue().includes('turkey-node-vless'));
+  if(!await page.evaluate(()=>app.cm.getOption('readOnly')===true))throw Error('generated runtime config is editable');
+  await page.evaluate(async()=>{app.nodeGeneratedConfig=JSON.stringify({inbounds:[{tag:'updated-turkey-inbound'}]});await app.$nextTick();});
+  await page.waitForFunction(()=>app.cm.getValue().includes('updated-turkey-inbound'));
+  if(!await page.evaluate(()=>!app.xraySetting.includes('turkey-node-vless')))throw Error('runtime inbounds leaked into editable template');
+
   await page.goto(process.env.NODE_UI_URL,{waitUntil:'networkidle'});
   await page.waitForFunction(()=>app.nodes.length===1);
   // Daemon cores reuse the main panel CodeMirror file editor.

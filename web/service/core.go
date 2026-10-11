@@ -79,12 +79,13 @@ const (
 
 // CoreStatus is the status of a single backend core shown in the Core Settings panel.
 type CoreStatus struct {
-	Name     string         `json:"name"`     // xray | l2tp | pptp | openvpn | openconnect | radius
-	State    CoreState      `json:"state"`    //
-	Detail   string         `json:"detail"`   // human-readable extra info / error
-	Version  string         `json:"version"`  // where available (xray)
-	Inbounds int            `json:"inbounds"` // number of inbounds of this type
-	Extra    map[string]any `json:"extra,omitempty"`
+	Name            string         `json:"name"`    // xray | l2tp | pptp | openvpn | openconnect | radius
+	State           CoreState      `json:"state"`   //
+	Detail          string         `json:"detail"`  // human-readable extra info / error
+	Version         string         `json:"version"` // where available (xray)
+	EnabledInbounds int            `json:"enabledInbounds"`
+	Inbounds        int            `json:"inbounds"` // number of inbounds of this type
+	Extra           map[string]any `json:"extra,omitempty"`
 }
 
 // ModuleStatus reports whether a kernel module is loaded. Optional modules (e.g.
@@ -343,7 +344,9 @@ func (s *CoreService) GetCoresStatus() []CoreStatus {
 	// (WireGuard) that setup has not actually wired up on this host.
 	installed := s.provisionedProtocolSet()
 	installedNames := coreNamesFromSet(installed)
+	enabledCounts := localEnabledCoreInbounds()
 	for i := range all {
+		all[i].EnabledInbounds = enabledCounts[all[i].Name]
 		if coreInstalled(all[i].Name, installed, installedNames) {
 			continue
 		}
@@ -354,6 +357,34 @@ func (s *CoreService) GetCoresStatus() []CoreStatus {
 		}
 	}
 	return all
+}
+
+// Local enabled memberships decide which missing cores are actually required.
+// Remote and disabled inbounds must not change this host's Overview health.
+func localEnabledCoreInbounds() map[string]int {
+	counts := map[string]int{}
+	db := database.GetDB()
+	if db == nil {
+		return counts
+	}
+	var rows []model.Inbound
+	if err := db.Select("protocol").Where("node_id = 0 AND enable = ?", true).Find(&rows).Error; err != nil {
+		return counts
+	}
+	for _, inbound := range rows {
+		name := NodeCoreForProtocol(inbound.Protocol)
+		counts[name]++
+		if name != "xray" {
+			counts["xray"]++
+		}
+		if needsFeature([]string{name}, featStrongswan) {
+			counts["ipsec"]++
+		}
+		if anyCoreUsesRadius([]string{name}) {
+			counts["radius"]++
+		}
+	}
+	return counts
 }
 
 // coreInstalled answers "has this host been set up for this core" for each of the

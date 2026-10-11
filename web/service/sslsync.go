@@ -83,7 +83,7 @@ func (s *SSLService) SyncLegacyCertificates() SSLSyncResult {
 	// move is to leave the whole arrangement alone and say why: a half-migrated box
 	// is worse than an unmigrated one.
 	if SSLLegacyRenewalInstalled() {
-		orphans := sslLegacyDomainsNotManaged()
+		orphans := sslLegacyDomainsNotManagedFor(candidates)
 		if len(orphans) > 0 {
 			res.LegacyCronKeptFor = orphans
 			logger.Warning("ssl: not taking over the certificate(s) installed outside the panel, because acme.sh's cron also renews",
@@ -136,7 +136,14 @@ func sslAdoptableIdentifiers(c SSLAdoptable) []string {
 // served, and removing the entry would stop renewing those with no warning
 // anywhere.
 func sslLegacyDomainsNotManaged() []string {
-	home := sslLegacyAcmeHome()
+	return sslLegacyDomainsNotManagedFor(nil)
+}
+
+func sslLegacyDomainsNotManagedFor(candidates []SSLAdoptable) []string {
+	return sslLegacyDomainsNotManagedAt(sslLegacyAcmeHome(), candidates)
+}
+
+func sslLegacyDomainsNotManagedAt(home string, candidates []SSLAdoptable) []string {
 	entries, err := os.ReadDir(home)
 	if err != nil {
 		return nil
@@ -144,6 +151,14 @@ func sslLegacyDomainsNotManaged() []string {
 
 	// Every name this panel now renews itself, lowercased for comparison.
 	managed := map[string]struct{}{}
+	for _, candidate := range candidates {
+		if candidate.Info == nil || !candidate.Info.KeyMatchesLeaf || !candidate.HasAcmeState {
+			continue
+		}
+		for _, id := range candidate.Info.Identifiers {
+			managed[strings.ToLower(id)] = struct{}{}
+		}
+	}
 	for _, name := range SSLProfileNames() {
 		root, err := SSLProfileRoot(name)
 		if err != nil {

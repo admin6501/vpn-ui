@@ -531,7 +531,18 @@ func (a *Agent) applyConfigCommand(generation int64, cmd nodewire.ConfigCommand)
 	targets := cs.CoreConfigTargets(cmd.Core)
 	if cmd.Core == "xray" {
 		template, _ := (&service.SettingService{}).GetXrayConfigTemplate()
-		targets = []map[string]any{{"core": "xray", "inbound": 0, "file": "config.json", "label": "Xray template", "current": template}}
+		target := map[string]any{"core": "xray", "inbound": 0, "file": "config.json", "label": "Xray template", "current": template}
+		// Read the actual runtime file, not another generated candidate: viewing
+		// configuration must not run traffic collection or mutate account state.
+		if info, err := os.Stat(xray.GetConfigPath()); err == nil && info.Size() <= 384*1024 {
+			if raw, err := os.ReadFile(xray.GetConfigPath()); err == nil && json.Valid(raw) {
+				target["generated"] = string(raw)
+				if encoded, _ := json.Marshal(target); len(encoded) > 700*1024 {
+					delete(target, "generated")
+				}
+			}
+		}
+		targets = []map[string]any{target}
 	}
 	if cmd.Core == "radius" {
 		secret, _ := (&service.SettingService{}).GetRadiusSecret()

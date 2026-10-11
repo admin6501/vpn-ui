@@ -927,6 +927,9 @@ noLog = "Henüz durum yok."
 loadDefault = "Varsayılanı yükle"
 apply = "Uygula"
 [pages.xray]
+"generatedConfig" = "Düğümün son yapılandırması"
+"generatedConfigHint" = "Düğümün gelen bağlantılarını içeren çalışma yapılandırması salt okunurdur. Ayarları şablon ve gelen bağlantı formları üzerinden düzenleyin."
+"generatedConfigUnavailable" = "Çalışma dosyası kullanılamıyor veya görüntüleme sınırını aşıyor. Düğüm aracısını güncelleyin ve Xray başladıktan sonra yenileyin."
 "title" = "Xray Yapılandırmaları"
 "save" = "Kaydet"
 "restart" = "Xray'i Yeniden Başlat"
@@ -1235,6 +1238,7 @@ vpnOutImportKept = "Dosyada olmadığından saklanan değer korunur:"
 
 
 [pages.settings.ssl]
+"externalCertificate" = "Bu panel dışında yönetiliyor"
 "noneTitle" = "Henüz sertifika yok"
 "noneDesc" = "Bu sunucuya düz HTTP ile ulaşılıyor, bu yüzden tarayıcılar uyarı veriyor. Ulaşmak için kullanılan adresi yazın, Let's Encrypt'ten ücretsiz bir sertifika alalım."
 "healthValid" = "{days} gün daha geçerli"

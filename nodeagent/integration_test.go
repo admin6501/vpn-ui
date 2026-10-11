@@ -265,13 +265,14 @@ func TestNodeRealDataPlane(t *testing.T) {
 		var report struct {
 			Generation string `json:"configGeneration"`
 			Targets    []struct {
-				Current string `json:"current"`
+				Current   string `json:"current"`
+				Generated string `json:"generated"`
 			} `json:"configTargets"`
 		}
 		json.Unmarshal([]byte(n.CoreReport), &report)
 		if report.Generation == "1" && len(report.Targets) > 0 {
 			current = report.Targets[0].Current
-			return current != ""
+			return current != "" && strings.Contains(report.Targets[0].Generated, "node-integration")
 		}
 		return false
 	})

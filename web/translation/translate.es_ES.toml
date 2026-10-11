@@ -928,6 +928,9 @@ noLog = "Aún no hay estado."
 loadDefault = "Cargar valor predeterminado"
 apply = "Aplicar"
 [pages.xray]
+"generatedConfig" = "Configuración final del nodo"
+"generatedConfigHint" = "Configuración de ejecución de solo lectura, incluidas las entradas del nodo. Edita los ajustes mediante la plantilla y los formularios de entradas."
+"generatedConfigUnavailable" = "El archivo de ejecución no está disponible o supera el límite de visualización. Actualiza el agente y vuelve a cargar tras iniciar Xray."
 "title" = "Xray Configuración"
 "save" = "Guardar configuración"
 "restart" = "Reiniciar Xray"
@@ -1236,6 +1239,7 @@ vpnOutImportKept = "No está en el archivo, por lo que se conserva el valor alma
 
 
 [pages.settings.ssl]
+"externalCertificate" = "Gestionado fuera de este panel"
 "noneTitle" = "Todavía no hay certificado"
 "noneDesc" = "A este servidor se llega por HTTP sin cifrar, así que los navegadores avisan. Escribe la dirección con la que se llega a él y conseguiremos un certificado gratuito de Let's Encrypt."
 "healthValid" = "Válido {days} días más"
