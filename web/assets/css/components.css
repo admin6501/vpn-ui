@@ -2749,3 +2749,7 @@ html[data-theme-animations='off'] .log-live-dot { animation:none; }
 .bo-lg--compact .bo-lg-note.bo-lg-note--open { display:block; white-space:normal; overflow-wrap:anywhere; }
 .bo-protocol-details { max-height:280px; max-width:360px; overflow:auto; }
 .bo-protocol-details > div { margin:6px 0; }
+
+.bo-lg-name { position:relative; }
+.bo-lg-name:has(.bo-comment-toggle) { padding-inline-end:24px; }
+.bo-lg-name .bo-comment-toggle { position:absolute; inset-inline-end:0; top:0; }

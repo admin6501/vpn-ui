@@ -20,7 +20,7 @@ const {chromium}=require('playwright');
   if(!await page.evaluate(()=>{const switches=Array.from(app.$el.querySelectorAll('.ssl-row .ant-switch'));return switches.length===3 && switches.every(button=>button.disabled)}))throw Error('external row enables managed-certificate actions');
  await page.goto(process.env.OVERVIEW_SSL_URL+'clients',{waitUntil:'networkidle'});
  await page.waitForFunction(()=>typeof app!=='undefined' && Array.isArray(app.clients));
- await page.evaluate(async()=>{if(app.loadingStates)app.loadingStates.fetched=true;app.density='compact';app.clients=[{id:91,email:'compact-comment-client',enable:true,up:0,down:0,totalGB:0,expiryTime:0,comment:'VISIBLE-COMMENT-FIXTURE',memberships:Array.from({length:5},(_,i)=>({inboundId:i+1,protocol:['vless','trojan','vmess','vless','trojan'][i],port:15000+i,remark:'location-'+i,enable:true}))}];await app.$nextTick();});
+ await page.evaluate(async()=>{if(app.loadingStates)app.loadingStates.fetched=true;app.density='compact';app.clients=[{id:91,email:'compact-comment-client-'+'long-'.repeat(50),enable:true,up:0,down:0,totalGB:0,expiryTime:0,comment:'VISIBLE-COMMENT-FIXTURE',memberships:Array.from({length:5},(_,i)=>({inboundId:i+1,protocol:['vless','trojan','vmess','vless','trojan'][i],port:15000+i,remark:'location-'+i,enable:true}))}];await app.$nextTick();});
  const comment=page.locator('.bo-lg-note').filter({hasText:'VISIBLE-COMMENT-FIXTURE'});
  if(await comment.isVisible())throw Error('Compact comment should initially be collapsed');
  await page.locator('.bo-comment-toggle').click();
