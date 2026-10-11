@@ -1217,6 +1217,9 @@ func (s *MtprotoService) getDisabledEmails() map[string]bool {
 
 // RestartServices reconciles the running telemt children with the enabled inbounds.
 func (s *MtprotoService) RestartServices() error {
+	if NodeCorePaused("mtproto") {
+		return s.StopServices()
+	}
 	migrateFromSystemd()
 
 	inbounds, err := s.GetMtprotoInbounds()

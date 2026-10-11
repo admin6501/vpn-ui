@@ -70,6 +70,14 @@ func ApplyNodeSnapshot(snap *nodewire.Snapshot, installed map[string]bool) (stri
 	// restart every daemon whenever a user downloads another byte.
 	identity := *snap
 	identity.Files = nil
+	// Management commands and acknowledgments do not change the data plane.
+	identity.ControlGeneration = 0
+	identity.CoreGeneration = 0
+	identity.RequestedCores = nil
+	identity.ConfigGeneration = 0
+	identity.ConfigCommand = nil
+	identity.CoreActionGeneration = 0
+	identity.CoreActionCommand = nil
 	identity.Inbounds = append([]model.Inbound(nil), snap.Inbounds...)
 	identity.Memberships = append([]model.AccountInbound(nil), snap.Memberships...)
 	for i := range identity.Memberships {
@@ -110,7 +118,7 @@ func ApplyNodeSnapshot(snap *nodewire.Snapshot, installed map[string]bool) (stri
 			source.NodeName = ""
 			source.UserId = 1
 			source.ClientStats = nil
-			source.Enable = source.Enable && snap.Enable && installed[NodeCoreForProtocol(source.Protocol)]
+			source.Enable = source.Enable && snap.Enable && installed[NodeCoreForProtocol(source.Protocol)] && !NodeCorePaused(NodeCoreForProtocol(source.Protocol))
 			source.TrafficMultiplierEnable = false
 			source.TrafficReset = "never"
 			source.LastTrafficResetTime = 0
@@ -285,10 +293,24 @@ func ReadNodeCounters(tx *gorm.DB) ([]nodewire.Counter, error) {
 }
 func ReadNodeOnline() []nodewire.Online {
 	var accounts []model.Account
-	database.GetDB().Select("id,email").Find(&accounts)
+	database.GetDB().Where("enable = ?", true).Select("id,email").Find(&accounts)
 	ids := map[string]int{}
 	for _, a := range accounts {
 		ids[accountKey(a.Email)] = a.Id
+	}
+	var active []model.Inbound
+	database.GetDB().Where("enable = ?", true).Select("id").Find(&active)
+	enabled := map[int]bool{}
+	for _, in := range active {
+		enabled[in.Id] = true
+	}
+	var memberships []model.AccountInbound
+	database.GetDB().Where("enable = ?", true).Find(&memberships)
+	admitted := map[int]bool{}
+	for _, m := range memberships {
+		if enabled[m.InboundId] {
+			admitted[m.AccountId] = true
+		}
 	}
 	result := []nodewire.Online{}
 	svc := &InboundService{}
@@ -300,16 +322,27 @@ func ReadNodeOnline() []nodewire.Online {
 		}
 		var inbound int
 		_, e := fmt.Sscanf(parts[0], "%d", &inbound)
-		if e == nil && ids[accountKey(parts[1])] > 0 {
+		if e == nil && enabled[inbound] && ids[accountKey(parts[1])] > 0 {
 			result = append(result, nodewire.Online{AccountID: ids[accountKey(parts[1])], InboundID: inbound})
 			seen[accountKey(parts[1])] = true
 		}
 	}
 	for _, email := range svc.GetOnlineClients() {
 		key := accountKey(email)
-		if !seen[key] && ids[key] > 0 {
+		if !seen[key] && ids[key] > 0 && admitted[ids[key]] {
 			result = append(result, nodewire.Online{AccountID: ids[key]})
 		}
 	}
 	return result
+}
+
+// Agent-only durable stop switches prevent routine jobs from restarting stopped cores.
+func NodeCorePaused(core string) bool {
+	if os.Getenv("VPNUI_NODE_AGENT") != "1" || database.GetDB() == nil {
+		return false
+	}
+	return GetNodeSetting("nodeCorePaused:"+core) == "true"
+}
+func SetNodeCorePaused(core string, paused bool) error {
+	return SetNodeSetting(database.GetDB(), "nodeCorePaused:"+core, fmt.Sprint(paused))
 }

@@ -317,6 +317,9 @@ func stopCharon() error {
 // shared ikev2ProcName, ikev2 and l2tp cooperate: whichever runs last leaves charon in the
 // right state, and `swanctl --load-all` merges both sets of conf.d files.
 func syncCharon() error {
+	if NodeCorePaused("ipsec") {
+		return stopCharon()
+	}
 	if !charonNeeded() {
 		return stopCharon()
 	}

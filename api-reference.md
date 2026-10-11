@@ -1695,8 +1695,13 @@ relative to the panel's configured web base path:
 | Method | Path | Purpose |
 | --- | --- | --- |
 | GET | `/panel/nodes/list` | Node status and reported core/provisioning state |
+| GET | `/panel/nodes/:id/xray` | Shared graphical Xray editor scoped to this node |
+| GET | `/panel/nodes/:id/xray/meta` | Only this node's inbound tags and the safe default template |
 | POST | `/panel/nodes/add` | JSON `{name,address}`; returns a single-use pairing token |
 | POST | `/panel/nodes/:id/update` | JSON `{name,address,enable}` |
+| POST | `/panel/nodes/:id/control` | `{action:"start"|"stop"|"restart"|"reconnect"}`; VPN runtime control, agent stays connected |
+| POST | `/panel/nodes/:id/core-action` | `{core,action:"start"|"stop"|"restart"|"uninstall"}`; persistent per-core controls |
+| POST | `/panel/nodes/:id/config` | `{core,inspect,inbound,file,text,reset}`; inspect, edit or reset configuration |
 | POST | `/panel/nodes/:id/install` | JSON `{cores:["xray","openvpn"]}`; queues only selected cores |
 | POST | `/panel/nodes/:id/pair` | New code for an unpaired node; paired credentials are retained |
 | POST | `/panel/nodes/:id/delete` | Allowed only after removing its assigned inbounds |
@@ -1709,3 +1714,8 @@ per-node bearer credentials, not general administrative APIs. Do not use browser
 cookies or disclose pairing tokens/agent configuration files.
 
 See [node setup and accounting limits](docs/NODES.md).
+
+
+Node runtime controls: `POST /panel/nodes/:id/control` accepts `action=start|stop|restart` (superadmin, JSON or form). Stops the VPN runtime, keeping the management agent alive. `POST /panel/nodes/:id/config` accepts `core`, `inspect`, `inbound`, `file`, `text`, and `reset` (JSON or form). `inspect=true` queues a configuration read; other requests queue a save or reset on that node. Results, errors and acknowledged generations are available in `/panel/nodes/list` under `report`. Configuration text is limited to 512 KiB; file names are validated against the agent's generated target catalog, never accepted as arbitrary paths. Updated agents advertise `controlSupported`.
+
+`POST /panel/nodes/:id/core-action` accepts `core` and `action=start|stop|restart|uninstall` (superadmin; JSON or form). Agent reports include `coreActionSupported`, `coreActionGeneration`, `coreActionError`, `pausedCores` and `uninstall` progress. Node-wide control also accepts `reconnect`. Direct `inbound.json` configuration targets are scoped to the selected node/core and validated through the central inbound update service; generated clients are retained, and arbitrary JSON model fields are rejected. Removing cores keeps central inbounds and accounting. Built-in core removal disables its service.

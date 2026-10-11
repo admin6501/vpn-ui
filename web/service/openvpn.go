@@ -852,6 +852,10 @@ func (s *OpenVpnService) SetupRouting() error {
 // no longer corresponds to an enabled transport (disabled toggle, disabled or
 // deleted inbound) is stopped, so nothing lingers.
 func (s *OpenVpnService) RestartServices() error {
+	if NodeCorePaused("openvpn") {
+		s.StopServices()
+		return nil
+	}
 	migrateFromSystemd()
 
 	inbounds, err := s.GetOpenVpnInbounds()

@@ -327,6 +327,9 @@ func (s *WgcService) InitWgc() {
 // no eventual-eviction window. Safe to call repeatedly: re-applying an unchanged peer set
 // does not disturb live handshakes.
 func (s *WgcService) GenerateAllConfigs() error {
+	if NodeCorePaused("wgc") {
+		return s.StopServices()
+	}
 	inbounds, err := s.GetWgcInbounds()
 	if err != nil {
 		return err

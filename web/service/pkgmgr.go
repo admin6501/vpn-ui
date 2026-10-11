@@ -284,6 +284,9 @@ func startIpsecService() string {
 // keeps it enabled. Falls back to the `ipsec restart` wrapper when systemd isn't
 // present. Returns the command output for the setup/restart log.
 func restartIpsecService() (string, error) {
+	if NodeCorePaused("ipsec") {
+		return "", stopIpsecService()
+	}
 	if backend.HasStrongswanBundle() {
 		// L2TP/IPsec now rides the SHARED charon (same daemon as IKEv2). "Restart ipsec"
 		// re-syncs charon: rewrites its config, ensures it's running, and reloads every

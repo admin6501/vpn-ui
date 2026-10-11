@@ -318,3 +318,178 @@ func TestNodeWorkerAccountRenameKeepsCumulativeCounter(t *testing.T) {
 	}
 	t.Fatal("renamed account lost its counter")
 }
+
+func TestNodeControlAndConfigurationAreScoped(t *testing.T) {
+	svc, n, _ := nodeFixture(t)
+	other, _, _ := svc.Create("Other", "other.example.com")
+	if err := svc.Control(n.ID, "stop"); err != nil {
+		t.Fatal(err)
+	}
+	snap, err := svc.Snapshot(n.ID)
+	if err != nil || snap.Enable || snap.ControlGeneration != 1 {
+		t.Fatal("stop not persistent", snap, err)
+	}
+	if err = svc.Configure(n.ID, nodewire.ConfigCommand{Core: "xray", Text: `{}`}); err == nil {
+		t.Fatal("configuration allowed on stopped runtime")
+	}
+	if err = svc.Configure(n.ID, nodewire.ConfigCommand{Core: "xray", Inspect: true}); err != nil {
+		t.Fatal(err)
+	}
+	if err = svc.Control(n.ID, "start"); err != nil {
+		t.Fatal(err)
+	}
+	if err = svc.Control(n.ID, "restart"); err != nil {
+		t.Fatal(err)
+	}
+	if err = svc.Control(n.ID, "unknown"); err == nil {
+		t.Fatal("unknown control accepted")
+	}
+	if err = svc.Configure(n.ID, nodewire.ConfigCommand{Core: "xray", Text: "invalid"}); err == nil {
+		t.Fatal("invalid template accepted")
+	}
+	snap, err = svc.Snapshot(n.ID)
+	if err != nil || !snap.Enable || snap.ControlGeneration != 3 || snap.ConfigGeneration != 1 || snap.ConfigCommand == nil || !snap.ConfigCommand.Inspect {
+		t.Fatal("commands changed unexpectedly", snap, err)
+	}
+	untouched, err := svc.Snapshot(other.ID)
+	if err != nil || !untouched.Enable || untouched.ControlGeneration != 0 || untouched.ConfigGeneration != 0 {
+		t.Fatal("other node changed", untouched, err)
+	}
+}
+
+func TestNodeInboundConfigurationRetainsOwnershipCredentialsAndQuota(t *testing.T) {
+	svc, n, _ := nodeFixture(t)
+	in, a := seedNodeAccount(t, n, 48731, "configuration@example.com")
+	originalOwner := in.UserId
+	targets := NodeInboundConfigurationTargets(n.ID, "xray")
+	if len(targets) != 1 {
+		t.Fatal(targets)
+	}
+	var editable nodeInboundConfiguration
+	if err := json.Unmarshal([]byte(targets[0]["current"].(string)), &editable); err != nil {
+		t.Fatal(err)
+	}
+	var settings map[string]any
+	json.Unmarshal(editable.Settings, &settings)
+	if _, ok := settings["clients"]; ok {
+		t.Fatal("account credentials exposed in editable settings")
+	}
+	settings["decryption"] = "none"
+	editable.Settings, _ = json.Marshal(settings)
+	raw, _ := json.Marshal(editable)
+	if err := svc.Configure(n.ID, nodewire.ConfigCommand{Core: "xray", Inbound: in.Id, File: "inbound.json", Text: string(raw)}); err != nil {
+		t.Fatal(err)
+	}
+	var stored model.Inbound
+	database.GetDB().First(&stored, in.Id)
+	var updated model.Account
+	database.GetDB().First(&updated, a.Id)
+	if stored.NodeID != n.ID || stored.UserId != originalOwner || updated.TotalGB != a.TotalGB || updated.SubID != a.SubID {
+		t.Fatal("configuration changed ownership/quota/token", updated, a)
+	}
+	var projected map[string]any
+	json.Unmarshal([]byte(stored.Settings), &projected)
+	if len(projected["clients"].([]any)) != 1 {
+		t.Fatal("clients lost")
+	}
+	other, _, _ := svc.Create("Other", "other.example.com")
+	if err := svc.Configure(other.ID, nodewire.ConfigCommand{Core: "xray", Inbound: in.Id, File: "inbound.json", Text: string(raw)}); err == nil {
+		t.Fatal("foreign inbound edited")
+	}
+}
+func TestNodeTemplateProtectsAccounting(t *testing.T) {
+	if err := ValidateNodeTemplate(defaultNodeTemplate); err != nil {
+		t.Fatal(err)
+	}
+	var cfg map[string]any
+	json.Unmarshal([]byte(defaultNodeTemplate), &cfg)
+	delete(cfg, "api")
+	raw, _ := json.Marshal(cfg)
+	if err := ValidateNodeTemplate(string(raw)); err == nil {
+		t.Fatal("accounting API removal accepted")
+	}
+}
+
+func TestNodeCorePauseSurvivesSnapshotAndRetainsMeter(t *testing.T) {
+	svc, n, _ := nodeFixture(t)
+	in, a := seedNodeAccount(t, n, 48741, "pause@example.com")
+	snap, err := svc.Snapshot(n.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("VPNUI_NODE_AGENT", "1")
+	t.Setenv("VPNUI_BIN_FOLDER", t.TempDir())
+	if err = SetNodeCorePaused("xray", true); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = ApplyNodeSnapshot(snap, map[string]bool{"xray": true}); err != nil {
+		t.Fatal(err)
+	}
+	var stored model.Inbound
+	database.GetDB().First(&stored, in.Id)
+	if stored.Enable {
+		t.Fatal("snapshot resumed stopped core")
+	}
+	var traffic xray.ClientTraffic
+	database.GetDB().Where("email = ?", a.Email).First(&traffic)
+	traffic.Down = 50
+	database.GetDB().Save(&traffic)
+	if err = SetNodeCorePaused("xray", false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = ApplyNodeSnapshot(snap, map[string]bool{"xray": true}); err != nil {
+		t.Fatal(err)
+	}
+	database.GetDB().First(&stored, in.Id)
+	database.GetDB().Where("email = ?", a.Email).First(&traffic)
+	if !stored.Enable || traffic.Down != 50 {
+		t.Fatal("resume did not retain data", stored.Enable, traffic.Down)
+	}
+}
+
+func TestNodeInspectionDoesNotRestartDataPlane(t *testing.T) {
+	svc, n, _ := nodeFixture(t)
+	seedNodeAccount(t, n, 48751, "inspection@example.com")
+	snap, err := svc.Snapshot(n.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("VPNUI_BIN_FOLDER", t.TempDir())
+	before, err := ApplyNodeSnapshot(snap, map[string]bool{"xray": true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	snap.ConfigGeneration = 42
+	snap.ConfigCommand = &nodewire.ConfigCommand{Core: "xray", Inspect: true}
+	snap.CoreActionGeneration = 43
+	snap.CoreActionCommand = &nodewire.CoreAction{Core: "xray", Action: "start"}
+	after, err := ApplyNodeSnapshot(snap, map[string]bool{"xray": true})
+	if err != nil || before != after {
+		t.Fatal("management command changed data-plane revision", before, after, err)
+	}
+}
+
+func TestNodeControlsUpgradeExistingNodeRows(t *testing.T) {
+	svc, n, _ := nodeFixture(t)
+	db := database.GetDB()
+	for _, column := range []string{"paused", "control_generation", "config_generation", "core_action_generation"} {
+		if err := db.Migrator().DropColumn(&model.RemoteNode{}, column); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := db.AutoMigrate(&model.RemoteNode{}); err != nil {
+		t.Fatal(err)
+	}
+	var existing int64
+	db.Model(&model.RemoteNode{}).Where("id = ? AND paused = ?", n.ID, false).Count(&existing)
+	if existing != 1 {
+		t.Fatal("upgraded node has no usable paused default")
+	}
+	if err := svc.Control(n.ID, "stop"); err != nil {
+		t.Fatal(err)
+	}
+	snap, err := svc.Snapshot(n.ID)
+	if err != nil || snap.ControlGeneration != 1 || snap.Enable {
+		t.Fatal("upgraded row cannot receive commands", snap, err)
+	}
+}

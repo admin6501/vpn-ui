@@ -306,6 +306,9 @@ func (s *SshService) InitSsh() {
 // longer wanted. Unlike the daemon protocols this is not a process restart, just a
 // listener reconcile, so live sessions on unchanged inbounds are preserved.
 func (s *SshService) RestartServices() error {
+	if NodeCorePaused("ssh") {
+		return s.StopServices()
+	}
 	if err := s.ReconcileHostKeys(); err != nil {
 		logger.Warning("SSH: host key reconcile failed:", err)
 	}

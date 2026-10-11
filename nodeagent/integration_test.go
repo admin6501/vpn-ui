@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -42,7 +43,7 @@ func TestNodeProcessHelper(t *testing.T) {
 	}
 	signalCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
-	ctx, cancel := context.WithTimeout(signalCtx, 2*time.Minute)
+	ctx, cancel := context.WithTimeout(signalCtx, 7*time.Minute)
 	defer cancel()
 	if err = a.Run(ctx); err != nil && ctx.Err() == nil {
 		t.Fatal(err)
@@ -102,7 +103,12 @@ func TestNodeRealDataPlane(t *testing.T) {
 	}
 	r := gin.New()
 	controller.RegisterNodeAgentRoutes(r.Group("/central"))
+	var unreachable atomic.Bool
 	central := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		if unreachable.Load() {
+			w.WriteHeader(503)
+			return
+		}
 		recorder := httptest.NewRecorder()
 		r.ServeHTTP(recorder, req)
 		if recorder.Code == 200 && strings.HasSuffix(req.URL.Path, "/sync") {
@@ -223,6 +229,151 @@ func TestNodeRealDataPlane(t *testing.T) {
 	if before.AllTime < 256*1024 || cursor.Down < 256*1024 {
 		t.Fatal("real traffic not accounted", before, cursor)
 	}
+	listener := func() bool {
+		c, e := net.DialTimeout("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(port)), 200*time.Millisecond)
+		if e == nil {
+			c.Close()
+			return true
+		}
+		return false
+	}
+	if err = svc.Control(node.ID, "stop"); err != nil {
+		t.Fatal(err)
+	}
+	waitNode(t, 15*time.Second, "stop closes VPN but preserves management", func() bool { return !listener() })
+	if err = svc.Control(node.ID, "start"); err != nil {
+		t.Fatal(err)
+	}
+	waitNode(t, 15*time.Second, "start reopens node VPN", listener)
+	if err = svc.Control(node.ID, "restart"); err != nil {
+		t.Fatal(err)
+	}
+	waitNode(t, 15*time.Second, "restart acknowledged", func() bool {
+		var n model.RemoteNode
+		db.First(&n, node.ID)
+		var report map[string]any
+		json.Unmarshal([]byte(n.CoreReport), &report)
+		return report["controlGeneration"] == "3" && listener()
+	})
+	if err = svc.Configure(node.ID, nodewire.ConfigCommand{Core: "xray", Inspect: true}); err != nil {
+		t.Fatal(err)
+	}
+	var current string
+	waitNode(t, 15*time.Second, "read actual node configuration", func() bool {
+		var n model.RemoteNode
+		db.First(&n, node.ID)
+		var report struct {
+			Generation string `json:"configGeneration"`
+			Targets    []struct {
+				Current string `json:"current"`
+			} `json:"configTargets"`
+		}
+		json.Unmarshal([]byte(n.CoreReport), &report)
+		if report.Generation == "1" && len(report.Targets) > 0 {
+			current = report.Targets[0].Current
+			return current != ""
+		}
+		return false
+	})
+	invalid := strings.ReplaceAll(current, `"protocol": "freedom"`, `"protocol": "not-a-real-protocol"`)
+	if invalid == current {
+		var cfg map[string]any
+		json.Unmarshal([]byte(current), &cfg)
+		cfg["outbounds"] = []any{map[string]any{"protocol": "not-a-real-protocol", "tag": "direct"}}
+		raw, _ := json.Marshal(cfg)
+		invalid = string(raw)
+	}
+	if err = svc.Configure(node.ID, nodewire.ConfigCommand{Core: "xray", Text: invalid}); err != nil {
+		t.Fatal(err)
+	}
+	waitNode(t, 20*time.Second, "invalid configuration rejected without losing VPN", func() bool {
+		var n model.RemoteNode
+		db.First(&n, node.ID)
+		var report map[string]any
+		json.Unmarshal([]byte(n.CoreReport), &report)
+		return report["configGeneration"] == "2" && report["configError"] != "" && listener()
+	})
+	if err = svc.Configure(node.ID, nodewire.ConfigCommand{Core: "xray", Text: current}); err != nil {
+		t.Fatal(err)
+	}
+	waitNode(t, 20*time.Second, "valid configuration applied", func() bool {
+		var n model.RemoteNode
+		db.First(&n, node.ID)
+		var report map[string]any
+		json.Unmarshal([]byte(n.CoreReport), &report)
+		return report["configGeneration"] == "3" && report["configError"] == "" && listener()
+	})
+	var after xray.ClientTraffic
+	db.Where("email = ?", email).First(&after)
+	if after.AllTime < before.AllTime || after.Total != before.Total {
+		t.Fatal("runtime control changed quota/counters", before, after)
+	}
+
+	coreAck := func(generation string) bool {
+		var n model.RemoteNode
+		db.First(&n, node.ID)
+		var report map[string]any
+		json.Unmarshal([]byte(n.CoreReport), &report)
+		if report["coreActionGeneration"] == generation && report["coreActionError"] != "" {
+			t.Fatalf("core action failed: %v", report["coreActionError"])
+		}
+		return report["coreActionGeneration"] == generation
+	}
+	if err = svc.CoreAction(node.ID, nodewire.CoreAction{Core: "xray", Action: "stop"}); err != nil {
+		t.Fatal(err)
+	}
+	waitNode(t, 15*time.Second, "individual core stop acknowledged", func() bool { return coreAck("1") && !listener() })
+	time.Sleep(11 * time.Second)
+	if listener() {
+		t.Fatal("stopped core restarted during routine sync")
+	}
+	if err = svc.CoreAction(node.ID, nodewire.CoreAction{Core: "xray", Action: "start"}); err != nil {
+		t.Fatal(err)
+	}
+	waitNode(t, 15*time.Second, "individual core start", func() bool { return coreAck("2") && listener() })
+	if err = svc.CoreAction(node.ID, nodewire.CoreAction{Core: "xray", Action: "restart"}); err != nil {
+		t.Fatal(err)
+	}
+	waitNode(t, 15*time.Second, "individual core restart", func() bool { return coreAck("3") && listener() })
+	radiusBound := func() bool {
+		c, e := net.ListenPacket("udp", "127.0.0.1:1812")
+		if e == nil {
+			c.Close()
+			return false
+		}
+		return true
+	}
+	if err = svc.CoreAction(node.ID, nodewire.CoreAction{Core: "radius", Action: "stop"}); err != nil {
+		t.Fatal(err)
+	}
+	waitNode(t, 15*time.Second, "RADIUS stops independently of native VPN", func() bool { return coreAck("4") && !radiusBound() && listener() })
+	if err = svc.CoreAction(node.ID, nodewire.CoreAction{Core: "radius", Action: "start"}); err != nil {
+		t.Fatal(err)
+	}
+	waitNode(t, 15*time.Second, "RADIUS starts without restarting node", func() bool { return coreAck("5") && radiusBound() && listener() })
+
+	// A real network outage exercises the complete 90-second admission lease.
+	unreachable.Store(true)
+	waitNode(t, 100*time.Second, "expired management lease stops VPN", func() bool { return !listener() })
+	unreachable.Store(false)
+	waitNode(t, 15*time.Second, "agent reconnects and resumes without reinstall", listener)
+	if err = svc.CoreAction(node.ID, nodewire.CoreAction{Core: "xray", Action: "uninstall"}); err != nil {
+		t.Fatal(err)
+	}
+	waitNode(t, 15*time.Second, "individual core removed", func() bool {
+		_, e := os.Stat(filepath.Join(folder, "bin", corebundle.XrayBinaryName()))
+		return coreAck("6") && os.IsNotExist(e) && !listener()
+	})
+	var retained int64
+	db.Model(&model.Inbound{}).Where("id = ?", in.Id).Count(&retained)
+	if retained != 1 {
+		t.Fatal("core removal deleted central inbound")
+	}
+	if err = svc.InstallCores(node.ID, []string{"xray"}); err != nil {
+		t.Fatal(err)
+	}
+	waitNode(t, 20*time.Second, "removed core can be reinstalled", listener)
+
 	if err = svc.Update(node.ID, node.Name, node.Address, false); err != nil {
 		t.Fatal(err)
 	}

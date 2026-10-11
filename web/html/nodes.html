@@ -1,4 +1,7 @@
 {{ template "page/head_start" .}}
+<link rel="stylesheet" href="{{ .base_path }}assets/codemirror/codemirror.min.css?{{ .asset_ver }}">
+<link rel="stylesheet" href="{{ .base_path }}assets/codemirror/xq.min.css?{{ .asset_ver }}">
+<style>.node-cfg-editor .CodeMirror{height:55vh;min-height:260px;direction:ltr;text-align:left}</style>
 {{ template "page/head_end" .}}
 {{ template "page/body_start" .}}
 {{ template "page/shell_start" .}}
@@ -13,6 +16,14 @@
     <div style="margin-top:12px">
       <a-button @click="edit(item.node)">{{ i18n "edit" }}</a-button>
       <a-button v-if="!item.paired" @click="pair(item.node.id)">{{ i18n "pages.nodes.installCommand" }}</a-button>
+      <a-button :disabled="!item.paired || !item.report || !item.report.controlSupported" @click="control(item,'start')">{{ i18n "pages.nodes.start" }}</a-button>
+      <a-button :disabled="!item.paired || !item.report || !item.report.controlSupported" @click="control(item,'stop')">{{ i18n "pages.nodes.stop" }}</a-button>
+      <a-button :disabled="!item.paired || !item.report || !item.report.controlSupported" @click="control(item,'restart')">{{ i18n "pages.nodes.restart" }}</a-button>
+      <a-button :disabled="!item.report || !item.report.controlSupported" @click="openConfig(item)">{{ i18n "pages.nodes.configuration" }}</a-button>
+      <a-tag v-if="item.report && item.report.controlSupported">[[ item.report.runtimeRunning ? '{{ i18n "pages.nodes.running" }}' : '{{ i18n "pages.nodes.stopped" }}' ]]</a-tag>
+      <a-tag v-if="item.report && Number(item.report.controlGeneration || 0) < item.node.controlGeneration">{{ i18n "pages.nodes.queued" }}</a-tag>
+      <a-alert v-if="item.paired && (!item.report || !item.report.controlSupported)" type="info" message='{{ i18n "pages.nodes.agentUpdate" }}'></a-alert>
+      <a-button :disabled="!item.paired || !item.report || !item.report.controlSupported" @click="control(item,'reconnect')">{{ i18n "pages.nodes.reconnect" }}</a-button>
       <a-button @click="openCores(item)">{{ i18n "pages.nodes.cores" }}</a-button>
       <a-popconfirm title='{{ i18n "pages.nodes.deleteConfirm" }}' @confirm="remove(item.node.id)"><a-button type="danger">{{ i18n "delete" }}</a-button></a-popconfirm>
     </div>
@@ -40,31 +51,68 @@
     <a-checkbox v-for="core in catalog" :key="core.name" :value="core.name">[[ core.title ]]</a-checkbox>
   </a-checkbox-group>
   <div v-if="current && current.report" style="margin-top:16px">
+    <a-alert v-if="current.report.coreActionError" type="error" :message="current.report.coreActionError"></a-alert>
+    <a-tag v-if="coreActionPending">{{ i18n "pages.nodes.queued" }}</a-tag>
+    <a-alert type="info" message='{{ i18n "pages.nodes.sharedCores" }}'></a-alert>
+    <a-list :data-source="current.report.uninstall ? current.report.uninstall.steps || [] : []"><a-list-item slot="renderItem" slot-scope="step"><a-tag :color="step.ok ? 'green' : 'red'">[[ step.name ]]</a-tag><span>[[ step.msg ]]</span></a-list-item></a-list>
     <p>{{ i18n "pages.nodes.installed" }}: [[ (current.report.installed || []).join(', ') || '—' ]]</p>
     <a-tag v-if="queued" color="blue">{{ i18n "pages.nodes.queued" }}</a-tag>
     <a-tag v-if="current.report.provision && current.report.provision.running" color="blue">{{ i18n "pages.nodes.installing" }}</a-tag>
     <a-list :data-source="current.report.cores || []">
-      <a-list-item slot="renderItem" slot-scope="core"><span>[[ core.name ]]</span><span>[[ state(core.state) ]]</span><span>[[ core.detail ]]</span></a-list-item>
+      <a-list-item slot="renderItem" slot-scope="core"><span>[[ core.name ]]</span><span>[[ state(core.state) ]]</span><span>[[ core.detail ]]</span><div v-if="current.report.coreActionSupported && (current.report.installed || []).includes(core.name)">
+      <a-button size="small" :disabled="coreActionPending || current.node.paused" @click="coreAction(core.name,'start')">{{ i18n "pages.nodes.start" }}</a-button>
+      <a-button size="small" :disabled="coreActionPending" @click="coreAction(core.name,'stop')">{{ i18n "pages.nodes.stop" }}</a-button>
+      <a-button size="small" :disabled="coreActionPending || current.node.paused" @click="coreAction(core.name,'restart')">{{ i18n "pages.nodes.restart" }}</a-button>
+      <a-button size="small" @click="configureCore(core.name)">{{ i18n "pages.nodes.configuration" }}</a-button>
+      <a-popconfirm title='{{ i18n "pages.nodes.uninstallConfirm" }}' @confirm="coreAction(core.name,'uninstall')"><a-button size="small" type="danger" :disabled="coreActionPending">{{ i18n "pages.nodes.uninstall" }}</a-button></a-popconfirm>
+      </div></a-list-item>
     </a-list>
     <a-list :data-source="current.report.provision ? current.report.provision.steps || [] : []">
       <a-list-item slot="renderItem" slot-scope="step"><a-tag :color="step.warn ? 'orange' : step.ok ? 'green' : 'red'">[[ step.name ]]</a-tag><span>[[ step.msg ]]</span></a-list-item>
     </a-list>
   </div>
 </a-modal>
+<a-modal v-model="configVisible" title='{{ i18n "pages.nodes.configuration" }}' :width="isMobile ? '95%' : '92%'" :footer="null" :mask-closable="false" :after-close="disposeConfigEditor" :class="themeSwitcher.currentTheme">
+  <a-alert type="info" message='{{ i18n "pages.nodes.configHelp" }}' style="margin-bottom:12px"></a-alert>
+  <a-select v-model="configCore" @change="inspectConfig" style="width:100%"><a-select-option v-for="core in current && current.report ? current.report.installed || [] : []" :key="core" :value="core">[[ core ]]</a-select-option></a-select>
+  <a-tag v-if="configPending">{{ i18n "pages.nodes.queued" }}</a-tag>
+  <a-alert v-if="current && current.report && current.report.configError" type="error" :message="current.report.configError"></a-alert>
+  <a-empty v-if="!configPending && !configTargets.length" description='{{ i18n "pages.nodes.noConfig" }}'></a-empty>
+  <a-select v-if="configTargets.length" v-model="configIndex" @change="selectConfig" style="width:100%;margin-top:12px"><a-select-option v-for="(target,index) in configTargets" :key="index" :value="index">[[ target.label ]] [[ target.remark || '' ]]</a-select-option></a-select>
+  <p v-if="configTargets[configIndex]" dir="ltr">[[ configTargets[configIndex].path || configTargets[configIndex].file ]] <a-tag v-if="configTargets[configIndex].override">{{ i18n "pages.core.configOverridden" }}</a-tag></p>
+  <div v-if="configTargets.length" class="node-cfg-editor"><textarea id="node-cfg-editor"></textarea></div>
+  <a-popconfirm v-if="configTargets.length" title='{{ i18n "pages.core.configSaveConfirm" }}' @confirm="saveConfig(false)" ok-text='{{ i18n "confirm" }}' cancel-text='{{ i18n "cancel" }}'><a-button type="primary" :disabled="configPending || !current || current.node.paused || !current.node.enable" style="margin-top:12px">{{ i18n "pages.nodes.saveApply" }}</a-button></a-popconfirm>
+<a-button v-if="configTargets.length" :disabled="configPending || !current || current.node.paused || !current.node.enable || !!(configTargets[configIndex] && configTargets[configIndex].central)" @click="saveConfig(true)">{{ i18n "reset" }}</a-button>
+</a-modal>
 {{ template "page/shell_end" .}}
 {{ template "page/body_scripts" .}}
 {{ template "component/aSidebar" .}}
 {{ template "component/aThemeSwitch" .}}
+<script src="{{ .base_path }}assets/codemirror/codemirror.min.js?{{ .asset_ver }}"></script>
+<script src="{{ .base_path }}assets/codemirror/properties.js?{{ .asset_ver }}"></script>
+<script src="{{ .base_path }}assets/codemirror/toml.js?{{ .asset_ver }}"></script>
+<script src="{{ .base_path }}assets/codemirror/javascript.js?{{ .asset_ver }}"></script>
 <script>
 const app = new Vue({
   el:'#app',delimiters:['[[',']]'],mixins:[MediaQueryMixin],
-  data:{themeSwitcher, pageTitle:'{{ i18n "pages.nodes.title" }}',pageClass:'',nodes:[], formVisible:false, commandVisible:false, coresVisible:false, busy:false, form:{}, pairing:'', command:'', current:null, selected:[], timer:null, https:location.protocol==='https:'},
+  data:{themeSwitcher, pageTitle:'{{ i18n "pages.nodes.title" }}',pageClass:'',nodes:[], formVisible:false, commandVisible:false, coresVisible:false, configVisible:false, configCore:"xray",configTargets:[],configIndex:0,configText:"",configSeen:-1, busy:false, form:{}, pairing:'', command:'', current:null, selected:[], timer:null, https:location.protocol==='https:'},
   computed:{
-    catalog(){return this.current && this.current.report ? (this.current.report.catalog || []).filter(c=>c.name!=='radius') : []},
+    coreActionPending(){return this.current && this.current.report && (Number(this.current.report.coreActionGeneration || 0)<Number(this.current.node.coreActionGeneration) || !!(this.current.report.uninstall && this.current.report.uninstall.running))},
+    configPending(){return this.current && this.current.report && Number(this.current.report.configGeneration || 0)<Number(this.current.node.configGeneration)},
+    catalog(){return this.current && this.current.report ? (this.current.report.catalog || []) : []},
     queued(){return this.current && this.current.report && Number(this.current.report.generation || 0)<Number(this.current.node.coreGeneration)}
   },
   methods:{
-    async load(){const msg=await HttpUtil.get('/panel/nodes/list');if(msg && msg.success){this.nodes=msg.obj || [];if(this.current)this.current=this.nodes.find(item=>item.node.id===this.current.node.id)||null}},
+    async coreAction(core,action){const msg=await this.post('/panel/nodes/'+this.current.node.id+'/core-action',{core,action});if(msg && msg.success)await this.load()},
+    configureCore(core){this.coresVisible=false;this.configVisible=true;this.configCore=core;this.inspectConfig()},
+    disposeConfigEditor(){if(this.configCm){this.configCm.toTextArea();this.configCm=null}},
+    mountConfigEditor(){const el=document.getElementById('node-cfg-editor');if(!el)return;const target=this.configTargets[this.configIndex] || {};const mode=target.format==='toml' ? 'text/x-toml' : target.file.endsWith('.json') ? 'application/json' : 'text/x-properties';if(!this.configCm){this.configCm=CodeMirror.fromTextArea(el,{lineNumbers:true,mode,theme:'xq',lineWrapping:true,indentUnit:2,tabSize:2,lineWiseCopyCut:false});this.configCm.on('change',editor=>{this.configText=editor.getValue()})}this.configCm.setOption('mode',mode);if(this.configCm.getValue()!==this.configText)this.configCm.setValue(this.configText);setTimeout(()=>{if(this.configCm)this.configCm.refresh()},300)},
+    async control(item,action){const msg=await this.post('/panel/nodes/'+item.node.id+'/control',{action});if(msg && msg.success)await this.load()},
+    openConfig(item){this.current=item;this.configVisible=true;this.configCore=(item.report.installed || [])[0] || 'xray';this.inspectConfig()},
+    async inspectConfig(){if(this.configCore==='xray'){location.href=basePath+'panel/nodes/'+this.current.node.id+'/xray';return}this.disposeConfigEditor();this.configTargets=[];this.configSeen=-1;const msg=await this.post('/panel/nodes/'+this.current.node.id+'/config',{core:this.configCore,inspect:true});if(msg && msg.success)await this.load()},
+    selectConfig(index){if(typeof index==='number')this.configIndex=index;this.configText=this.configTargets[this.configIndex] ? this.configTargets[this.configIndex].current : '';this.$nextTick(()=>this.mountConfigEditor())},
+    async saveConfig(reset){const target=this.configTargets[this.configIndex];if(!target)return;const msg=await this.post('/panel/nodes/'+this.current.node.id+'/config',{core:this.configCore,inbound:target.inbound,file:target.file,text:this.configText,inspect:false,reset:!!reset});if(msg && msg.success)await this.load()},
+    async load(){const msg=await HttpUtil.get('/panel/nodes/list');if(msg && msg.success){this.nodes=msg.obj || [];if(this.current)this.current=this.nodes.find(item=>item.node.id===this.current.node.id)||null;if(this.configVisible && this.current && this.current.report && !this.configPending && this.configSeen!==Number(this.current.report.configGeneration || 0)){this.configSeen=Number(this.current.report.configGeneration || 0);const previousText=this.configText,hadTargets=this.configTargets.length;this.configTargets=this.current.report.configTargets || [];this.configIndex=0;if(hadTargets && this.current.report.configError){this.configText=previousText;this.$nextTick(()=>this.mountConfigEditor())}else this.selectConfig()}}},
     edit(node){this.form=node ? {id:node.id,name:node.name,address:node.address,enable:node.enable} : {name:'',address:'',enable:true};this.formVisible=true},
     async post(url,body){return HttpUtil.post(url,body)},
     async save(){if(!this.form.name || !this.form.address)return;this.busy=true;try{const msg=await this.post(this.form.id ? '/panel/nodes/'+this.form.id+'/update' : '/panel/nodes/add',this.form);if(msg && msg.success){this.formVisible=false;if(!this.form.id)this.showCommand(msg.obj.pairToken);await this.load()}}finally{this.busy=false}},
@@ -78,7 +126,7 @@ const app = new Vue({
     state(value){const states={running:'{{ i18n "pages.nodes.running" }}',stopped:'{{ i18n "pages.nodes.stopped" }}',idle:'{{ i18n "pages.nodes.idle" }}',not_installed:'{{ i18n "pages.nodes.notInstalled" }}',error:'{{ i18n "pages.nodes.error" }}'};return states[value] || value}
   },
   mounted(){this.load();this.timer=setInterval(()=>this.load(),5000)},
-  beforeDestroy(){clearInterval(this.timer)}
+  beforeDestroy(){clearInterval(this.timer);this.disposeConfigEditor()}
 });
 </script>
 {{ template "page/body_end" .}}

@@ -322,6 +322,10 @@ func (s *PptpService) SetupAllTproxy() error {
 
 // RestartServices (re)launches pptpd as a panel-managed child process.
 func (s *PptpService) RestartServices() error {
+	if NodeCorePaused("pptp") {
+		s.StopServices()
+		return nil
+	}
 	migrateFromSystemd()
 
 	inbounds, err := s.GetPptpInbounds()

@@ -179,8 +179,13 @@ func (s *XrayService) GetXrayConfig() (*xray.Config, error) {
 		return nil, err
 	}
 
+	return s.GetXrayConfigWithTemplate(templateConfig)
+}
+
+// GetXrayConfigWithTemplate builds a candidate without replacing the active template.
+func (s *XrayService) GetXrayConfigWithTemplate(templateConfig string) (*xray.Config, error) {
 	xrayConfig := &xray.Config{}
-	err = json.Unmarshal([]byte(templateConfig), xrayConfig)
+	err := json.Unmarshal([]byte(templateConfig), xrayConfig)
 	if err != nil {
 		return nil, err
 	}
@@ -754,6 +759,12 @@ func (s *XrayService) GetXrayTraffic() ([]*xray.Traffic, []*xray.ClientTraffic, 
 
 // RestartXray restarts the Xray process, optionally forcing a restart even if config unchanged.
 func (s *XrayService) RestartXray(isForce bool) error {
+	if NodeCorePaused("xray") {
+		if !s.IsXrayRunning() {
+			return nil
+		}
+		return s.StopXray()
+	}
 	lock.Lock()
 	defer lock.Unlock()
 	logger.Debug("restart Xray, force:", isForce)

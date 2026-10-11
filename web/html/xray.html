@@ -10,6 +10,12 @@
 
 {{ template "page/body_start" .}}
 {{template "page/shell_start" . }}
+{{ if .node_id }}
+      <a-button :href="basePath+'panel/nodes/'" icon="arrow-left" style="margin-bottom:12px">{{ i18n "pages.nodes.title" }}</a-button>
+      <a-alert v-if="nodeConfigPending" type="info" message='{{ i18n "pages.nodes.queued" }}' style="margin-bottom:12px"></a-alert>
+      <a-alert v-if="nodeConfigError" type="error" :message="nodeConfigError" style="margin-bottom:12px"></a-alert>
+      <a-button v-if="nodeConfigError && !nodeConfigPending" icon="reload" @click="getXraySetting" style="margin-bottom:12px">{{ i18n "pages.core.refresh" }}</a-button>
+      {{ end }}
       <a-spin :spinning="loadingStates.spinning" :delay="500"
         tip='{{ i18n "loading"}}' size="large">
         <transition name="list" appear>
@@ -33,11 +39,11 @@
                   :style="{ display: 'flex', flexWrap: 'wrap', alignItems: 'center' }">
                   <a-col :xs="24" :sm="10" :style="{ padding: '4px' }">
                     <a-space direction="horizontal">
-                      <a-button type="primary" :disabled="saveBtnDisable"
+                      <a-button type="primary" :disabled="saveBtnDisable || nodeConfigPending"
                         @click="updateXraySetting">
                         {{ i18n "pages.xray.save" }}
                       </a-button>
-                      <a-button type="danger" :disabled="!saveBtnDisable"
+                      <a-button type="danger" :disabled="!saveBtnDisable || nodeConfigPending"
                         @click="restartXray">
                         {{ i18n "pages.xray.restart" }}
                       </a-button>
@@ -207,6 +213,17 @@
 {{template "component/aThemeSwitch" .}}
 {{template "component/aTableSortable" .}}
 {{template "component/aSettingListItem" .}}
+<script>
+window.nodeXrayId = {{ if .node_id }}{{ .node_id }}{{ else }}0{{ end }};
+// This shared page must never send an operation to the central host in node mode.
+if (window.nodeXrayId) axios.interceptors.request.use(config => {
+  const path=new URL(config.url,location.origin).pathname;
+  if (!path.startsWith('/panel/nodes/') && !path.startsWith(basePath+'panel/nodes/')) {
+    return Promise.reject(new Error('{{ i18n "pages.nodes.noConfig" }}'));
+  }
+  return config;
+});
+</script>
 {{template "modals/ruleModal"}}
 {{template "modals/outModal"}}
 {{template "modals/reverseModal"}}
@@ -297,7 +314,11 @@
     el: '#app',
     data: {
       themeSwitcher,
-      pageTitle: '{{ i18n "menu.xray"}}',
+      pageTitle: '{{ if .node_id }}{{ .node_name }} · {{ i18n "pages.nodes.configuration" }}{{ else }}{{ i18n "menu.xray"}}{{ end }}',
+      nodeContext: window.nodeXrayId,
+      nodeConfigError: '',
+      nodeConfigPending: false,
+      nodeMetadata: null,
       pageClass: 'xray-page',
       isDarkTheme: themeSwitcher.isDarkTheme,
       loadingStates: {
@@ -456,12 +477,57 @@
       }
     },
     methods: {
+      async nodeReadReport(generation, waitForAck=true) {
+        const deadline=Date.now()+35000;
+        while (true) {
+          const msg=await HttpUtil.get('/panel/nodes/list');
+          if (!msg.success) throw new Error(msg.msg || '{{ i18n "somethingWentWrong" }}');
+          const item=(msg.obj || []).find(item=>item.node.id===this.nodeContext);
+          if (!item) throw new Error('{{ i18n "pages.nodes.offline" }}');
+          if (!waitForAck || Number(item.report && item.report.configGeneration || 0)>=generation) return item;
+          if (Date.now()>=deadline) throw new Error('{{ i18n "pages.nodes.queued" }}');
+          await PromiseUtil.sleep(1000);
+        }
+      },
+      async getNodeXraySetting() {
+        this.nodeConfigPending=true;this.nodeConfigError='';
+        try {
+          const meta=await HttpUtil.get('/panel/nodes/'+this.nodeContext+'/xray/meta');
+          if (!meta.success) throw new Error(meta.msg);
+          this.nodeMetadata=meta.obj;this.inboundTags=meta.obj.inboundTags;
+          const queued=await HttpUtil.post('/panel/nodes/'+this.nodeContext+'/config',{core:'xray',inspect:true});
+          if (!queued.success) throw new Error(queued.msg);
+          const pending=await this.nodeReadReport(0,false);
+          const item=await this.nodeReadReport(pending.node.configGeneration);
+          if (item.report.configError) throw new Error(item.report.configError);
+          const target=(item.report.configTargets || []).find(target=>target.core==='xray' && target.file==='config.json');
+          if (!target) throw new Error('{{ i18n "pages.nodes.noConfig" }}');
+          const config=JSON.parse(target.current);
+          this.xraySetting=JSON.stringify(config,null,2);this.oldXraySetting=this.xraySetting;
+          this.loadingStates.fetched=true;this.saveBtnDisable=true;
+        } catch(error) {this.nodeConfigError=error.message}
+        finally {this.nodeConfigPending=false}
+      },
+      async updateNodeXraySetting() {
+        this.loading(true);this.nodeConfigPending=true;this.nodeConfigError='';
+        try {
+          const submitted=this.xraySetting;
+          const queued=await HttpUtil.post('/panel/nodes/'+this.nodeContext+'/config',{core:'xray',file:'config.json',text:submitted});
+          if (!queued.success) throw new Error(queued.msg);
+          const pending=await this.nodeReadReport(0,false);
+          const item=await this.nodeReadReport(pending.node.configGeneration);
+          if (item.report.configError) throw new Error(item.report.configError);
+          this.oldXraySetting=submitted;this.saveBtnDisable=this.xraySetting===submitted;
+        } catch(error) {this.nodeConfigError=error.message}
+        finally {this.loading(false);this.nodeConfigPending=false}
+      },
       loading(spinning = true) {
         this.loadingStates.spinning = spinning;
       },
       // Raw axios rather than HttpUtil: this only decides a label, so a failed
       // fetch should leave the row reading `socks` rather than red-bar the page.
       async loadSshOutboundTags() {
+        if (this.nodeContext) return;
         try {
           const resp = await axios.post('/panel/xray/sshoutbound/list');
           const list = resp && resp.data ? resp.data.obj : null;
@@ -482,6 +548,7 @@
       // reason as the SSH tags: this decides labels and an Edit path, so a failed
       // fetch should leave rows reading `freedom` rather than red-bar the page.
       async loadVpnOutbounds() {
+        if (this.nodeContext) return;
         try {
           const resp = await axios.post('/panel/xray/vpnoutbound/list');
           const list = resp && resp.data ? resp.data.obj : null;
@@ -496,6 +563,7 @@
       // tunnels, and each one asks a different driver about a different netdev, so
       // there is nothing to batch server-side.
       async loadVpnOutboundStatus() {
+        if (this.nodeContext) return;
         const tags = Object.keys(this.vpnOutbounds);
         if (!tags.length) return;
         const states = {};
@@ -528,6 +596,7 @@
       // and gives the operator nothing to act on, while a greyed one carrying its
       // reason says what to install.
       async loadVpnOutKinds() {
+        if (this.nodeContext) return;
         try {
           const resp = await axios.post('/panel/xray/vpnoutbound/kinds');
           const list = resp && resp.data ? resp.data.obj : null;
@@ -566,12 +635,14 @@
         return outbound ? outbound.protocol : '';
       },
       async getOutboundsTraffic() {
+        if (this.nodeContext) return;
         const msg = await HttpUtil.get("/panel/xray/getOutboundsTraffic");
         if (msg.success) {
           this.outboundsTraffic = msg.obj;
         }
       },
       async getXraySetting() {
+        if (this.nodeContext) return this.getNodeXraySetting();
         const msg = await HttpUtil.post("/panel/xray/");
 
         if (msg.success) {
@@ -590,6 +661,7 @@
         }
       },
       async updateXraySetting() {
+        if (this.nodeContext) return this.updateNodeXraySetting();
         this.loading(true);
         const msg = await HttpUtil.post("/panel/xray/update", {
           xraySetting: this.xraySetting,
@@ -601,6 +673,11 @@
         }
       },
       async restartXray() {
+        if (this.nodeContext) {
+          const msg = await HttpUtil.post('/panel/nodes/'+this.nodeContext+'/core-action', {core:'xray',action:'restart'});
+          if (msg.success) this.$message.info('{{ i18n "pages.nodes.queued" }}');
+          return;
+        }
         this.loading(true);
         const msg = await HttpUtil.post("/panel/api/server/restartXrayService");
         this.loading(false);
@@ -611,6 +688,7 @@
         this.loading(false);
       },
       async getXrayResult() {
+        if (this.nodeContext) return;
         const msg = await HttpUtil.get("/panel/xray/getXrayResult");
         if (msg.success) {
           this.restartResult = msg.obj;
@@ -618,6 +696,10 @@
         }
       },
       async resetXrayConfigToDefault() {
+        if (this.nodeContext) {
+          this.templateSettings=JSON.parse(JSON.stringify(this.nodeMetadata.defaults));
+          return;
+        }
         this.loading(true);
         const msg = await HttpUtil.get("/panel/setting/getDefaultJsonConfig");
         this.loading(false);
@@ -1134,6 +1216,7 @@
         return exit ? GeoUtil.countryName(exit.countryCode) : '';
       },
       async testOutbound(index) {
+        if (this.nodeContext) return;
         const outbound = this.templateSettings.outbounds[index];
         if (!outbound) {
           Vue.prototype.$message.error('{{ i18n "pages.xray.outbound.testError" }}');
@@ -1284,6 +1367,7 @@
         this.templateSettings = newTemplateSettings;
       },
       async refreshOutboundTraffic() {
+        if (this.nodeContext) return;
         if (!this.refreshing) {
           this.refreshing = true;
           await this.getOutboundsTraffic();
@@ -1300,6 +1384,8 @@
         }
       },
       async resetOutboundTraffic(index) {
+        if (this.nodeContext) return;
+        if (this.nodeContext) return;
         let tag = "-alltags-";
         if (index >= 0) {
           tag = this.outboundData[index].tag ? this.outboundData[index].tag : ""
@@ -1577,6 +1663,7 @@
         nordModal.show();
       },
       async loadCustomGeoAliases() {
+        if (this.nodeContext) return;
         try {
           const msg = await HttpUtil.get('/panel/api/custom-geo/aliases');
           if (!msg.success) {
@@ -1628,7 +1715,7 @@
       await this.getXrayResult();
       await this.getOutboundsTraffic();
 
-      if (window.wsClient) {
+      if (window.wsClient && !this.nodeContext) {
           window.wsClient.connect();
           window.wsClient.on('outbounds', (payload) => {
             if (payload) {

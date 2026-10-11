@@ -153,7 +153,7 @@ func (s *NodeService) Delete(id int) error {
 	})
 }
 func (s *NodeService) InstallCores(id int, cores []string) error {
-	allowed := map[string]bool{"xray": true, "ssh": true}
+	allowed := map[string]bool{"xray": true, "ssh": true, "radius": true}
 	for _, c := range coreCatalog {
 		allowed[c.name] = true
 	}
@@ -162,7 +162,7 @@ func (s *NodeService) InstallCores(id int, cores []string) error {
 	}
 	set := map[string]bool{}
 	for _, c := range cores {
-		if !allowed[c] || c == "radius" {
+		if !allowed[c] {
 			return fmt.Errorf("Unknown core %q", c)
 		}
 		set[c] = true
@@ -263,8 +263,14 @@ func (s *NodeService) Snapshot(id int) (*nodewire.Snapshot, error) {
 	if e := db.First(&n, id).Error; e != nil {
 		return nil, e
 	}
-	snap := &nodewire.Snapshot{Version: nodewire.Version, NodeID: id, Enable: n.Enable, LeaseSeconds: nodewire.LeaseSeconds, CoreGeneration: n.CoreGeneration, Template: defaultNodeTemplate, Files: map[string][]byte{}}
+	snap := &nodewire.Snapshot{Version: nodewire.Version, NodeID: id, Enable: n.Enable && !n.Paused, ControlGeneration: n.ControlGeneration, CoreActionGeneration: n.CoreActionGeneration, ConfigGeneration: n.ConfigGeneration, LeaseSeconds: nodewire.LeaseSeconds, CoreGeneration: n.CoreGeneration, Template: defaultNodeTemplate, Files: map[string][]byte{}}
 	_ = json.Unmarshal([]byte(n.RequestedCores), &snap.RequestedCores)
+	if n.CoreActionCommand != "" {
+		_ = json.Unmarshal([]byte(n.CoreActionCommand), &snap.CoreActionCommand)
+	}
+	if n.ConfigCommand != "" {
+		_ = json.Unmarshal([]byte(n.ConfigCommand), &snap.ConfigCommand)
+	}
 	if !n.Enable {
 		return snap, nil
 	}
@@ -569,7 +575,7 @@ func nodeOnline(db *gorm.DB) ([]string, []string) {
 		return nil, nil
 	}
 	var nodes []model.RemoteNode
-	if e := db.Where("enable = ? AND last_seen > ?", true, time.Now().Add(-35*time.Second).UnixMilli()).Find(&nodes).Error; e != nil {
+	if e := db.Where("enable = ? AND paused = ? AND last_seen > ?", true, false, time.Now().Add(-35*time.Second).UnixMilli()).Find(&nodes).Error; e != nil {
 		return nil, nil
 	}
 	var entries []nodewire.Online
@@ -608,3 +614,193 @@ func nodeOnline(db *gorm.DB) ([]string, []string) {
 
 //go:embed config.json
 var defaultNodeTemplate string
+
+// Control keeps the management agent alive while changing VPN runtime state.
+func (s *NodeService) Control(id int, action string) error {
+	var n model.RemoteNode
+	if err := database.GetDB().First(&n, id).Error; err != nil {
+		return err
+	}
+	switch action {
+	case "start", "restart", "reconnect":
+		n.Paused = false
+		n.Enable = true
+	case "stop":
+		n.Paused = true
+	default:
+		return errors.New("Unknown node action")
+	}
+	return database.GetDB().Model(&n).Updates(map[string]any{"enable": n.Enable, "paused": n.Paused, "control_generation": gorm.Expr("control_generation + 1")}).Error
+}
+func (s *NodeService) Configure(id int, cmd nodewire.ConfigCommand) error {
+	var n model.RemoteNode
+	if err := database.GetDB().First(&n, id).Error; err != nil {
+		return err
+	}
+	if len(cmd.Text) > 512*1024 {
+		return errors.New("Configuration exceeds 512 KiB")
+	}
+	valid := cmd.Core == "xray"
+	for _, c := range (&CoreService{}).CoreCatalog() {
+		if c.Name == cmd.Core {
+			valid = true
+		}
+	}
+	if !valid {
+		return errors.New("Unknown core")
+	}
+	if !cmd.Inspect && (n.Paused || !n.Enable) {
+		return errors.New("Start the node before applying configuration / ابتدا نود را روشن کنید")
+	}
+	if !cmd.Inspect && cmd.File == "inbound.json" {
+		var in model.Inbound
+		if err := database.GetDB().Where("id = ? AND node_id = ?", cmd.Inbound, id).First(&in).Error; err != nil {
+			return err
+		}
+		if NodeCoreForProtocol(in.Protocol) != cmd.Core {
+			return errors.New("Inbound does not belong to this core")
+		}
+		if cmd.Reset {
+			return errors.New("Edit inbound settings directly; no replacement file to reset")
+		}
+		var body nodeInboundConfiguration
+		dec := json.NewDecoder(strings.NewReader(cmd.Text))
+		dec.DisallowUnknownFields()
+		if err := dec.Decode(&body); err != nil {
+			return err
+		}
+		var settings, original map[string]any
+		if err := json.Unmarshal(body.Settings, &settings); err != nil || settings == nil {
+			return errors.New("Settings must be a JSON object")
+		}
+		_ = json.Unmarshal([]byte(in.Settings), &original)
+		// Credentials and account limits remain centrally managed rather than copied
+		// from a node's derived, quota-adjusted client projection.
+		delete(settings, "clients")
+		if clients, ok := original["clients"]; ok {
+			settings["clients"] = clients
+		}
+		raw, _ := json.Marshal(settings)
+		in.Settings = string(raw)
+		if len(body.StreamSettings) > 0 {
+			var stream map[string]any
+			if err := json.Unmarshal(body.StreamSettings, &stream); err != nil || stream == nil {
+				return errors.New("streamSettings must be an object")
+			}
+			in.StreamSettings = string(body.StreamSettings)
+		}
+		in.Listen = body.Listen
+		in.Port = body.Port
+		if _, _, err := (&InboundService{}).UpdateInbound(&in); err != nil {
+			return err
+		}
+		cmd.Inspect = true
+		cmd.Text = ""
+	}
+
+	if !cmd.Inspect && !cmd.Reset && cmd.Core == "xray" {
+		if err := ValidateNodeTemplate(cmd.Text); err != nil {
+			return err
+		}
+	}
+	raw, err := json.Marshal(cmd)
+	if err != nil {
+		return err
+	}
+	return database.GetDB().Model(&n).Updates(map[string]any{"config_command": string(raw), "config_generation": gorm.Expr("config_generation + 1")}).Error
+}
+
+func DefaultNodeTemplate() string { return defaultNodeTemplate }
+
+// Node templates must retain the API and counters used for centralized quotas.
+func ValidateNodeTemplate(text string) error {
+	var cfg, base map[string]any
+	if err := json.Unmarshal([]byte(text), &cfg); err != nil {
+		return err
+	}
+	_ = json.Unmarshal([]byte(defaultNodeTemplate), &base)
+	equal := func(a, b any) bool { x, _ := json.Marshal(a); y, _ := json.Marshal(b); return string(x) == string(y) }
+	if !equal(cfg["api"], base["api"]) || !equal(cfg["stats"], base["stats"]) {
+		return errors.New("Preserve the node API and statistics configuration / تنظیمات API و آمار نود باید حفظ شوند")
+	}
+	var api bool
+	inbounds, _ := cfg["inbounds"].([]any)
+	for _, entry := range inbounds {
+		m, _ := entry.(map[string]any)
+		if m["tag"] == "api" {
+			api = equal(entry, base["inbounds"].([]any)[0])
+		}
+	}
+	policy, _ := cfg["policy"].(map[string]any)
+	levels, _ := policy["levels"].(map[string]any)
+	level, _ := levels["0"].(map[string]any)
+	system, _ := policy["system"].(map[string]any)
+	routing, _ := cfg["routing"].(map[string]any)
+	rules, _ := routing["rules"].([]any)
+	baseRouting := base["routing"].(map[string]any)
+	var apiRoute bool
+	for _, rule := range rules {
+		if equal(rule, baseRouting["rules"].([]any)[0]) {
+			apiRoute = true
+		}
+	}
+	if !api || !apiRoute || level["statsUserUplink"] != true || level["statsUserDownlink"] != true || system["statsInboundUplink"] != true || system["statsInboundDownlink"] != true {
+		return errors.New("Preserve API inbound/routing and traffic counters / ورودی مدیریتی و شمارنده‌های مصرف باید حفظ شوند")
+	}
+	return (&XraySettingService{}).CheckXrayConfig(text)
+}
+
+func (s *NodeService) CoreAction(id int, cmd nodewire.CoreAction) error {
+	var n model.RemoteNode
+	if err := database.GetDB().First(&n, id).Error; err != nil {
+		return err
+	}
+	switch cmd.Action {
+	case "start", "stop", "restart", "uninstall":
+	default:
+		return errors.New("Unknown core action")
+	}
+	valid := false
+	for _, c := range (&CoreService{}).CoreCatalog() {
+		if c.Name == cmd.Core {
+			valid = true
+		}
+	}
+	if !valid {
+		return errors.New("Unknown core")
+	}
+	if (cmd.Action == "start" || cmd.Action == "restart") && (n.Paused || !n.Enable) {
+		return errors.New("Start the node first / ابتدا نود را روشن کنید")
+	}
+	raw, _ := json.Marshal(cmd)
+	return database.GetDB().Model(&n).Updates(map[string]any{"core_action_command": string(raw), "core_action_generation": gorm.Expr("core_action_generation + 1")}).Error
+}
+
+type nodeInboundConfiguration struct {
+	Listen         string          `json:"listen"`
+	Port           int             `json:"port"`
+	Settings       json.RawMessage `json:"settings"`
+	StreamSettings json.RawMessage `json:"streamSettings"`
+}
+
+func NodeInboundConfigurationTargets(id int, core string) []map[string]any {
+	var inbounds []model.Inbound
+	database.GetDB().Where("node_id = ?", id).Order("id").Find(&inbounds)
+	out := []map[string]any{}
+	for _, in := range inbounds {
+		if NodeCoreForProtocol(in.Protocol) != core {
+			continue
+		}
+		var settings map[string]any
+		_ = json.Unmarshal([]byte(in.Settings), &settings)
+		delete(settings, "clients")
+		raw, _ := json.Marshal(settings)
+		stream := json.RawMessage(in.StreamSettings)
+		if !json.Valid(stream) {
+			stream = json.RawMessage(`{}`)
+		}
+		current, _ := json.MarshalIndent(nodeInboundConfiguration{Listen: in.Listen, Port: in.Port, Settings: raw, StreamSettings: stream}, "", "  ")
+		out = append(out, map[string]any{"core": core, "inbound": in.Id, "file": "inbound.json", "label": fmt.Sprintf("inbound-%d.json", in.Id), "remark": in.Remark, "current": string(current), "central": true})
+	}
+	return out
+}

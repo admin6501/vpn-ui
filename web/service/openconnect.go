@@ -476,6 +476,10 @@ func (s *OcservService) SetupRouting() error {
 // without one). Managed ocserv processes with no corresponding enabled inbound
 // are stopped.
 func (s *OcservService) RestartServices() error {
+	if NodeCorePaused("openconnect") {
+		s.StopServices()
+		return nil
+	}
 	migrateFromSystemd()
 
 	inbounds, err := s.GetOcservInbounds()

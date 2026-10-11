@@ -11,12 +11,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/mhsanaei/3x-ui/v2/xray"
 	"io"
 	"log"
 	"net"
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"sort"
@@ -168,13 +170,15 @@ func Enroll(ctx context.Context, path, panel, pair, ca string) error {
 }
 
 type Agent struct {
-	config      Config
-	client      *http.Client
-	runtime     *web.Server
-	lastSuccess time.Time
-	revision    string
-	inventory   string
-	lastError   string
+	config           Config
+	client           *http.Client
+	runtime          *web.Server
+	lastSuccess      time.Time
+	revision         string
+	inventory        string
+	lastError        string
+	coreRestart      string
+	coreRestartForce bool
 }
 
 func New(path string) (*Agent, error) {
@@ -209,6 +213,7 @@ func prepareDatabase() error {
 	if e := os.Chmod(config.GetDBPath(), 0600); e != nil {
 		return e
 	}
+	_ = service.SetNodeSetting(database.GetDB(), "nodeRuntimeRunning", "false")
 	if backend.Available() {
 		if _, e := service.RefreshInstalledDaemons(); e != nil {
 			return e
@@ -231,6 +236,9 @@ func installedCores() map[string]bool {
 	if service.GetNodeSetting("nodeSSHInstalled") == "true" {
 		set["ssh"] = true
 	}
+	if len(set) > 0 && service.GetNodeSetting("nodeRadiusRemoved") != "true" {
+		set["radius"] = true
+	}
 	return set
 }
 func coreReport() json.RawMessage {
@@ -240,7 +248,35 @@ func coreReport() json.RawMessage {
 		installed = append(installed, name)
 	}
 	sort.Strings(installed)
-	report := map[string]any{"installed": installed, "catalog": cs.CoreCatalog(), "cores": cs.GetCoresStatus(), "system": cs.GetSystemStatus(), "provision": cs.ProvisionState(), "generation": service.GetNodeSetting("nodeCoreGeneration")}
+	statuses := cs.GetCoresStatus()
+	actual := installedCores()
+	for i := range statuses {
+		if !actual[statuses[i].Name] {
+			statuses[i].State = service.CoreNotInstalled
+		} else if service.NodeCorePaused(statuses[i].Name) {
+			statuses[i].State = service.CoreStopped
+		}
+	}
+	report := map[string]any{"installed": installed, "catalog": cs.CoreCatalog(), "cores": statuses, "system": cs.GetSystemStatus(), "provision": cs.ProvisionState(), "generation": service.GetNodeSetting("nodeCoreGeneration")}
+	report["controlGeneration"] = service.GetNodeSetting("nodeControlGeneration")
+	report["configGeneration"] = service.GetNodeSetting("nodeConfigGeneration")
+	report["configError"] = service.GetNodeSetting("nodeConfigError")
+	paused := []string{}
+	for _, c := range cs.CoreCatalog() {
+		if service.NodeCorePaused(c.Name) {
+			paused = append(paused, c.Name)
+		}
+	}
+	report["pausedCores"] = paused
+	report["coreActionSupported"] = true
+	report["coreActionGeneration"] = service.GetNodeSetting("nodeCoreActionGeneration")
+	report["coreActionError"] = service.GetNodeSetting("nodeCoreActionError")
+	report["uninstall"] = cs.CoreUninstallStatus()
+	report["controlSupported"] = true
+	report["runtimeRunning"] = service.GetNodeSetting("nodeRuntimeRunning") == "true"
+	var targets any
+	_ = json.Unmarshal([]byte(service.GetNodeSetting("nodeConfigTargets")), &targets)
+	report["configTargets"] = targets
 	data, _ := json.Marshal(report)
 	return data
 }
@@ -284,7 +320,7 @@ func (a *Agent) requestCores(snap *nodewire.Snapshot) error {
 		return errors.New("Empty core request rejected")
 	}
 	cs := &service.CoreService{}
-	if cs.ProvisionState().Running {
+	if cs.ProvisionState().Running || cs.CoreUninstallStatus().Running {
 		return nil
 	}
 	a.stopRuntime()
@@ -298,8 +334,15 @@ func (a *Agent) requestCores(snap *nodewire.Snapshot) error {
 	}
 	installable := []string{}
 	for _, c := range snap.RequestedCores {
+		if e := service.SetNodeCorePaused(c, false); e != nil {
+			return e
+		}
 		switch c {
 		case "xray":
+		case "radius":
+			if e := service.SetNodeSetting(database.GetDB(), "nodeRadiusRemoved", "false"); e != nil {
+				return e
+			}
 		case "ssh":
 			if e := service.SetNodeSetting(database.GetDB(), "nodeSSHInstalled", "true"); e != nil {
 				return e
@@ -342,10 +385,28 @@ func (a *Agent) Tick(ctx context.Context) error {
 	if e = a.requestCores(&snap); e != nil {
 		return e
 	}
-	if (&service.CoreService{}).ProvisionState().Running {
+	if (&service.CoreService{}).ProvisionState().Running || (&service.CoreService{}).CoreUninstallStatus().Running {
 		a.lastSuccess = time.Now()
 		a.stopRuntime()
 		return nil
+	}
+	if snap.CoreActionCommand != nil && snap.CoreActionGeneration != nodeSettingInt("nodeCoreActionGeneration") {
+		a.applyCoreAction(snap.CoreActionGeneration, *snap.CoreActionCommand)
+	}
+	if (&service.CoreService{}).CoreUninstallStatus().Running {
+		a.lastSuccess = time.Now()
+		return nil
+	}
+	if snap.ControlGeneration != nodeSettingInt("nodeControlGeneration") {
+		a.stopRuntime()
+	}
+	if template := service.GetNodeSetting("nodeXrayTemplate"); template != "" {
+		snap.Template = template
+	}
+	for i := range snap.Inbounds {
+		if service.NodeCorePaused(service.NodeCoreForProtocol(snap.Inbounds[i].Protocol)) {
+			snap.Inbounds[i].Enable = false
+		}
 	}
 	installed := installedCores()
 	inventoryRaw, _ := json.Marshal(installed)
@@ -355,12 +416,15 @@ func (a *Agent) Tick(ctx context.Context) error {
 		return e
 	}
 	a.lastSuccess = time.Now()
+	if snap.ConfigCommand != nil && snap.ConfigCommand.Inspect && snap.ConfigGeneration != nodeSettingInt("nodeConfigGeneration") {
+		a.applyConfigCommand(snap.ConfigGeneration, *snap.ConfigCommand)
+	}
 	if !snap.Enable {
 		a.stopRuntime()
-		return nil
+		return service.SetNodeSetting(database.GetDB(), "nodeControlGeneration", strconv.FormatInt(snap.ControlGeneration, 10))
 	}
 	if len(installed) == 0 {
-		return nil
+		return service.SetNodeSetting(database.GetDB(), "nodeControlGeneration", strconv.FormatInt(snap.ControlGeneration, 10))
 	}
 	if a.runtime == nil {
 		a.runtime = web.NewServer()
@@ -368,10 +432,26 @@ func (a *Agent) Tick(ctx context.Context) error {
 			a.stopRuntime()
 			return e
 		}
+		a.coreRestart = ""
 	} else if revision != a.revision || inventory != a.inventory {
 		if e = a.runtime.RefreshNodeRuntime(); e != nil {
 			return e
 		}
+		a.coreRestart = ""
+	}
+	_ = service.SetNodeSetting(database.GetDB(), "nodeRuntimeRunning", "true")
+	if e = service.SetNodeSetting(database.GetDB(), "nodeControlGeneration", strconv.FormatInt(snap.ControlGeneration, 10)); e != nil {
+		return e
+	}
+	if snap.ConfigCommand != nil && snap.ConfigGeneration != nodeSettingInt("nodeConfigGeneration") {
+		a.applyConfigCommand(snap.ConfigGeneration, *snap.ConfigCommand)
+	}
+	if a.coreRestart != "" && a.runtime != nil {
+		if e = a.runtime.RefreshNodeCore(a.coreRestart, a.coreRestartForce); e != nil {
+			_ = service.SetNodeSetting(database.GetDB(), "nodeCoreActionError", e.Error())
+			return e
+		}
+		a.coreRestart = ""
 	}
 	a.revision = revision
 	a.inventory = inventory
@@ -379,6 +459,7 @@ func (a *Agent) Tick(ctx context.Context) error {
 	return nil
 }
 func (a *Agent) stopRuntime() {
+	_ = service.SetNodeSetting(database.GetDB(), "nodeRuntimeRunning", "false")
 	if e := service.DisableNodeAdmission(); e != nil {
 		log.Printf("disable node admission: %v", e)
 	}
@@ -411,4 +492,234 @@ func (a *Agent) Run(ctx context.Context) error {
 		case <-ticker.C:
 		}
 	}
+}
+
+func nodeSettingInt(key string) int64 {
+	n, _ := strconv.ParseInt(service.GetNodeSetting(key), 10, 64)
+	return n
+}
+func (a *Agent) applyConfigCommand(generation int64, cmd nodewire.ConfigCommand) {
+	cs := &service.CoreService{}
+	var err error
+	if !cmd.Inspect {
+		if cmd.Reset {
+			cmd.Text = ""
+			if cmd.Core == "xray" {
+				cmd.Text = service.DefaultNodeTemplate()
+			}
+		}
+		if cmd.Core == "radius" && cmd.File == "radius.json" {
+			err = a.applyRadiusConfig(cmd.Text, cmd.Reset)
+		} else if cmd.Core == "xray" {
+			err = a.applyXrayConfig(cmd.Text)
+		} else {
+			var health *service.CoreConfigHealth
+			health, err = cs.SaveCoreConfigOverride(cmd.Core, cmd.Inbound, cmd.File, service.CoreConfigModeReplace, cmd.Text)
+			if err == nil && health != nil && health.Reverted {
+				err = errors.New("Configuration failed; previous configuration restored\n" + health.Logs)
+			}
+		}
+	}
+	message := ""
+	if err != nil {
+		message = err.Error()
+		if len(message) > 4096 {
+			message = message[:4096]
+		}
+	}
+	_ = service.SetNodeSetting(database.GetDB(), "nodeConfigError", message)
+	targets := cs.CoreConfigTargets(cmd.Core)
+	if cmd.Core == "xray" {
+		template, _ := (&service.SettingService{}).GetXrayConfigTemplate()
+		targets = []map[string]any{{"core": "xray", "inbound": 0, "file": "config.json", "label": "Xray template", "current": template}}
+	}
+	if cmd.Core == "radius" {
+		secret, _ := (&service.SettingService{}).GetRadiusSecret()
+		raw, _ := json.MarshalIndent(map[string]string{"secret": secret}, "", "  ")
+		targets = []map[string]any{{"core": "radius", "inbound": 0, "file": "radius.json", "label": "radius.json", "current": string(raw)}}
+	}
+	raw, _ := json.Marshal(targets)
+	if len(raw) > 768*1024 {
+		raw = []byte("[]")
+		_ = service.SetNodeSetting(database.GetDB(), "nodeConfigError", "Configuration target list exceeds report size limit")
+	}
+	_ = service.SetNodeSetting(database.GetDB(), "nodeConfigTargets", string(raw))
+	_ = service.SetNodeSetting(database.GetDB(), "nodeConfigGeneration", strconv.FormatInt(generation, 10))
+}
+
+// Validate the fully generated configuration with this node's own Xray and geo files.
+func (a *Agent) applyXrayConfig(text string) (err error) {
+	if err = service.ValidateNodeTemplate(text); err != nil {
+		return err
+	}
+	settings := &service.XraySettingService{}
+	previous, err := settings.GetXrayConfigTemplate()
+	if err != nil {
+		return err
+	}
+	if _, missing := service.EnsureGeofiles(service.ExtGeoRefs([]byte(text))); len(missing) > 0 {
+		return fmt.Errorf("Missing node geo files: %s", strings.Join(missing, ", "))
+	}
+	cfg, err := (&service.XrayService{}).GetXrayConfigWithTemplate(text)
+	if err != nil {
+		return err
+	}
+	raw, err := json.Marshal(cfg)
+	if err != nil {
+		return err
+	}
+	f, err := os.CreateTemp("", "node-xray-check-*.json")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(f.Name())
+	if _, err = f.Write(raw); err != nil {
+		f.Close()
+		return err
+	}
+	if err = f.Close(); err != nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	output, err := exec.CommandContext(ctx, xray.GetBinaryPath(), "-test", "-c", f.Name()).CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("Xray rejected configuration: %s", string(output))
+	}
+	if err = settings.SaveXraySetting(text); err != nil {
+		return err
+	}
+	defer func() {
+		if err != nil {
+			_ = settings.RepairXrayTemplate(previous)
+			if a.runtime != nil {
+				_ = a.runtime.RefreshNodeRuntime()
+			}
+		}
+	}()
+	if a.runtime != nil {
+		if err = a.runtime.RefreshNodeRuntime(); err != nil {
+			return err
+		}
+	}
+	return service.SetNodeSetting(database.GetDB(), "nodeXrayTemplate", text)
+}
+
+func (a *Agent) applyCoreAction(generation int64, cmd nodewire.CoreAction) {
+	err := a.executeCoreAction(cmd)
+	message := ""
+	if err != nil {
+		message = err.Error()
+		if len(message) > 4096 {
+			message = message[:4096]
+		}
+	}
+	_ = service.SetNodeSetting(database.GetDB(), "nodeCoreActionError", message)
+	_ = service.SetNodeSetting(database.GetDB(), "nodeCoreActionGeneration", strconv.FormatInt(generation, 10))
+}
+func (a *Agent) executeCoreAction(cmd nodewire.CoreAction) error {
+	cs := &service.CoreService{}
+	if !installedCores()[cmd.Core] {
+		return errors.New("Core is not installed / هسته نصب نشده است")
+	}
+
+	if (cmd.Core == "xray" || cmd.Core == "radius" || cmd.Core == "ipsec") && (cmd.Action == "uninstall" || cmd.Action == "stop") {
+		radiusDeps := map[string]bool{"l2tp": true, "pptp": true, "openvpn": true, "openconnect": true, "sstp": true, "ikev2": true}
+		ipsecDeps := map[string]bool{"l2tp": true, "ikev2": true, "gre": true}
+		for core := range installedCores() {
+			dependent := cmd.Core == "xray" || (cmd.Core == "radius" && radiusDeps[core]) || (cmd.Core == "ipsec" && ipsecDeps[core])
+			if core != cmd.Core && core != "radius" && dependent && ((cmd.Core == "xray" && cmd.Action == "uninstall") || !service.NodeCorePaused(core)) {
+				return errors.New("Stop/remove dependent cores first / ابتدا هسته‌های وابسته را متوقف یا حذف کنید")
+			}
+		}
+	}
+
+	switch cmd.Action {
+	case "stop":
+		if a.runtime != nil {
+			a.runtime.FlushNodeTraffic()
+		}
+		if err := service.SetNodeCorePaused(cmd.Core, true); err != nil {
+			return err
+		}
+		if cmd.Core == "ikev2" {
+			return nil
+		} // Shared charon is reconciled after disabling its inbounds.
+		if cmd.Core == "xray" && !(&service.XrayService{}).IsXrayRunning() {
+			return nil
+		}
+		return cs.StopCore(cmd.Core)
+	case "start", "restart":
+		if err := service.SetNodeCorePaused(cmd.Core, false); err != nil {
+			return err
+		}
+		if cmd.Action == "restart" {
+			if a.runtime != nil {
+				a.runtime.FlushNodeTraffic()
+			}
+			if cmd.Core != "xray" || (&service.XrayService{}).IsXrayRunning() {
+				if err := cs.StopCore(cmd.Core); err != nil {
+					return err
+				}
+			}
+		}
+		a.coreRestart = cmd.Core
+		a.coreRestartForce = cmd.Action == "restart"
+		return nil
+	case "uninstall":
+		a.stopRuntime()
+		if err := service.SetNodeCorePaused(cmd.Core, true); err != nil {
+			return err
+		}
+		switch cmd.Core {
+		case "xray":
+			return os.Remove(xray.GetBinaryPath())
+		case "ssh":
+			return service.SetNodeSetting(database.GetDB(), "nodeSSHInstalled", "false")
+		case "radius":
+			return service.SetNodeSetting(database.GetDB(), "nodeRadiusRemoved", "true") // Built into the agent; removal disables its listener.
+		default:
+			started, err := cs.StartCoreUninstall([]string{cmd.Core}, service.InboundsKeep)
+			if err != nil {
+				return err
+			}
+			if !started {
+				return errors.New("Uninstall busy")
+			}
+			return nil
+		}
+	default:
+		return errors.New("Unknown core action")
+	}
+}
+
+func (a *Agent) applyRadiusConfig(text string, reset bool) error {
+	var cfg struct {
+		Secret string `json:"secret"`
+	}
+	if reset {
+		key := make([]byte, 32)
+		if _, err := rand.Read(key); err != nil {
+			return err
+		}
+		cfg.Secret = hex.EncodeToString(key)
+	} else {
+		dec := json.NewDecoder(strings.NewReader(text))
+		dec.DisallowUnknownFields()
+		if err := dec.Decode(&cfg); err != nil {
+			return err
+		}
+	}
+	if len(cfg.Secret) < 16 || len(cfg.Secret) > 128 {
+		return errors.New("RADIUS secret must contain 16–128 characters")
+	}
+	for _, r := range cfg.Secret {
+		if !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '_' || r == '-') {
+			return errors.New("RADIUS secret must be alphanumeric, underscore or hyphen")
+		}
+	}
+	// Recreate the runtime on the next snapshot so every daemon receives the same
+	// new shared secret, preserving final accounting before the reconfiguration.
+	a.stopRuntime()
+	return (&service.SettingService{}).SetRadiusSecret(cfg.Secret)
 }

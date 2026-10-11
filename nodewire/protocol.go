@@ -23,18 +23,35 @@ type Account struct {
 	Remaining           int64         `json:"remaining"`     // -1 is unlimited; zero means exhausted.
 	Allowed             bool          `json:"allowed"`
 }
+type ConfigCommand struct {
+	Reset   bool   `json:"reset"`
+	Core    string `json:"core"`
+	Inbound int    `json:"inbound"`
+	File    string `json:"file"`
+	Text    string `json:"text"`
+	Inspect bool   `json:"inspect"`
+}
+type CoreAction struct {
+	Core   string `json:"core"`
+	Action string `json:"action"`
+}
 type Snapshot struct {
-	Version        int                    `json:"version"`
-	NodeID         int                    `json:"nodeId"`
-	Enable         bool                   `json:"enable"`
-	LeaseSeconds   int                    `json:"leaseSeconds"`
-	Inbounds       []model.Inbound        `json:"inbounds"`
-	Accounts       []Account              `json:"accounts"`
-	Memberships    []model.AccountInbound `json:"memberships"`
-	Template       string                 `json:"template"`
-	CoreGeneration int64                  `json:"coreGeneration"`
-	RequestedCores []string               `json:"requestedCores"`
-	Files          map[string][]byte      `json:"files"`
+	CoreActionGeneration int64                  `json:"coreActionGeneration"`
+	CoreActionCommand    *CoreAction            `json:"coreActionCommand,omitempty"`
+	ControlGeneration    int64                  `json:"controlGeneration"`
+	ConfigGeneration     int64                  `json:"configGeneration"`
+	ConfigCommand        *ConfigCommand         `json:"configCommand,omitempty"`
+	Version              int                    `json:"version"`
+	NodeID               int                    `json:"nodeId"`
+	Enable               bool                   `json:"enable"`
+	LeaseSeconds         int                    `json:"leaseSeconds"`
+	Inbounds             []model.Inbound        `json:"inbounds"`
+	Accounts             []Account              `json:"accounts"`
+	Memberships          []model.AccountInbound `json:"memberships"`
+	Template             string                 `json:"template"`
+	CoreGeneration       int64                  `json:"coreGeneration"`
+	RequestedCores       []string               `json:"requestedCores"`
+	Files                map[string][]byte      `json:"files"`
 }
 type Counter struct {
 	Kind      string `json:"kind"` // account (bill), membership (display), inbound (display)

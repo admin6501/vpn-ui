@@ -66,11 +66,16 @@ func TestNodePageBrowserRuntime(t *testing.T) {
 			if err = tpl.ExecuteTemplate(&output, "nodes.html", data); err != nil {
 				t.Fatal(err)
 			}
+			nodeData := map[string]any{"base_path": "/test/", "title": "pages.nodes.configuration", "node_id": 1, "node_name": "Germany", "perms": data["perms"]}
+			if err = tpl.ExecuteTemplate(&bytes.Buffer{}, "xray.html", nodeData); err != nil {
+				t.Fatal(err)
+			}
 			if err := database.InitDB(filepath.Join(t.TempDir(), "browser.db")); err != nil {
 				t.Fatal(err)
 			}
 			gin.SetMode(gin.TestMode)
 			router := gin.New()
+			router.SetHTMLTemplate(tpl)
 			router.Use(func(c *gin.Context) {
 				c.Set("LOGIN_USER_ROW", &model.User{Id: 1, Username: "test-admin", IsSuperAdmin: true, Enable: true})
 				c.Set("base_path", "/test/")
@@ -94,7 +99,7 @@ func TestNodePageBrowserRuntime(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			ctx, cancel := context.WithTimeout(context.Background(), 40*time.Second)
+			ctx, cancel := context.WithTimeout(context.Background(), 80*time.Second)
 			defer cancel()
 			cmd := exec.CommandContext(ctx, node, script)
 			cmd.Env = append(os.Environ(), "NODE_UI_URL="+server.URL+"/test/panel/nodes/", "NODE_UI_CHROME="+chrome)

@@ -72,17 +72,94 @@ func NewNodeController(g *gin.RouterGroup) {
 	nodes := g.Group("/nodes")
 	nodes.Use(requireSuperAdmin())
 	nodes.GET("/", func(c *gin.Context) { html(c, "nodes.html", "pages.nodes.title", nil) })
+	nodes.GET("/:id/xray", func(c *gin.Context) {
+		id, err := strconv.Atoi(c.Param("id"))
+		var node model.RemoteNode
+		if err != nil || database.GetDB().First(&node, id).Error != nil {
+			c.AbortWithStatus(http.StatusNotFound)
+			return
+		}
+		html(c, "xray.html", "pages.nodes.configuration", gin.H{"node_id": node.ID, "node_name": node.Name})
+	})
+	nodes.GET("/:id/xray/meta", func(c *gin.Context) {
+		id, err := strconv.Atoi(c.Param("id"))
+		var node model.RemoteNode
+		if err != nil || database.GetDB().First(&node, id).Error != nil {
+			c.AbortWithStatus(http.StatusNotFound)
+			return
+		}
+		tags := []string{}
+		err = database.GetDB().Model(&model.Inbound{}).Where("node_id = ?", id).Pluck("tag", &tags).Error
+		jsonObj(c, gin.H{"inboundTags": tags, "defaults": json.RawMessage(service.DefaultNodeTemplate())}, err)
+	})
 	nodes.GET("/list", func(c *gin.Context) {
 		var rows []model.RemoteNode
 		err := database.GetDB().Order("id").Find(&rows).Error
 		result := []gin.H{}
 		for _, n := range rows {
-			var report any
+			var report map[string]any
 			_ = json.Unmarshal([]byte(n.CoreReport), &report)
+			if report != nil {
+				var cmd nodewire.ConfigCommand
+				if json.Unmarshal([]byte(n.ConfigCommand), &cmd) == nil && cmd.Core != "" {
+					targets, _ := report["configTargets"].([]any)
+					for _, target := range service.NodeInboundConfigurationTargets(n.ID, cmd.Core) {
+						targets = append(targets, target)
+					}
+					report["configTargets"] = targets
+				}
+			}
 			result = append(result, gin.H{"node": n, "paired": n.TokenHash != "", "online": n.LastSeen > time.Now().Add(-35*time.Second).UnixMilli(), "report": report})
 		}
 		jsonObj(c, result, err)
 	})
+	nodes.POST("/:id/control", func(c *gin.Context) {
+		id, e := strconv.Atoi(c.Param("id"))
+		var body struct {
+			Action string `json:"action" form:"action"`
+		}
+		if e == nil {
+			e = c.ShouldBind(&body)
+		}
+		if e == nil {
+			e = (&service.NodeService{}).Control(id, body.Action)
+		}
+		jsonMsg(c, "", e)
+	})
+	nodes.POST("/:id/core-action", func(c *gin.Context) {
+		id, e := strconv.Atoi(c.Param("id"))
+		var body struct {
+			Core   string `json:"core" form:"core"`
+			Action string `json:"action" form:"action"`
+		}
+		if e == nil {
+			e = c.ShouldBind(&body)
+		}
+		if e == nil {
+			e = (&service.NodeService{}).CoreAction(id, nodewire.CoreAction{Core: body.Core, Action: body.Action})
+		}
+		jsonMsg(c, "", e)
+	})
+
+	nodes.POST("/:id/config", func(c *gin.Context) {
+		id, e := strconv.Atoi(c.Param("id"))
+		var body struct {
+			Core    string `json:"core" form:"core"`
+			Inbound int    `json:"inbound" form:"inbound"`
+			File    string `json:"file" form:"file"`
+			Text    string `json:"text" form:"text"`
+			Inspect bool   `json:"inspect" form:"inspect"`
+			Reset   bool   `json:"reset" form:"reset"`
+		}
+		if e == nil {
+			e = c.ShouldBind(&body)
+		}
+		if e == nil {
+			e = (&service.NodeService{}).Configure(id, nodewire.ConfigCommand{Core: body.Core, Inbound: body.Inbound, File: body.File, Text: body.Text, Inspect: body.Inspect, Reset: body.Reset})
+		}
+		jsonMsg(c, "", e)
+	})
+
 	nodes.POST("/add", func(c *gin.Context) {
 		var body struct {
 			Name    string `json:"name" form:"name"`

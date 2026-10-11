@@ -785,6 +785,10 @@ func l2tpSwanctlConn(connName, secretName, psk, localAddr string) string {
 // L2TP/IPsec runs on the SHARED charon (IKEv1 transport, one daemon on 500/4500 with
 // IKEv2); otherwise it falls back to host libreswan/pluto.
 func (s *L2tpService) RestartServices() error {
+	if NodeCorePaused("l2tp") {
+		s.StopServices()
+		return nil
+	}
 	migrateFromSystemd()
 
 	inbounds, err := s.GetL2tpInbounds()

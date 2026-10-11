@@ -40,7 +40,7 @@
                 </a-select>
             </template>
         </a-setting-list-item>
-        <a-setting-list-item paddings="small">
+        <a-setting-list-item v-if="!nodeContext" paddings="small">
             <template #title>{{ i18n "pages.xray.outboundTestUrl" }}</template>
             <template #description>{{ i18n "pages.xray.outboundTestUrlDesc"
                 }}</template>
@@ -242,7 +242,7 @@
                 </a-select>
             </template>
         </a-setting-list-item>
-        <a-row :xs="24" :sm="24" :lg="12">
+        <a-row v-if="!nodeContext" :xs="24" :sm="24" :lg="12">
             <a-alert type="warning"
                 :style="{ textAlign: 'center', marginTop: '20px' }">
                 <template slot="message">
@@ -312,7 +312,7 @@
                 </template>
             </a-alert>
         </a-row>
-        <a-setting-list-item paddings="small">
+        <a-setting-list-item v-if="!nodeContext" paddings="small">
             <template #title>{{ i18n "pages.xray.warpRouting" }}</template>
             <template #control>
                 <template v-if="WarpExist">
@@ -331,7 +331,7 @@
                 </template>
             </template>
         </a-setting-list-item>
-        <a-setting-list-item paddings="small">
+        <a-setting-list-item v-if="!nodeContext" paddings="small">
             <template #title>{{ i18n "pages.xray.nordRouting" }}</template>
             <template #control>
                 <template v-if="NordExist">

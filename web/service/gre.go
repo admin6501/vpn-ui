@@ -547,6 +547,9 @@ func (s *GreService) InitGre() {
 // route and learned neighbour entry are withdrawn. Verified against the kernel: removing
 // the neighbour entry alone kills a catch-all-served account without touching any other.
 func (s *GreService) GenerateAllConfigs() error {
+	if NodeCorePaused("gre") {
+		return s.StopServices()
+	}
 	inbounds, err := s.GetGreInbounds()
 	if err != nil {
 		return err

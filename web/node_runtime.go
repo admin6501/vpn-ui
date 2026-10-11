@@ -16,6 +16,14 @@ func (s *Server) StartNodeRuntime() error {
 	return nil
 }
 func (s *Server) RefreshNodeRuntime() error {
+	if !service.NodeCorePaused("radius") {
+		secret := s.getOrCreateRadiusSecret()
+		if secret != "" {
+			if err := s.radiusService.EnsureRunning(secret); err != nil {
+				return err
+			}
+		}
+	}
 	s.l2tpService.InitL2tp()
 	s.pptpService.InitPptp()
 	s.openvpnService.InitOpenVpn()
@@ -43,4 +51,42 @@ func (s *Server) StopNodeRuntime() error {
 	s.l2tpService.StopServices()
 	s.pptpService.StopServices()
 	return s.Stop()
+}
+
+func (s *Server) FlushNodeTraffic() { job.NewXrayTrafficJob(&s.radiusService).Run() }
+
+// RefreshNodeCore is used for an explicit per-core restart without stopping the
+// node management/runtime scheduler or the other protocol services.
+func (s *Server) RefreshNodeCore(core string, force bool) error {
+	switch core {
+	case "xray":
+		return s.xrayService.RestartXray(force)
+	case "radius":
+		return s.radiusService.EnsureRunning(s.getOrCreateRadiusSecret())
+	case "l2tp":
+		s.l2tpService.InitL2tp()
+	case "pptp":
+		s.pptpService.InitPptp()
+	case "openvpn":
+		s.openvpnService.InitOpenVpn()
+	case "openconnect":
+		s.ocservService.InitOcserv()
+	case "sstp":
+		s.sstpService.InitSstp()
+	case "ikev2":
+		s.ikev2Service.InitIkev2()
+	case "wgc":
+		s.wgcService.InitWgc()
+	case "awg":
+		s.awgService.InitAwg()
+	case "gre":
+		s.greService.InitGre()
+	case "mtproto":
+		s.mtprotoService.InitMtproto()
+	case "ssh":
+		s.sshService.InitSsh()
+	case "ipsec":
+		return (&service.CoreService{}).RestartCore(core)
+	}
+	return nil
 }

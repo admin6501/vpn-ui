@@ -349,6 +349,7 @@
                 Object.keys(Protocols).forEach(key => {
                     const value = Protocols[key];
                     const kind = vpnKindOf(value);
+                    if (window.nodeXrayId && (kind || value===Protocols.SSH)) return;
                     const label = protocolLabel(value, key);
                     if (!kind) {
                         out.push({ value: value, label: label, disabled: false, why: '', coreHref: '' });

@@ -1390,3 +1390,39 @@ other = "This server"
 
 [pages.nodes.copy]
 other = "Copy command"
+
+[pages.nodes.start]
+other = "Start"
+
+[pages.nodes.stop]
+other = "Stop"
+
+[pages.nodes.restart]
+other = "Restart"
+
+[pages.nodes.configuration]
+other = "Core configuration"
+
+[pages.nodes.agentUpdate]
+other = "Update the node agent to enable runtime controls and configuration editing."
+
+[pages.nodes.configHelp]
+other = "Changes apply on the selected node. Full file overrides replace generated settings; new users may require resetting the override. Stop keeps the management agent connected."
+
+[pages.nodes.noConfig]
+other = "No inbound or configuration file exists for this core yet. Create an inbound first."
+
+[pages.nodes.saveApply]
+other = "Save and apply"
+
+[pages.nodes.reconnect]
+other = "Reconnect"
+
+[pages.nodes.uninstall]
+other = "Remove core"
+
+[pages.nodes.uninstallConfirm]
+other = "Remove this core? Its inbounds, users and counters will be kept; affected VPN connections will stop."
+
+[pages.nodes.sharedCores]
+other = "Shared dependencies may serve other cores. Stop dependent cores before stopping a shared dependency; remove dependent cores before removing Xray. RADIUS and SSH are built into the agent: removal disables their feature."

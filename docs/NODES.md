@@ -31,8 +31,7 @@ reboot the **node**, not the central server. The agent does not reboot automatic
 
 The agent reuses the panel's data-plane implementations: Xray-native protocols,
 OpenVPN, L2TP, PPTP, OpenConnect, SSTP, IKEv2, kernel WireGuard, AmneziaWG, GRE,
-MTProto and the built-in SSH proxy. The embedded RADIUS service is an internal
-VPN dependency and does not appear as an independently installable core.
+MTProto and the built-in SSH proxy. The embedded RADIUS service is an internal VPN dependency. It can be controlled or disabled separately; selecting it restores the built-in service rather than installing an external daemon.
 
 Selecting a core installs that core and its required dependencies. Xray and
 geodata are also extracted when another VPN core needs routing/accounting. This
@@ -107,3 +106,17 @@ The release workflow tests actual TCP forwarding through a selected Xray core an
 returning those bytes to central quota accounting. Other protocol and kernel
 implementations share the existing runtime; every kernel protocol has not been
 live-tested on every supported distribution.
+
+## Runtime controls and configuration
+
+Update both the central panel (`deploy.sh`) and each existing node (`install-node.sh`, run again without pairing options). Existing node credentials, users and counters are retained. Older agents show an update notice and the new buttons stay disabled.
+
+The Nodes page provides **Start**, **Stop** and **Restart** for the node's VPN services. The management agent stays connected, so a stopped location can be started remotely. Requests are persistent and remain pending until acknowledged by the agent. Start and Reconnect also enable the node. Reconnect queues a start request; it cannot bypass an unavailable network path. The agent keeps retrying every five seconds after the 90-second lease expires and resumes automatically when a valid snapshot arrives.
+
+**Core configuration** reuses the main panel editors. Xray opens the same graphical settings page (basics, routing, outbounds, DNS, reverse, balancers and advanced JSON), scoped to the selected node. Other cores open the same CodeMirror file editor: select the file, edit and choose **Save and apply**. Provider accounts, panel-managed outbound tunnels and outbound tests/traffic controls remain local-panel features and are not offered in the node editor. Changes are stored on that node and survive configuration regeneration and restart. **Reset** restores generated defaults. Xray edits are checked using the node's own binary and geo files; other cores use the same validation and rollback mechanisms as local core settings. Errors are returned in the configuration dialog.
+
+Full file overrides for non-Xray cores replace generated configuration: later user/inbound changes may require resetting the override. Kernel-configured and built-in cores expose their assigned inbounds as JSON configuration targets in this same editor. Those edits are validated and stored centrally; generated account credentials, quota and subscription tokens are preserved. Start the node before applying an edit. Reading configuration is available while stopped.
+
+Each installed core has its own Start, Stop, Restart, Configuration and Remove controls in the Cores dialog. Stop switches persist on the node, including across routine syncs and agent restarts. Remove keeps central inbounds, accounts and usage; reinstalling restores them. Uninstall progress and errors are reported by the agent. SSH/RADIUS are compiled into the agent, so removing them disables the feature rather than shrinking the binary. Shared dependencies cannot be stopped while active dependent cores need them; remove dependent cores before removing Xray. Shared IPsec services may affect more than one protocol.
+
+Xray templates must preserve the reserved API inbound, API routing and traffic counters used for central accounting. The node validates a generated candidate before replacing the active template. Editing an `inbound-N.json` target changes only that inbound's listener, protocol and transport settings; clients stay under central account management. Reset applies to daemon-file overrides, not direct inbound edits.

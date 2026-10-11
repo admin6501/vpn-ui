@@ -100,10 +100,67 @@ func TestNodeBrowserFormPostsCreateUpdateAndInstall(t *testing.T) {
 	if node.Enable || node.Name != "Renamed" || node.Address != "de2.example.com" {
 		t.Fatal("form update did not bind")
 	}
+	post(fmt.Sprintf("/panel/nodes/%d/control", node.ID), url.Values{"action": {"stop"}})
+	database.GetDB().First(&node, node.ID)
+	if !node.Paused || node.ControlGeneration != 1 {
+		t.Fatal("control form did not bind")
+	}
+	post(fmt.Sprintf("/panel/nodes/%d/config", node.ID), url.Values{"core": {"xray"}, "inspect": {"true"}})
+	database.GetDB().First(&node, node.ID)
+	if node.ConfigGeneration != 1 {
+		t.Fatal("configuration form did not bind")
+	}
+
+	post(fmt.Sprintf("/panel/nodes/%d/core-action", node.ID), url.Values{"core": {"xray"}, "action": {"stop"}})
+	database.GetDB().First(&node, node.ID)
+	if node.CoreActionGeneration != 1 {
+		t.Fatal("core action form did not bind")
+	}
+
 	post(fmt.Sprintf("/panel/nodes/%d/install", node.ID), url.Values{"cores": {"xray", "openvpn"}})
 	database.GetDB().First(&node, node.ID)
 	var cores []string
 	if err := json.Unmarshal([]byte(node.RequestedCores), &cores); err != nil || len(cores) != 2 || node.CoreGeneration != 1 {
 		t.Fatal("repeated form core fields did not bind", err)
+	}
+}
+
+func TestNodeXrayMetadataIsScoped(t *testing.T) {
+	f := newIdorFixture(t)
+	f.ali.IsSuperAdmin = true
+	node, _, err := (&service.NodeService{}).Create("Germany", "de.example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, in := range []model.Inbound{{NodeID: node.ID, Tag: "de-only"}, {NodeID: 0, Tag: "local-only"}, {NodeID: node.ID + 1, Tag: "other-only"}} {
+		if err = database.GetDB().Create(&in).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	r := gin.New()
+	r.Use(withUser(f.ali))
+	NewNodeController(r.Group("/panel"))
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest("GET", fmt.Sprintf("/panel/nodes/%d/xray/meta", node.ID), nil))
+	var response struct {
+		Success bool `json:"success"`
+		Obj     struct {
+			Tags     []string        `json:"inboundTags"`
+			Defaults json.RawMessage `json:"defaults"`
+		} `json:"obj"`
+	}
+	if err = json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if !response.Success || len(response.Obj.Tags) != 1 || response.Obj.Tags[0] != "de-only" {
+		t.Fatalf("foreign inbound tags exposed: %s", w.Body.String())
+	}
+	if err = service.ValidateNodeTemplate(string(response.Obj.Defaults)); err != nil {
+		t.Fatal(err)
+	}
+	w = httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest("GET", "/panel/nodes/999999/xray/meta", nil))
+	if w.Code != http.StatusNotFound {
+		t.Fatal("nonexistent node metadata accepted")
 	}
 }

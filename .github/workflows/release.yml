@@ -55,14 +55,14 @@ jobs:
       - name: Verify dedicated node authentication, billing, subscriptions and real data plane
         run: |
           go test ./nodeagent ./web/service ./web/controller ./sub -run 'TestNode' -count=1
-          RUN_NODE_INTEGRATION=1 go test ./nodeagent -run '^TestNodeRealDataPlane$' -count=1 -timeout 120s
-      - name: Verify node page mounting and creation in Chromium (English and Persian)
+          RUN_NODE_INTEGRATION=1 go test ./nodeagent -run '^TestNodeRealDataPlane$' -count=1 -timeout 420s
+      - name: Verify node page creation, runtime controls and shared graphical/file editors in Chromium (English and Persian)
         run: |
           npm install --prefix /tmp/vpn-ui-browser-tests playwright@1.62.1 --no-audit --no-fund
           /tmp/vpn-ui-browser-tests/node_modules/.bin/playwright install --with-deps chromium
           export NODE_PATH=/tmp/vpn-ui-browser-tests/node_modules
           export NODE_UI_CHROME=$(node -e 'console.log(require("playwright").chromium.executablePath())')
-          RUN_NODE_UI_BROWSER=1 go test ./web -run '^TestNodePageBrowserRuntime$' -count=1 -timeout 120s
+          RUN_NODE_UI_BROWSER=1 go test ./web -run '^TestNodePageBrowserRuntime$' -count=1 -timeout 180s
       - name: Verify ownership transfer and online counts
         run: go test -tags netgo,osusergo ./web/service ./web/controller -run 'TestAccountOwnershipTransfer|TestPasarGuard|TestOverview|TestVerifiedProvisioned|TestOffline|TestMigrationAccountsVerifiesExistingImported'
       - name: Verify imported subscription quotas and legacy credentials

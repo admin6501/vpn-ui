@@ -332,6 +332,9 @@ func (s *AwgService) InitAwg() {
 // GenerateAllConfigs reconciles every kernel awg<id> interface to DB state, exactly like
 // WgcService.GenerateAllConfigs but with the obfuscation parameters applied at the device.
 func (s *AwgService) GenerateAllConfigs() error {
+	if NodeCorePaused("awg") {
+		return s.StopServices()
+	}
 	inbounds, err := s.GetAwgInbounds()
 	if err != nil {
 		return err

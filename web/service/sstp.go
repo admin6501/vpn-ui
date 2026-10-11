@@ -529,6 +529,9 @@ func (s *SstpService) SetupRouting() error {
 // start without one). Managed accel-pppd processes with no corresponding enabled
 // inbound are stopped. Mirrors OcservService.RestartServices.
 func (s *SstpService) RestartServices() error {
+	if NodeCorePaused("sstp") {
+		return s.StopServices()
+	}
 	migrateFromSystemd()
 
 	inbounds, err := s.GetSstpInbounds()

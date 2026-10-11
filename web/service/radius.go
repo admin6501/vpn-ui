@@ -131,6 +131,9 @@ var runningRadius *RadiusService
 
 // Start launches the RADIUS auth (1812) and accounting (1813) servers on localhost.
 func (s *RadiusService) Start(secret string) error {
+	if NodeCorePaused("radius") {
+		return nil
+	}
 	s.sessions = make(map[string]*radiusSession)
 	s.pending = make(map[string]time.Time)
 	return s.listen(secret)
@@ -2038,4 +2041,22 @@ ATTRIBUTE	MS-CHAP2-Response	25	string	Microsoft
 ATTRIBUTE	MS-CHAP2-Success	26	string	Microsoft
 `
 	return os.WriteFile(dir+"/dictionary", []byte(dict), 0644)
+}
+
+// EnsureRunning reopens a stopped node listener without resetting sessions or
+// replacing the instance referenced by its authentication/traffic services.
+func (s *RadiusService) EnsureRunning(secret string) error {
+	if NodeCorePaused("radius") {
+		return nil
+	}
+	if s.authServer != nil && s.acctServer != nil {
+		return nil
+	}
+	if s.sessions == nil {
+		s.sessions = make(map[string]*radiusSession)
+	}
+	if s.pending == nil {
+		s.pending = make(map[string]time.Time)
+	}
+	return s.listen(secret)
 }

@@ -1905,3 +1905,39 @@ other = "همین سرور"
 
 [pages.nodes.copy]
 other = "کپی دستور"
+
+[pages.nodes.start]
+other = "شروع"
+
+[pages.nodes.stop]
+other = "توقف"
+
+[pages.nodes.restart]
+other = "راه‌اندازی مجدد"
+
+[pages.nodes.configuration]
+other = "پیکربندی هسته‌ها"
+
+[pages.nodes.agentUpdate]
+other = "برای فعال شدن کنترل سرویس و ویرایش پیکربندی، عامل نود را به‌روزرسانی کنید."
+
+[pages.nodes.configHelp]
+other = "تغییرات روی همین نود اعمال می‌شوند. جایگزینی کامل فایل، تنظیمات تولیدشده را ثابت می‌کند؛ برای کاربران جدید ممکن است حذف جایگزین لازم باشد. توقف سرویس، ارتباط مدیریتی نود را قطع نمی‌کند."
+
+[pages.nodes.noConfig]
+other = "برای این هسته هنوز ورودی یا فایل پیکربندی وجود ندارد؛ ابتدا ورودی آن را بسازید."
+
+[pages.nodes.saveApply]
+other = "ذخیره و اعمال"
+
+[pages.nodes.reconnect]
+other = "اتصال مجدد"
+
+[pages.nodes.uninstall]
+other = "حذف هسته"
+
+[pages.nodes.uninstallConfirm]
+other = "این هسته حذف شود؟ ورودی‌ها، کاربران و مصرف حفظ می‌شوند؛ اتصال‌های وابسته قطع خواهند شد."
+
+[pages.nodes.sharedCores]
+other = "برخی هسته‌ها وابستگی مشترک دارند. پیش از توقف وابستگی، هسته‌های وابسته را متوقف کنید؛ برای حذف Xray ابتدا هسته‌های وابسته حذف شوند. حذف RADIUS و SSH داخلی، قابلیت آن‌ها را غیرفعال می‌کند."

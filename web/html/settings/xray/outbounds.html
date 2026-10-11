@@ -7,9 +7,9 @@
                     <span v-if="!isMobile">{{ i18n
                         "pages.xray.outbound.addOutbound" }}</span>
                 </a-button>
-                <a-button type="primary" icon="cloud"
+                <a-button type="primary" icon="cloud" v-if="!nodeContext"
                     @click="showWarp()">WARP</a-button>
-                <a-button type="primary" icon="api"
+                <a-button type="primary" icon="api" v-if="!nodeContext"
                     @click="showNord()">NordVPN</a-button>
                 <!-- No SSH or VPN Tunnel button: both are protocols in the Add
                      Outbound picker now, which is where an operator looks for
@@ -18,7 +18,7 @@
             </a-space>
         </a-col>
         <a-col :xs="12" :sm="12" :lg="12" :style="{ textAlign: 'right' }">
-            <a-button-group>
+            <a-button-group v-if="!nodeContext">
                 <a-button icon="sync" @click="refreshOutboundTraffic()"
                     :loading="refreshing"></a-button>
                 <a-popconfirm placement="topRight"
@@ -54,7 +54,7 @@
                         <a-icon type="edit"></a-icon>
                         <span>{{ i18n "edit" }}</span>
                     </a-menu-item>
-                    <a-menu-item @click="resetOutboundTraffic(index)">
+                    <a-menu-item v-if="!nodeContext" @click="resetOutboundTraffic(index)">
                         <span>
                             <a-icon type="retweet"></a-icon>
                             <span>{{ i18n "pages.inbounds.resetTraffic"}}</span>
@@ -142,7 +142,7 @@
                     icon="thunderbolt"
                     :loading="outboundTestStates[index] && outboundTestStates[index].testing"
                     @click="testOutbound(index)"
-                    :disabled="(outbound.protocol === 'blackhole' || outbound.tag === 'blocked') || (outboundTestStates[index] && outboundTestStates[index].testing)">
+                    :disabled="!!nodeContext || (outbound.protocol === 'blackhole' || outbound.tag === 'blocked') || (outboundTestStates[index] && outboundTestStates[index].testing)">
                 </a-button>
             </a-tooltip>
         </template>
