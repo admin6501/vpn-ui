@@ -17,6 +17,8 @@ this includes the existing fork fixes.
 - Representative roles with add/edit/delete controls, scoped account visibility and administrator
   ownership transfer. Assigned roles cannot be deleted.
 - Overview totals and online counts count unique accounts across inbounds.
+- Complete catalogs for thirteen panel/bot languages and localized dialog, pagination and calendar
+  controls; see [translations](docs/TRANSLATIONS.md).
 - Persian/English migration prompts, Persian form and Telegram language fixes; no donation interface
   or representative external-proxy permission.
 - Full release binary includes portable cores and all six geodata files: base, Iran and Russia

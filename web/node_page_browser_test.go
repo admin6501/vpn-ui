@@ -47,12 +47,12 @@ func TestNodePageBrowserRuntime(t *testing.T) {
 	}
 	bundle := i18n.NewBundle(language.MustParse("en-US"))
 	bundle.RegisterUnmarshalFunc("toml", toml.Unmarshal)
-	for _, locale := range []string{"en_US", "fa_IR"} {
+	for _, locale := range []string{"en_US", "fa_IR", "ar_EG", "es_ES", "id_ID", "ja_JP", "pt_BR", "ru_RU", "tr_TR", "uk_UA", "vi_VN", "zh_CN", "zh_TW"} {
 		if _, err = bundle.LoadMessageFile("translation/translate." + locale + ".toml"); err != nil {
 			t.Fatal(err)
 		}
 	}
-	for _, locale := range []string{"en-US", "fa-IR"} {
+	for _, locale := range []string{"en-US", "fa-IR", "ar-EG", "es-ES", "id-ID", "ja-JP", "pt-BR", "ru-RU", "tr-TR", "uk-UA", "vi-VN", "zh-CN", "zh-TW"} {
 		t.Run(locale, func(t *testing.T) {
 			localizer := i18n.NewLocalizer(bundle, locale)
 			tpl, err := (&Server{}).getHtmlTemplate(template.FuncMap{"i18n": func(key string, args ...string) (string, error) {
@@ -102,7 +102,7 @@ func TestNodePageBrowserRuntime(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 80*time.Second)
 			defer cancel()
 			cmd := exec.CommandContext(ctx, node, script)
-			cmd.Env = append(os.Environ(), "NODE_UI_URL="+server.URL+"/test/panel/nodes/", "NODE_UI_CHROME="+chrome)
+			cmd.Env = append(os.Environ(), "NODE_UI_URL="+server.URL+"/test/panel/nodes/", "NODE_UI_CHROME="+chrome, "NODE_UI_LANG="+locale)
 			if out, err := cmd.CombinedOutput(); err != nil {
 				t.Fatalf("browser runtime failed: %v\n%s", err, out)
 			} else {

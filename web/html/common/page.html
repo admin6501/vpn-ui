@@ -195,11 +195,14 @@
 {{ define "page/body_scripts" }}
 <script src="{{ .base_path }}assets/vue/vue.min.js?{{ .asset_ver }}"></script>
 <script src="{{ .base_path }}assets/moment/moment.min.js"></script>
+<script src="{{ .base_path }}assets/moment/locales.js?{{ .asset_ver }}"></script>
 <script src="{{ .base_path }}assets/ant-design-vue/antd.min.js"></script>
 <script src="{{ .base_path }}assets/axios/axios.min.js?{{ .asset_ver }}"></script>
 <script src="{{ .base_path }}assets/qs/qs.min.js"></script>
 <script src="{{ .base_path }}assets/js/axios-init.js?{{ .asset_ver }}"></script>
 <script src="{{ .base_path }}assets/js/util/index.js?{{ .asset_ver }}"></script>
+<script src="{{ .base_path }}assets/js/component-locales.js?{{ .asset_ver }}"></script>
+<script src="{{ .base_path }}assets/js/panel-locale.js?{{ .asset_ver }}"></script>
 <script>
   const basePath = '{{ .base_path }}';
   axios.defaults.baseURL = basePath;

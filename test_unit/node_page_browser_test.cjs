@@ -4,6 +4,7 @@ const {chromium}=require('playwright');
  try{
   const page=await browser.newPage({viewport:{width:390,height:844}});
   page.setDefaultTimeout(10000);
+  await page.context().addCookies([{url:process.env.NODE_UI_URL,name:"lang",value:process.env.NODE_UI_LANG || "en-US"}]);
   const errors=[];page.on('pageerror',err=>{errors.push(err.message);console.error('Page error:',err.message)});
   await page.goto(process.env.NODE_UI_URL,{waitUntil:'networkidle'});
   await page.locator('#app:not([v-cloak])').waitFor({state:'visible'});
@@ -11,6 +12,10 @@ const {chromium}=require('playwright');
   if(await page.locator('a-sidebar').count())throw Error('sidebar component not mounted');
   await page.locator('button.ant-btn-primary').first().click();
   await page.locator('.ant-modal:visible').waitFor({state:'visible'});
+  const componentLocale=await page.evaluate(()=>PanelComponentLocales[LanguageManager.getLanguage()]);
+  const okText=await page.locator('.ant-modal:visible .ant-modal-footer button.ant-btn-primary').innerText();
+  if(okText.replace(/\s/g,'')!==componentLocale.Modal.okText.replace(/\s/g,''))throw Error('component dialog language differs from panel language: '+okText);
+  if(await page.evaluate(()=>moment.locale())!=='en')throw Error('component locales changed default wire date formatting');
   const inputs=page.locator('.ant-modal:visible input');
   await inputs.nth(0).fill('Germany');await inputs.nth(1).fill('de.example.com');
   await page.locator('.ant-modal:visible .ant-modal-footer button.ant-btn-primary').click();
@@ -19,6 +24,20 @@ const {chromium}=require('playwright');
   if(!command.includes('install-node.sh')||!command.includes('/test/'))throw Error('pairing command missing web path');
 
   await page.locator('.ant-modal:visible').filter({has:page.locator('textarea')}).locator('.ant-modal-close').click();
+  // Real library components must inherit the selected panel language too.
+  await page.evaluate(()=>{
+   const el=document.createElement('div');el.id='locale-probe';document.body.appendChild(el);
+   window.componentProbe=new Vue({el:'#locale-probe',data:{value:moment('2026-10-11')},template:'<div id="locale-probe"><a-date-picker v-model="value"></a-date-picker><a-pagination :total="100"></a-pagination></div>'});
+  });
+  const datePlaceholder=await page.locator('#locale-probe .ant-calendar-picker input').getAttribute('placeholder');
+  if(datePlaceholder!==componentLocale.DatePicker.lang.placeholder)throw Error('date picker language differs');
+  const nextPage=await page.locator('#locale-probe .ant-pagination-next').getAttribute('title');
+  if(nextPage!==componentLocale.Pagination.next_page)throw Error('pagination language differs');
+  await page.locator('#locale-probe .ant-calendar-picker input').click();
+  const today=await page.locator('.ant-calendar:visible .ant-calendar-today-btn').innerText();
+  if(today!==componentLocale.DatePicker.lang.today)throw Error('calendar language differs');
+  await page.keyboard.press('Escape');
+  await page.evaluate(()=>{const el=componentProbe.$el;componentProbe.$destroy();el.remove();delete window.componentProbe});
   // A synthetic agent report exercises the UI; requests still use the actual
   // controller/database. The real-agent integration test verifies execution.
   let currentCore='xray',submitted=null;
