@@ -11,11 +11,7 @@
 sudo bash install-offline.sh ./vpn-ui-amd64
 ```
 
-زبان انگلیسی:
-
-```bash
-sudo bash install-offline.sh --lang en ./vpn-ui-amd64
-```
+پیام‌ها و پرسش‌های نصب آفلاین همیشه انگلیسی هستند. گزینهٔ قدیمی `--lang` برای سازگاری پذیرفته می‌شود، ولی زبان پیام‌ها را تغییر نمی‌دهد.
 
 Linux amd64 یا arm64، Bash، systemd فعال و ابزارهای پایهٔ سیستم (از جمله coreutils و awk) لازم‌اند. باینری
 شامل Xray، هسته‌های قابل‌حمل و داده‌های عمومی، ایران و روسیه است. برای برخی پروتکل‌ها، nftables،
@@ -68,11 +64,13 @@ sudo systemctl restart vpn-ui
 
 ## English
 
+Installer messages and Yes/No prompts are always in English.
+
 Transfer the release's `vpn-ui-amd64` and `install-offline.sh` into the same directory, optionally
 with `SHA256SUMS`. Run:
 
 ```bash
-sudo bash install-offline.sh --lang en ./vpn-ui-amd64
+sudo bash install-offline.sh ./vpn-ui-amd64
 ```
 
 Requires Linux amd64 or arm64, Bash, an active systemd system and standard utilities (coreutils/awk). The

@@ -610,6 +610,7 @@ unfreeze = "Çözme"
 frozen = "Dondurulmuş"
 
 [pages.clients]
+"sortName" = "Ad"
 "summaryTarget" = "Gelen"
 "tabPreview" = "Önizleme"
 "randomStemHint" = "Sekiz x karakteri, her hesaba oluşturulduğunda verilen rastgele adı temsil eder."

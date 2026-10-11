@@ -130,6 +130,7 @@
               <label>{{ i18n "pages.inbounds.totalFlow" }}</label>
               <a-input-number v-model="clientsBulkModal.totalGb" :min="0"
                 :style="{ width: '100%' }"></a-input-number>
+              <a-select :value="clientsBulkModal.quotaUnit" @change="v => clientsBulkModal.setQuotaUnit(v)"><a-select-option value="GB">GB</a-select-option><a-select-option value="MB">MB</a-select-option></a-select>
               <div class="bo-cf-hint">{{ i18n "pages.clients.zeroUnlimited" }}</div>
             </div>
           </a-col>
@@ -306,6 +307,7 @@
     comment: '',
     tgId: '',
     totalGb: 0,
+    quotaUnit: 'GB',
     days: 0,
     // A negative expiryTime means "N days from first use" and the clock has not
     // started, which is what this switch writes.
@@ -366,9 +368,11 @@
     get firstIndex() { return this.usesNum ? (Number(this.firstNum) || 0) : 0; },
 
     // --- the summary rail ---------------------------------------------------
+    get quotaBytes() { return Math.round((this.totalGb || 0) * (this.quotaUnit === 'MB' ? 1048576 : 1073741824)); },
+    setQuotaUnit(unit) { const bytes = this.quotaBytes; this.quotaUnit = unit; this.totalGb = bytes / (unit === 'MB' ? 1048576 : 1073741824); },
     get quotaText() {
       if (!this.totalGb) return '{{ i18n "pages.clients.summaryUnlimited" }}';
-      return SizeFormatter.sizeFormat(this.totalGb * 1073741824);
+      return SizeFormatter.sizeFormat(this.quotaBytes);
     },
     get expiresText() {
       if (!this.days) return '{{ i18n "pages.clients.summaryNever" }}';
@@ -425,7 +429,7 @@
       return !!(RESELLER.isReseller && RESELLER.daysPerGb > 0);
     },
     get resellerForcedDaysText() {
-      const days = NumberFormatter.toFixed((this.totalGb || 0) * RESELLER.daysPerGb, 1);
+      const days = NumberFormatter.toFixed((this.quotaBytes / 1073741824) * RESELLER.daysPerGb, 1);
       return days + ' ' + '{{ i18n "pages.client.expireDays" }}';
     },
     // The calendar is only offered while the deadline IS a date. With a delayed
@@ -527,7 +531,7 @@
         subId: acc.subId,
         reset: Number(this.reset) || 0,
         tgId: Number(this.tgId) || 0,
-        totalGB: (this.totalGb || 0) * 1073741824,
+        totalGB: this.quotaBytes,
         expiryTime,
         vpnUsername: acc.vpnUsername,
         auth: acc.auth,
@@ -620,6 +624,7 @@
       this.comment = '';
       this.tgId = '';
       this.totalGb = 0;
+      this.quotaUnit = 'GB';
       this.days = 0;
       this.delayedStart = false;
       this.pickDate = false;

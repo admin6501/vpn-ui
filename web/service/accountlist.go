@@ -124,6 +124,9 @@ type AccountRow struct {
 type AccountListResult struct {
 	CanTransferOwnership bool         `json:"canTransferOwnership"`
 	Rows                 []AccountRow `json:"rows"`
+	Online               int          `json:"online"`
+	Enabled              int          `json:"enabled"`
+	Disabled             int          `json:"disabled"`
 	Total                int          `json:"total"` // rows matching the search, before paging
 	Page                 int          `json:"page"`
 	Size                 int          `json:"size"`
@@ -142,6 +145,7 @@ type AccountListResult struct {
 // Named constants because they cross the wire; clients.html uses these exact
 // strings as its menu keys.
 const (
+	AccountSortName     = "name"
 	AccountSortNewest   = "newest"
 	AccountSortOldest   = "oldest"
 	AccountSortOnline   = "online"
@@ -289,7 +293,7 @@ func (s *AccountService) ListAccounts(user *model.User, page, size int, search, 
 	// of meaning: on a box where Xray never started it is empty, and every account
 	// then sorts as offline rather than the call failing.
 	online := map[string]bool{}
-	if sortKey == AccountSortOnline {
+	{
 		var inboundService InboundService
 		for _, email := range inboundService.GetOnlineClients() {
 			online[accountKey(email)] = true
@@ -297,6 +301,15 @@ func (s *AccountService) ListAccounts(user *model.User, page, size int, search, 
 	}
 	sortKey = sortAccountRows(rows, createdAt, online, sortKey)
 
+	enabled, connected := 0, 0
+	for _, row := range rows {
+		if row.Enable {
+			enabled++
+		}
+		if online[accountKey(row.Email)] {
+			connected++
+		}
+	}
 	total := len(rows)
 	start := (page - 1) * size
 	if start > total {
@@ -311,6 +324,7 @@ func (s *AccountService) ListAccounts(user *model.User, page, size int, search, 
 	}
 	return &AccountListResult{
 		Rows: rows[start:end], Total: total, Page: page, Size: size,
+		Online: connected, Enabled: enabled, Disabled: total - enabled,
 		Sort: sortKey, CanTransferOwnership: user.IsSuperAdmin,
 	}, nil
 }
@@ -332,7 +346,7 @@ func (s *AccountService) ListAccounts(user *model.User, page, size int, search, 
 // the order they were made.
 func sortAccountRows(rows []AccountRow, createdAt map[int]int64, online map[string]bool, sortKey string) string {
 	switch sortKey {
-	case AccountSortNewest, AccountSortOldest, AccountSortOnline,
+	case AccountSortName, AccountSortNewest, AccountSortOldest, AccountSortOnline,
 		AccountSortEnabled, AccountSortDisabled:
 	default:
 		sortKey = AccountSortNewest
@@ -343,6 +357,11 @@ func sortAccountRows(rows []AccountRow, createdAt map[int]int64, online map[stri
 	// are five different questions and only two of them are about the same value.
 	less := func(a, b *AccountRow) bool {
 		switch sortKey {
+		case AccountSortName:
+			if accountKey(a.Email) != accountKey(b.Email) {
+				return accountKey(a.Email) < accountKey(b.Email)
+			}
+			return a.Id < b.Id
 		case AccountSortOldest:
 			if createdAt[a.Id] != createdAt[b.Id] {
 				return createdAt[a.Id] < createdAt[b.Id]

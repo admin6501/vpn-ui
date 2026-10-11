@@ -1676,7 +1676,12 @@ func (s *AccountService) RenameAccount(oldEmail, newEmail string) ([]int, error)
 			return err
 		}
 		touched = changed
-
+		if err := tx.Model(&xray.ClientTraffic{}).Where("LOWER(TRIM(email)) = ?", oldKey).Update("email", newEmail).Error; err != nil {
+			return err
+		}
+		if err := tx.Model(&model.ResellerClient{}).Where("LOWER(TRIM(email)) = ?", oldKey).Update("email", newEmail).Error; err != nil {
+			return err
+		}
 		return tx.Model(&model.Account{}).Where("id = ?", account.Id).
 			Update("email", newEmail).Error
 	})

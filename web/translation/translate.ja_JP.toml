@@ -610,6 +610,7 @@ unfreeze = "凍結解除"
 frozen = "冷凍"
 
 [pages.clients]
+"sortName" = "名前"
 "summaryTarget" = "インバウンド"
 "tabPreview" = "プレビュー"
 "randomStemHint" = "8 つの x 文字は、各アカウントの作成時に付けられるランダムな名前を表します。"

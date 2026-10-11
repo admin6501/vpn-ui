@@ -239,6 +239,9 @@ func ApplyNodeSnapshot(snap *nodewire.Snapshot, installed map[string]bool) (stri
 		}
 		return nil
 	})
+	if e == nil {
+		WriteSpeedLimits()
+	}
 	return revision, e
 }
 

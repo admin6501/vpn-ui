@@ -67,6 +67,9 @@
                     </a-popover>
                   </a-button-group>
 
+                  <a-tag color="green">{{ i18n "online" }}: [[ clientCounts.online ]]</a-tag>
+                  <a-tag>{{ i18n "enabled" }}: [[ clientCounts.enabled ]]</a-tag>
+                  <a-tag>{{ i18n "disabled" }}: [[ clientCounts.disabled ]]</a-tag>
                   <!-- The order. The only sort control on the page: none of these
                        five is a column, so there are no header arrows to compete
                        with. The button keeps a fixed label and the menu carries the
@@ -488,6 +491,7 @@
       // are needed: the rows carry the account-level totals the server computed,
       // the inbounds carry the per-protocol client objects every action works on.
       clients: [],
+      clientCounts: { online: 0, enabled: 0, disabled: 0 },
       dbInbounds: [],
       inbounds: [],
       assignable: [],
@@ -547,6 +551,7 @@
       // which way it runs, so there is nothing for an ascending/descending toggle to
       // do and the menu is one click rather than two.
       sortOptions: [
+        { key: 'name', label: '{{ i18n "pages.clients.sortName" }}' },
         { key: 'newest',  label: '{{ i18n "pages.clients.sortNewest" }}' },
         { key: 'oldest',  label: '{{ i18n "pages.clients.sortOldest" }}' },
         { key: 'online',  label: '{{ i18n "online" }}' },
@@ -850,6 +855,7 @@
         if (!msg || !msg.success) return;
         this.canTransferOwnership = !!(msg.obj && msg.obj.canTransferOwnership);
         this.clients = (msg.obj && msg.obj.rows) || [];
+        this.clientCounts = { online: msg.obj.online || 0, enabled: msg.obj.enabled || 0, disabled: msg.obj.disabled || 0 };
         this.pagination.total = (msg.obj && msg.obj.total) || 0;
         // Taken from the ANSWER, not from what was asked. The server falls back to
         // newest for an ordering it does not know, and a stale key left in this

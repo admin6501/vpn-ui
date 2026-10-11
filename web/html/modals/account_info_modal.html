@@ -39,6 +39,7 @@
           [[ row.enable ? '{{ i18n "enable" }}' : '{{ i18n "disabled" }}' ]]
         </span>
         <span class="ai-chip ok" v-if="isOnline">{{ i18n "online" }}</span>
+        <span class="ai-chip ok" v-for="p in onlineProtocols" :key="p">[[ ProtocolLabels[p] || p ]]</span>
         <span class="ai-chip warn" v-if="frozen">{{ i18n "pages.client.frozen" }}</span>
       </div>
 
@@ -291,6 +292,10 @@
       },
       frozen() {
         return !!(this.app && this.row && this.app.isAccountFrozen(this.row));
+      },
+      onlineProtocols() {
+        if (!this.app || !this.row) return [];
+        return [...new Set(this.memberships.filter(m => this.app.membershipOnline(m.record, m.client.email)).map(m => m.record.protocol))];
       },
       isOnline() {
         if (!this.app || !this.row) return false;

@@ -615,6 +615,7 @@ kernelRuntime = "کرنل سیستم‌عامل"
 "frozen" = "مسدود"
 
 [pages.clients]
+"sortName" = "نام"
 "summaryTarget" = "ورودی"
 "tabPreview" = "پیش‌نمایش"
 "randomStemHint" = "هشت حرف x نماینده نام تصادفی هر حساب هنگام ایجاد است."

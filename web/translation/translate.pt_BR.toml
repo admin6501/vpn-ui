@@ -610,6 +610,7 @@ unfreeze = "descongelar"
 frozen = "Congelado"
 
 [pages.clients]
+"sortName" = "Nome"
 "summaryTarget" = "Entrada"
 "tabPreview" = "Visualização"
 "randomStemHint" = "Os oito caracteres x representam o nome aleatório que cada conta recebe quando é criada."

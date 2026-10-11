@@ -270,9 +270,10 @@
              0. This is the message, not the control: ResellerService.Quote
              refuses it again server-side. -->
         <a-input-number
-            v-model.number="client._totalGB"
-            :min="RESELLER.isReseller && !RESELLER.unlimited ? Math.max(1, RESELLER.minCreateGb) : 0"
+            v-model.number="client._quotaAmount"
+            :min="RESELLER.isReseller && !RESELLER.unlimited ? Math.max(1, RESELLER.minCreateGb) * (client.quotaUnit === 'MB' ? 1024 : 1) : 0"
         ></a-input-number>
+        <a-select v-model="client.quotaUnit"><a-select-option value="GB">GB</a-select-option><a-select-option value="MB">MB</a-select-option></a-select>
     </a-form-item>
     <a-form-item v-if="isEdit && clientStats" label='{{ i18n "usage" }}'>
         <a-tag

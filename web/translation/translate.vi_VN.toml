@@ -611,6 +611,7 @@ unfreeze = "Giải phóng"
 frozen = "Đông lạnh"
 
 [pages.clients]
+"sortName" = "Tên"
 "summaryTarget" = "Vào"
 "tabPreview" = "Xem trước"
 "randomStemHint" = "Tám ký tự x đại diện cho tên ngẫu nhiên mà mỗi tài khoản được đặt khi nó được tạo."

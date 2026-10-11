@@ -132,3 +132,13 @@ func TestSortAccountRowsTieBreakIsCaseInsensitive(t *testing.T) {
 		t.Errorf("the tie-break should ignore case: %v", got)
 	}
 }
+
+func TestAccountSortNameIsCaseInsensitiveAndStable(t *testing.T) {
+	rows := []AccountRow{{Id: 3, Email: "zulu"}, {Id: 2, Email: "Alpha"}, {Id: 1, Email: "alpha"}}
+	if got := sortAccountRows(rows, nil, nil, AccountSortName); got != AccountSortName {
+		t.Fatal(got)
+	}
+	if rows[0].Id != 1 || rows[1].Id != 2 || rows[2].Id != 3 {
+		t.Fatalf("unexpected name order: %+v", rows)
+	}
+}

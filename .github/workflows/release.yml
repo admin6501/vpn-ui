@@ -64,7 +64,7 @@ jobs:
           export NODE_UI_CHROME=$(node -e 'console.log(require("playwright").chromium.executablePath())')
           RUN_NODE_UI_BROWSER=1 go test ./web -run '^Test(NodePageBrowserRuntime|OverviewSSLBrowserRuntime)$' -count=1 -timeout 360s
       - name: Verify ownership transfer and online counts
-        run: go test -tags netgo,osusergo ./web/service ./web/controller -run 'TestAccountOwnershipTransfer|TestPasarGuard|TestOverview|TestVerifiedProvisioned|TestOffline|TestMigrationAccountsVerifiesExistingImported'
+        run: go test -tags netgo,osusergo ./web/service ./web/controller -run 'TestRenameAccount|TestSortAccountRows|TestAccountSort|TestClientLimit|TestSpeedLimit|TestAccountOwnershipTransfer|TestPasarGuard|TestOverview|TestVerifiedProvisioned|TestOffline|TestMigrationAccountsVerifiesExistingImported'
       - name: Verify imported subscription quotas and legacy credentials
         run: go test ./sub ./compat/pasarguard -run 'TestPasarGuard|TestGetSubs|TestExistingSubscriptionFormats|TestInvalidTokens|TestDisplayToken' -count=1
       - name: Verify offline refresh guard
@@ -80,6 +80,7 @@ jobs:
       - name: Verify actual TCP and UDP socket lifetimes
         run: |
           go test ./util/sys ./web/service -run 'TestSocketCounts|TestConnection' -count=1
+          node test_unit/client_edit_regression_test.cjs
           node test_unit/inbound_stats_test.js
           node test_unit/overview_ssl_stats_test.cjs
           node --check web/assets/js/model/inbound.js

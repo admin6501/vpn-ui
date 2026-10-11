@@ -493,3 +493,32 @@ func TestNodeControlsUpgradeExistingNodeRows(t *testing.T) {
 		t.Fatal("upgraded row cannot receive commands", snap, err)
 	}
 }
+
+func TestNodeWorkerPublishesClientSpeedOverridesBothDirections(t *testing.T) {
+	svc, n, _ := nodeFixture(t)
+	_, account := seedNodeAccount(t, n, 48901, "limited@example.com")
+	down, up := 128, 64
+	account.SpeedLimitDown, account.SpeedLimitUp = &down, &up
+	if err := database.GetDB().Save(account).Error; err != nil {
+		t.Fatal(err)
+	}
+	snap, err := svc.Snapshot(n.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("VPNUI_BIN_FOLDER", t.TempDir())
+	if _, err := ApplyNodeSnapshot(snap, map[string]bool{"xray": true}); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(xray.GetSpeedLimitPath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc speedLimitDoc
+	if err := json.Unmarshal(data, &doc); err != nil {
+		t.Fatal(err)
+	}
+	if len(doc.Users) != 1 || doc.Users[0].Email != account.Email || doc.Users[0].DownBps != 128*1024 || doc.Users[0].UpBps != 64*1024 {
+		t.Fatalf("limits not delivered to worker: %s", data)
+	}
+}

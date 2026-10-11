@@ -97,6 +97,7 @@ func (a *InboundController) initRouter(g *gin.RouterGroup) {
 	// account an identity in. Both are super-admin-only in the handler (see
 	// callerMayLeaveAccountUnserved), which is a narrower gate than these permission
 	// bits and the reason the bits are still the ones its served twin uses.
+	g.POST("/renameUnservedAccount", requirePerm(model.PermEditClient), a.renameUnservedAccount)
 	g.POST("/saveAccount", requirePerm(model.PermCreateClient), a.saveAccountClient)
 	g.POST("/delAccount/:email", requirePerm(model.PermDeleteClient), a.delAccountClient)
 	// Switch one account on or off on ONE inbound. Deliberately not a shape of
@@ -3281,4 +3282,38 @@ var errNoInboundNotYours = fmt.Errorf(
 func (a *InboundController) callerMayLeaveAccountUnserved(c *gin.Context) bool {
 	user := session.GetLoginUser(c)
 	return user != nil && user.IsSuperAdmin
+}
+
+// renameUnservedAccount is restricted to retained accounts with no memberships.
+func (a *InboundController) renameUnservedAccount(c *gin.Context) {
+	if !a.callerMayLeaveAccountUnserved(c) {
+		jsonMsg(c, I18nWeb(c, "somethingWentWrong"), errNoInboundNotYours)
+		return
+	}
+	oldEmail, email := c.PostForm("oldEmail"), c.PostForm("email")
+	if err := service.ValidateClientEmail(email); err != nil {
+		jsonMsg(c, "", err)
+		return
+	}
+	ids, err := accountService.InboundIdsForEmail(oldEmail)
+	if err != nil || len(ids) != 0 {
+		jsonMsg(c, "", fmt.Errorf("Account has memberships; use the client editor"))
+		return
+	}
+	var old model.Account
+	db := database.GetDB()
+	if err := db.Where("LOWER(TRIM(email)) = ?", strings.ToLower(strings.TrimSpace(oldEmail))).First(&old).Error; err != nil {
+		jsonMsg(c, "", err)
+		return
+	}
+	var collisions int64
+	if err := db.Model(&model.Account{}).Where("LOWER(TRIM(email)) = ? AND id <> ?", strings.ToLower(strings.TrimSpace(email)), old.Id).Count(&collisions).Error; err != nil || collisions > 0 {
+		jsonMsg(c, "", fmt.Errorf("Client name already exists"))
+		return
+	}
+	if _, err := accountService.RenameAccount(oldEmail, email); err != nil {
+		jsonMsg(c, "", err)
+		return
+	}
+	jsonMsg(c, I18nWeb(c, "pages.inbounds.toasts.inboundClientUpdateSuccess"), nil)
 }

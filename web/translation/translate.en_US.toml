@@ -610,6 +610,7 @@ kernelRuntime = "OS kernel"
 "renewDesc" = "Auto-renewal after expiration. (0 = disable)(unit: day)"
 
 [pages.clients]
+"sortName" = "Name"
 "summaryTarget" = "Inbound"
 "tabPreview" = "Preview"
 "randomStemHint" = "The eight x characters stand for the random name each account is given when it is created."

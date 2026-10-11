@@ -5,6 +5,7 @@ import (
 
 	"github.com/mhsanaei/3x-ui/v2/database"
 	"github.com/mhsanaei/3x-ui/v2/database/model"
+	"github.com/mhsanaei/3x-ui/v2/xray"
 
 	"gorm.io/gorm"
 )
@@ -258,5 +259,36 @@ func TestADeletedClientIsNotResurrectedByTheNextProjection(t *testing.T) {
 	}
 	if got := len(readClients(t, second.Id)); got != 1 {
 		t.Errorf("the inbound that should still serve it has %d clients", got)
+	}
+}
+
+func TestRenameAccountPreservesGlobalUsageAndOwnerForAdmin(t *testing.T) {
+	svc := newAccountsDB(t)
+	seedInboundWithClients(t, model.VLESS, 49901, []map[string]any{{"id": "3fa85f64-5717-4562-b3fc-2c963f66afa6", "email": "before", "enable": true}})
+	svc.MigrationAccounts()
+	db := database.GetDB()
+	if err := db.Create(&xray.ClientTraffic{Email: "before", Up: 123, Down: 456, Total: 104857600, Enable: true}).Error; err != nil {
+		t.Fatal(err)
+	}
+	owner := model.ResellerClient{Email: "before"}
+	if err := db.Create(&owner).Error; err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.RenameAccount("before", "after"); err != nil {
+		t.Fatal(err)
+	}
+	var traffic xray.ClientTraffic
+	if err := db.Where("email = ?", "after").First(&traffic).Error; err != nil {
+		t.Fatal(err)
+	}
+	if traffic.Up != 123 || traffic.Down != 456 || traffic.Total != 104857600 {
+		t.Fatalf("usage or quota changed: %+v", traffic)
+	}
+	var carried model.ResellerClient
+	if err := db.First(&carried, owner.Id).Error; err != nil {
+		t.Fatal(err)
+	}
+	if carried.Email != "after" {
+		t.Fatal("admin rename lost reseller ownership")
 	}
 }

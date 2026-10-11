@@ -3280,6 +3280,7 @@ Inbound.ClientBase = class extends XrayCommonClass {
         this.email = email;
         this.limitIp = limitIp;
         this.totalGB = totalGB;
+        this.quotaUnit = totalGB > 0 && totalGB < SizeFormatter.ONE_GB ? "MB" : "GB";
         this.expiryTime = expiryTime;
         this.enable = enable;
         this.tgId = tgId;
@@ -3339,6 +3340,9 @@ Inbound.ClientBase = class extends XrayCommonClass {
             this.expiryTime = t.valueOf();
         }
     }
+
+    get _quotaAmount() { return this.totalGB / (this.quotaUnit === "MB" ? 1048576 : SizeFormatter.ONE_GB); }
+    set _quotaAmount(value) { this.totalGB = Math.round(value * (this.quotaUnit === "MB" ? 1048576 : SizeFormatter.ONE_GB)); }
 
     get _totalGB() {
         return NumberFormatter.toFixed(this.totalGB / SizeFormatter.ONE_GB, 2);

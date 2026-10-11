@@ -611,6 +611,7 @@ unfreeze = "إلغاء التجميد"
 frozen = "مجمد"
 
 [pages.clients]
+"sortName" = "الاسم"
 "summaryTarget" = "اتصال وارد"
 "tabPreview" = "معاينة"
 "randomStemHint" = "تشير الأحرف x الثمانية إلى الاسم العشوائي الذي يُعطى لكل حساب عند إنشائه."

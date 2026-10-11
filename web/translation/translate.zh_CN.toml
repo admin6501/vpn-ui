@@ -611,6 +611,7 @@ unfreeze = "解冻"
 frozen = "冻结"
 
 [pages.clients]
+"sortName" = "名称"
 "summaryTarget" = "入站"
 "tabPreview" = "预览"
 "randomStemHint" = "八个 x 字符代表每个帐户在创建时指定的随机名称。"

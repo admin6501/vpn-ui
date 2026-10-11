@@ -67,14 +67,12 @@
       <template v-if="clientMembershipModal.tab === 'identity'">
         <div class="bo-cf-field">
           <label>{{ i18n "pages.inbounds.email" }}</label>
-          <a-input v-model.trim="clientMembershipModal.client.email"
-                   :disabled="clientMembershipModal.isEdit">
+          <a-input v-model.trim="clientMembershipModal.client.email">
             <a-tooltip slot="addonAfter" v-if="!clientMembershipModal.isEdit">
               <template slot="title">{{ i18n "pages.clients.regenerate" }}</template>
               <a-icon type="reload" @click="clientMembershipModal.regenerate('email')"></a-icon>
             </a-tooltip>
           </a-input>
-          <div class="bo-cf-hint" v-if="clientMembershipModal.isEdit">{{ i18n "pages.clients.emailLocked" }}</div>
         </div>
         <a-row :gutter="12">
           <a-col :span="12">
@@ -108,6 +106,7 @@
               <label>{{ i18n "pages.inbounds.totalFlow" }}</label>
               <a-input-number v-model="clientMembershipModal.totalGb" :min="0"
                 :style="{ width: '100%' }"></a-input-number>
+              <a-select :value="clientMembershipModal.quotaUnit" @change="v => clientMembershipModal.setQuotaUnit(v)"><a-select-option value="GB">GB</a-select-option><a-select-option value="MB">MB</a-select-option></a-select>
               <div class="bo-cf-hint">{{ i18n "pages.clients.zeroUnlimited" }}</div>
             </div>
           </a-col>
@@ -389,6 +388,7 @@
     assignable: [],
     selected: [],
     totalGb: 0,
+    quotaUnit: 'GB',
     days: 0,
     client: {},
     row: null,
@@ -527,7 +527,8 @@
         // of them. Nothing is generated here - an edit must show the operator
         // what the customer currently has installed.
         this.loadCredentialsFrom(row);
-        this.totalGb = row.totalGB ? Math.round(row.totalGB / 1073741824) : 0;
+        this.quotaUnit = row.totalGB > 0 && row.totalGB < 1073741824 ? 'MB' : 'GB';
+        this.totalGb = (row.totalGB || 0) / (this.quotaUnit === 'MB' ? 1048576 : 1073741824);
         // A negative expiry means "N days from first use" and has not started, so it
         // is shown as that many days rather than as a date in 1970.
         this.days = row.expiryTime > 0
@@ -546,6 +547,7 @@
           email: this.mint('email'), enable: true,
         });
         this.totalGb = 0;
+        this.quotaUnit = 'GB';
         this.days = 0;
         this.delayedStart = false;
         this.selected = [];
@@ -580,7 +582,12 @@
     // On an edit these are the account's real figures; on an add they preview
     // what is being typed, which is the only way the rail earns its space before
     // the account exists.
-    get quotaBytes() { return (this.totalGb || 0) * 1073741824; },
+    setQuotaUnit(unit) {
+      const bytes = this.quotaBytes;
+      this.quotaUnit = unit;
+      this.totalGb = bytes / (unit === 'MB' ? 1048576 : 1073741824);
+    },
+    get quotaBytes() { return Math.round((this.totalGb || 0) * (this.quotaUnit === 'MB' ? 1048576 : 1073741824)); },
     get usedBytes() { return this.row ? ((this.row.up || 0) + (this.row.down || 0)) : 0; },
     get usedPercent() {
       if (!this.quotaBytes) return 0;
@@ -600,7 +607,7 @@
     // The derived duration, shown in place of the controls so the reseller can see
     // what they are selling before they save.
     get resellerForcedDaysText() {
-      const days = NumberFormatter.toFixed((this.totalGb || 0) * RESELLER.daysPerGb, 1);
+      const days = NumberFormatter.toFixed((this.quotaBytes / 1073741824) * RESELLER.daysPerGb, 1);
       return days + ' ' + '{{ i18n "pages.client.expireDays" }}';
     },
     // Already past its deadline, so the day count cannot describe it.
@@ -1031,7 +1038,7 @@
         subId: c.subId || '',
         reset: Number(c.reset) || 0,
         tgId: Number(c.tgId) || 0,
-        totalGB: (this.totalGb || 0) * 1073741824,
+        totalGB: this.quotaBytes,
         // A NEGATIVE expiry is not a date. It is "this many days from first use",
         // and the server starts the clock on the first connection.
         expiryTime: this.postedExpiry(),
@@ -1178,7 +1185,14 @@
       // Nothing serves this account, so there is no entry anywhere for updateClient
       // to match and no protocol to address it by. saveAccount is that case, and it
       // is also how the inbounds now being ticked get attached.
-      if (!anchor) return await this.saveAccount(email, ids);
+      if (!anchor) {
+        if (email !== this.row.email) {
+          const renamed = await HttpUtil.post('/panel/api/inbounds/renameUnservedAccount', { oldEmail: this.row.email, email });
+          if (!renamed || !renamed.success) return renamed;
+          this.row.email = email;
+        }
+        return await this.saveAccount(email, ids);
+      }
       const anchorIb = this.assignable.find(x => x.inboundId === anchor.inboundId);
       const client = this.entryFor(anchorIb ? anchorIb.protocol : anchor.protocol,
                                    email, anchor.inboundId);

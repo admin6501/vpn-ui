@@ -610,6 +610,7 @@ unfreeze = "Mencairkan"
 frozen = "Beku"
 
 [pages.clients]
+"sortName" = "Nama"
 "summaryTarget" = "Masuk"
 "tabPreview" = "Pratinjau"
 "randomStemHint" = "Delapan karakter x mewakili nama acak yang diberikan setiap akun saat dibuat."
