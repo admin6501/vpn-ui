@@ -54,7 +54,7 @@ func ValidatePanelURL(raw string) (string, error) {
 	ip := net.ParseIP(u.Hostname())
 	loopback := ip != nil && ip.IsLoopback()
 	if u.Scheme != "https" && !(u.Scheme == "http" && loopback) {
-		return "", errors.New("Use HTTPS for node management / ارتباط مدیریت نود باید HTTPS باشد")
+		return "", errors.New("Use HTTPS for node management.")
 	}
 	u.Path = strings.TrimRight(u.Path, "/") + "/"
 	return u.String(), nil
@@ -133,7 +133,7 @@ func Enroll(ctx context.Context, path, panel, pair, ca string) error {
 			if c.PanelURL != panel {
 				return errors.New("Agent is paired to another panel")
 			}
-			fmt.Println("Agent already paired / عامل قبلاً متصل شده است")
+			fmt.Println("Agent already paired.")
 			return nil
 		}
 		if c.PanelURL != panel {
@@ -165,7 +165,7 @@ func Enroll(ctx context.Context, path, panel, pair, ca string) error {
 	if e = saveConfig(path, c); e != nil {
 		return e
 	}
-	fmt.Printf("Node connected / نود متصل شد: #%d\n", c.NodeID)
+	fmt.Printf("Node connected: #%d\n", c.NodeID)
 	return nil
 }
 
@@ -620,7 +620,7 @@ func (a *Agent) applyCoreAction(generation int64, cmd nodewire.CoreAction) {
 func (a *Agent) executeCoreAction(cmd nodewire.CoreAction) error {
 	cs := &service.CoreService{}
 	if !installedCores()[cmd.Core] {
-		return errors.New("Core is not installed / هسته نصب نشده است")
+		return errors.New("Core is not installed.")
 	}
 
 	if (cmd.Core == "xray" || cmd.Core == "radius" || cmd.Core == "ipsec") && (cmd.Action == "uninstall" || cmd.Action == "stop") {
@@ -629,7 +629,7 @@ func (a *Agent) executeCoreAction(cmd nodewire.CoreAction) error {
 		for core := range installedCores() {
 			dependent := cmd.Core == "xray" || (cmd.Core == "radius" && radiusDeps[core]) || (cmd.Core == "ipsec" && ipsecDeps[core])
 			if core != cmd.Core && core != "radius" && dependent && ((cmd.Core == "xray" && cmd.Action == "uninstall") || !service.NodeCorePaused(core)) {
-				return errors.New("Stop/remove dependent cores first / ابتدا هسته‌های وابسته را متوقف یا حذف کنید")
+				return errors.New("Stop or remove dependent cores first.")
 			}
 		}
 	}
