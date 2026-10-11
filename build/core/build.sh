@@ -227,7 +227,7 @@ build_core() {
     srccommit="$(git -C "$src" rev-parse HEAD 2>/dev/null || echo unknown)"
     # Dependency and vendored transport fixes must invalidate the core cache.
     local security_hash
-    security_hash="$(cat "$REPO_ROOT/build/core/security-dependencies.patch" "$REPO_ROOT/third_party/quic-go/http3/headers.go" "$REPO_ROOT/third_party/quic-go/go.mod" | sha256sum | cut -d' ' -f1)"
+    security_hash="$(cat "$REPO_ROOT/build/core/security-dependencies.patch" "$REPO_ROOT/build/core/tcp-timeout.patch" "$REPO_ROOT/third_party/quic-go/http3/headers.go" "$REPO_ROOT/third_party/quic-go/go.mod" | sha256sum | cut -d' ' -f1)"
     srccommit="$srccommit-$security_hash"
     info "pinned Xray core source: $src @ ${srccommit:0:12}"
     for goarch in "${ARCHES[@]}"; do

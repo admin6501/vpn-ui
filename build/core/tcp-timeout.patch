@@ -1,0 +1,74 @@
+diff --git a/transport/internet/sockopt_linux.go b/transport/internet/sockopt_linux.go
+index 9a305a40..20246c6f 100644
+--- a/transport/internet/sockopt_linux.go
++++ b/transport/internet/sockopt_linux.go
+@@ -2,6 +2,7 @@ package internet
+ 
+ import (
+ 	"context"
++	stderrors "errors"
+ 	"net"
+ 	"runtime"
+ 	"strconv"
+@@ -77,7 +78,7 @@ func applyOutboundSocketOptions(network string, address string, fd uintptr, conf
+ 		}
+ 
+ 		if config.TcpUserTimeout > 0 {
+-			if err := syscall.SetsockoptInt(int(fd), syscall.IPPROTO_TCP, unix.TCP_USER_TIMEOUT, int(config.TcpUserTimeout)); err != nil {
++			if err := setTCPUserTimeout(int(fd), int(config.TcpUserTimeout)); err != nil {
+ 				return errors.New("failed to set TCP_USER_TIMEOUT", err)
+ 			}
+ 		}
+@@ -186,7 +187,7 @@ func applyInboundSocketOptions(network string, fd uintptr, config *SocketConfig)
+ 		}
+ 
+ 		if config.TcpUserTimeout > 0 {
+-			if err := syscall.SetsockoptInt(int(fd), syscall.IPPROTO_TCP, unix.TCP_USER_TIMEOUT, int(config.TcpUserTimeout)); err != nil {
++			if err := setTCPUserTimeout(int(fd), int(config.TcpUserTimeout)); err != nil {
+ 				return errors.New("failed to set TCP_USER_TIMEOUT", err)
+ 			}
+ 		}
+@@ -271,3 +272,15 @@ func setReusePort(fd uintptr) error {
+ 	}
+ 	return nil
+ }
++
++// Unsupported optional timeouts must not abort mandatory TPROXY setup.
++func setTCPUserTimeout(fd, timeout int) error {
++	return tolerateUnsupportedTCPUserTimeout(syscall.SetsockoptInt(fd, syscall.IPPROTO_TCP, unix.TCP_USER_TIMEOUT, timeout))
++}
++func tolerateUnsupportedTCPUserTimeout(err error) error {
++	if stderrors.Is(err, syscall.ENOPROTOOPT) || stderrors.Is(err, syscall.EOPNOTSUPP) {
++		errors.LogWarning(context.Background(), "TCP_USER_TIMEOUT unavailable for this socket; retaining keepalive and TPROXY")
++		return nil
++	}
++	return err
++}
+diff --git a/transport/internet/tcp_timeout_regression_test.go b/transport/internet/tcp_timeout_regression_test.go
+new file mode 100644
+index 0000000..d8c5929
+--- /dev/null
++++ b/transport/internet/tcp_timeout_regression_test.go
+@@ -0,0 +1,22 @@
++//go:build linux
++
++package internet
++
++import (
++	"fmt"
++	"syscall"
++	"testing"
++)
++
++func TestTCPUserTimeoutUnsupportedDoesNotAbortSocketSetup(t *testing.T) {
++	for _, err := range []error{nil, syscall.ENOPROTOOPT, syscall.EOPNOTSUPP, fmt.Errorf("socket: %w", syscall.ENOPROTOOPT)} {
++		if got := tolerateUnsupportedTCPUserTimeout(err); got != nil {
++			t.Fatalf("optional timeout aborted setup: %v", got)
++		}
++	}
++	for _, err := range []error{syscall.EPERM, syscall.EBADF, syscall.EINVAL} {
++		if got := tolerateUnsupportedTCPUserTimeout(err); got != err {
++			t.Fatalf("unexpected error suppressed: %v", err)
++		}
++	}
++}
