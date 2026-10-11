@@ -777,6 +777,7 @@
       clientCount: [],
       accountSummary: null,
       accountSummaryLoading: false,
+      accountSummaryTimer: null,
       onlineClients: [],
       // "<inboundId>:<email>" for each pair seen in the last traffic tick. Consumed
       // by membershipOnline (component/clientActions.html), which is what the
@@ -831,6 +832,8 @@
         try {
           const summary = await HttpUtil.get('/panel/api/server/userStats');
           if (summary && summary.success && summary.obj) this.accountSummary = summary.obj;
+        } catch (error) {
+          console.warn('Account summary refresh failed', error);
         } finally {
           this.accountSummaryLoading = false;
         }
@@ -1886,6 +1889,8 @@
       this.loading();
       this.getDefaultSettings();
       
+      // Keep time-based expiration current even when no traffic or row changes.
+      this.accountSummaryTimer = setInterval(() => this.refreshAccountSummary(), 10000);
       // Initial data fetch
       this.getDBInbounds().then(() => {
         this.loading(false);
@@ -2001,6 +2006,9 @@
           this.startDataRefreshLoop();
         }
       }
+    },
+    beforeDestroy() {
+      clearInterval(this.accountSummaryTimer);
     },
     computed: {
       // Whether to offer reordering at all. The order is the PANEL's and shared by
