@@ -50,7 +50,7 @@ release checksums before copying. Then run:
 ```bash
 bash install-node.sh --binary ./vpn-ui-node-arm64 \
   --panel-url 'https://panel.example.com/YOUR_WEB_PATH/' \
-  --pair-token 'TOKEN_COPIED_FROM_THE_CENTRAL_PANEL' --lang en
+  --pair-token 'TOKEN_COPIED_FROM_THE_CENTRAL_PANEL'
 ```
 
 For x86-64, replace the binary name with `vpn-ui-node-amd64`. Answer No to the apt
@@ -120,3 +120,5 @@ Full file overrides for non-Xray cores replace generated configuration: later us
 Each installed core has its own Start, Stop, Restart, Configuration and Remove controls in the Cores dialog. Stop switches persist on the node, including across routine syncs and agent restarts. Remove keeps central inbounds, accounts and usage; reinstalling restores them. Uninstall progress and errors are reported by the agent. SSH/RADIUS are compiled into the agent, so removing them disables the feature rather than shrinking the binary. Shared dependencies cannot be stopped while active dependent cores need them; remove dependent cores before removing Xray. Shared IPsec services may affect more than one protocol.
 
 Xray templates must preserve the reserved API inbound, API routing and traffic counters used for central accounting. The node validates a generated candidate before replacing the active template. Editing an `inbound-N.json` target changes only that inbound's listener, protocol and transport settings; clients stay under central account management. Reset applies to daemon-file overrides, not direct inbound edits.
+
+The node installer uses English for all prompts, status messages and errors.
