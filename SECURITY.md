@@ -22,7 +22,9 @@ This update fixes confirmed issues in the panel:
   upstream HTTP/3 trailer decoding fix (GO-2026-5676).
 
 All users must log in again after installing this update. Update both the panel
-and dedicated node agents to refresh their embedded Xray binaries.
+and dedicated node agents. For each existing node, then request installation
+of Xray again from the central panel's Nodes → Cores page. This refreshes the
+on-disk Xray binary; updating the agent alone preserves existing installed cores.
 
 Old logs, Telegram messages and backups are not erased by this update. If login
 failures or incorrect two-factor codes were submitted on an older version,
@@ -67,8 +69,8 @@ The final scan finds no affected symbols or imported packages. The unused
 `golang.org/x/crypto/openpgp` package has an advisory without a fixed version;
 neither the panel nor Xray imports it.
 
-This review is not a guarantee that all vulnerabilities are absent. Third-party
-non-Go VPN engines and live-server operating-system configuration have not had a
+This review is not a guarantee that all vulnerabilities are absent. Other bundled
+third-party VPN engines and live-server operating-system configuration have not had a
 complete penetration test as part of this review.
 
 Report suspected vulnerabilities privately to the repository owner before
