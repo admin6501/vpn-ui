@@ -1296,6 +1296,7 @@
                 enable: true,
                 token: newTwoFactorToken,
                 code: twoFactorModal.enteredCode,
+                password: twoFactorModal.enteredPassword,
               });
               // Only flip the switch once the server has actually stored it.
               if (msg && msg.success) this.twoFactorEnable = true;

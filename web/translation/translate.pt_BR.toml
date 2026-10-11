@@ -239,6 +239,7 @@ rebooting = "Reinicializando o servidor…"
 "hidePassword" = "Ocultar senha"
 
 [pages.login.toasts]
+"tooManyAttempts" = "Muitas tentativas de login. Tente novamente mais tarde."
 "invalidFormData" = "O formato dos dados de entrada é inválido."
 "emptyUsername" = "Nome de usuário é obrigatório"
 "emptyPassword" = "Senha é obrigatória"

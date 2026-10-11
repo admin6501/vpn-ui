@@ -70,9 +70,10 @@ type ClientExternalProxy struct {
 // encrypted, so anything that reaches it is readable client-side. The session
 // stores only Id for the same reason (see web/session).
 type User struct {
-	Id       int    `json:"id" gorm:"primaryKey;autoIncrement"`
-	Username string `json:"username" gorm:"uniqueIndex"`
-	Password string `json:"-"`
+	Id             int    `json:"id" gorm:"primaryKey;autoIncrement"`
+	Username       string `json:"username" gorm:"uniqueIndex"`
+	Password       string `json:"-"`
+	SessionVersion int64  `json:"-" gorm:"default:0"`
 
 	// Nickname is a human label for the Admins list; it carries no privilege.
 	Nickname string `json:"nickname" form:"nickname"`

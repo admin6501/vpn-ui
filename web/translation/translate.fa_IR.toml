@@ -241,6 +241,7 @@ kernelRuntime = "کرنل سیستم‌عامل"
 "hidePassword" = "پنهان کردن رمزعبور"
 
 [pages.login.toasts]
+"tooManyAttempts" = "تعداد تلاش‌های ورود بیش از حد مجاز است. کمی بعد دوباره تلاش کنید."
 "invalidFormData" = "اطلاعات به‌درستی وارد نشده‌است"
 "emptyUsername" = "لطفا یک نام‌کاربری وارد کنید‌"
 "emptyPassword" = "لطفا یک رمزعبور وارد کنید"

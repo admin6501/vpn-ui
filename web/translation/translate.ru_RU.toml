@@ -239,6 +239,7 @@ rebooting = "Перезагрузка сервера…"
 "hidePassword" = "Скрыть пароль"
 
 [pages.login.toasts]
+"tooManyAttempts" = "Слишком много попыток входа. Попробуйте позже."
 "invalidFormData" = "Недопустимый формат данных"
 "emptyUsername" = "Введите имя пользователя"
 "emptyPassword" = "Введите пароль"

@@ -239,6 +239,7 @@ rebooting = "サーバーを再起動しています…"
 "hidePassword" = "パスワードを非表示"
 
 [pages.login.toasts]
+"tooManyAttempts" = "ログイン試行回数が多すぎます。しばらくしてから再試行してください。"
 "invalidFormData" = "データ形式エラー"
 "emptyUsername" = "ユーザー名を入力してください"
 "emptyPassword" = "パスワードを入力してください"

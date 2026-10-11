@@ -1458,6 +1458,9 @@ func (s *ResellerService) UpdateReseller(caller *model.User, id int, spec Resell
 	if profile.ConsumptionBased {
 		updates["representative_role_id"] = spec.RepresentativeRoleID
 	}
+	if !spec.Enable {
+		updates["session_version"] = gorm.Expr("session_version + 1")
+	}
 	if spec.Password != "" {
 		hash, err := crypto.HashPasswordAsBcrypt(spec.Password)
 		if err != nil {

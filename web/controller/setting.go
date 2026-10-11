@@ -2,6 +2,8 @@ package controller
 
 import (
 	"errors"
+	"github.com/gin-contrib/sessions"
+	"github.com/mhsanaei/3x-ui/v2/database"
 	"time"
 
 	"github.com/mhsanaei/3x-ui/v2/database/model"
@@ -60,8 +62,9 @@ func (a *SettingController) initRouter(g *gin.RouterGroup) {
 
 	g.POST("/all", a.getAllSetting)
 	g.POST("/update", a.updateSetting)
-	g.POST("/updateUser", a.updateUser)
-	g.POST("/twoFactor", a.updateTwoFactor)
+	securityLimiter := newLoginLimiter().middleware()
+	g.POST("/updateUser", securityLimiter, a.updateUser)
+	g.POST("/twoFactor", securityLimiter, a.updateTwoFactor)
 	g.POST("/restartPanel", a.restartPanel)
 	// Its own route rather than a field in AllSetting: the switch is on the
 	// inbounds page, which never loads the settings blob, so posting through
@@ -193,9 +196,12 @@ func (a *SettingController) updateUser(c *gin.Context) {
 	}
 	err = a.userService.UpdateUser(user.Id, form.NewUsername, form.NewPassword)
 	if err == nil {
-		user.Username = form.NewUsername
-		user.Password, _ = crypto.HashPasswordAsBcrypt(form.NewPassword)
-		session.SetLoginUser(c, user)
+		var fresh model.User
+		err = database.GetDB().First(&fresh, user.Id).Error
+		if err == nil {
+			session.SetLoginUser(c, &fresh)
+			err = sessions.Default(c).Save()
+		}
 	}
 	jsonMsg(c, I18nWeb(c, "pages.settings.toasts.modifyUser"), err)
 }
@@ -220,9 +226,10 @@ func (a *SettingController) getDefaultXrayConfig(c *gin.Context) {
 // user id: an admin may only ever change their own second factor, so it comes from
 // the session and can never be aimed at someone else.
 type twoFactorForm struct {
-	Enable bool   `json:"enable" form:"enable"`
-	Token  string `json:"token" form:"token"`
-	Code   string `json:"code" form:"code"`
+	Password string `json:"password" form:"password"`
+	Enable   bool   `json:"enable" form:"enable"`
+	Token    string `json:"token" form:"token"`
+	Code     string `json:"code" form:"code"`
 }
 
 // updateTwoFactor turns the caller's own TOTP on or off.
@@ -236,6 +243,21 @@ func (a *SettingController) updateTwoFactor(c *gin.Context) {
 	if err := c.ShouldBind(form); err != nil {
 		jsonMsg(c, I18nWeb(c, "pages.settings.security.twoFactor"), err)
 		return
+	}
+	if form.Enable && user.TwoFactorEnable {
+		// A live cookie cannot replace the existing authenticator with a newly
+		// generated secret. Disable using the current authenticator first.
+		if form.Token != "" && form.Token != user.TwoFactorToken {
+			jsonMsg(c, I18nWeb(c, "pages.settings.security.twoFactor"), errors.New(I18nWeb(c, "pages.settings.security.twoFactorModalRemoveStep")))
+			return
+		}
+		form.Token = user.TwoFactorToken
+	} else if form.Enable {
+		verified, err := a.userService.CheckUser(user.Username, form.Password, "")
+		if err != nil || verified == nil {
+			jsonMsg(c, I18nWeb(c, "pages.settings.security.twoFactor"), errors.New(I18nWeb(c, "pages.settings.toasts.originalUserPassIncorrect")))
+			return
+		}
 	}
 	if form.Enable {
 		// Verify against the SUBMITTED secret before storing it. Enrolment used to be
@@ -257,6 +279,16 @@ func (a *SettingController) updateTwoFactor(c *gin.Context) {
 		}
 	}
 	if err := a.userService.SetTwoFactor(user.Id, form.Enable, form.Token); err != nil {
+		jsonMsg(c, I18nWeb(c, "pages.settings.security.twoFactor"), err)
+		return
+	}
+	var fresh model.User
+	if err := database.GetDB().First(&fresh, user.Id).Error; err != nil {
+		jsonMsg(c, I18nWeb(c, "pages.settings.security.twoFactor"), err)
+		return
+	}
+	session.SetLoginUser(c, &fresh)
+	if err := sessions.Default(c).Save(); err != nil {
 		jsonMsg(c, I18nWeb(c, "pages.settings.security.twoFactor"), err)
 		return
 	}

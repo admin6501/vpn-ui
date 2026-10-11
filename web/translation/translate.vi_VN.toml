@@ -239,6 +239,7 @@ rebooting = "Đang khởi động lại máy chủ…"
 "hidePassword" = "Ẩn mật khẩu"
 
 [pages.login.toasts]
+"tooManyAttempts" = "Có quá nhiều lần đăng nhập. Vui lòng thử lại sau."
 "invalidFormData" = "Dạng dữ liệu nhập không hợp lệ."
 "emptyUsername" = "Vui lòng nhập tên người dùng."
 "emptyPassword" = "Vui lòng nhập mật khẩu."

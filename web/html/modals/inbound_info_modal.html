@@ -520,8 +520,8 @@
                       @click="FileManager.downloadTextFile(infoModal.links[index], `peer-${index + 1}.conf`)"></a-button>
                   </a-tooltip>
                 </tr-info-title>
-                <div v-html="infoModal.links[index].replaceAll(`\n`,`<br />`)"
-                  :style="{ borderRadius: '1rem', padding: '0.5rem' }" class="client-table-odd-row">
+                <div v-text="infoModal.links[index]"
+                  :style="{ borderRadius: '1rem', padding: '0.5rem', whiteSpace: 'pre-wrap' }" class="client-table-odd-row">
                 </div>
                 <a-divider orientation="center">Link</a-divider>
                 <tr-info-title class="tr-info-title">

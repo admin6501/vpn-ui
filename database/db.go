@@ -6,7 +6,6 @@ import (
 	"bytes"
 	"errors"
 	"io"
-	"io/fs"
 	"log"
 	"os"
 	"path"
@@ -375,8 +374,12 @@ func copyFile(src, dst string) error {
 		return err
 	}
 	defer in.Close()
-	out, err := os.OpenFile(dst, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o644)
+	out, err := os.OpenFile(dst, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
 	if err != nil {
+		return err
+	}
+	if err := out.Chmod(0o600); err != nil {
+		out.Close()
 		return err
 	}
 	if _, err := io.Copy(out, in); err != nil {
@@ -388,12 +391,31 @@ func copyFile(src, dst string) error {
 
 func InitDB(dbPath string) error {
 	dir := path.Dir(dbPath)
-	err := os.MkdirAll(dir, fs.ModePerm)
+	err := os.MkdirAll(dir, 0o700)
 	if err != nil {
 		return err
 	}
 
 	migrateLegacyDB(dbPath)
+
+	// SQLite contains panel authentication material and VPN credentials. Create
+	// it privately before SQLite opens it, and repair permissive legacy modes.
+	file, err := os.OpenFile(dbPath, os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		return err
+	}
+	if err := file.Chmod(0o600); err != nil {
+		file.Close()
+		return err
+	}
+	if err := file.Close(); err != nil {
+		return err
+	}
+	for _, suffix := range []string{"-wal", "-shm", "-journal"} {
+		if err := os.Chmod(dbPath+suffix, 0o600); err != nil && !os.IsNotExist(err) {
+			return err
+		}
+	}
 
 	var gormLogger logger.Interface
 

@@ -219,11 +219,16 @@ prepare_src() {
 build_core() {
     local src
     src="$(prepare_src)"
+    bash "$REPO_ROOT/build/core/apply-security.sh" "$src"
     # The commit the source is at. If the cached xray was built from this same
     # commit, there is nothing to rebuild — skip the (slow) go build. Bump the
     # submodule/ref to trigger a rebuild, or set CORE_FORCE=1.
     local srccommit
     srccommit="$(git -C "$src" rev-parse HEAD 2>/dev/null || echo unknown)"
+    # Dependency and vendored transport fixes must invalidate the core cache.
+    local security_hash
+    security_hash="$(cat "$REPO_ROOT/build/core/security-dependencies.patch" "$REPO_ROOT/third_party/quic-go/http3/headers.go" "$REPO_ROOT/third_party/quic-go/go.mod" | sha256sum | cut -d' ' -f1)"
+    srccommit="$srccommit-$security_hash"
     info "pinned Xray core source: $src @ ${srccommit:0:12}"
     for goarch in "${ARCHES[@]}"; do
         local outdir="$OUT_ROOT/$goarch"

@@ -239,6 +239,7 @@ rebooting = "正在重新启动服务器..."
 "hidePassword" = "隐藏密码"
 
 [pages.login.toasts]
+"tooManyAttempts" = "登录尝试次数过多，请稍后重试。"
 "invalidFormData" = "数据格式错误"
 "emptyUsername" = "请输入用户名"
 "emptyPassword" = "请输入密码"

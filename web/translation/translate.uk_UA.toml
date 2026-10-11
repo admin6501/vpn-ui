@@ -239,6 +239,7 @@ rebooting = "перезавантаження сервера…"
 "hidePassword" = "Приховати пароль"
 
 [pages.login.toasts]
+"tooManyAttempts" = "Забагато спроб входу. Спробуйте пізніше."
 "invalidFormData" = "Формат вхідних даних недійсний."
 "emptyUsername" = "Потрібне ім'я користувача"
 "emptyPassword" = "Потрібен пароль"

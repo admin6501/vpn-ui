@@ -198,6 +198,10 @@ func (s *Server) initRouter() (*gin.Engine, error) {
 	}
 
 	engine := gin.Default()
+	if err := engine.SetTrustedProxies(middleware.TrustedProxies()); err != nil {
+		return nil, err
+	}
+	engine.Use(middleware.BrowserOriginProtection())
 
 	webDomain, err := s.settingService.GetWebDomain()
 	if err != nil {
@@ -232,6 +236,12 @@ func (s *Server) initRouter() (*gin.Engine, error) {
 	}
 	store.Options(sessionOptions)
 	engine.Use(sessions.Sessions("vpn-ui", store))
+	engine.Use(func(c *gin.Context) {
+		options := sessionOptions
+		options.Secure = middleware.IsSecureRequest(c.Request)
+		sessions.Default(c).Options(options)
+		c.Next()
+	})
 	engine.Use(func(c *gin.Context) {
 		c.Set("base_path", basePath)
 	})

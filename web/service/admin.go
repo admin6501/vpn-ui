@@ -258,6 +258,9 @@ func (s *AdminService) UpdateAdmin(id int, spec AdminSpec) error {
 		"enable":         spec.Enable,
 		"is_super_admin": spec.IsSuperAdmin,
 	}
+	if !spec.Enable {
+		updates["session_version"] = gorm.Expr("session_version + 1")
+	}
 	if spec.Password != "" {
 		hash, err := crypto.HashPasswordAsBcrypt(spec.Password)
 		if err != nil {

@@ -2,6 +2,8 @@
 <a-modal id="two-factor-modal" v-model="twoFactorModal.visible" :title="twoFactorModal.title" :closable="true"
     :class="themeSwitcher.currentTheme">
     <template v-if="twoFactorModal.type === 'set'">
+        <label>{{ i18n "pages.settings.currentPassword" }}</label>
+        <a-input-password autocomplete="current-password" v-model="twoFactorModal.enteredPassword"></a-input-password>
         <p>{{ i18n "pages.settings.security.twoFactorModalSteps" }}</p>
         <a-divider></a-divider>
         <p>{{ i18n "pages.settings.security.twoFactorModalFirstStep" }}</p>
@@ -31,6 +33,7 @@
 
 <script>
     const twoFactorModal = {
+        enteredPassword: "",
         title: '',
         description: '',
         fileName: '',
@@ -94,6 +97,7 @@
                 : null;
         },
         close: function () {
+            twoFactorModal.enteredPassword = "";
             twoFactorModal.enteredCode = "";
             twoFactorModal.visible = false;
         },

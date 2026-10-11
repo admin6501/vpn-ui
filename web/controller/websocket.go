@@ -2,12 +2,12 @@ package controller
 
 import (
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/mhsanaei/3x-ui/v2/logger"
 	"github.com/mhsanaei/3x-ui/v2/util/common"
+	"github.com/mhsanaei/3x-ui/v2/web/middleware"
 	"github.com/mhsanaei/3x-ui/v2/web/session"
 	"github.com/mhsanaei/3x-ui/v2/web/websocket"
 
@@ -34,37 +34,7 @@ var upgrader = ws.Upgrader{
 	WriteBufferSize:   32768,
 	EnableCompression: true, // Negotiate permessage-deflate compression if the client supports it
 
-	CheckOrigin: func(r *http.Request) bool {
-		// Check origin for security
-		origin := r.Header.Get("Origin")
-		if origin == "" {
-			// Allow connections without Origin header (same-origin requests)
-			return true
-		}
-		// Get the host from the request
-		host := r.Host
-		// Extract scheme and host from origin
-		originURL := origin
-		// Simple check: origin should match the request host
-		// This prevents cross-origin WebSocket hijacking
-		if strings.HasPrefix(originURL, "http://") || strings.HasPrefix(originURL, "https://") {
-			// Extract host from origin
-			originHost := strings.TrimPrefix(strings.TrimPrefix(originURL, "http://"), "https://")
-			if idx := strings.Index(originHost, "/"); idx != -1 {
-				originHost = originHost[:idx]
-			}
-			if idx := strings.Index(originHost, ":"); idx != -1 {
-				originHost = originHost[:idx]
-			}
-			// Compare hosts (without port)
-			requestHost := host
-			if idx := strings.Index(requestHost, ":"); idx != -1 {
-				requestHost = requestHost[:idx]
-			}
-			return originHost == requestHost || originHost == "" || requestHost == ""
-		}
-		return false
-	},
+	CheckOrigin: middleware.SameOrigin,
 }
 
 // WebSocketController handles WebSocket connections for real-time updates

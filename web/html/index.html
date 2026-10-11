@@ -1657,16 +1657,16 @@
 
           let text = ``;
           if (log.Email !== "") {
-            text = `<td>${log.Email}</td>`;
+            text = `<td>${LogFormatter.esc(log.Email)}</td>`;
           }
 
           formattedLogs += `
 <tr ${outboundColor}>
-    <td><b>${IntlUtil.formatDate(log.DateTime)}</b></td>
-    <td>${log.FromAddress}</td>
-    <td>${log.ToAddress}</td>
-    <td>${log.Inbound}</td>
-    <td>${log.Outbound}</td>
+    <td><b>${LogFormatter.esc(IntlUtil.formatDate(log.DateTime))}</b></td>
+    <td>${LogFormatter.esc(log.FromAddress)}</td>
+    <td>${LogFormatter.esc(log.ToAddress)}</td>
+    <td>${LogFormatter.esc(log.Inbound)}</td>
+    <td>${LogFormatter.esc(log.Outbound)}</td>
     ${text}
 </tr>
 `;

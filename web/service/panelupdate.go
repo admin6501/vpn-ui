@@ -591,11 +591,24 @@ func CopyFile(src, dst string) error {
 		return err
 	}
 	defer in.Close()
-	out, err := os.OpenFile(dst, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o644)
+	info, err := in.Stat()
+	if err != nil {
+		return err
+	}
+	mode := info.Mode().Perm()
+	// Database snapshots must stay private, including copies from older installs.
+	name := filepath.Base(src)
+	if strings.HasSuffix(name, ".db") || strings.Contains(name, ".db-") {
+		mode = 0o600
+	}
+	out, err := os.OpenFile(dst, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, mode)
 	if err != nil {
 		return err
 	}
 	defer out.Close()
+	if err := out.Chmod(mode); err != nil {
+		return err
+	}
 	_, err = io.Copy(out, in)
 	return err
 }

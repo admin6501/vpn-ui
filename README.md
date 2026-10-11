@@ -148,3 +148,7 @@ The installed executable keeps the compatibility path `/opt/vpn-ui/vpn-ui-amd64`
 Use the dedicated, outbound-only agent to manage location servers and install selected
 cores from the central panel. Accounts keep one owner, subscription and shared quota.
 The initial agent install activates no VPN core. See [node setup and limitations](docs/NODES.md).
+
+## Security and deployment
+
+[Security and deployment](SECURITY.md)

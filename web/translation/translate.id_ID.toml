@@ -239,6 +239,7 @@ rebooting = "Mem-boot ulang server…"
 "hidePassword" = "Sembunyikan kata sandi"
 
 [pages.login.toasts]
+"tooManyAttempts" = "Terlalu banyak percobaan masuk. Silakan coba lagi nanti."
 "invalidFormData" = "Format data input tidak valid."
 "emptyUsername" = "Nama Pengguna diperlukan"
 "emptyPassword" = "Kata Sandi diperlukan"

@@ -239,6 +239,7 @@ rebooting = "إعادة تشغيل الخادم..."
 "hidePassword" = "إخفاء الباسورد"
 
 [pages.login.toasts]
+"tooManyAttempts" = "محاولات تسجيل الدخول كثيرة جدًا. حاول مرة أخرى لاحقًا."
 "invalidFormData" = "تنسيق البيانات المدخلة مش صحيح."
 "emptyUsername" = "اسم المستخدم مطلوب"
 "emptyPassword" = "الباسورد مطلوب"

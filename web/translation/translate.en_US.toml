@@ -239,6 +239,7 @@ kernelRuntime = "OS kernel"
 "hidePassword" = "Hide password"
 
 [pages.login.toasts]
+"tooManyAttempts" = "Too many login attempts. Please try again later."
 "invalidFormData" = "The Input data format is invalid."
 "emptyUsername" = "Username is required"
 "emptyPassword" = "Password is required"

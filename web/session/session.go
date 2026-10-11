@@ -3,7 +3,15 @@
 package session
 
 import (
+	"crypto/sha256"
+	"crypto/subtle"
+	"encoding/hex"
+	"encoding/json"
 	"net/http"
+
+	"github.com/mhsanaei/3x-ui/v2/logger"
+	"github.com/mhsanaei/3x-ui/v2/web/middleware"
+	"gorm.io/gorm"
 
 	"github.com/mhsanaei/3x-ui/v2/database"
 	"github.com/mhsanaei/3x-ui/v2/database/model"
@@ -14,12 +22,13 @@ import (
 
 const (
 	loginUserKey = "LOGIN_USER"
+	loginAuthKey = "LOGIN_AUTH"
 	// loginUserCtxKey caches the loaded user for the life of one request, so the
 	// several handlers that ask for it don't each re-query.
 	loginUserCtxKey = "LOGIN_USER_ROW"
 )
 
-// The session cookie holds ONLY the user's id, never the user row.
+// The session cookie holds the user ID and a credential binding, never the user row.
 //
 // The store is signed but not encrypted (cookie.NewStore -> securecookie with a
 // nil blockKey), so its gob body is readable in the browser with base64 -d. It
@@ -30,10 +39,8 @@ const (
 // take effect immediately instead of lingering until the cookie's 6h expiry, and
 // it sidesteps securecookie's 4096-byte cap.
 //
-// Upgrade note: a pre-upgrade cookie holds a gob'd model.User, so the int type
-// assertion below fails and the session soft-logs-out. That is the intended
-// migration: one forced re-login, rather than a stale snapshot decoding with
-// zero permissions into a panel where every action silently 403s.
+// Upgrade note: cookies without the credential binding require one fresh login.
+// Legacy cookies carrying a whole User are also rejected.
 
 // SetLoginUser stores the authenticated user's id in the session.
 func SetLoginUser(c *gin.Context, user *model.User) {
@@ -41,8 +48,18 @@ func SetLoginUser(c *gin.Context, user *model.User) {
 		return
 	}
 	s := sessions.Default(c)
+	s.Clear()
 	s.Set(loginUserKey, user.Id)
+	s.Set(loginAuthKey, authBinding(user))
 	c.Set(loginUserCtxKey, user)
+}
+
+// A digest binds the signed cookie to current credentials and revocation state.
+// Neither bcrypt hashes nor TOTP secrets are carried in the browser cookie.
+func authBinding(user *model.User) string {
+	raw, _ := json.Marshal([]any{user.Id, user.Username, user.Password, user.TwoFactorEnable, user.TwoFactorToken, user.SessionVersion})
+	digest := sha256.Sum256(raw)
+	return hex.EncodeToString(digest[:])
 }
 
 // loginUserId returns the session's user id, or 0 when absent or unreadable.
@@ -87,6 +104,10 @@ func loadLoginUser(c *gin.Context) *model.User {
 	if err := db.Model(model.User{}).Where("id = ?", id).First(user).Error; err != nil {
 		return nil // deleted mid-session, or the DB is unavailable
 	}
+	proof, ok := sessions.Default(c).Get(loginAuthKey).(string)
+	if !ok || subtle.ConstantTimeCompare([]byte(proof), []byte(authBinding(user))) != 1 {
+		return nil
+	}
 	if !user.Enable {
 		return nil // disabled admins are logged out on their next request
 	}
@@ -124,6 +145,14 @@ func IsLogin(c *gin.Context) bool {
 // ClearSession removes all session data and invalidates the session.
 // This effectively logs out the user and clears any stored session information.
 func ClearSession(c *gin.Context) {
+	if user := GetLoginUser(c); user != nil {
+		// Revokes copied cookies too, including other browsers for this account.
+		if err := database.GetDB().Model(&model.User{}).Where("id = ?", user.Id).
+			UpdateColumn("session_version", gorm.Expr("session_version + 1")).Error; err != nil {
+			logger.Warning("Unable to revoke login sessions: ", err)
+		}
+	}
+	c.Set(loginUserCtxKey, (*model.User)(nil))
 	s := sessions.Default(c)
 	s.Clear()
 	cookiePath := c.GetString("base_path")
@@ -134,6 +163,7 @@ func ClearSession(c *gin.Context) {
 		Path:     cookiePath,
 		MaxAge:   -1,
 		HttpOnly: true,
+		Secure:   middleware.IsSecureRequest(c.Request),
 		SameSite: http.SameSiteLaxMode,
 	})
 }

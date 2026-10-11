@@ -26,6 +26,20 @@ jobs:
         run: |
           bash test_unit/offline_prerequisites_test.sh
           PREREQUISITE_SCRIPT=install-node.sh bash test_unit/offline_prerequisites_test.sh
+      - name: Apply pinned Xray security dependency patch
+        run: bash build/core/apply-security.sh
+      - name: Verify authentication, sessions, origins and private backups
+        run: go test -race ./database ./web/session ./web/middleware ./web/controller ./web/service -run '^TestSecurity' -count=1
+      - name: Verify administrator, representative and node access boundaries
+        run: go test ./web/controller ./web/service ./web ./nodeagent -run 'TestCrossAdminIsolation|TestResellerIsolation|TestPasarGuardReadAllDoesNotWidenOwnWrite|TestPasarGuardMissingResetPermission|TestNodeAgentHTTPAuthenticationAndScope|TestNodeAdministrationRejectsRepresentative|TestRepresentativeRoleWritesDeny|TestMigratedGlobalTwoFactorSecretIsNotServed' -count=1
+      - name: Verify bounded QUIC trailer decoding
+        working-directory: third_party/quic-go
+        run: go test ./http3 -run TestResponseTrailer -count=1
+      - name: Scan panel and embedded Xray dependencies
+        run: |
+          go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./web/... ./nodeagent/...
+          cd third_party/Xray-core
+          go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./main/...
       - name: Build patched Xray and complete geodata
         run: GEO_LEAN=0 bash build/core/build.sh ${{ matrix.arch }}
       - name: Verify all six bundled geodata files
