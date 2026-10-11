@@ -321,6 +321,7 @@
            value in two of these three fields (unlimited), so the control itself would
            make "inherit" unreachable the moment an operator cleared a box. -->
       <template v-if="clientMembershipModal.tab === 'limits'">
+        <a-alert type="info" show-icon message='{{ i18n "pages.clients.limitSupportHint" }}'></a-alert>
         <a-alert type="info" show-icon :style="{ marginBottom: '14px' }"
           message='{{ i18n "pages.clients.limitsHint" }}'></a-alert>
 
@@ -351,7 +352,7 @@
               <!-- The one field of the three that is NOT nullable. limitIp is a plain
                    int column that predates the others, so 0 there already means
                    inherit and there is no third state to express. -->
-              <a-input-number v-model="clientMembershipModal.client.limitIp" :min="0"
+              <a-input-number v-model="clientMembershipModal.client.limitIp" :disabled="!clientMembershipModal.ipLimitSupported" :min="0"
                 :style="{ width: '100%' }"></a-input-number>
               <div class="bo-cf-hint">{{ i18n "pages.clients.limitIpDesc" }}</div>
             </div>
@@ -359,7 +360,7 @@
           <a-col :span="12">
             <div class="bo-cf-field">
               <label>{{ i18n "pages.clients.limitDevices" }}</label>
-              <a-input v-model.trim="clientMembershipModal.limitDevices"
+              <a-input v-model.trim="clientMembershipModal.limitDevices" :disabled="!clientMembershipModal.deviceLimitSupported"
                 placeholder='{{ i18n "pages.clients.limitInherit" }}'></a-input>
               <div class="bo-cf-hint">{{ i18n "pages.clients.limitDevicesDesc" }}</div>
             </div>
@@ -371,7 +372,7 @@
              not honour it. It cannot: an account's tunnel addresses are laid out on
              a uniform stride of the inbound's K, so a bigger block for one account
              would run into the next account's addresses. -->
-        <a-alert type="warning" show-icon :style="{ marginTop: '10px' }"
+        <a-alert v-if="clientMembershipModal.deviceLimitSupported" type="warning" show-icon :style="{ marginTop: '10px' }"
           message='{{ i18n "pages.clients.limitDevicesClamp" }}'></a-alert>
       </template>
     </div>
@@ -450,6 +451,8 @@
     // NAS-Identifier), which is exactly the set the server refuses.
     ambiguous: ['l2tp', 'pptp', 'ikev2'],
 
+    get deviceLimitSupported() { return this.assignable.some(m => this.selected.includes(m.inboundId) && m.deviceLimitSupported); },
+    get ipLimitSupported() { return this.assignable.some(m => this.selected.includes(m.inboundId) && m.ipLimitSupported); },
     get allChecked() {
       return this.assignable.length > 0 && this.selected.length === this.assignable.length;
     },

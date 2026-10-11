@@ -611,6 +611,8 @@ unfreeze = "إلغاء التجميد"
 frozen = "مجمد"
 
 [pages.clients]
+"protocolCount" = "عدد البروتوكولات"
+"limitSupportHint" = "تُطبق الحدود فقط على البروتوكولات المحددة التي تدعمها. حد IP يحسب عناوين المصدر المتزامنة، وليس الأجهزة خلف NAT نفسه."
 "sortName" = "الاسم"
 "summaryTarget" = "اتصال وارد"
 "tabPreview" = "معاينة"

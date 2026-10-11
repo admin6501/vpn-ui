@@ -610,6 +610,8 @@ kernelRuntime = "OS kernel"
 "renewDesc" = "Auto-renewal after expiration. (0 = disable)(unit: day)"
 
 [pages.clients]
+"protocolCount" = "Protocol count"
+"limitSupportHint" = "Limits apply only to supported selected protocols. IP limits count simultaneous source addresses, not physical devices behind the same NAT."
 "sortName" = "Name"
 "summaryTarget" = "Inbound"
 "tabPreview" = "Preview"

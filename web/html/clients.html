@@ -168,8 +168,13 @@
                         <span class="bo-lamp" :class="lampClass(row)"></span>
                       </a-tooltip>
                       <div class="bo-lg-names">
-                        <div class="bo-lg-name">[[ row.email ]]</div>
-                        <div class="bo-lg-note" v-if="row.comment" :title="row.comment">[[ row.comment ]]</div>
+                        <div class="bo-lg-name">[[ row.email ]]
+                          <button v-if="density === 'compact' && row.comment" type="button" class="bo-comment-toggle"
+                            :aria-label="'{{ i18n "comment" }}'" :aria-expanded="!!commentOpen[row.id]" @click.stop="toggleComment(row)">
+                            <a-icon :type="commentOpen[row.id] ? 'up' : 'down'"></a-icon>
+                          </button>
+                        </div>
+                        <div class="bo-lg-note" :class="{ 'bo-lg-note--open': commentOpen[row.id] }" v-if="row.comment" :title="row.comment">[[ row.comment ]]</div>
                       </div>
                     </div>
                   </template>
@@ -215,23 +220,21 @@
                           {{ i18n "pages.clients.noInbounds" }}
                         </a-tag>
                       </a-tooltip>
-                      <a-tooltip v-for="m in shownMemberships(row)" :key="m.inboundId">
-                        <template slot="title">
-                          [[ m.remark || ('#' + m.inboundId) ]]
-                          <span v-if="!m.enable"> &middot; {{ i18n "disabled" }}</span>
-                        </template>
-                        <a-tag class="bo-proto" :class="'bo-proto--' + protocolFamily(m.protocol)">
-                          [[ ProtocolLabels[m.protocol] || m.protocol ]]<span class="bo-lg-port">:[[ m.port ]]</span>
-                        </a-tag>
-                      </a-tooltip>
-                      <a-tooltip v-if="hiddenMemberships(row).length">
-                        <template slot="title">
-                          <div v-for="m in hiddenMemberships(row)" :key="m.inboundId">
-                            [[ m.remark || ('#' + m.inboundId) ]] ([[ m.protocol ]]:[[ m.port ]])
-                          </div>
-                        </template>
-                        <a-tag class="bo-proto">+[[ hiddenMemberships(row).length ]]</a-tag>
-                      </a-tooltip>
+                      <template v-if="row.memberships && row.memberships.length">
+                        <span>{{ i18n "pages.clients.protocolCount" }}: [[ protocolCount(row) ]]</span>
+                        <a-popover trigger="click" placement="bottomRight" :overlay-class-name="themeSwitcher.currentTheme">
+                          <a-button size="small" icon="info-circle">INFO</a-button>
+                          <template slot="content">
+                            <div class="bo-protocol-details">
+                              <div v-for="m in row.memberships" :key="m.inboundId">
+                                <a-tag class="bo-proto" :class="'bo-proto--' + protocolFamily(m.protocol)">[[ ProtocolLabels[m.protocol] || m.protocol ]] :[[ m.port ]]</a-tag>
+                                <span>[[ m.remark || ('#' + m.inboundId) ]]</span>
+                                <a-tag v-if="!m.enable">{{ i18n "disabled" }}</a-tag>
+                              </div>
+                            </div>
+                          </template>
+                        </a-popover>
+                      </template>
                     </div>
                   </template>
 
@@ -491,6 +494,7 @@
       // are needed: the rows carry the account-level totals the server computed,
       // the inbounds carry the per-protocol client objects every action works on.
       clients: [],
+      commentOpen: {},
       clientCounts: { online: 0, enabled: 0, disabled: 0 },
       dbInbounds: [],
       inbounds: [],
@@ -709,25 +713,8 @@
           return new Date(ts).toISOString().slice(0, 10);
         }
       },
-      // Roomier shows EVERY inbound, however many that is: the column is the
-      // answer to "where is this account served", and a "+2" is not that answer.
-      // The cost is that an account on five inbounds wraps its cell onto a second
-      // line and stands taller than its neighbours - which is what roomier is
-      // for. Compact is the mode that trades completeness for uniform rows.
-      //
-      // Compact's cap counts RENDERED chips, +N included. Capping memberships
-      // instead let a four-inbound account draw two chips and a "+2" - three
-      // chips wide - and wrap anyway.
-      servingCap() { return this.density === 'compact' ? 2 : Infinity; },
-      shownMemberships(row) {
-        const all = row.memberships || [];
-        const cap = this.servingCap();
-        return all.length <= cap ? all : all.slice(0, cap - 1);
-      },
-      hiddenMemberships(row) {
-        const all = row.memberships || [];
-        return all.slice(this.shownMemberships(row).length);
-      },
+      protocolCount(row) { return new Set((row.memberships || []).map(m => m.protocol)).size; },
+      toggleComment(row) { this.$set(this.commentOpen, row.id, !this.commentOpen[row.id]); },
       lastSeen(row) {
         if (this.isClientOnline(row.email)) return '{{ i18n "online" }}';
         const ts = this.getLastOnline(row.email);

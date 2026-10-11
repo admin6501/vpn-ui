@@ -40,7 +40,7 @@ func TestOverviewSSLBrowserRuntime(t *testing.T) {
 			}
 			data := map[string]any{"base_path": "/test/", "title": "menu.settings", "perms": map[string]bool{"superAdmin": true, "accessOverview": true, "accessInbounds": true, "accessCoreSettings": true, "panelSettings": true}}
 			pages := map[string][]byte{}
-			for _, name := range []string{"index.html", "settings.html"} {
+			for _, name := range []string{"index.html", "settings.html", "clients.html"} {
 				var out bytes.Buffer
 				if err := tpl.ExecuteTemplate(&out, name, data); err != nil {
 					t.Fatal(err)
@@ -54,6 +54,9 @@ func TestOverviewSSLBrowserRuntime(t *testing.T) {
 				case r.URL.Path == "/test/panel/overview":
 					w.Header().Set("Content-Type", "text/html")
 					w.Write(pages["index.html"])
+				case r.URL.Path == "/test/panel/clients":
+					w.Header().Set("Content-Type", "text/html")
+					w.Write(pages["clients.html"])
 				case r.URL.Path == "/test/panel/settings":
 					w.Header().Set("Content-Type", "text/html")
 					w.Write(pages["settings.html"])

@@ -610,6 +610,8 @@ unfreeze = "解凍"
 frozen = "凍結"
 
 [pages.clients]
+"protocolCount" = "協定數量"
+"limitSupportHint" = "限制僅適用於支援該功能的已選協定。IP限制統計同時連線的來源位址，而不是同一NAT後的實體裝置數量。"
 "sortName" = "名稱"
 "summaryTarget" = "入站"
 "tabPreview" = "預覽"

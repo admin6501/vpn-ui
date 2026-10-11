@@ -270,7 +270,7 @@ func ipLimitEnforcedInCore(inb *model.Inbound) bool {
 	if inb == nil {
 		return false
 	}
-	return !isVpnProtocol(inb.Protocol) && inb.Protocol != model.SSH && inb.Protocol != model.MTPROTO
+	return !isVpnProtocol(inb.Protocol) && inb.Protocol != model.WireGuard && inb.Protocol != model.SSH && inb.Protocol != model.MTPROTO
 }
 
 // The two IP Limit strategies, spelled once. These are the VPN User Limit's words

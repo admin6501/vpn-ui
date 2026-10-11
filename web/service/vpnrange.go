@@ -846,15 +846,17 @@ func userLimitOverrideApplies(inbound *model.Inbound) bool {
 		return false
 	}
 	switch inbound.Protocol {
-	case model.WGC, model.AWG, model.GRE, model.WireGuard:
-		return false
+	case model.L2TP, model.PPTP, model.OPENVPN, model.OPENCONNECT, model.SSTP, model.SSH, model.MTPROTO:
+		return true
 	case model.IKEV2:
 		switch ikev2AuthMode(inbound) {
 		case "psk", "eap-tls":
 			return false
 		}
+		return true
+	default:
+		return false
 	}
-	return true
 }
 
 // --- Account slots -----------------------------------------------------------------

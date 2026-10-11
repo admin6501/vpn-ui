@@ -610,6 +610,8 @@ unfreeze = "Mencairkan"
 frozen = "Beku"
 
 [pages.clients]
+"protocolCount" = "Jumlah protokol"
+"limitSupportHint" = "Batas hanya berlaku pada protokol terpilih yang mendukungnya. Batas IP menghitung alamat sumber bersamaan, bukan perangkat di balik NAT yang sama."
 "sortName" = "Nama"
 "summaryTarget" = "Masuk"
 "tabPreview" = "Pratinjau"

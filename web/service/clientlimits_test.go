@@ -218,3 +218,30 @@ func TestLimitOverridesAreProjectedOntoTheClientEntry(t *testing.T) {
 		}
 	}
 }
+
+func TestClientLimitCapabilitiesMatchActualEnforcement(t *testing.T) {
+	for _, protocol := range []model.Protocol{model.VLESS, model.VMESS, model.Trojan, model.Shadowsocks} {
+		inbound := &model.Inbound{Protocol: protocol}
+		if userLimitOverrideApplies(inbound) || !ipLimitEnforcedInCore(inbound) {
+			t.Fatalf("%s incorrectly promises a device cap or hides IP enforcement", protocol)
+		}
+	}
+	for _, protocol := range []model.Protocol{model.L2TP, model.PPTP, model.OPENVPN, model.OPENCONNECT, model.SSTP, model.SSH, model.MTPROTO} {
+		inbound := &model.Inbound{Protocol: protocol}
+		if !userLimitOverrideApplies(inbound) || ipLimitEnforcedInCore(inbound) {
+			t.Fatalf("%s does not match its native session allocator", protocol)
+		}
+	}
+	for _, protocol := range []model.Protocol{model.WireGuard, model.WGC, model.AWG, model.GRE} {
+		inbound := &model.Inbound{Protocol: protocol}
+		if userLimitOverrideApplies(inbound) || ipLimitEnforcedInCore(inbound) {
+			t.Fatalf("gateway %s advertises a per-source core cap", protocol)
+		}
+	}
+	for _, mode := range []string{"psk", "eap-tls"} {
+		inbound := &model.Inbound{Protocol: model.IKEV2, Settings: `{"authMode":"` + mode + `"}`}
+		if userLimitOverrideApplies(inbound) {
+			t.Fatalf("gateway auth mode %s advertises a device cap", mode)
+		}
+	}
+}

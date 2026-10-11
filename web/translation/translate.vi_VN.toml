@@ -611,6 +611,8 @@ unfreeze = "Giải phóng"
 frozen = "Đông lạnh"
 
 [pages.clients]
+"protocolCount" = "Số giao thức"
+"limitSupportHint" = "Giới hạn chỉ áp dụng cho giao thức đã chọn có hỗ trợ. Giới hạn IP đếm địa chỉ nguồn đồng thời, không đếm thiết bị vật lý sau cùng một NAT."
 "sortName" = "Tên"
 "summaryTarget" = "Vào"
 "tabPreview" = "Xem trước"

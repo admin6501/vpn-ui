@@ -25,14 +25,16 @@ import (
 // AccountMembershipView is one inbound an account is served on, named the way an
 // operator recognises it rather than by id alone.
 type AccountMembershipView struct {
-	NodeID    int    `json:"nodeId"`
-	NodeName  string `json:"nodeName,omitempty"`
-	InboundId int    `json:"inboundId"`
-	Protocol  string `json:"protocol"`
-	Remark    string `json:"remark"`
-	Port      int    `json:"port"`
-	Enable    bool   `json:"enable"`
-	Slot      *int   `json:"slot"`
+	DeviceLimitSupported bool   `json:"deviceLimitSupported"`
+	IPLimitSupported     bool   `json:"ipLimitSupported"`
+	NodeID               int    `json:"nodeId"`
+	NodeName             string `json:"nodeName,omitempty"`
+	InboundId            int    `json:"inboundId"`
+	Protocol             string `json:"protocol"`
+	Remark               string `json:"remark"`
+	Port                 int    `json:"port"`
+	Enable               bool   `json:"enable"`
+	Slot                 *int   `json:"slot"`
 	// Method is the shadowsocks cipher, and empty for every other protocol. It is
 	// reported because a 2022-blake3 cipher refuses a user password that is not
 	// base64 of its exact key length, so a form offering ONE password for an
@@ -470,6 +472,7 @@ func (s *AccountService) membershipViews() (map[int][]AccountMembershipView, err
 			continue
 		}
 		view := AccountMembershipView{
+			DeviceLimitSupported: userLimitOverrideApplies(inbound), IPLimitSupported: ipLimitEnforcedInCore(inbound),
 			InboundId: inbound.Id, Protocol: string(inbound.Protocol),
 			Remark: inbound.Remark, Port: inbound.Port, Enable: inbound.Enable, NodeID: inbound.NodeID, NodeName: inbound.NodeName,
 			Slot: m.Slot,
@@ -614,6 +617,7 @@ func (s *AccountService) AssignableInboundsFor(user *model.User) ([]AccountMembe
 			continue
 		}
 		out = append(out, AccountMembershipView{
+			DeviceLimitSupported: userLimitOverrideApplies(in), IPLimitSupported: ipLimitEnforcedInCore(in),
 			InboundId: in.Id, Protocol: string(in.Protocol),
 			Remark: in.Remark, Port: in.Port, Enable: in.Enable,
 			Method: inboundMethod(in.Settings),

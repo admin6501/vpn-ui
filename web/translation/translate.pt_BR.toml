@@ -610,6 +610,8 @@ unfreeze = "descongelar"
 frozen = "Congelado"
 
 [pages.clients]
+"protocolCount" = "Quantidade de protocolos"
+"limitSupportHint" = "Os limites se aplicam apenas aos protocolos selecionados compatíveis. O limite de IP conta endereços de origem simultâneos, não dispositivos atrás do mesmo NAT."
 "sortName" = "Nome"
 "summaryTarget" = "Entrada"
 "tabPreview" = "Visualização"

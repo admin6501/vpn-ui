@@ -611,6 +611,8 @@ unfreeze = "解冻"
 frozen = "冻结"
 
 [pages.clients]
+"protocolCount" = "协议数量"
+"limitSupportHint" = "限制仅适用于支持该功能的已选协议。IP限制统计同时连接的来源地址，不是同一NAT后的物理设备数量。"
 "sortName" = "名称"
 "summaryTarget" = "入站"
 "tabPreview" = "预览"

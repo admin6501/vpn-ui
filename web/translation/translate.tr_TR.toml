@@ -610,6 +610,8 @@ unfreeze = "Çözme"
 frozen = "Dondurulmuş"
 
 [pages.clients]
+"protocolCount" = "Protokol sayısı"
+"limitSupportHint" = "Sınırlar yalnızca bunları destekleyen seçili protokollere uygulanır. IP sınırı aynı NAT arkasındaki cihazları değil, eşzamanlı kaynak adreslerini sayar."
 "sortName" = "Ad"
 "summaryTarget" = "Gelen"
 "tabPreview" = "Önizleme"

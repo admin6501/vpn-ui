@@ -610,6 +610,8 @@ unfreeze = "凍結解除"
 frozen = "冷凍"
 
 [pages.clients]
+"protocolCount" = "プロトコル数"
+"limitSupportHint" = "制限は対応する選択済みプロトコルにのみ適用されます。IP制限は同時接続元アドレスを数え、同じNAT配下の物理端末は識別しません。"
 "sortName" = "名前"
 "summaryTarget" = "インバウンド"
 "tabPreview" = "プレビュー"
