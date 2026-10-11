@@ -614,6 +614,8 @@ frozen = "Đông lạnh"
 [pages.clients]
 "protocolCount" = "Số giao thức"
 "limitSupportHint" = "Giới hạn chỉ áp dụng cho giao thức đã chọn có hỗ trợ. Giới hạn IP đếm địa chỉ nguồn đồng thời, không đếm thiết bị vật lý sau cùng một NAT."
+"sortTraffic" = "Lưu lượng đã dùng (nhiều nhất trước)"
+"sortDays" = "Số ngày còn lại (ít nhất trước)"
 "sortName" = "Tên"
 "summaryTarget" = "Vào"
 "tabPreview" = "Xem trước"
@@ -1365,6 +1367,10 @@ vpnOutImportKept = "Không có trong tệp nên giá trị được lưu trữ �
 "resetOutboundTrafficError" = "Lỗi khi đặt lại lưu lượng truy cập đi"
 
 [pages.inboundForm]
+"statusCode" = "Mã trạng thái HTTP"
+"insecure" = "Cho phép TLS không an toàn"
+"rewriteHost" = "Viết lại máy chủ"
+"udpIdleTimeout" = "Thời gian chờ UDP không hoạt động (giây)"
 notCreatedYetThisIsWhatYou = "Chưa được tạo. Đây là những gì bạn đang gõ."
 protocol = "Giao thức"
 listensOn = "Đang nghe"

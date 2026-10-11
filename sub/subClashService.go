@@ -337,6 +337,9 @@ func (s *SubClashService) buildHysteriaProxy(inbound *model.Inbound, client mode
 
 	// TLS details — hysteria always uses TLS.
 	applyAlwaysOnTLS(proxy, rawStream)
+	if proxyType == "hysteria2" {
+		proxy["alpn"] = []string{"h3"}
+	}
 
 	// Salamander obfs (Hysteria2). Read the same finalmask.udp[salamander]
 	// block the subscription link generator uses.

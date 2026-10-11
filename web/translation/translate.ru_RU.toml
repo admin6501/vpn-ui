@@ -614,6 +614,8 @@ frozen = "Заморожено"
 [pages.clients]
 "protocolCount" = "Количество протоколов"
 "limitSupportHint" = "Ограничения действуют только для выбранных протоколов с их поддержкой. Лимит IP считает одновременные адреса источника, а не устройства за одним NAT."
+"sortTraffic" = "Использованный трафик (сначала больше)"
+"sortDays" = "Оставшиеся дни (сначала меньше)"
 "sortName" = "Имя"
 "summaryTarget" = "Входящее"
 "tabPreview" = "Предварительный просмотр"
@@ -1365,6 +1367,10 @@ vpnOutImportKept = "нет в файле, поэтому сохраненное 
 "resetOutboundTrafficError" = "Ошибка сброса трафика исходящего подключения"
 
 [pages.inboundForm]
+"statusCode" = "Код состояния HTTP"
+"insecure" = "Разрешить небезопасный TLS"
+"rewriteHost" = "Перезаписывать хост"
+"udpIdleTimeout" = "Тайм-аут бездействия UDP (секунды)"
 notCreatedYetThisIsWhatYou = "Еще не создано. Это то, что вы печатаете."
 protocol = "Протокол"
 listensOn = "Слушает"

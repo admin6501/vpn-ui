@@ -4,52 +4,52 @@
   :label-col="{ md: {span:8} }"
   :wrapper-col="{ md: {span:14} }"
 >
-  <a-form-item label="UDP Idle Timeout">
+  <a-form-item label='{{ i18n "pages.inboundForm.udpIdleTimeout" }}'>
     <a-input-number
       v-model.number="inbound.stream.hysteria.udpIdleTimeout"
       :min="0"
     ></a-input-number>
   </a-form-item>
-  <a-form-item label="Masquerade">
+  <a-form-item label='{{ i18n "pages.inboundForm.masquerade" }}'>
     <a-switch v-model="inbound.stream.hysteria.masqueradeSwitch"></a-switch>
   </a-form-item>
   <template v-if="inbound.stream.hysteria.masqueradeSwitch">
-    <div class="bo-if-sub">Masquerade</div>
-    <a-form-item label="Type">
+    <div class="bo-if-sub">{{ i18n "pages.inboundForm.masquerade" }}</div>
+    <a-form-item label='{{ i18n "pages.inboundForm.type" }}'>
       <a-select
         v-model="inbound.stream.hysteria.masquerade.type"
         :dropdown-class-name="themeSwitcher.currentTheme"
       >
-        <a-select-option value="file">File</a-select-option>
-        <a-select-option value="proxy">Proxy</a-select-option>
-        <a-select-option value="string">String</a-select-option>
+        <a-select-option value="file">{{ i18n "pages.inboundForm.staticFiles" }}</a-select-option>
+        <a-select-option value="proxy">{{ i18n "pages.inboundForm.reverseProxy" }}</a-select-option>
+        <a-select-option value="string">{{ i18n "pages.inboundForm.fixedString" }}</a-select-option>
       </a-select>
     </a-form-item>
     <a-form-item
-      label="Dir"
+      label='{{ i18n "pages.inboundForm.directory" }}'
       v-if="inbound.stream.hysteria.masquerade.type === 'file'"
     >
       <a-input v-model.trim="inbound.stream.hysteria.masquerade.dir"></a-input>
     </a-form-item>
     <template v-if="inbound.stream.hysteria.masquerade.type === 'proxy'">
-      <a-form-item label="URL">
+      <a-form-item label='{{ i18n "pages.inboundForm.upstreamUrl" }}'>
         <a-input
           v-model.trim="inbound.stream.hysteria.masquerade.url"
         ></a-input>
       </a-form-item>
-      <a-form-item label="Rewrite Host">
+      <a-form-item label='{{ i18n "pages.inboundForm.rewriteHost" }}'>
         <a-switch
           v-model="inbound.stream.hysteria.masquerade.rewriteHost"
         ></a-switch>
       </a-form-item>
-      <a-form-item label="Insecure">
+      <a-form-item label='{{ i18n "pages.inboundForm.insecure" }}'>
         <a-switch
           v-model="inbound.stream.hysteria.masquerade.insecure"
         ></a-switch>
       </a-form-item>
     </template>
     <template v-if="inbound.stream.hysteria.masquerade.type === 'string'">
-      <a-form-item label="Content">
+      <a-form-item label='{{ i18n "pages.inboundForm.responseBody" }}'>
         <a-input
           v-model.trim="inbound.stream.hysteria.masquerade.content"
         ></a-input>
@@ -89,7 +89,7 @@
           </a-input>
         </a-input-group>
       </a-form-item>
-      <a-form-item label="Status Code">
+      <a-form-item label='{{ i18n "pages.inboundForm.statusCode" }}'>
         <a-input-number
           v-model.number="inbound.stream.hysteria.masquerade.statusCode"
         ></a-input-number>

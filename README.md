@@ -34,6 +34,10 @@ and edit account settings without using the first inbound as an anchor. Disablin
 one inbound or membership leaves the account and its other memberships intact.
 Account-wide quota, expiry and the global enable switch still apply to all memberships.
 
+Clients can also be sorted by used traffic (highest first) or remaining days
+(soonest expiry first). Delayed-start days are included; unlimited expiry sorts last.
+Hysteria2 uses HTTP/3, including its raw, JSON and Clash subscription profiles.
+
 ## Protocols and dependencies
 
 The panel includes Xray VLESS, VMess, Trojan, Shadowsocks and native AnyTLS/TUIC/NaiveProxy, plus

@@ -614,6 +614,8 @@ frozen = "مجمد"
 [pages.clients]
 "protocolCount" = "عدد البروتوكولات"
 "limitSupportHint" = "تُطبق الحدود فقط على البروتوكولات المحددة التي تدعمها. حد IP يحسب عناوين المصدر المتزامنة، وليس الأجهزة خلف NAT نفسه."
+"sortTraffic" = "حركة البيانات المستخدمة (الأعلى أولاً)"
+"sortDays" = "الأيام المتبقية (الأقل أولاً)"
 "sortName" = "الاسم"
 "summaryTarget" = "اتصال وارد"
 "tabPreview" = "معاينة"
@@ -1365,6 +1367,10 @@ vpnOutImportKept = "غير موجود في الملف، لذلك يتم الاح
 "resetOutboundTrafficError" = "خطأ في إعادة تعيين حركات المرور الصادرة"
 
 [pages.inboundForm]
+"statusCode" = "رمز حالة HTTP"
+"insecure" = "السماح بـ TLS غير آمن"
+"rewriteHost" = "إعادة كتابة المضيف"
+"udpIdleTimeout" = "مهلة خمول UDP (ثوانٍ)"
 notCreatedYetThisIsWhatYou = "لم يتم إنشاؤه بعد. هذا هو ما تكتبه."
 protocol = "بروتوكول"
 listensOn = "يتم الاستماع"

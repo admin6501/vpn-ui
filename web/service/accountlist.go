@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/mhsanaei/3x-ui/v2/database"
 	"github.com/mhsanaei/3x-ui/v2/database/model"
@@ -147,6 +148,8 @@ type AccountListResult struct {
 // Named constants because they cross the wire; clients.html uses these exact
 // strings as its menu keys.
 const (
+	AccountSortTraffic  = "traffic"
+	AccountSortDays     = "days"
 	AccountSortName     = "name"
 	AccountSortNewest   = "newest"
 	AccountSortOldest   = "oldest"
@@ -349,7 +352,7 @@ func (s *AccountService) ListAccounts(user *model.User, page, size int, search, 
 func sortAccountRows(rows []AccountRow, createdAt map[int]int64, online map[string]bool, sortKey string) string {
 	switch sortKey {
 	case AccountSortName, AccountSortNewest, AccountSortOldest, AccountSortOnline,
-		AccountSortEnabled, AccountSortDisabled:
+		AccountSortEnabled, AccountSortDisabled, AccountSortTraffic, AccountSortDays:
 	default:
 		sortKey = AccountSortNewest
 	}
@@ -357,8 +360,47 @@ func sortAccountRows(rows []AccountRow, createdAt map[int]int64, online map[stri
 	// Each case returns "is a before b" outright. Written as a full comparison per
 	// ordering rather than a shared key function plus a direction flag, because these
 	// are five different questions and only two of them are about the same value.
+	now := time.Now().UnixMilli()
+	remaining := func(expiry int64) int64 {
+		if expiry < 0 {
+			if expiry == -1<<63 {
+				return 1<<63 - 1
+			}
+			return -expiry
+		}
+		return expiry - now
+	}
+	usage := func(row *AccountRow) uint64 {
+		var n uint64
+		if row.Up > 0 {
+			n += uint64(row.Up)
+		}
+		if row.Down > 0 {
+			n += uint64(row.Down)
+		}
+		return n
+	}
 	less := func(a, b *AccountRow) bool {
 		switch sortKey {
+		case AccountSortTraffic:
+			if usage(a) != usage(b) {
+				return usage(a) > usage(b)
+			}
+			if accountKey(a.Email) != accountKey(b.Email) {
+				return accountKey(a.Email) < accountKey(b.Email)
+			}
+			return a.Id < b.Id
+		case AccountSortDays:
+			if (a.ExpiryTime == 0) != (b.ExpiryTime == 0) {
+				return a.ExpiryTime != 0
+			}
+			if a.ExpiryTime != 0 && remaining(a.ExpiryTime) != remaining(b.ExpiryTime) {
+				return remaining(a.ExpiryTime) < remaining(b.ExpiryTime)
+			}
+			if accountKey(a.Email) != accountKey(b.Email) {
+				return accountKey(a.Email) < accountKey(b.Email)
+			}
+			return a.Id < b.Id
 		case AccountSortName:
 			if accountKey(a.Email) != accountKey(b.Email) {
 				return accountKey(a.Email) < accountKey(b.Email)

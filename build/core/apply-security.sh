@@ -20,6 +20,13 @@ elif ! git -C "$src" apply --reverse --check "$patch" 2>/dev/null; then
  echo "Xray TCP timeout patch does not match this checkout." >&2
  exit 1
 fi
+patch="$root/build/core/hysteria-fixes.patch"
+if git -C "$src" apply --check "$patch" 2>/dev/null; then
+ git -C "$src" apply "$patch"
+elif ! git -C "$src" apply --reverse --check "$patch" 2>/dev/null; then
+ echo "Xray Hysteria patch does not match this checkout." >&2
+ exit 1
+fi
 # A fallback clone may live outside third_party; use an absolute module path there.
 if [[ "$(cd "$src" && pwd)" != "$root/third_party/Xray-core" ]]; then
     (cd "$src" && go mod edit "-replace=github.com/apernet/quic-go=$root/third_party/quic-go")

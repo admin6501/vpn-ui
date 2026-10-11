@@ -22,6 +22,11 @@ This update fixes confirmed issues in the panel:
   Xray. The custom QUIC fork retains its transport features and includes the
   upstream HTTP/3 trailer decoding fix (GO-2026-5676).
 
+Hysteria managed inbounds reject shared fallback authentication when their account
+list is empty. Duplicate credentials cannot replace another account. Removed accounts
+cannot open new TCP streams or continue sending UDP datagrams on an authenticated
+QUIC connection; authentication state is synchronized with stream dispatch.
+
 All users must log in again after installing this update. Update both the panel
 and dedicated node agents. For each existing node, then request installation
 of Xray again from the central panel's Nodes → Cores page. This refreshes the

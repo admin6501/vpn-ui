@@ -2,6 +2,7 @@ package service
 
 import (
 	"testing"
+	"time"
 )
 
 // The Clients table is paged by the SERVER, so its order is decided here and the
@@ -140,5 +141,17 @@ func TestAccountSortNameIsCaseInsensitiveAndStable(t *testing.T) {
 	}
 	if rows[0].Id != 1 || rows[1].Id != 2 || rows[2].Id != 3 {
 		t.Fatalf("unexpected name order: %+v", rows)
+	}
+}
+
+func TestAccountSortTrafficAndDays(t *testing.T) {
+	rows := []AccountRow{{Id: 1, Email: "light", Up: 5, Down: 10}, {Id: 2, Email: "heavy", Up: 2, Down: 100}, {Id: 3, Email: "middle", Up: 30, Down: 10}}
+	if got := sortAccountRows(rows, nil, nil, AccountSortTraffic); got != AccountSortTraffic || !equal(names(rows), []string{"heavy", "middle", "light"}) {
+		t.Fatalf("traffic: %v", names(rows))
+	}
+	now := time.Now().UnixMilli()
+	rows = []AccountRow{{Id: 1, Email: "unlimited"}, {Id: 2, Email: "later", ExpiryTime: now + 86400000*5}, {Id: 3, Email: "expired", ExpiryTime: now - 86400000}, {Id: 4, Email: "delayed", ExpiryTime: -86400000 * 2}, {Id: 5, Email: "soon", ExpiryTime: now + 86400000}}
+	if got := sortAccountRows(rows, nil, nil, AccountSortDays); got != AccountSortDays || !equal(names(rows), []string{"expired", "soon", "delayed", "later", "unlimited"}) {
+		t.Fatalf("days: %v", names(rows))
 	}
 }

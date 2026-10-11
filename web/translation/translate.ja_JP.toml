@@ -613,6 +613,8 @@ frozen = "冷凍"
 [pages.clients]
 "protocolCount" = "プロトコル数"
 "limitSupportHint" = "制限は対応する選択済みプロトコルにのみ適用されます。IP制限は同時接続元アドレスを数え、同じNAT配下の物理端末は識別しません。"
+"sortTraffic" = "使用トラフィック（多い順）"
+"sortDays" = "残り日数（少ない順）"
 "sortName" = "名前"
 "summaryTarget" = "インバウンド"
 "tabPreview" = "プレビュー"
@@ -1364,6 +1366,10 @@ vpnOutImportKept = "ファイルにないため、保存された値が保持さ
 "resetOutboundTrafficError" = "送信トラフィックのリセットエラー"
 
 [pages.inboundForm]
+"statusCode" = "HTTPステータスコード"
+"insecure" = "安全でないTLSを許可"
+"rewriteHost" = "ホストを書き換え"
+"udpIdleTimeout" = "UDP無通信タイムアウト（秒）"
 notCreatedYetThisIsWhatYou = "まだ作成されていません。これはあなたが入力しているものです。"
 protocol = "プロトコル"
 listensOn = "リッスンします"

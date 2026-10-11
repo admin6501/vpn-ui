@@ -1,0 +1,278 @@
+diff --git a/proxy/hysteria/account/config.go b/proxy/hysteria/account/config.go
+index 0e50dcc9..0680a3ac 100644
+--- a/proxy/hysteria/account/config.go
++++ b/proxy/hysteria/account/config.go
+@@ -50,13 +50,23 @@ func (v *Validator) Add(u *protocol.MemoryUser) error {
+ 	v.mutex.Lock()
+ 	defer v.mutex.Unlock()
+ 
++	if u == nil {
++		return errors.New("Missing Hysteria user")
++	}
++	credential, ok := u.Account.(*MemoryAccount)
++	if !ok || credential == nil || credential.Auth == "" {
++		return errors.New("Invalid Hysteria credential")
++	}
++	if _, exists := v.users[credential.Auth]; exists {
++		return errors.New("Hysteria credential already exists")
++	}
+ 	if u.Email != "" {
+ 		if _, ok := v.emails[u.Email]; ok {
+ 			return errors.New("User ", u.Email, " already exists.")
+ 		}
+ 		v.emails[u.Email] = struct{}{}
+ 	}
+-	v.users[u.Account.(*MemoryAccount).Auth] = u
++	v.users[credential.Auth] = u
+ 
+ 	return nil
+ }
+diff --git a/transport/internet/hysteria/dialer.go b/transport/internet/hysteria/dialer.go
+index 1b2b5876..7d9f4b30 100644
+--- a/transport/internet/hysteria/dialer.go
++++ b/transport/internet/hysteria/dialer.go
+@@ -473,7 +473,7 @@ func Dial(ctx context.Context, dest net.Destination, streamSettings *internet.Me
+ 			ctx:            ctx,
+ 			dest:           dest,
+ 			config:         config,
+-			tlsConfig:      tlsConfig.GetTLSConfig(),
++			tlsConfig:      hysteriaTLSConfig(tlsConfig),
+ 			socketConfig:   streamSettings.SocketSettings,
+ 			udpmaskManager: streamSettings.UdpmaskManager,
+ 			quicParams:     streamSettings.QuicParams,
+@@ -492,3 +492,10 @@ func Dial(ctx context.Context, dest net.Destination, streamSettings *internet.Me
+ func init() {
+ 	common.Must(internet.RegisterTransportDialer(protocolName, Dial))
+ }
++
++// HTTP/3 is required even when a generic TLS configuration supplies HTTP/2 defaults.
++func hysteriaTLSConfig(config *tls.Config) *go_tls.Config {
++	result := config.GetTLSConfig()
++	result.NextProtos = []string{http3.NextProtoH3}
++	return result
++}
+diff --git a/transport/internet/hysteria/hub.go b/transport/internet/hysteria/hub.go
+index 89e18dac..d64d1193 100644
+--- a/transport/internet/hysteria/hub.go
++++ b/transport/internet/hysteria/hub.go
+@@ -35,7 +35,8 @@ type udpSessionManagerServer struct {
+ 	udpIdleTimeout time.Duration
+ 	mutex          sync.RWMutex
+ 
+-	user *protocol.MemoryUser
++	user       *protocol.MemoryUser
++	authorized func() bool
+ }
+ 
+ func (m *udpSessionManagerServer) close(udpConn *InterUdpConn) {
+@@ -99,6 +100,13 @@ func (m *udpSessionManagerServer) run() {
+ }
+ 
+ func (m *udpSessionManagerServer) feed(id uint32, d []byte) {
++	if m.authorized != nil && !m.authorized() {
++		if m.conn != nil {
++			_ = m.conn.CloseWithError(0, "account no longer authorized")
++		}
++		return
++	}
++
+ 	m.mutex.RLock()
+ 	udpConn, ok := m.m[id]
+ 	if ok {
+@@ -163,6 +171,10 @@ func (h *httpHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+ 		defer h.mutex.Unlock()
+ 
+ 		if h.auth {
++			if !h.authorizedLocked() {
++				h.masqHandler.ServeHTTP(w, r)
++				return
++			}
+ 			w.Header().Set(ResponseHeaderUDPEnabled, strconv.FormatBool(hyCtx.RequireDatagramFromContext(h.ctx)))
+ 			w.Header().Set(CommonHeaderCCRX, strconv.FormatUint(h.quicParams.BrutalDown, 10))
+ 			w.Header().Set(CommonHeaderPadding, authResponsePadding.String())
+@@ -175,7 +187,7 @@ func (h *httpHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+ 
+ 		var user *protocol.MemoryUser
+ 		var ok bool
+-		if h.validator != nil && h.validator.GetCount() > 0 {
++		if h.validator != nil {
+ 			user = h.validator.Get(auth)
+ 		} else if h.config.Auth != "" {
+ 			ok = auth == h.config.Auth
+@@ -214,7 +226,8 @@ func (h *httpHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+ 					stopCh:         make(chan struct{}),
+ 					udpIdleTimeout: time.Duration(h.config.UdpIdleTimeout) * time.Second,
+ 
+-					user: h.user,
++					user:       h.user,
++					authorized: h.authorized,
+ 				}
+ 				go udpSM.clean()
+ 				go udpSM.run()
+@@ -232,7 +245,11 @@ func (h *httpHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+ }
+ 
+ func (h *httpHandler) StreamDispatcher(ft http3.FrameType, stream *quic.Stream, err error) (bool, error) {
+-	if err != nil || !h.auth {
++	h.mutex.Lock()
++	authorized := h.authorizedLocked()
++	user := h.user
++	h.mutex.Unlock()
++	if err != nil || !authorized {
+ 		return false, nil
+ 	}
+ 
+@@ -247,7 +264,7 @@ func (h *httpHandler) StreamDispatcher(ft http3.FrameType, stream *quic.Stream,
+ 			local:  h.conn.LocalAddr(),
+ 			remote: h.conn.RemoteAddr(),
+ 
+-			user: h.user,
++			user: user,
+ 		})
+ 		return true, nil
+ 	default:
+@@ -427,7 +444,10 @@ func Listen(ctx context.Context, address net.Address, port net.Port, streamSetti
+ 		quicConfig.MaxIncomingStreams = 1024
+ 	}
+ 
+-	qListener, err := quic.Listen(pktConn, tlsConfig.GetTLSConfig(), quicConfig)
++	// Hysteria2 authentication and streams use HTTP/3, never HTTP/2.
++	quicTLS := tlsConfig.GetTLSConfig()
++	quicTLS.NextProtos = []string{http3.NextProtoH3}
++	qListener, err := quic.Listen(pktConn, quicTLS, quicConfig)
+ 	if err != nil {
+ 		_ = pktConn.Close()
+ 		return nil, err
+@@ -453,3 +473,27 @@ func Listen(ctx context.Context, address net.Address, port net.Port, streamSetti
+ func init() {
+ 	common.Must(internet.RegisterTransportListener(protocolName, Listen))
+ }
++
++// A removed account must not open new streams or send more UDP datagrams on
++// an already authenticated QUIC connection.
++func (h *httpHandler) authorizedLocked() bool {
++	if !h.auth {
++		return false
++	}
++	if h.validator == nil {
++		return true
++	}
++	if h.user == nil {
++		return false
++	}
++	credential, ok := h.user.Account.(*account.MemoryAccount)
++	if !ok || credential == nil {
++		return false
++	}
++	return h.validator.Get(credential.Auth) == h.user
++}
++func (h *httpHandler) authorized() bool {
++	h.mutex.Lock()
++	defer h.mutex.Unlock()
++	return h.authorizedLocked()
++}
+diff --git a/transport/internet/hysteria/auth_regression_test.go b/transport/internet/hysteria/auth_regression_test.go
+new file mode 100644
+index 0000000..911e541
+--- /dev/null
++++ b/transport/internet/hysteria/auth_regression_test.go
+@@ -0,0 +1,68 @@
++package hysteria
++
++import (
++	"context"
++	"github.com/xtls/xray-core/common/protocol"
++	"github.com/xtls/xray-core/proxy/hysteria/account"
++	"github.com/xtls/xray-core/transport/internet"
++	"github.com/xtls/xray-core/transport/internet/stat"
++	"net/http"
++	"net/http/httptest"
++	"sync"
++	"testing"
++)
++
++func TestManagedEmptyValidatorRejectsFallbackPassword(t *testing.T) {
++	h := &httpHandler{ctx: context.Background(), config: &Config{Auth: "fallback"}, quicParams: &internet.QuicParams{}, validator: account.NewValidator(), masqHandler: http.NotFoundHandler()}
++	r := httptest.NewRequest(http.MethodPost, "https://"+URLHost+URLPath, nil)
++	r.Header.Set(RequestHeaderAuth, "fallback")
++	w := httptest.NewRecorder()
++	h.ServeHTTP(w, r)
++	if w.Code == StatusAuthOK || h.auth {
++		t.Fatal("empty account list accepted shared password")
++	}
++}
++func TestRevokedHysteriaAccountCannotReuseQUICAuthorization(t *testing.T) {
++	v := account.NewValidator()
++	u := &protocol.MemoryUser{Email: "alice", Account: &account.MemoryAccount{Auth: "token"}}
++	if err := v.Add(u); err != nil {
++		t.Fatal(err)
++	}
++	h := &httpHandler{auth: true, user: u, validator: v}
++	if !h.authorized() {
++		t.Fatal("valid account rejected")
++	}
++	if err := v.Del("alice"); err != nil {
++		t.Fatal(err)
++	}
++	if h.authorized() {
++		t.Fatal("revoked account remains authorized")
++	}
++	called := false
++	m := &udpSessionManagerServer{authorized: h.authorized, addConn: func(stat.Connection) { called = true }}
++	m.feed(1, []byte("payload"))
++	if called {
++		t.Fatal("revoked datagram dispatched")
++	}
++}
++
++func TestHysteriaAuthAndStreamDispatcherAreSynchronized(t *testing.T) {
++	h := &httpHandler{}
++	var wg sync.WaitGroup
++	wg.Add(2)
++	go func() {
++		defer wg.Done()
++		for i := 0; i < 1000; i++ {
++			h.mutex.Lock()
++			h.auth = i%2 == 0
++			h.mutex.Unlock()
++		}
++	}()
++	go func() {
++		defer wg.Done()
++		for i := 0; i < 1000; i++ {
++			h.StreamDispatcher(0, nil, nil)
++		}
++	}()
++	wg.Wait()
++}
+diff --git a/proxy/hysteria/account/credential_regression_test.go b/proxy/hysteria/account/credential_regression_test.go
+new file mode 100644
+index 0000000..9c7881f
+--- /dev/null
++++ b/proxy/hysteria/account/credential_regression_test.go
+@@ -0,0 +1,25 @@
++package account
++
++import (
++	"github.com/xtls/xray-core/common/protocol"
++	"testing"
++)
++
++func TestDuplicateHysteriaCredentialCannotReplaceAccount(t *testing.T) {
++	v := NewValidator()
++	alice := &protocol.MemoryUser{Email: "alice", Account: &MemoryAccount{Auth: "same"}}
++	if err := v.Add(alice); err != nil {
++		t.Fatal(err)
++	}
++	if v.Add(&protocol.MemoryUser{Email: "bob", Account: &MemoryAccount{Auth: "same"}}) == nil {
++		t.Fatal("duplicate auth accepted")
++	}
++	if v.Get("same") != alice || v.GetByEmail("bob") != nil {
++		t.Fatal("failed addition changed ownership")
++	}
++	for _, u := range []*protocol.MemoryUser{nil, {Email: "empty", Account: &MemoryAccount{}}} {
++		if v.Add(u) == nil {
++			t.Fatal("invalid credential accepted")
++		}
++	}
++}

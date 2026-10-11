@@ -837,7 +837,9 @@ func (s *SubService) genHysteriaLink(inbound *model.Inbound, email string) strin
 		return ""
 	}
 	var stream map[string]any
-	json.Unmarshal([]byte(inbound.StreamSettings), &stream)
+	if err := json.Unmarshal([]byte(inbound.StreamSettings), &stream); err != nil {
+		return ""
+	}
 	clients, _ := s.inboundService.GetClients(inbound)
 	clientIndex := -1
 	for i, client := range clients {
@@ -845,6 +847,9 @@ func (s *SubService) genHysteriaLink(inbound *model.Inbound, email string) strin
 			clientIndex = i
 			break
 		}
+	}
+	if clientIndex < 0 {
+		return ""
 	}
 	auth := clients[clientIndex].Auth
 	params := make(map[string]string)
@@ -854,7 +859,9 @@ func (s *SubService) genHysteriaLink(inbound *model.Inbound, email string) strin
 	alpns, _ := tlsSetting["alpn"].([]any)
 	var alpn []string
 	for _, a := range alpns {
-		alpn = append(alpn, a.(string))
+		if text, ok := a.(string); ok {
+			alpn = append(alpn, text)
+		}
 	}
 	if len(alpn) > 0 {
 		params["alpn"] = strings.Join(alpn, ",")
@@ -869,7 +876,7 @@ func (s *SubService) genHysteriaLink(inbound *model.Inbound, email string) strin
 			params["fp"], _ = fpValue.(string)
 		}
 		if insecure, ok := searchKey(tlsSettings, "allowInsecure"); ok {
-			if insecure.(bool) {
+			if allowed, _ := insecure.(bool); allowed {
 				params["insecure"] = "1"
 			}
 		}
@@ -900,6 +907,9 @@ func (s *SubService) genHysteriaLink(inbound *model.Inbound, email string) strin
 	json.Unmarshal([]byte(inbound.Settings), &settings)
 	version, _ := settings["version"].(float64)
 	protocol := "hysteria2"
+	if int(version) != 1 {
+		params["alpn"] = "h3"
+	}
 	if int(version) == 1 {
 		protocol = "hysteria"
 	}
@@ -924,8 +934,10 @@ func (s *SubService) genHysteriaLink(inbound *model.Inbound, email string) strin
 			}
 			epRemark, _ := ep["remark"].(string)
 
-			link := fmt.Sprintf("%s://%s@%s:%d", protocol, auth, dest, int(portF))
-			u, _ := url.Parse(link)
+			if portF < 1 || portF > 65535 || portF != float64(int(portF)) {
+				continue
+			}
+			u := &url.URL{Scheme: protocol, User: url.User(auth), Host: net.JoinHostPort(strings.Trim(dest, "[]"), strconv.Itoa(int(portF)))}
 			q := u.Query()
 			for k, v := range params {
 				q.Add(k, v)
@@ -938,15 +950,14 @@ func (s *SubService) genHysteriaLink(inbound *model.Inbound, email string) strin
 	}
 
 	// No external proxy configured — fall back to the request host.
-	link := fmt.Sprintf("%s://%s@%s:%d", protocol, auth, s.resolveInboundAddress(inbound), inbound.Port)
-	url, _ := url.Parse(link)
-	q := url.Query()
+	u := &url.URL{Scheme: protocol, User: url.User(auth), Host: net.JoinHostPort(strings.Trim(s.resolveInboundAddress(inbound), "[]"), strconv.Itoa(inbound.Port))}
+	q := u.Query()
 	for k, v := range params {
 		q.Add(k, v)
 	}
-	url.RawQuery = q.Encode()
-	url.Fragment = s.genRemark(inbound, email, "")
-	return url.String()
+	u.RawQuery = q.Encode()
+	u.Fragment = s.genRemark(inbound, email, "")
+	return u.String()
 }
 
 // genAnytlsLink emits `anytls://<password>@host:port?<stream params>#<remark>`, the URI

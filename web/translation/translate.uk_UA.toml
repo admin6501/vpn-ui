@@ -613,6 +613,8 @@ frozen = "Заморожений"
 [pages.clients]
 "protocolCount" = "Кількість протоколів"
 "limitSupportHint" = "Обмеження діють лише для вибраних протоколів, що їх підтримують. Ліміт IP рахує одночасні адреси джерела, а не пристрої за одним NAT."
+"sortTraffic" = "Використаний трафік (спочатку більше)"
+"sortDays" = "Залишок днів (спочатку менше)"
 "sortName" = "Ім’я"
 "summaryTarget" = "Вхідне"
 "tabPreview" = "попередній перегляд"
@@ -1364,6 +1366,10 @@ vpnOutImportKept = "немає у файлі, тому збережене зна
 "resetOutboundTrafficError" = "Помилка скидання вихідного трафіку"
 
 [pages.inboundForm]
+"statusCode" = "Код стану HTTP"
+"insecure" = "Дозволити небезпечний TLS"
+"rewriteHost" = "Перезаписувати хост"
+"udpIdleTimeout" = "Тайм-аут бездіяльності UDP (секунди)"
 notCreatedYetThisIsWhatYou = "ще не створено. Це те, що ви друкуєте."
 protocol = "Протокол"
 listensOn = "Слухає"

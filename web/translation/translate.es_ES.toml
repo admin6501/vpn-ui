@@ -614,6 +614,8 @@ frozen = "Congelado"
 [pages.clients]
 "protocolCount" = "Número de protocolos"
 "limitSupportHint" = "Los límites solo se aplican a los protocolos seleccionados compatibles. El límite de IP cuenta direcciones de origen simultáneas, no dispositivos detrás del mismo NAT."
+"sortTraffic" = "Tráfico utilizado (mayor primero)"
+"sortDays" = "Días restantes (menor primero)"
 "sortName" = "Nombre"
 "summaryTarget" = "Entrante"
 "tabPreview" = "Vista previa"
@@ -1365,6 +1367,10 @@ vpnOutImportKept = "No está en el archivo, por lo que se conserva el valor alma
 "resetOutboundTrafficError" = "Error al reiniciar el tráfico saliente"
 
 [pages.inboundForm]
+"statusCode" = "Código de estado HTTP"
+"insecure" = "Permitir TLS inseguro"
+"rewriteHost" = "Reescribir host"
+"udpIdleTimeout" = "Tiempo de inactividad UDP (segundos)"
 notCreatedYetThisIsWhatYou = "Aún no creado. Esto es lo que estás escribiendo."
 protocol = "Protocolo"
 listensOn = "Escucha en"
