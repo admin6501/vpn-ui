@@ -4483,6 +4483,13 @@ func (s *InboundService) SetClientTelegramUserID(trafficId int, tgId int64) (boo
 }
 
 func (s *InboundService) checkIsEnabledByEmail(clientEmail string) (bool, error) {
+	account, err := (&AccountService{}).GetAccountByEmail(clientEmail)
+	if err != nil {
+		return false, err
+	}
+	if account != nil {
+		return account.Enable, nil
+	}
 	_, inbound, err := s.GetClientInboundByEmail(clientEmail)
 	if err != nil {
 		return false, err
@@ -4509,6 +4516,37 @@ func (s *InboundService) checkIsEnabledByEmail(clientEmail string) (bool, error)
 }
 
 func (s *InboundService) ToggleClientEnableByEmail(clientEmail string) (bool, bool, error) {
+	account, err := (&AccountService{}).GetAccountByEmail(clientEmail)
+	if err != nil {
+		return false, false, err
+	}
+	if account != nil {
+		var enabled bool
+		err := database.GetDB().Transaction(func(tx *gorm.DB) error {
+			current, err := (&AccountService{}).GetAccountByEmailTx(tx, clientEmail)
+			if err != nil {
+				return err
+			}
+			if current == nil {
+				return common.NewError("Account Not Found:", clientEmail)
+			}
+			enabled = !current.Enable
+			if err := tx.Model(current).Updates(map[string]any{
+				"enable": enabled, "imported_reset_disabled": !enabled,
+			}).Error; err != nil {
+				return err
+			}
+			if err := tx.Model(&xray.ClientTraffic{}).Where("LOWER(TRIM(email)) = ?", accountKey(clientEmail)).
+				Update("enable", enabled && !current.RepresentativeBlocked).Error; err != nil {
+				return err
+			}
+			_, err = (&AccountService{}).ProjectAccount(tx, current.Id)
+			return err
+		})
+		// Request a runtime refresh after projecting every membership; the first
+		// inbound no longer determines the shared account state.
+		return enabled, err == nil, err
+	}
 	_, inbound, err := s.GetClientInboundByEmail(clientEmail)
 	if err != nil {
 		return false, false, err

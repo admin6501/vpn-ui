@@ -1202,6 +1202,21 @@
       // them. updateClient carries inboundIds and re-projects, which is why this
       // page does not need a write path of its own.
       async applyToAccount(row, patch) {
+        {{ if .perms.superAdmin }}
+        // Write the account itself; a disabled membership is never its anchor.
+        const client = Object.assign({
+          email: row.email, enable: row.enable, totalGB: row.totalGB,
+          expiryTime: row.expiryTime, limitIp: row.limitIp, subId: row.subId,
+          comment: row.comment, reset: row.reset, tgId: row.tgId || 0,
+          speedLimitDown: row.speedLimitDown, speedLimitUp: row.speedLimitUp,
+          userLimitOverride: row.userLimitOverride,
+        }, patch);
+        const ids = (row.memberships || []).map(m => m.inboundId);
+        return await HttpUtil.post('/panel/api/inbounds/saveAccount', {
+          settings: JSON.stringify({clients:[client]}),
+          ...(ids.length ? {inboundIds:ids} : {noInbounds:true}),
+        });
+        {{ else }}
         const ids = (row.memberships || []).map(m => m.inboundId);
         // No inbound serves it, so no stored entry can address it and updateClient
         // has nothing to match. The account route writes the same fields with no
@@ -1222,6 +1237,7 @@
         // protocol except shadowsocks. The list API reports it per membership.
         const clientId = (row.memberships[0] && row.memberships[0].clientId) || row.email;
         return await HttpUtil.post('/panel/api/inbounds/updateClient/' + encodeURIComponent(clientId), body);
+        {{ end }}
       },
       // The same patch for an account nothing serves. Built from the ROW rather than
       // from a stored entry, because there is no stored entry: the account row is

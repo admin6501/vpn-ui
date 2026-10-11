@@ -29,3 +29,17 @@ const online = vm.runInNewContext('({' + info.slice(start, end) + '\n}})');
 const protocols = online.onlineProtocols.call({row:{},app:{membershipOnline:(r)=>r.id===2},memberships:[{record:{id:1,protocol:'vless'},client:{email:'a'}},{record:{id:2,protocol:'trojan'},client:{email:'a'}}]});
 assert.equal(JSON.stringify(protocols), '["trojan"]');
 console.log('Client quota round trips, editable identity, and online protocol evidence passed');
+
+const speed = {limitDown:'12345',limitDownUnit:'KB/s', ...method('speedFactor(unit)'), ...method('setSpeedUnit(field, unit)'), ...method('postedSpeed(field)')};
+for (const unit of ['Mbps','MB/s','KB/s']) {
+  speed.setSpeedUnit('limitDown',unit);
+  assert.equal(speed.postedSpeed('limitDown'),12345);
+}
+speed.limitDown='10'; speed.limitDownUnit='Mbps';
+assert.equal(speed.postedSpeed('limitDown'),1221);
+speed.limitDown='0'; assert.equal(speed.postedSpeed('limitDown'),0);
+speed.limitDown=''; assert.equal(speed.postedSpeed('limitDown'),null);
+speed.limitDown='0.0001'; assert.equal(speed.postedSpeed('limitDown'),1);
+speed.limitDown='-0.0001'; assert.equal(speed.postedSpeed('limitDown'),-1);
+speed.limitDown='invalid'; assert.equal(speed.postedSpeed('limitDown'),'invalid');
+console.log('Speed units preserve limits, inheritance and unlimited state');

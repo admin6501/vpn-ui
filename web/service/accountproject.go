@@ -572,9 +572,6 @@ func (s *AccountService) upsertAccountFromEntry(tx *gorm.DB, entry map[string]an
 	updated.ImportedResetDays = account.ImportedResetDays
 	updated.ImportedLastResetAt = account.ImportedLastResetAt
 	updated.ImportedResetDisabled = account.ImportedResetDisabled
-	if _, mentioned := entry["enable"]; mentioned && !account.RepresentativeBlocked && updated.Enable != account.Enable {
-		updated.ImportedResetDisabled = !updated.Enable
-	}
 	// An entry reads enable=false for either of two reasons, and only one of them is
 	// the account's. The projection renders the AND of the account flag and the
 	// membership flag, so an account switched off on THIS inbound alone projects a
@@ -588,6 +585,9 @@ func (s *AccountService) upsertAccountFromEntry(tx *gorm.DB, entry map[string]an
 	// posted entry decides - which is right: nothing else can.
 	if account.RepresentativeBlocked || !s.membershipEnabledFor(tx, account.Id, inboundId) {
 		updated.Enable = account.Enable
+	}
+	if _, mentioned := entry["enable"]; mentioned && !account.RepresentativeBlocked && updated.Enable != account.Enable {
+		updated.ImportedResetDisabled = !updated.Enable
 	}
 	// Credentials are per FIELD and are filled from whichever protocol supplies
 	// them, so they are carried forward rather than reset: an account on vless and
@@ -1199,13 +1199,24 @@ func (s *AccountService) ApplyMembershipsFrom(email string, anchorInboundId int,
 // the account, that decides what serves it, and keeping them apart is what lets the
 // same handler create an account on nothing and re-attach one to three inbounds.
 func (s *AccountService) SaveAccountWithoutInbound(entry map[string]any) (*model.Account, error) {
+	encoded, err := json.Marshal(entry)
+	if err != nil {
+		return nil, err
+	}
+	var client model.Client
+	if err := json.Unmarshal(encoded, &client); err != nil {
+		return nil, err
+	}
+	if err := validateClientLimits([]model.Client{client}); err != nil {
+		return nil, err
+	}
 	email, _ := entry["email"].(string)
 	key := accountKey(email)
 	if key == "" {
 		return nil, common.NewError("a client needs an email")
 	}
 	var saved *model.Account
-	err := database.GetDB().Transaction(func(tx *gorm.DB) error {
+	err = database.GetDB().Transaction(func(tx *gorm.DB) error {
 		existing, err := s.GetAccountByEmailTx(tx, email)
 		if err != nil {
 			return err

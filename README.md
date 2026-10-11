@@ -24,6 +24,16 @@ this includes the existing fork fixes.
 - Full release binary includes portable cores and all six geodata files: base, Iran and Russia
   geoip/geosite. Kernel modules and OS packages cannot all be embedded.
 
+## Client speed and independent accounts
+
+Client download and upload limits accept KB/s, MB/s (1024-based bytes) or Mbps
+(decimal megabits). Empty inherits the inbound limit; zero means unlimited.
+Positive values are stored to the nearest KB/s, with a minimum of 1 KB/s.
+Super administrators can create accounts without an inbound, attach protocols later,
+and edit account settings without using the first inbound as an anchor. Disabling
+one inbound or membership leaves the account and its other memberships intact.
+Account-wide quota, expiry and the global enable switch still apply to all memberships.
+
 ## Protocols and dependencies
 
 The panel includes Xray VLESS, VMess, Trojan, Shadowsocks and native AnyTLS/TUIC/NaiveProxy, plus

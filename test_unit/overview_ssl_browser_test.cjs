@@ -31,6 +31,31 @@ const {chromium}=require('playwright');
  await page.locator('.bo-lg-serving button').filter({hasText:'INFO'}).click();
  await page.locator('.bo-protocol-details').waitFor({state:'visible'});
  if(await page.locator('.bo-protocol-details > div').count()!==5)throw Error('INFO omitted a location/protocol membership');
+ await page.evaluate(async()=>{clientMembershipModal.show({});clientMembershipModal.tab='limits';await app.$nextTick();});
+ await page.locator('.ant-modal .ant-input-group-addon').filter({hasText:'KB/s'}).first().waitFor({state:'visible'});
+ const speedSelector=page.locator('.ant-modal .ant-input-group-addon .ant-select').first();
+ await speedSelector.click();
+ await page.locator('.ant-select-dropdown-menu-item').filter({hasText:/^Mbps$/}).click();
+ if(!await page.evaluate(()=>clientMembershipModal.limitDownUnit==='Mbps'))throw Error('Speed unit dropdown did not update download unit');
+ await page.evaluate(()=>{clientMembershipModal.limitDown='10';});
+ if(!await page.evaluate(()=>clientMembershipModal.postedSpeed('limitDown')===1221))throw Error('Mbps entry converted incorrectly');
+ const writes=await page.evaluate(async()=>{
+   const original=HttpUtil.post,calls=[];
+   HttpUtil.post=async(url,body)=>{calls.push({url,body});return {success:true}};
+   try {
+     clientMembershipModal.client.email='new-independent';
+     clientMembershipModal.client.subId='keep-new-token';
+     await clientMembershipModal.saveNew('new-independent',[1,2]);
+     const row=app.clients[0];
+     row.memberships[0].enable=false;
+     row.speedLimitDown=512;row.speedLimitUp=256;row.userLimitOverride=2;
+     await app.applyToAccount(row,{enable:false});
+     return calls;
+   } finally {HttpUtil.post=original;}
+ });
+ if(writes.length!==2 || writes.some(call=>!call.url.endsWith('/saveAccount')))throw Error('Superadmin account creation or enable still depends on first inbound');
+ const patched=JSON.parse(writes[1].body.settings).clients[0];
+ if(patched.speedLimitDown!==512 || patched.speedLimitUp!==256 || patched.userLimitOverride!==2)throw Error('Global enable reset unrelated per-account limits');
  if(errors.length)throw Error(errors.join('\n'));
  console.log('Overview and SSL manager rendered and verified in '+process.env.NODE_UI_LANG);
 }finally{await browser.close()}})().catch(error=>{console.error(error);process.exit(1)});

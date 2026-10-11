@@ -331,7 +331,12 @@
               <label>{{ i18n "pages.clients.limitDown" }}</label>
               <a-input v-model.trim="clientMembershipModal.limitDown"
                 placeholder='{{ i18n "pages.clients.limitInherit" }}'
-                addon-after="KB/s"></a-input>
+                ><a-select slot="addonAfter" :value="clientMembershipModal.limitDownUnit"
+                  @change="unit => clientMembershipModal.setSpeedUnit('limitDown', unit)" :style="{width: '100px'}">
+                  <a-select-option value="KB/s">KB/s</a-select-option>
+                  <a-select-option value="MB/s">MB/s</a-select-option>
+                  <a-select-option value="Mbps">Mbps</a-select-option>
+                </a-select></a-input>
             </div>
           </a-col>
           <a-col :span="12">
@@ -339,7 +344,12 @@
               <label>{{ i18n "pages.clients.limitUp" }}</label>
               <a-input v-model.trim="clientMembershipModal.limitUp"
                 placeholder='{{ i18n "pages.clients.limitInherit" }}'
-                addon-after="KB/s"></a-input>
+                ><a-select slot="addonAfter" :value="clientMembershipModal.limitUpUnit"
+                  @change="unit => clientMembershipModal.setSpeedUnit('limitUp', unit)" :style="{width: '100px'}">
+                  <a-select-option value="KB/s">KB/s</a-select-option>
+                  <a-select-option value="MB/s">MB/s</a-select-option>
+                  <a-select-option value="Mbps">Mbps</a-select-option>
+                </a-select></a-input>
             </div>
           </a-col>
         </a-row>
@@ -402,6 +412,9 @@
     // never the empty string. postedLimit() below is the one place that conversion
     // happens.
     limitDown: '',
+    limitDownUnit: 'KB/s',
+    independentAccountWrites: {{ if .perms.superAdmin }}true{{ else }}false{{ end }},
+    limitUpUnit: 'KB/s',
     limitUp: '',
     limitDevices: '',
     // A negative expiryTime means "N days from first use" and the clock has not
@@ -542,6 +555,7 @@
         // come back as an EMPTY box rather than as a 0: 0 is a real value in two of
         // these three fields and means unlimited. Number(null) is 0, so the null
         // check cannot be skipped by leaning on the string conversion.
+        this.limitDownUnit = this.limitUpUnit = 'KB/s';
         this.limitDown = this.storedLimit(row.speedLimitDown);
         this.limitUp = this.storedLimit(row.speedLimitUp);
         this.limitDevices = this.storedLimit(row.userLimitOverride);
@@ -556,6 +570,7 @@
         this.selected = [];
         this.seedCredentials();
         // A new account inherits everything, so the whole tab starts empty.
+        this.limitDownUnit = this.limitUpUnit = 'KB/s';
         this.limitDown = '';
         this.limitUp = '';
         this.limitDevices = '';
@@ -567,6 +582,25 @@
     // including 0, is shown as a number the operator can see and clear.
     storedLimit(v) {
       return (v === null || v === undefined) ? '' : String(v);
+    },
+    speedFactor(unit) {
+      return unit === 'Mbps' ? 1000000 / 8 / 1024 : unit === 'MB/s' ? 1024 : 1;
+    },
+    setSpeedUnit(field, unit) {
+      const text = String(this[field]).trim();
+      if (text !== '' && Number.isFinite(Number(text))) {
+        this[field] = String(Number(text) * this.speedFactor(this[field + 'Unit']) / this.speedFactor(unit));
+      }
+      this[field + 'Unit'] = unit;
+    },
+    postedSpeed(field) {
+      const text = String(this[field]).trim();
+      if (text === '') return null;
+      const value = Number(text) * this.speedFactor(this[field + 'Unit']);
+      // Keep invalid and negative input invalid for server-side validation.
+      if (!Number.isFinite(value)) return text;
+      if (value < 0) return -Math.max(1, Math.round(Math.abs(value)));
+      return value === 0 ? 0 : Math.max(1, Math.round(value));
     },
     // ...and the reverse, on the way to the server. An empty or blank box is null,
     // which the Go side reads as "inherit"; anything that is not a number is also
@@ -1034,8 +1068,8 @@
         // partial POST silently wiped subId panel-wide), so omitting a cleared field
         // would leave the old override in place and the box would spring back full
         // on the next open.
-        speedLimitDown: this.postedLimit(this.limitDown),
-        speedLimitUp: this.postedLimit(this.limitUp),
+        speedLimitDown: this.postedSpeed('limitDown'),
+        speedLimitUp: this.postedSpeed('limitUp'),
         userLimitOverride: this.postedLimit(this.limitDevices),
         comment: c.comment || '',
         subId: c.subId || '',
@@ -1131,11 +1165,10 @@
         { id: ib.inboundId, inboundIds: ids, settings: JSON.stringify({ clients: [client] }) });
     },
 
-    // A NEW account, addressed to the first inbound it will land on. The other
-    // memberships are the server's to fill, and the credential columns it fills
-    // them from are the ones this entry just carried.
+    // Super administrators write the account directly and attach memberships
+    // afterwards. Restricted callers retain the authorized/priced inbound route.
     async saveNew(email, ids) {
-      if (!ids.length) return await this.saveAccount(email, ids);
+      if (this.independentAccountWrites || !ids.length) return await this.saveAccount(email, ids);
       const first = this.assignable.find(x => x.inboundId === ids[0]);
       const client = this.entryFor(first ? first.protocol : '', email, ids[0]);
       const msg = await HttpUtil.post('/panel/api/inbounds/addClient',
@@ -1183,6 +1216,9 @@
     // an account on vmess and trojan has a uuid on one and a password on the
     // other, and only the anchor's own credential can address it.
     async saveEdit(email, ids) {
+      if (this.independentAccountWrites && email === this.row.email) {
+        return await this.saveAccount(email, ids);
+      }
       const memberships = (this.row && this.row.memberships) || [];
       const anchor = memberships.find(m => ids.includes(m.inboundId)) || memberships[0];
       // Nothing serves this account, so there is no entry anywhere for updateClient
