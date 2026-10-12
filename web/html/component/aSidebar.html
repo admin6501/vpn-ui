@@ -99,7 +99,7 @@
                         title: '{{ i18n "pages.nodes.title"}}'
                     },
                     {{ end }}
-                    {{ if .perms.superAdmin }}
+                    {{ if .perms.manageAdmins }}
                     {
                         key: '{{ .base_path }}panel/admins',
                         icon: 'team',

@@ -92,9 +92,9 @@ jobs:
           /tmp/vpn-ui-browser-tests/node_modules/.bin/playwright install --with-deps chromium
           export NODE_PATH=/tmp/vpn-ui-browser-tests/node_modules
           export NODE_UI_CHROME=$(node -e 'console.log(require("playwright").chromium.executablePath())')
-          RUN_NODE_UI_BROWSER=1 go test ./web -run '^Test(NodePageBrowserRuntime|OverviewSSLBrowserRuntime)$' -count=1 -timeout 360s
+          RUN_NODE_UI_BROWSER=1 go test ./web -run '^Test(NodePageBrowserRuntime|OverviewSSLBrowserRuntime|AdminRolesBrowserRuntime)$' -count=1 -timeout 600s
       - name: Verify ownership transfer and online counts
-        run: go test -tags netgo,osusergo ./web/service ./web/controller -run 'TestSaveAccount|TestLeavingAnAccount|TestIndependentAccount|TestMembershipEnable|TestDisabledMembership|TestRemovingTheLastMembership|TestToggleClientEnableByEmail|TestRenameAccount|TestSortAccountRows|TestAccountSort|TestClientLimit|TestResolveUserLimitOverride|TestAllocateBlockIP|TestOldestBlockSession|TestAdmit|TestSpeedLimit|TestAccountOwnershipTransfer|TestPasarGuard|TestOverview|TestVerifiedProvisioned|TestOffline|TestMigrationAccountsVerifiesExistingImported'
+        run: go test -tags netgo,osusergo ./web/service ./web/controller -run 'TestSaveAccount|TestLeavingAnAccount|TestIndependentAccount|TestMembershipEnable|TestDisabledMembership|TestRemovingTheLastMembership|TestToggleClientEnableByEmail|TestRenameAccount|TestSortAccountRows|TestAccountSort|TestClientLimit|TestResolveUserLimitOverride|TestAllocateBlockIP|TestOldestBlockSession|TestAdmit|TestSpeedLimit|TestAdminRoles|TestAdminOwner|TestAccountOwnershipTransfer|TestPasarGuard|TestOverview|TestVerifiedProvisioned|TestOffline|TestMigrationAccountsVerifiesExistingImported'
       - name: Verify imported subscription quotas and legacy credentials
         run: go test ./sub ./compat/pasarguard -run 'TestPasarGuard|TestGetSubs|TestExistingSubscriptionFormats|TestInvalidTokens|TestDisplayToken|TestHysteria' -count=1
       - name: Verify offline refresh guard

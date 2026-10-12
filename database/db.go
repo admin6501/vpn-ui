@@ -31,6 +31,7 @@ const (
 func initModels() error {
 	models := []any{
 		&model.User{},
+		&model.AdminRole{},
 		&model.Inbound{},
 		&model.InboundAccess{},
 		&model.ResellerProfile{},
@@ -94,6 +95,7 @@ func initUser() error {
 			Username:     defaultUsername,
 			Password:     hashedPassword,
 			IsSuperAdmin: true,
+			IsPanelOwner: true,
 			Enable:       true,
 		}
 		return db.Create(user).Error
@@ -112,6 +114,10 @@ func initUser() error {
 // Guarded on there being no super admin at all, which makes it idempotent and
 // stops it from re-promoting an account a super admin later demoted on purpose.
 func migrateSuperAdmin() {
+	var owners int64
+	if db.Model(&model.User{}).Where("is_panel_owner = ? AND enable = ?", true, true).Count(&owners).Error == nil && owners > 0 {
+		return
+	}
 	var supers int64
 	if err := db.Model(&model.User{}).Where("is_super_admin = ?", true).Count(&supers).Error; err != nil {
 		log.Printf("super-admin migration skipped: %v", err)
@@ -450,6 +456,7 @@ func InitDB(dbPath string) error {
 	// Order matters: promote a super admin before adopting inbounds, since the
 	// adoption needs an owner to assign them to.
 	migrateSuperAdmin()
+	migratePanelOwner()
 	migrateGlobalTwoFactor()
 	migrateInboundOwners()
 	migrateInboundAccess()
@@ -569,3 +576,18 @@ func MigrateSuperAdminForTest() { migrateSuperAdmin() }
 // MigrateGlobalTwoFactorForTest exposes the 2FA migration so tests can drive the
 // upgrade path against an already-open DB.
 func MigrateGlobalTwoFactorForTest() { migrateGlobalTwoFactor() }
+
+// Existing installs select their historic first administrator exactly once.
+func migratePanelOwner() {
+	var count int64
+	if db.Model(&model.User{}).Where("is_panel_owner = ?", true).Count(&count).Error != nil || count > 0 {
+		return
+	}
+	var owner model.User
+	if db.Where("is_super_admin = ? AND enable = ? AND is_reseller = ?", true, true, false).Order("id").First(&owner).Error != nil {
+		return
+	}
+	if err := db.Model(&owner).Update("is_panel_owner", true).Error; err != nil {
+		log.Printf("owner migration failed: %v", err)
+	}
+}

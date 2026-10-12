@@ -149,6 +149,20 @@ release/install process.
 ARM64 (aarch64): download `vpn-ui-arm64`; the online installer selects the architecture automatically.
 The installed executable keeps the compatibility path `/opt/vpn-ui/vpn-ui-amd64` on both architectures.
 
+## Administrator roles and protected ownership
+
+The **Admins** page contains role creation, editing and deletion, and the admin
+form selects a role or custom permissions. Role changes apply to members on their
+next request; inbound access remains assigned separately. Super administrators
+show all permission boxes checked, including node management.
+
+The initial administrator is the protected **Panel owner**. On upgrade, the historic
+first active super administrator receives this marker once. The owner can turn off
+its super-administrator switch, select an operational role, and still manage admins
+and roles. Other super administrators cannot edit or delete that account or modify
+its assigned role. Sensitive database, executable and authentication operations
+require ownership as well as their normal permission checks.
+
 ## Multi-location nodes
 
 Use the dedicated, outbound-only agent to manage location servers and install selected

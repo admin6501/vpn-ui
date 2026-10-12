@@ -17,7 +17,7 @@ import (
 // always retains a super admin; these catch the narrower case of the caller doing
 // it to themselves, where the service cannot tell who is asking.
 var (
-	errSelfDemote = errors.New("you cannot remove your own super admin role or disable your own account")
+	errSelfDemote = errors.New("you cannot disable your own account")
 	errSelfDelete = errors.New("you cannot delete your own account")
 	// errNotOwned is reported as a not-found so it cannot confirm that an object with
 	// that id exists under another admin.
@@ -125,6 +125,9 @@ func landingPath(c *gin.Context) string {
 		if user.Can(p.perm) {
 			return c.GetString("base_path") + p.path
 		}
+	}
+	if user.CanManageAdmins() {
+		return c.GetString("base_path") + "panel/admins"
 	}
 	return ""
 }
@@ -477,4 +480,33 @@ func denyForReseller(c *gin.Context, msg string) bool {
 	}
 	pureJsonMsg(c, http.StatusOK, false, msg)
 	return true
+}
+
+func requireAdminManagement() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		user := session.GetLoginUser(c)
+		if user == nil {
+			deny(c, http.StatusUnauthorized, "pages.login.loginAgain", c.GetString("base_path"))
+			return
+		}
+		if !user.CanManageAdmins() {
+			deny(c, http.StatusForbidden, "pages.admins.forbidden", landingPath(c))
+			return
+		}
+		c.Next()
+	}
+}
+func requirePanelOwner() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		user := session.GetLoginUser(c)
+		if user == nil {
+			deny(c, http.StatusUnauthorized, "pages.login.loginAgain", c.GetString("base_path"))
+			return
+		}
+		if !user.IsPanelOwner {
+			deny(c, http.StatusForbidden, "pages.admins.ownerOnly", landingPath(c))
+			return
+		}
+		c.Next()
+	}
 }

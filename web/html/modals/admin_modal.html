@@ -26,7 +26,7 @@
     </a-form-item>
 
     <a-form-item label='{{ i18n "enable" }}'>
-      <a-switch v-model="adminModal.admin.enable" :disabled="adminModal.isSelf"></a-switch>
+      <a-switch v-model="adminModal.admin.enable" :disabled="adminModal.isSelf || adminModal.admin.isPanelOwner"></a-switch>
     </a-form-item>
 
     <a-form-item>
@@ -37,9 +37,8 @@
           <a-icon type="question-circle"></a-icon>
         </a-tooltip>
       </template>
-      <!-- Editing yourself cannot drop your own super admin role or disable your own
-           account: the server refuses it too, but disabling it here explains why. -->
-      <a-switch v-model="adminModal.admin.isSuperAdmin" :disabled="adminModal.isSelf"></a-switch>
+      <a-switch v-model="adminModal.admin.isSuperAdmin" :disabled="adminModal.isEdit && adminModal.admin.isSuperAdmin && !adminModal.canDemote" @change="adminModal.superChanged($event)"></a-switch>
+      <p v-if="adminModal.isEdit && adminModal.admin.isSuperAdmin && !adminModal.canDemote">{{ i18n "pages.admins.lastSuperHint" }}</p>
     </a-form-item>
 
 
@@ -80,10 +79,18 @@
       </template>
     </a-form-item>
 
-    <!-- A super admin bypasses the mask entirely, so offering checkboxes would imply
-         a limit that does not exist. -->
-    <a-form-item v-if="!adminModal.admin.isSuperAdmin" label='{{ i18n "pages.admins.permissions" }}'>
-      <a-checkbox-group v-model="adminModal.admin.permissions" :style="{ width: '100%' }">
+    <a-form-item v-if="!adminModal.admin.isSuperAdmin" label='{{ i18n "pages.admins.roleName" }}'>
+      <a-select v-model="adminModal.admin.adminRoleId" @change="adminModal.selectRole($event)" style="width:100%">
+        <a-select-option :value="0">{{ i18n "pages.admins.customPermissions" }}</a-select-option>
+        <a-select-option v-for="role in adminModal.allRoles" :key="role.id" :value="role.id">[[ role.name ]]</a-select-option>
+      </a-select>
+      <p v-if="adminModal.admin.adminRoleId">{{ i18n "pages.admins.roleInherited" }}</p>
+    </a-form-item>
+    <a-alert v-if="adminModal.admin.isPanelOwner" type="info" :message="'{{ i18n "pages.admins.ownerDesc" }}'" style="margin-bottom:12px"></a-alert>
+
+    <!-- Super-admin permissions are shown checked and locked; ordinary roles inherit a live mask. -->
+    <a-form-item label='{{ i18n "pages.admins.permissions" }}'>
+      <a-checkbox-group v-model="adminModal.admin.permissions" :disabled="adminModal.admin.isSuperAdmin || !!adminModal.admin.adminRoleId" :style="{ width: '100%' }">
         <a-row>
           <a-col :span="24" v-for="slug in adminModal.allPermissions" :key="slug">
             <a-checkbox :value="slug">[[ adminModal.permLabel(slug) ]]</a-checkbox>
@@ -126,6 +133,8 @@
     confirm: null,
     allPermissions: [],
     allInbounds: [],
+    allRoles: [],
+    canDemote: true,
     admin: { id: 0, username: '', password: '', nickname: '', enable: true, isSuperAdmin: false, permissions: [], inboundIds: [] },
 
     permLabel(slug) {
@@ -147,29 +156,40 @@
     ok() {
       ObjectUtil.execute(adminModal.confirm, adminModal.admin);
     },
-    show({ title = '', okText = '{{ i18n "sure" }}', admin = null, allPermissions = [], allInbounds = [], confirm = () => { }, isEdit = false }) {
+    show({ allRoles = [], title = '', okText = '{{ i18n "sure" }}', admin = null, allPermissions = [], allInbounds = [], confirm = () => { }, isEdit = false }) {
       this.title = title;
       this.okText = okText;
       this.confirm = confirm;
       this.isEdit = isEdit;
       this.allPermissions = allPermissions;
+      this.allRoles = allRoles;
       this.allInbounds = allInbounds;
       if (isEdit && admin) {
         this.admin = {
           id: admin.id,
+          isPanelOwner: !!admin.isPanelOwner,
+          adminRoleId: admin.adminRoleId || 0,
           username: admin.username,
           password: '', // blank means "keep the current one"
           nickname: admin.nickname || '',
           enable: admin.enable,
           isSuperAdmin: admin.isSuperAdmin,
-          permissions: (admin.permissions || []).slice(),
-          inboundIds: (admin.inboundIds || []).slice(),
+          permissions: admin.isSuperAdmin ? allPermissions.slice() : (admin.permissions || []).slice(),
+          inboundIds: admin.isSuperAdmin ? allInbounds.map(ib=>ib.id) : (admin.inboundIds || []).slice(),
         };
       } else {
-        this.admin = { id: 0, username: '', password: '', nickname: '', enable: true, isSuperAdmin: false, permissions: [], inboundIds: [] };
+        this.admin = { adminRoleId: 0, isPanelOwner:false, id: 0, username: '', password: '', nickname: '', enable: true, isSuperAdmin: false, permissions: [], inboundIds: [] };
       }
+      this.canDemote = !admin || admin.canDemote !== false;
       this.isSelf = isEdit && admin && admin.id === app.currentAdminId;
       this.visible = true;
+    },
+    selectRole(id) {
+      const role = this.allRoles.find(role=>role.id===id);
+      if (role) this.admin.permissions = role.permissions.slice();
+    },
+    superChanged(enabled) {
+      if (enabled) { this.admin.adminRoleId=0;this.admin.permissions=this.allPermissions.slice(); }
     },
     // Bodies are form-urlencoded (a global axios interceptor Qs.stringify's them),
     // and Qs emits an array as repeated keys, which is what Gin binds into []string.
@@ -182,6 +202,7 @@
         nickname: admin.nickname,
         enable: admin.enable,
         isSuperAdmin: admin.isSuperAdmin,
+        adminRoleId: admin.isSuperAdmin ? 0 : (Number(admin.adminRoleId) || 0),
         permissions: admin.isSuperAdmin ? [] : (admin.permissions.length ? admin.permissions : ['']),
         // A blank entry is how "none" is sent: an omitted key binds as nil server-side
         // and cannot be told apart from "leave the existing grants alone".

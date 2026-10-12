@@ -401,19 +401,8 @@
       </div>
     </article>
 
-    <!-- ===== manage ===== -->
-    <!-- Every button here is escalation-class: the logs name other admins'
-         inbounds, clients and IPs; config.json carries every inbound's secrets;
-         backup and restore are the whole database, users table and bcrypt hashes
-         included. It used to answer only to the super admin role for exactly that
-         reason.
-
-         The operator chose otherwise on 2026-07-31, with the consequence stated:
-         manageOverview now opens this tile, so whoever holds that bit can take the
-         panel. It is a deliberate delegation, not an oversight. The server agrees
-         (requireOverviewManage on each route), so this gate hides what the caller
-         cannot do rather than being the only thing stopping them. -->
-    {{ if .perms.manageOverview }}
+    <!-- Database, authentication secrets and executable replacement are owner-only. -->
+    {{ if and .perms.manageOverview .perms.panelOwner }}
     <article class="bo-tile bo-t-manage" aria-label='{{ i18n "menu.link" }}'>
       <div class="bo-tile-head"><h3 class="bo-tile-title">{{ i18n "menu.link" }}</h3></div>
       <div class="bo-btn-row bo-btn-row--compact">

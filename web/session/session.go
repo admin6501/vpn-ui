@@ -111,7 +111,18 @@ func loadLoginUser(c *gin.Context) *model.User {
 	if !user.Enable {
 		return nil // disabled admins are logged out on their next request
 	}
-	if user.RepresentativeRoleID > 0 {
+	if user.AdminRoleID > 0 && !user.IsSuperAdmin && !user.IsReseller {
+		var role model.AdminRole
+		if err := db.First(&role, user.AdminRoleID).Error; err != nil {
+			// An owner can repair an invalid assignment; operational permissions stay empty.
+			if !user.IsPanelOwner {
+				return nil
+			}
+		} else {
+			user.AdminRole = &role
+		}
+	}
+	if user.RepresentativeRoleID > 0 && !user.IsPanelOwner && (user.AdminRoleID == 0 || user.IsReseller) {
 		var role model.RepresentativeRole
 		if db.First(&role, user.RepresentativeRoleID).Error != nil {
 			return nil

@@ -151,6 +151,9 @@ func TestCannotStrandPanelWithoutSuperAdmin(t *testing.T) {
 		t.Fatalf("no super admin: %v", err)
 	}
 
+	if err := db.Model(super).Update("is_panel_owner", false).Error; err != nil {
+		t.Fatal(err)
+	}
 	// Demoting the only super admin.
 	err := s.UpdateAdmin(super.Id, AdminSpec{Username: super.Username, Permissions: 0, Enable: true, IsSuperAdmin: false})
 	if !errors.Is(err, ErrLastSuperAdmin) {

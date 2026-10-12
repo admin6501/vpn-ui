@@ -47,7 +47,7 @@ func (a *CoreController) initRouter(g *gin.RouterGroup) {
 	// equivalent to running arbitrary code as root on the host. Reading stays on the
 	// Core Settings bit, since the same operator can already read the same text
 	// through the logs endpoint.
-	g.POST("/config/:core", requireSuperAdmin(), a.saveCoreConfig)
+	g.POST("/config/:core", requirePanelOwner(), a.saveCoreConfig)
 }
 
 // status returns the status of all cores plus the host/kernel system status and

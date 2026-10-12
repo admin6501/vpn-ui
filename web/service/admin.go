@@ -15,7 +15,7 @@ import (
 )
 
 // AdminService is the CRUD behind the Admins page. Every method here is reachable
-// only by a super admin (enforced at the route), so it does not re-check the
+// only by a super admin or protected owner (enforced at the route), so it does not re-check the
 // caller's role; it does enforce the invariants that keep the panel recoverable.
 type AdminService struct{}
 
@@ -29,6 +29,10 @@ var (
 // returning model.User: it carries the permission slugs, and it keeps the password
 // hash and TOTP secret from ever being serialized.
 type AdminView struct {
+	IsPanelOwner    bool     `json:"isPanelOwner"`
+	AdminRoleID     int      `json:"adminRoleId"`
+	AdminRoleName   string   `json:"adminRoleName"`
+	CanDemote       bool     `json:"canDemote"`
 	Id              int      `json:"id"`
 	Username        string   `json:"username"`
 	Nickname        string   `json:"nickname"`
@@ -43,14 +47,19 @@ type AdminView struct {
 }
 
 func toAdminView(u *model.User, inbounds int64, inboundIds []int) AdminView {
+	roleName := ""
+	if u.AdminRole != nil {
+		roleName = u.AdminRole.Name
+	}
 	return AdminView{
+		IsPanelOwner: u.IsPanelOwner, AdminRoleID: u.AdminRoleID, AdminRoleName: roleName,
 		Id:              u.Id,
 		Username:        u.Username,
 		Nickname:        u.Nickname,
 		IsSuperAdmin:    u.IsSuperAdmin,
 		Enable:          u.Enable,
 		TwoFactorEnable: u.TwoFactorEnable,
-		Permissions:     u.Permissions.Slugs(),
+		Permissions:     u.EffectivePermissions().Slugs(),
 		InboundCount:    inbounds,
 		InboundIds:      inboundIds,
 	}
@@ -95,13 +104,33 @@ func (s *AdminService) GetAdmins() ([]AdminView, error) {
 		byUser[g.UserId] = append(byUser[g.UserId], g.InboundId)
 	}
 
+	var roles []model.AdminRole
+	if err := db.Find(&roles).Error; err != nil {
+		return nil, err
+	}
+	byRole := map[int]*model.AdminRole{}
+	for i := range roles {
+		byRole[roles[i].ID] = &roles[i]
+	}
+	var enabledSupers, enabledOwners int
+	for _, u := range users {
+		if u.Enable && u.IsSuperAdmin {
+			enabledSupers++
+		}
+		if u.Enable && u.IsPanelOwner {
+			enabledOwners++
+		}
+	}
 	out := make([]AdminView, 0, len(users))
 	for _, u := range users {
 		ids := byUser[u.Id]
 		if ids == nil {
 			ids = []int{} // marshal as [], not null: the UI ticks against it
 		}
-		out = append(out, toAdminView(u, counts[u.Id], ids))
+		u.AdminRole = byRole[u.AdminRoleID]
+		view := toAdminView(u, counts[u.Id], ids)
+		view.CanDemote = enabledOwners > 0 || enabledSupers > 1 || !u.IsSuperAdmin
+		out = append(out, view)
 	}
 	return out, nil
 }
@@ -129,7 +158,8 @@ func (s *AdminService) usernameTaken(db *gorm.DB, username string, exceptId int)
 // rather than a positional list: the two adjacent int pairs (port range, subnet
 // band) are trivially swappable at a call site, and the compiler cannot catch it.
 type AdminSpec struct {
-	Username string
+	AdminRoleID *int
+	Username    string
 	// Password empty on update means "keep the existing one".
 	Password     string
 	Nickname     string
@@ -174,14 +204,12 @@ func (s *AdminService) AddAdmin(spec AdminSpec) (*model.User, error) {
 		return nil, err
 	}
 	user := &model.User{
-		Username:    username,
-		Password:    hash,
-		Nickname:    strings.TrimSpace(spec.Nickname),
-		Permissions: spec.Permissions,
-		Enable:      spec.Enable,
-		// A super admin is never created through this path: promotion is a separate,
-		// deliberate act (UpdateAdmin), so a misfiled create can't mint one.
-		IsSuperAdmin: false,
+		Username:     username,
+		Password:     hash,
+		Nickname:     strings.TrimSpace(spec.Nickname),
+		Permissions:  spec.Permissions,
+		Enable:       spec.Enable,
+		IsSuperAdmin: spec.IsSuperAdmin,
 	}
 	// Enable carries gorm:"default:1" so rows predating the column read back enabled.
 	// The cost is that GORM omits a zero-valued field that has a default from the
@@ -189,6 +217,14 @@ func (s *AdminService) AddAdmin(spec AdminSpec) (*model.User, error) {
 	// stored enable=1 and could log in. Force the intended value, in one transaction
 	// so no window exists where the account is live.
 	err = db.Transaction(func(tx *gorm.DB) error {
+		roleID, err := resolveAdminRole(tx, spec, 0)
+		if err != nil {
+			return err
+		}
+		user.AdminRoleID = roleID
+		if roleID > 0 {
+			user.Permissions = 0
+		}
 		if err := tx.Create(user).Error; err != nil {
 			return err
 		}
@@ -239,6 +275,9 @@ func (s *AdminService) UpdateAdmin(id int, spec AdminSpec) error {
 		return ErrAdminUsernameTaken
 	}
 
+	if existing.IsPanelOwner && !spec.Enable {
+		return ErrProtectedAdmin
+	}
 	// Refuse to demote or disable the last super admin: either would leave nobody
 	// able to manage admins, with no way back through the UI.
 	if existing.IsSuperAdmin && (!spec.IsSuperAdmin || !spec.Enable) {
@@ -268,18 +307,46 @@ func (s *AdminService) UpdateAdmin(id int, spec AdminSpec) error {
 		}
 		updates["password"] = hash
 	}
-	if err := db.Model(model.User{}).Where("id = ?", id).Updates(updates).Error; err != nil {
-		return err
-	}
-	// Super admins see everything by role, so carrying explicit grants for one would
-	// be dead rows that reappear if they are ever demoted.
-	if spec.IsSuperAdmin {
-		return s.SetInboundAccess(id, nil)
-	}
-	return s.SetInboundAccess(id, spec.InboundIds)
+	return db.Transaction(func(tx *gorm.DB) error {
+		roleID, err := resolveAdminRole(tx, spec, existing.AdminRoleID)
+		if err != nil {
+			return err
+		}
+		updates["admin_role_id"] = roleID
+		if existing.IsPanelOwner || spec.AdminRoleID != nil {
+			updates["representative_role_id"] = 0
+		}
+		if roleID > 0 {
+			updates["permissions"] = 0
+		}
+		if existing.IsSuperAdmin && (!spec.IsSuperAdmin || !spec.Enable) {
+			last, err := s.isLastSuperAdmin(tx, id)
+			if err != nil {
+				return err
+			}
+			if last {
+				return ErrLastSuperAdmin
+			}
+		}
+		if err := tx.Model(&model.User{}).Where("id = ?", id).Updates(updates).Error; err != nil {
+			return err
+		}
+		ids := spec.InboundIds
+		if spec.IsSuperAdmin {
+			ids = nil
+		}
+		return setAdminInboundAccess(tx, id, ids)
+	})
 }
 
 func (s *AdminService) isLastSuperAdmin(db *gorm.DB, id int) (bool, error) {
+	var owners int64
+	if err := db.Model(&model.User{}).Where("is_panel_owner = ? AND enable = ?", true, true).Count(&owners).Error; err != nil {
+		return false, err
+	}
+	if owners > 0 {
+		return false, nil
+	}
 	var others int64
 	err := db.Model(model.User{}).
 		Where("is_super_admin = ? AND enable = ? AND id != ?", true, true, id).Count(&others).Error
@@ -306,6 +373,9 @@ func (s *AdminService) DeleteAdmin(id int) error {
 	// stranded.
 	if existing.IsReseller {
 		return ErrAdminNotFound
+	}
+	if existing.IsPanelOwner {
+		return ErrProtectedAdmin
 	}
 	if existing.IsSuperAdmin {
 		last, err := s.isLastSuperAdmin(db, id)
@@ -446,20 +516,23 @@ func (s *AdminService) GrantInbound(userId, inboundId int) error {
 
 // SetInboundAccess replaces an admin's grants with exactly inboundIds.
 func (s *AdminService) SetInboundAccess(userId int, inboundIds []int) error {
-	return database.GetDB().Transaction(func(tx *gorm.DB) error {
-		if err := tx.Where("user_id = ?", userId).Delete(&model.InboundAccess{}).Error; err != nil {
+	return database.GetDB().Transaction(func(tx *gorm.DB) error { return setAdminInboundAccess(tx, userId, inboundIds) })
+}
+func setAdminInboundAccess(tx *gorm.DB, userId int, inboundIds []int) error {
+	if err := tx.Where("user_id = ?", userId).Delete(&model.InboundAccess{}).Error; err != nil {
+		return err
+	}
+	seen := map[int]bool{}
+	for _, id := range inboundIds {
+		if id <= 0 || seen[id] {
+			continue
+		}
+		seen[id] = true
+		if err := tx.Create(&model.InboundAccess{UserId: userId, InboundId: id}).Error; err != nil {
 			return err
 		}
-		for _, id := range inboundIds {
-			if id <= 0 {
-				continue
-			}
-			if err := tx.Create(&model.InboundAccess{UserId: userId, InboundId: id}).Error; err != nil {
-				return err
-			}
-		}
-		return nil
-	})
+	}
+	return nil
 }
 
 // RevokeInboundEverywhere drops every grant for an inbound, for use when it is

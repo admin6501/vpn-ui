@@ -154,7 +154,7 @@ func (u *User) Can(perm Permission) bool {
 	if u.IsSuperAdmin {
 		return true
 	}
-	if u.RepresentativeRoleID > 0 {
+	if u.RepresentativeRoleID > 0 && !u.IsPanelOwner && (u.AdminRoleID == 0 || u.IsReseller) {
 		if u.RepresentativeRole == nil {
 			return false
 		}
@@ -194,5 +194,5 @@ func (u *User) Can(perm Permission) bool {
 	if u.IsReseller {
 		return resellerPerms.Has(perm)
 	}
-	return u.Permissions.Has(perm)
+	return u.EffectivePermissions().Has(perm)
 }

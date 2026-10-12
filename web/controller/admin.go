@@ -15,6 +15,7 @@ import (
 // ShouldBindJSON. Permissions arrive as repeated `permissions` keys, which is what
 // Qs's arrayFormat:'repeat' emits for an array.
 type adminForm struct {
+	AdminRoleID  *int     `json:"adminRoleId" form:"adminRoleId"`
 	Id           int      `json:"id" form:"id"`
 	Username     string   `json:"username" form:"username"`
 	Password     string   `json:"password" form:"password"`
@@ -46,6 +47,7 @@ func (f *adminForm) inboundIds() []int {
 // spec maps the wire form onto the service's shape.
 func (f *adminForm) spec() service.AdminSpec {
 	return service.AdminSpec{
+		AdminRoleID:  f.AdminRoleID,
 		Username:     f.Username,
 		Password:     f.Password,
 		Nickname:     f.Nickname,
@@ -56,7 +58,7 @@ func (f *adminForm) spec() service.AdminSpec {
 	}
 }
 
-// AdminController serves the Admins CRUD. Every route is super-admin only; the
+// AdminController serves admin and role CRUD for super admins and the protected owner; the
 // gating lives on the group below, not in the handlers.
 type AdminController struct {
 	BaseController
@@ -73,9 +75,13 @@ func NewAdminController(g *gin.RouterGroup) *AdminController {
 
 func (a *AdminController) initRouter(g *gin.RouterGroup) {
 	g = g.Group("/admins")
-	g.Use(requireSuperAdmin())
+	g.Use(requireAdminManagement())
 
 	g.GET("/list", a.list)
+	g.GET("/roles", a.roles)
+	g.POST("/roles/add", a.saveRole)
+	g.POST("/roles/update/:id", a.saveRole)
+	g.POST("/roles/delete/:id", a.deleteRole)
 	g.GET("/permissions", a.permissions)
 	g.GET("/inbounds", a.inbounds)
 	g.POST("/add", a.add)
@@ -136,15 +142,19 @@ func (a *AdminController) update(c *gin.Context) {
 		jsonMsg(c, I18nWeb(c, "pages.admins.edit"), err)
 		return
 	}
-	// Guard the caller against locking themselves out: the service refuses to strand
-	// the panel with no super admin, but it cannot tell that this edit is self-inflicted.
-	if me := session.GetLoginUser(c); me != nil && me.Id == id && (!form.IsSuperAdmin || !form.Enable) {
+	// Protect the permanent owner and prevent disabling the current login.
+	// Self-demotion remains possible while administrator recovery is preserved.
+	if err := a.adminService.GuardAdminTarget(session.GetLoginUser(c), id); err != nil {
+		adminRoleResult(c, err)
+		return
+	}
+	if me := session.GetLoginUser(c); me != nil && me.Id == id && !form.Enable {
 		jsonMsg(c, I18nWeb(c, "pages.admins.edit"), errSelfDemote)
 		return
 	}
 	err = a.adminService.UpdateAdmin(id, form.spec())
 	if err != nil {
-		jsonMsg(c, I18nWeb(c, "pages.admins.edit"), err)
+		adminRoleResult(c, err)
 		return
 	}
 	jsonMsg(c, I18nWeb(c, "pages.admins.edit"), nil)
@@ -154,6 +164,10 @@ func (a *AdminController) del(c *gin.Context) {
 	id, err := strconv.Atoi(c.Param("id"))
 	if err != nil {
 		jsonMsg(c, I18nWeb(c, "pages.admins.del"), err)
+		return
+	}
+	if err := a.adminService.GuardAdminTarget(session.GetLoginUser(c), id); err != nil {
+		adminRoleResult(c, err)
 		return
 	}
 	if me := session.GetLoginUser(c); me != nil && me.Id == id {
@@ -184,4 +198,57 @@ func (a *AdminController) reassign(c *gin.Context) {
 		return
 	}
 	jsonObj(c, gin.H{"moved": moved}, nil)
+}
+
+func (a *AdminController) roles(c *gin.Context) {
+	rows, err := a.adminService.AdminRoles()
+	jsonObj(c, rows, err)
+}
+func (a *AdminController) saveRole(c *gin.Context) {
+	var body struct {
+		Name        string   `json:"name" form:"name"`
+		Permissions []string `json:"permissions" form:"permissions"`
+	}
+	if err := c.ShouldBind(&body); err != nil {
+		jsonMsg(c, "", err)
+		return
+	}
+	id := 0
+	var err error
+	if c.Param("id") != "" {
+		id, err = strconv.Atoi(c.Param("id"))
+		if err != nil || id <= 0 {
+			jsonMsg(c, "", service.ErrAdminNotFound)
+			return
+		}
+	}
+	err = a.adminService.SaveAdminRole(session.GetLoginUser(c), id, body.Name, model.PermissionsFromSlugs(body.Permissions))
+	adminRoleResult(c, err)
+}
+func (a *AdminController) deleteRole(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err == nil && id > 0 {
+		err = a.adminService.DeleteAdminRole(session.GetLoginUser(c), id)
+	} else {
+		err = service.ErrAdminNotFound
+	}
+	adminRoleResult(c, err)
+}
+func adminRoleResult(c *gin.Context, err error) {
+	key := ""
+	switch err {
+	case service.ErrProtectedAdmin:
+		key = "pages.admins.ownerProtected"
+	case service.ErrAdminRoleAssigned:
+		key = "pages.admins.roleAssigned"
+	case service.ErrAdminRoleName:
+		key = "pages.admins.roleNameRequired"
+	case service.ErrAdminRoleDuplicate:
+		key = "pages.admins.roleDuplicate"
+	}
+	if key != "" {
+		pureJsonMsg(c, 200, false, I18nWeb(c, key))
+		return
+	}
+	jsonMsg(c, "", err)
 }

@@ -60,8 +60,8 @@ func (a *SettingController) initRouter(g *gin.RouterGroup) {
 	g = g.Group("/setting")
 	g.Use(requirePerm(model.PermPanelSettings))
 
-	g.POST("/all", a.getAllSetting)
-	g.POST("/update", a.updateSetting)
+	g.POST("/all", requirePanelOwner(), a.getAllSetting)
+	g.POST("/update", requirePanelOwner(), a.updateSetting)
 	securityLimiter := newLoginLimiter().middleware()
 	g.POST("/updateUser", securityLimiter, a.updateUser)
 	g.POST("/twoFactor", securityLimiter, a.updateTwoFactor)
@@ -76,10 +76,10 @@ func (a *SettingController) initRouter(g *gin.RouterGroup) {
 	g.GET("/service/log", a.serviceLog)
 	// Writes a systemd unit as root: escalation-class, so no permission bit stands
 	// in for it.
-	g.POST("/service", requireSuperAdmin(), a.saveService)
+	g.POST("/service", requirePanelOwner(), a.saveService)
 
 	// The SSL certificate manager. Reading rides the PermPanelSettings gate above;
-	// every route that ACTS carries requireSuperAdmin() inline, for the same reason
+	// every route that ACTS carries requirePanelOwner() inline, for the same reason
 	// saveService does and the reason spelled out at core.go:44-49. Driving acme.sh
 	// as a subprocess and then writing the files this webserver loads as its own TLS
 	// identity is running code as root on the host, and no permission bit stands in
@@ -93,21 +93,21 @@ func (a *SettingController) initRouter(g *gin.RouterGroup) {
 	// would use for a set of names, without contacting anything.
 	g.POST("/ssl/suggest", a.sslSuggest)
 	g.GET("/ssl/consumers", a.sslConsumers)
-	g.POST("/ssl/start", requireSuperAdmin(), a.sslStart)
-	g.POST("/ssl/use-managed", requireSuperAdmin(), a.sslUseManaged)
+	g.POST("/ssl/start", requirePanelOwner(), a.sslStart)
+	g.POST("/ssl/use-managed", requirePanelOwner(), a.sslUseManaged)
 	// The other half of the switch: clearing a listener's setting so it stops
 	// serving TLS at all. Same gate, because it decides the panel's own identity.
-	g.POST("/ssl/unassign", requireSuperAdmin(), a.sslUnassign)
-	g.POST("/ssl/rollback", requireSuperAdmin(), a.sslRollback)
+	g.POST("/ssl/unassign", requirePanelOwner(), a.sslUnassign)
+	g.POST("/ssl/rollback", requirePanelOwner(), a.sslRollback)
 	// Deleting a certificate takes private keys off disk and can strand a listener,
 	// so it sits on the same super-admin gate as everything else that mutates here.
-	g.POST("/ssl/delete-profile", requireSuperAdmin(), a.sslDeleteProfile)
-	g.POST("/ssl/adopt", requireSuperAdmin(), a.sslAdopt)
+	g.POST("/ssl/delete-profile", requirePanelOwner(), a.sslDeleteProfile)
+	g.POST("/ssl/adopt", requirePanelOwner(), a.sslAdopt)
 	// Taking over what deploy.sh and vpn-ui.sh installed. Writes certificate
 	// material and can re-point a listener, so it takes the same gate as issuing.
-	g.POST("/ssl/sync", requireSuperAdmin(), a.sslSync)
-	g.POST("/ssl/auto-renew", requireSuperAdmin(), a.sslAutoRenew)
-	g.POST("/ssl/nickname", requireSuperAdmin(), a.sslNickname)
+	g.POST("/ssl/sync", requirePanelOwner(), a.sslSync)
+	g.POST("/ssl/auto-renew", requirePanelOwner(), a.sslAutoRenew)
+	g.POST("/ssl/nickname", requirePanelOwner(), a.sslNickname)
 }
 
 // serviceStatus returns the current systemd unit state for the panel.

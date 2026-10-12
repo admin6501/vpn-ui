@@ -153,6 +153,8 @@ func templatePerms(c *gin.Context) map[string]bool {
 		perms[d.Slug] = user.Can(d.Bit)
 	}
 	perms["superAdmin"] = user.IsSuperAdmin
+	perms["panelOwner"] = user.IsPanelOwner
+	perms["manageAdmins"] = user.CanManageAdmins()
 	// The overview asks two questions -- "may this page be opened?" and "may it
 	// act?" -- and the two roles answer them from different columns: an admin from
 	// the permission bits, a reseller from their profile, whose stored mask Can()

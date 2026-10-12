@@ -59,9 +59,23 @@ Do not trust 0.0.0.0/0 or ::/0.
 
 ## Administrative permissions
 
-The overview management permission includes database export/restore and binary
-replacement. Grant it only to fully trusted administrators. Those operations
-intentionally provide access to sensitive data and control over the service.
+The historic first active administrator is recorded as the protected panel owner
+on upgrade; new installs mark the initial account as owner. Ownership is independent
+of the super-administrator switch. The active owner retains administrator and role
+management, so it can restrict its operational permissions without losing recovery
+access. Other super administrators cannot edit, disable or delete that account, or
+change a role assigned to it.
+
+Database export/restore, executable replacement, private authentication settings and
+central daemon configuration writes additionally require the protected owner. These
+operations could otherwise bypass account protection. Node management remains an
+explicit delegated permission and applies to the remote node.
+
+Administrator roles are live permission sets. Existing sessions use the current
+role on each request; missing roles grant no operational permissions. Inbound access
+is assigned per administrator. Roles never grant super-administrator status or panel
+ownership. Assigned roles must be detached before deletion. The owner can repair a
+missing role through administrator management.
 Protect database backups: they contain credential hashes, VPN credentials and
 subscription tokens. The panel's process and root account require protection.
 

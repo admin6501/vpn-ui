@@ -78,9 +78,13 @@ type User struct {
 	// Nickname is a human label for the Admins list; it carries no privilege.
 	Nickname string `json:"nickname" form:"nickname"`
 
-	// IsSuperAdmin bypasses Permissions entirely and is the only role that may
-	// manage admins. Exactly one is seeded from the pre-existing first user.
+	// IsSuperAdmin enables every permission bit. The protected owner also retains
+	// administrator management independently of this operational switch.
 	IsSuperAdmin bool `json:"isSuperAdmin" gorm:"default:0"`
+	// Ownership is permanent account protection, independent of operational permissions.
+	IsPanelOwner bool       `json:"-" form:"-" gorm:"default:0"`
+	AdminRoleID  int        `json:"adminRoleId" gorm:"default:0;index"`
+	AdminRole    *AdminRole `json:"-" gorm:"-"`
 
 	// Permissions is the capability bitmask; ignored for a super admin, and
 	// ignored for a reseller (whose mask is derived from the role, see Can).
@@ -805,3 +809,34 @@ type AccountInbound struct {
 
 // TableName pins the table name. See Account.TableName.
 func (AccountInbound) TableName() string { return "account_inbounds" }
+
+// AdminRole supplies a live permission set to ordinary administrators.
+// Inbound visibility is still assigned independently per administrator.
+type AdminRole struct {
+	ID          int        `json:"id" gorm:"primaryKey;autoIncrement"`
+	Name        string     `json:"name" gorm:"uniqueIndex"`
+	Permissions Permission `json:"-"`
+}
+
+func (u *User) CanManageAdmins() bool {
+	return u != nil && u.Enable && !u.IsReseller && (u.IsPanelOwner || u.IsSuperAdmin)
+}
+func (u *User) EffectivePermissions() Permission {
+	if u == nil {
+		return 0
+	}
+	if u.IsSuperAdmin {
+		var all Permission
+		for _, d := range AllPermissions {
+			all |= d.Bit
+		}
+		return all
+	}
+	if u.AdminRoleID > 0 {
+		if u.AdminRole == nil || u.AdminRole.ID != u.AdminRoleID {
+			return 0
+		}
+		return u.AdminRole.Permissions
+	}
+	return u.Permissions
+}

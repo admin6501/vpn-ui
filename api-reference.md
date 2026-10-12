@@ -1722,3 +1722,27 @@ See [node setup and accounting limits](docs/NODES.md).
 Node runtime controls: `POST /panel/nodes/:id/control` accepts `action=start|stop|restart` (manageNodes; JSON or form). Stops the VPN runtime, keeping the management agent alive. `POST /panel/nodes/:id/config` accepts `core`, `inspect`, `inbound`, `file`, `text`, and `reset` (JSON or form). `inspect=true` queues a configuration read; other requests queue a save or reset on that node. Results, errors and acknowledged generations are available in `/panel/nodes/list` under `report`. Configuration text is limited to 512 KiB; file names are validated against the agent's generated target catalog, never accepted as arbitrary paths. Updated agents advertise `controlSupported`.
 
 `POST /panel/nodes/:id/core-action` accepts `core` and `action=start|stop|restart|uninstall` (manageNodes; JSON or form). Agent reports include `coreActionSupported`, `coreActionGeneration`, `coreActionError`, `pausedCores` and `uninstall` progress. Node-wide control also accepts `reconnect`. Direct `inbound.json` configuration targets are scoped to the selected node/core and validated through the central inbound update service; generated clients are retained, and arbitrary JSON model fields are rejected. Removing cores keeps central inbounds and accounting. Built-in core removal disables its service.
+
+## Administrator roles and protected panel ownership
+
+`/panel/admins` is available to active super administrators and the protected panel
+owner, including an owner whose super-administrator switch is off. Existing account
+ownership is not rewritten by a role or permission change.
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| GET | `/panel/admins/roles` | Roles with effective permission slugs, member counts and `ownerAssigned` |
+| POST | `/panel/admins/roles/add` | Create a role using `name` and repeated `permissions` |
+| POST | `/panel/admins/roles/update/:id` | Edit a role; a role assigned to the owner is owner-editable only |
+| POST | `/panel/admins/roles/delete/:id` | Delete an unassigned role |
+
+Admin add/update accepts `adminRoleId`. Zero selects custom permissions; omission
+on update retains the existing role. Positive ids must resolve to existing roles.
+`isSuperAdmin=true` ignores named roles and grants all ordinary permission bits.
+Roles cannot confer ownership or super-administrator status. Admin views include
+`isPanelOwner`, `adminRoleId`, `adminRoleName` and `canDemote`. Ownership is never an
+editable payload field. A non-owner cannot edit or delete the owner account.
+
+Database replacement/export, panel executable replacement, authentication-setting
+reads/writes and central daemon-config writes additionally require the panel owner;
+an overview-management or super-administrator grant alone cannot bypass this check.

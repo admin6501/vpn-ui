@@ -61,21 +61,10 @@ func (a *ServerController) initRouter(g *gin.RouterGroup) {
 	g.GET("/panelLocation", a.panelLocation)
 	g.GET("/cpuHistory/:bucket", a.getCpuHistoryBucket)
 	g.GET("/getXrayVersion", a.getXrayVersion)
-	// Escalation-class, and DELEGABLE since 2026-07-31: these answer to
-	// PermOverviewManage (requireOverviewManage, which also resolves a reseller's
-	// profile columns) rather than to the super admin role.
-	//
-	// They are still escalation-class. getConfigJson and getDb expose every admin's
-	// data and getDb carries the users table with its bcrypt hashes; importDB replaces
-	// the database wholesale; updatePanel swaps the running binary as root. Anyone
-	// holding that bit can therefore take the panel, which the operator chose
-	// deliberately with the consequence stated. Do not "tidy" this back to
-	// requireSuperAdmin, and do not widen the bit's reach any further without asking:
-	// the line drawn was "everything the overview offers", which is why admin
-	// management, the host reboot, core uninstall and the systemd unit stayed behind
-	// requireSuperAdmin. See overviewManage in permission.go.
-	g.GET("/getConfigJson", requireOverviewManage(), a.getConfigJson)
-	g.GET("/getDb", requireOverviewManage(), a.getDb)
+	// Owner-account protection also covers database replacement, authentication
+	// secrets and executable replacement, which could bypass ordinary admin CRUD.
+	g.GET("/getConfigJson", requireOverviewManage(), requirePanelOwner(), a.getConfigJson)
+	g.GET("/getDb", requireOverviewManage(), requirePanelOwner(), a.getDb)
 	g.GET("/getNewUUID", a.getNewUUID)
 	g.GET("/getNewX25519Cert", a.getNewX25519Cert)
 	g.GET("/getNewmldsa65", a.getNewmldsa65)
@@ -92,7 +81,7 @@ func (a *ServerController) initRouter(g *gin.RouterGroup) {
 	// updatePanel: reading it CLEARS it, so an admin without the bit loading the
 	// dashboard first would otherwise consume the notice meant for whoever ran the
 	// update.
-	g.GET("/updateResult", requireOverviewManage(), a.updateResult)
+	g.GET("/updateResult", requireOverviewManage(), requirePanelOwner(), a.updateResult)
 
 	// Renaming the server relabels the panel for every admin. Offered only from the
 	// overview, so it answers to the bit that says this overview may act. Reading it
@@ -105,19 +94,19 @@ func (a *ServerController) initRouter(g *gin.RouterGroup) {
 
 	// Panel-wide effects rather than per-inbound, so they follow the Xray permission.
 	g.POST("/stopXrayService", requirePerm(model.PermXraySettings), a.stopXrayService)
-	g.POST("/updatePanel", requireOverviewManage(), a.updatePanel)
-	g.POST("/cancelUpdate", requireOverviewManage(), a.cancelUpdate)
+	g.POST("/updatePanel", requireOverviewManage(), requirePanelOwner(), a.updatePanel)
+	g.POST("/cancelUpdate", requireOverviewManage(), requirePanelOwner(), a.cancelUpdate)
 	// Manual update: a binary the operator names, either uploaded from their machine
 	// or downloaded by the panel from a URL they give. Same escalation class as
 	// updatePanel, since both end in the same binary swap. Split in two so the
 	// operator confirms against a version the server read out of the file itself,
 	// not against its name or its address.
-	g.POST("/uploadPanelBinary", requireOverviewManage(), a.uploadPanelBinary)
-	g.POST("/fetchPanelBinary", requireOverviewManage(), a.fetchPanelBinary)
-	g.POST("/applyPanelBinary", requireOverviewManage(), a.applyPanelBinary)
-	g.POST("/discardPanelBinary", requireOverviewManage(), a.discardPanelBinary)
+	g.POST("/uploadPanelBinary", requireOverviewManage(), requirePanelOwner(), a.uploadPanelBinary)
+	g.POST("/fetchPanelBinary", requireOverviewManage(), requirePanelOwner(), a.fetchPanelBinary)
+	g.POST("/applyPanelBinary", requireOverviewManage(), requirePanelOwner(), a.applyPanelBinary)
+	g.POST("/discardPanelBinary", requireOverviewManage(), requirePanelOwner(), a.discardPanelBinary)
 	g.POST("/restartXrayService", requirePerm(model.PermXraySettings), a.restartXrayService)
-	g.POST("/installXray/:version", requirePerm(model.PermXraySettings), a.installXray)
+	g.POST("/installXray/:version", requirePerm(model.PermXraySettings), requirePanelOwner(), a.installXray)
 	// Geofile updates are reached only from the overview's geofiles dialog, so they
 	// answer to the overview's acting bit alone, for the same reason serverName does.
 	// stopXrayService and restartXrayService above deliberately do NOT: those are also
@@ -130,8 +119,8 @@ func (a *ServerController) initRouter(g *gin.RouterGroup) {
 	// Panel and Xray logs name other admins' inbounds, clients and IPs.
 	g.POST("/logs/:count", requireOverviewManage(), a.getLogs)
 	g.POST("/xraylogs/:count", requireOverviewManage(), a.getXrayLogs)
-	g.POST("/importDB", requireOverviewManage(), a.importDB)
-	g.POST("/importForeignDB", requireOverviewManage(), a.importForeignDB)
+	g.POST("/importDB", requireOverviewManage(), requirePanelOwner(), a.importDB)
+	g.POST("/importForeignDB", requireOverviewManage(), requirePanelOwner(), a.importForeignDB)
 	g.POST("/getNewEchCert", a.getNewEchCert)
 }
 
