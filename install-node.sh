@@ -80,7 +80,7 @@ install_node() {
     chmod 700 "$base"
     local stage
     stage=$(mktemp -d "$base/install.XXXXXXXX")
-    trap 'rm -rf -- "$stage"' RETURN
+    trap 'rm -rf -- "$stage"; trap - RETURN' RETURN
     if [[ -n $binary ]]; then
         [[ -f $binary ]] || die 'Local binary not found.'
         cp -- "$binary" "$stage/vpn-ui-node"
