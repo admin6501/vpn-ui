@@ -1355,7 +1355,7 @@ func (s *CoreService) runProvisionSteps(emit func(ProvisionStep), cores []string
 	// time. Running here, the incoming kernel and its headers are already on disk, so the
 	// `dkms autoinstall` inside this step covers it too.
 	if needsFeature(selected, featAmneziawg) {
-		emit(ensureAmneziawg())
+		emit(ensureAmneziawgWithProgress(emit))
 	}
 
 	// Clear any distro deny-list/disable for our modules (and their dependencies) so

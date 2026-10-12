@@ -158,3 +158,15 @@ Xray templates must preserve the reserved API inbound, API routing and traffic c
 The node installer uses English for all prompts, status messages and errors.
 
 In the node Xray editor, Advanced → Final node configuration displays the actual generated runtime file with enabled node inbounds. This view is read-only; edit managed inbounds using their forms and core settings using the template. It requires an updated node agent and an existing runtime file.
+
+### Installing AmneziaWG
+
+AmneziaWG needs a kernel module built for the node's running kernel. Its first
+installation can take several minutes to download missing DKMS/compiler/header
+packages and compile the module. The node core dialog shows prerequisite and
+build steps, expandable command logs, and a reboot warning when required.
+Already installed packages are reused, and package indexes are refreshed once
+for that prerequisite batch. Existing node services keep running during an
+additional core installation; central admission/quota updates and lease expiry
+continue to apply. A fresh node starts its data plane after setup finishes.
+Update the node agent as well as the central panel to receive these changes.

@@ -21,6 +21,10 @@ const awgBuildDir = "/usr/src/vpn-ui-amneziawg"
 // unavailable, every other protocol keeps working) with the build log , there is no userspace
 // fallback by design. DKMS registration makes the module auto-rebuild on kernel upgrade.
 func ensureAmneziawg() ProvisionStep {
+	return ensureAmneziawgWithProgress(func(ProvisionStep) {})
+}
+
+func ensureAmneziawgWithProgress(emit func(ProvisionStep)) ProvisionStep {
 	name := "AmneziaWG (amneziawg kernel module)"
 
 	// The question is NOT "is the module loadable right now" but "is it built for every
@@ -68,6 +72,7 @@ func ensureAmneziawg() ProvisionStep {
 		if pkg == "" {
 			continue
 		}
+		emit(ProvisionStep{Name: "AmneziaWG prerequisite: " + pkg, OK: true, Msg: "Checking / installing prerequisite"})
 		out, err := pm.installPackage(pkg)
 		log.WriteString(out)
 		if err != nil {
@@ -115,6 +120,7 @@ func ensureAmneziawg() ProvisionStep {
 		{"dkms", "install", "-m", amneziawgModule, "-v", awgsrc.Version},
 	}
 	for _, st := range steps {
+		emit(ProvisionStep{Name: "AmneziaWG: " + strings.Join(st, " "), OK: true, Msg: "Starting build step; kernel compilation can take several minutes"})
 		out, err := awgRunCmd(st[0], st[1:]...)
 		log.WriteString(fmt.Sprintf("\n$ %s\n%s", strings.Join(st, " "), out))
 		if err != nil {

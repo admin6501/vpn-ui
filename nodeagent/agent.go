@@ -241,6 +241,26 @@ func installedCores() map[string]bool {
 	}
 	return set
 }
+
+// A DKMS/compiler log can exceed the central report limit. Retain error tails
+// without letting a completed install permanently wedge its durable report.
+func boundedProvisionLogs(steps []service.ProvisionStep) []service.ProvisionStep {
+	result := append([]service.ProvisionStep(nil), steps...)
+	budget := 128 << 10
+	for i := len(result) - 1; i >= 0; i-- {
+		keep := min(budget, 8<<10)
+		if len(result[i].Log) > keep {
+			if keep == 0 {
+				result[i].Log = ""
+			} else {
+				result[i].Log = "[earlier output omitted]\n" + result[i].Log[len(result[i].Log)-keep:]
+			}
+		}
+		budget -= min(keep, len(result[i].Log))
+	}
+	return result
+}
+
 func coreReport() json.RawMessage {
 	cs := &service.CoreService{}
 	installed := []string{}
@@ -257,7 +277,9 @@ func coreReport() json.RawMessage {
 			statuses[i].State = service.CoreStopped
 		}
 	}
-	report := map[string]any{"installed": installed, "catalog": cs.CoreCatalog(), "cores": statuses, "system": cs.GetSystemStatus(), "provision": cs.ProvisionState(), "generation": service.GetNodeSetting("nodeCoreGeneration")}
+	provision := cs.ProvisionState()
+	provision.Steps = boundedProvisionLogs(provision.Steps)
+	report := map[string]any{"installed": installed, "catalog": cs.CoreCatalog(), "cores": statuses, "system": cs.GetSystemStatus(), "provision": provision, "generation": service.GetNodeSetting("nodeCoreGeneration")}
 	report["controlGeneration"] = service.GetNodeSetting("nodeControlGeneration")
 	report["configGeneration"] = service.GetNodeSetting("nodeConfigGeneration")
 	report["configError"] = service.GetNodeSetting("nodeConfigError")
@@ -323,7 +345,8 @@ func (a *Agent) requestCores(snap *nodewire.Snapshot) error {
 	if cs.ProvisionState().Running || cs.CoreUninstallStatus().Running {
 		return nil
 	}
-	a.stopRuntime()
+	// Keep the already-running data plane alive while installing an additional core.
+	// Bundles are replaced atomically; admission snapshots still apply during setup.
 	// Xray is a dependency of VPN accounting/routing, not a selection that installs
 	// every other core. Nothing is extracted before the first central request.
 	if _, e := corebundle.ExtractXray(config.GetBinFolderPath()); e != nil {
@@ -356,6 +379,44 @@ func (a *Agent) requestCores(snap *nodewire.Snapshot) error {
 	}
 	return service.SetNodeSetting(database.GetDB(), "nodeCoreGeneration", generation)
 }
+
+// syncWhileProvisioning uses only the inventory that was running before setup.
+// New cores are activated after prerequisite verification. Quota changes, revoked
+// users, explicit node stops and the central lease continue to take effect.
+func (a *Agent) syncWhileProvisioning(snap *nodewire.Snapshot) error {
+	if !snap.Enable || snap.ControlGeneration != nodeSettingInt("nodeControlGeneration") {
+		a.stopRuntime()
+	}
+	if a.runtime == nil {
+		a.lastSuccess = time.Now()
+		return nil
+	}
+	installed := map[string]bool{}
+	if err := json.Unmarshal([]byte(a.inventory), &installed); err != nil {
+		a.stopRuntime()
+		return fmt.Errorf("invalid running core inventory: %w", err)
+	}
+	if template := service.GetNodeSetting("nodeXrayTemplate"); template != "" {
+		snap.Template = template
+	}
+	for i := range snap.Inbounds {
+		if service.NodeCorePaused(service.NodeCoreForProtocol(snap.Inbounds[i].Protocol)) {
+			snap.Inbounds[i].Enable = false
+		}
+	}
+	revision, err := service.ApplyNodeSnapshot(snap, installed)
+	if err == nil && revision != a.revision {
+		err = a.runtime.RefreshNodeRuntime()
+	}
+	if err != nil {
+		a.stopRuntime()
+		return err
+	}
+	a.revision = revision
+	a.lastSuccess = time.Now()
+	return nil
+}
+
 func (a *Agent) Tick(ctx context.Context) error {
 	timeout := 25 * time.Second
 	if a.runtime != nil && !a.lastSuccess.IsZero() {
@@ -385,10 +446,13 @@ func (a *Agent) Tick(ctx context.Context) error {
 	if e = a.requestCores(&snap); e != nil {
 		return e
 	}
-	if (&service.CoreService{}).ProvisionState().Running || (&service.CoreService{}).CoreUninstallStatus().Running {
+	if (&service.CoreService{}).CoreUninstallStatus().Running {
 		a.lastSuccess = time.Now()
 		a.stopRuntime()
 		return nil
+	}
+	if (&service.CoreService{}).ProvisionState().Running {
+		return a.syncWhileProvisioning(&snap)
 	}
 	if snap.CoreActionCommand != nil && snap.CoreActionGeneration != nodeSettingInt("nodeCoreActionGeneration") {
 		a.applyCoreAction(snap.CoreActionGeneration, *snap.CoreActionCommand)

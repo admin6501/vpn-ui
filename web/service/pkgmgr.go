@@ -9,6 +9,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/mhsanaei/3x-ui/v2/backend"
 	"github.com/mhsanaei/3x-ui/v2/config"
@@ -19,11 +20,12 @@ import (
 // IPsec daemon for L2TP/IPsec), whose pluto + NSS crypto don't relocate
 // reliably. Everything else (xl2tpd, openvpn, pptpd, pppd) ships in the binary.
 type packageManager struct {
-	name    string   // display name
-	env     []string // extra environment (e.g. non-interactive)
-	refresh []string // optional index-refresh command
-	install []string // install command; the package name is appended
-	hint    string   // manual guidance when libreswan isn't in the default repos
+	refreshOnce sync.Once
+	name        string   // display name
+	env         []string // extra environment (e.g. non-interactive)
+	refresh     []string // optional index-refresh command
+	install     []string // install command; the package name is appended
+	hint        string   // manual guidance when libreswan isn't in the default repos
 }
 
 // detectPackageManager returns the host's package manager, or nil if none of the
@@ -36,11 +38,14 @@ func detectPackageManager() *packageManager {
 		return &packageManager{
 			name:    "apt",
 			env:     []string{"DEBIAN_FRONTEND=noninteractive"},
-			refresh: []string{"apt-get", "update"},
+			refresh: []string{"apt-get", "-o", "Acquire::Retries=1", "-o", "Acquire::http::Timeout=30", "-o", "Acquire::https::Timeout=30", "update"},
 			// Keep existing conffiles on any prompt so an unattended kernel install
 			// (which can touch /etc/default/grub, /etc/kernel-img.conf, …) never
 			// blocks waiting for a "keep or replace?" answer.
 			install: []string{"apt-get", "install", "-y",
+				"-o", "Acquire::Retries=1",
+				"-o", "Acquire::http::Timeout=30", "-o", "Acquire::https::Timeout=30",
+				"-o", "DPkg::Lock::Timeout=60",
 				"-o", "Dpkg::Options::=--force-confold",
 				"-o", "Dpkg::Options::=--force-confdef"},
 		}
@@ -90,18 +95,21 @@ func (pm *packageManager) installPackage(pkg string) (string, error) {
 	// else needs it", which are very different pieces of advice.
 	if pm.packageInstalled(pkg) {
 		ownNote(ownPackage, pkg, "", "already installed on this host before vpn-ui")
+		return "already installed", nil
 	} else {
 		ownClaim(ownPackage, pkg, "")
 	}
 
 	var log strings.Builder
-	if len(pm.refresh) > 0 {
-		refresh := exec.Command(pm.refresh[0], pm.refresh[1:]...)
-		refresh.Env = append(os.Environ(), pm.env...)
-		rout, _ := refresh.CombinedOutput()
-		log.WriteString("$ " + strings.Join(pm.refresh, " ") + "\n")
-		log.Write(rout)
-	}
+	pm.refreshOnce.Do(func() {
+		if len(pm.refresh) > 0 {
+			refresh := exec.Command(pm.refresh[0], pm.refresh[1:]...)
+			refresh.Env = append(os.Environ(), pm.env...)
+			rout, _ := refresh.CombinedOutput()
+			log.WriteString("$ " + strings.Join(pm.refresh, " ") + "\n")
+			log.Write(rout)
+		}
+	})
 	args := append(append([]string{}, pm.install[1:]...), pkg)
 	cmd := exec.Command(pm.install[0], args...)
 	cmd.Env = append(os.Environ(), pm.env...)

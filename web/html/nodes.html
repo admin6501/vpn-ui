@@ -44,7 +44,7 @@
   <a-textarea :value="command" :rows="5" readonly dir="ltr"></a-textarea>
   <a-button type="primary" @click="copyCommand" style="margin-top:12px">{{ i18n "pages.nodes.copy" }}</a-button>
 </a-modal>
-<a-modal v-model="coresVisible" :title="current ? current.node.name : ''" @ok="installCores" :confirm-loading="busy" :width="800" :class="themeSwitcher.currentTheme" ok-text='{{ i18n "pages.nodes.installSelected" }}'>
+<a-modal v-model="coresVisible" :title="current ? current.node.name : ''" @ok="installCores" :confirm-loading="busy" :ok-button-props="{props:{disabled:installPending}}" :width="800" :class="themeSwitcher.currentTheme" ok-text='{{ i18n "pages.nodes.installSelected" }}'>
   <a-alert type="info" message='{{ i18n "pages.nodes.coreHelp" }}' style="margin-bottom:12px"></a-alert>
   <a-checkbox-group v-model="selected" style="display:flex;flex-wrap:wrap;gap:12px">
     <a-checkbox value="xray">Xray (VLESS / VMess / Trojan / Shadowsocks / Hysteria / TUIC / AnyTLS / Naive / WireGuard)</a-checkbox>
@@ -60,15 +60,16 @@
     <a-tag v-if="current.report.provision && current.report.provision.running" color="blue">{{ i18n "pages.nodes.installing" }}</a-tag>
     <a-list :data-source="current.report.cores || []">
       <a-list-item slot="renderItem" slot-scope="core"><span>[[ core.name ]]</span><span>[[ state(core.state) ]]</span><span>[[ core.detail ]]</span><div v-if="current.report.coreActionSupported && (current.report.installed || []).includes(core.name)">
-      <a-button size="small" :disabled="coreActionPending || current.node.paused" @click="coreAction(core.name,'start')">{{ i18n "pages.nodes.start" }}</a-button>
-      <a-button size="small" :disabled="coreActionPending" @click="coreAction(core.name,'stop')">{{ i18n "pages.nodes.stop" }}</a-button>
-      <a-button size="small" :disabled="coreActionPending || current.node.paused" @click="coreAction(core.name,'restart')">{{ i18n "pages.nodes.restart" }}</a-button>
+      <a-button size="small" :disabled="coreActionPending || installPending || current.node.paused" @click="coreAction(core.name,'start')">{{ i18n "pages.nodes.start" }}</a-button>
+      <a-button size="small" :disabled="coreActionPending || installPending" @click="coreAction(core.name,'stop')">{{ i18n "pages.nodes.stop" }}</a-button>
+      <a-button size="small" :disabled="coreActionPending || installPending || current.node.paused" @click="coreAction(core.name,'restart')">{{ i18n "pages.nodes.restart" }}</a-button>
       <a-button size="small" @click="configureCore(core.name)">{{ i18n "pages.nodes.configuration" }}</a-button>
-      <a-popconfirm title='{{ i18n "pages.nodes.uninstallConfirm" }}' @confirm="coreAction(core.name,'uninstall')"><a-button size="small" type="danger" :disabled="coreActionPending">{{ i18n "pages.nodes.uninstall" }}</a-button></a-popconfirm>
+      <a-popconfirm title='{{ i18n "pages.nodes.uninstallConfirm" }}' @confirm="coreAction(core.name,'uninstall')"><a-button size="small" type="danger" :disabled="coreActionPending || installPending">{{ i18n "pages.nodes.uninstall" }}</a-button></a-popconfirm>
       </div></a-list-item>
     </a-list>
+    <a-alert v-if="current.report.provision && current.report.provision.rebootRequired" type="warning" message='{{ i18n "pages.core.rebootTitle" }}' description='{{ i18n "pages.core.rebootWhat" }}'></a-alert>
     <a-list :data-source="current.report.provision ? current.report.provision.steps || [] : []">
-      <a-list-item slot="renderItem" slot-scope="step"><a-tag :color="step.warn ? 'orange' : step.ok ? 'green' : 'red'">[[ step.name ]]</a-tag><span>[[ step.msg ]]</span></a-list-item>
+      <a-list-item slot="renderItem" slot-scope="step"><a-tag :color="step.warn ? 'orange' : step.ok ? 'green' : 'red'">[[ step.name ]]</a-tag><span>[[ step.msg ]]</span><details v-if="step.log"><summary>{{ i18n "pages.core.showLog" }}</summary><pre style="white-space:pre-wrap;word-break:break-word">[[ step.log ]]</pre></details></a-list-item>
     </a-list>
   </div>
 </a-modal>
@@ -97,6 +98,7 @@ const app = new Vue({
   el:'#app',delimiters:['[[',']]'],mixins:[MediaQueryMixin],
   data:{themeSwitcher, pageTitle:'{{ i18n "pages.nodes.title" }}',pageClass:'',nodes:[], formVisible:false, commandVisible:false, coresVisible:false, configVisible:false, configCore:"xray",configTargets:[],configIndex:0,configText:"",configSeen:-1, busy:false, form:{}, pairing:'', command:'', current:null, selected:[], timer:null, https:location.protocol==='https:'},
   computed:{
+    installPending(){return !!(this.queued || (this.current && this.current.report && this.current.report.provision && this.current.report.provision.running))},
     coreActionPending(){return this.current && this.current.report && (Number(this.current.report.coreActionGeneration || 0)<Number(this.current.node.coreActionGeneration) || !!(this.current.report.uninstall && this.current.report.uninstall.running))},
     configPending(){return this.current && this.current.report && Number(this.current.report.configGeneration || 0)<Number(this.current.node.configGeneration)},
     catalog(){return this.current && this.current.report ? (this.current.report.catalog || []) : []},
@@ -122,7 +124,7 @@ const app = new Vue({
     async copyCommand(){try{await navigator.clipboard.writeText(this.command);this.$message.success('{{ i18n "pages.nodes.copied" }}')}catch(error){this.$message.info('{{ i18n "pages.nodes.selectCopy" }}')}},
     async remove(id){const msg=await this.post('/panel/nodes/'+id+'/delete');if(msg && msg.success)await this.load()},
     openCores(item){this.current=item;this.selected=[];this.coresVisible=true},
-    async installCores(){if(!this.current || !this.selected.length)return;this.busy=true;try{const msg=await this.post('/panel/nodes/'+this.current.node.id+'/install',{cores:this.selected});if(msg && msg.success){this.selected=[];await this.load()}}finally{this.busy=false}},
+    async installCores(){if(!this.current || !this.selected.length || this.installPending)return;this.busy=true;try{const msg=await this.post('/panel/nodes/'+this.current.node.id+'/install',{cores:this.selected});if(msg && msg.success){this.selected=[];await this.load()}}finally{this.busy=false}},
     state(value){const states={running:'{{ i18n "pages.nodes.running" }}',stopped:'{{ i18n "pages.nodes.stopped" }}',idle:'{{ i18n "pages.nodes.idle" }}',not_installed:'{{ i18n "pages.nodes.notInstalled" }}',error:'{{ i18n "pages.nodes.error" }}'};return states[value] || value}
   },
   mounted(){this.load();this.timer=setInterval(()=>this.load(),5000)},
