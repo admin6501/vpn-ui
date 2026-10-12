@@ -386,7 +386,7 @@ func (a *Agent) requestCores(snap *nodewire.Snapshot) error {
 	return service.SetNodeSetting(database.GetDB(), "nodeCoreGeneration", generation)
 }
 
-// syncWhileProvisioning uses only the inventory that was running before setup.
+// syncWhileProvisioning keeps the running inventory during install/uninstall.
 // New cores are activated after prerequisite verification. Quota changes, revoked
 // users, explicit node stops and the central lease continue to take effect.
 func (a *Agent) syncWhileProvisioning(snap *nodewire.Snapshot) error {
@@ -411,15 +411,19 @@ func (a *Agent) syncWhileProvisioning(snap *nodewire.Snapshot) error {
 		}
 	}
 	revision, err := service.ApplyNodeSnapshot(snap, installed)
-	if err == nil && revision != a.revision {
-		err = a.runtime.RefreshNodeRuntime()
-	}
 	if err != nil {
 		a.stopRuntime()
-		return err
+		return atSyncStage("snapshot", err)
+	}
+	if revision != a.revision {
+		if err := a.runtime.RefreshNodeRuntime(); err != nil {
+			a.stopRuntime()
+			return atSyncStage("runtime", err)
+		}
 	}
 	a.revision = revision
 	a.lastSuccess = time.Now()
+	a.lastError = ""
 	return nil
 }
 
@@ -441,7 +445,7 @@ func (a *Agent) Tick(ctx context.Context) error {
 	}
 	var snap nodewire.Snapshot
 	if e = exchange(ctx, a.client, a.config, strconv.Itoa(a.config.NodeID)+"/sync", report, &snap); e != nil {
-		return e
+		return atSyncStage("exchange", e)
 	}
 	if snap.NodeID != a.config.NodeID || snap.Version != nodewire.Version {
 		return errors.New("Wrong node snapshot")
@@ -450,12 +454,10 @@ func (a *Agent) Tick(ctx context.Context) error {
 		return e
 	}
 	if e = a.requestCores(&snap); e != nil {
-		return e
+		return atSyncStage("installation", e)
 	}
 	if (&service.CoreService{}).CoreUninstallStatus().Running {
-		a.lastSuccess = time.Now()
-		a.stopRuntime()
-		return nil
+		return a.syncWhileProvisioning(&snap)
 	}
 	if (&service.CoreService{}).ProvisionState().Running {
 		return a.syncWhileProvisioning(&snap)
@@ -464,8 +466,7 @@ func (a *Agent) Tick(ctx context.Context) error {
 		a.applyCoreAction(snap.CoreActionGeneration, *snap.CoreActionCommand)
 	}
 	if (&service.CoreService{}).CoreUninstallStatus().Running {
-		a.lastSuccess = time.Now()
-		return nil
+		return a.syncWhileProvisioning(&snap)
 	}
 	if snap.ControlGeneration != nodeSettingInt("nodeControlGeneration") {
 		a.stopRuntime()
@@ -483,7 +484,7 @@ func (a *Agent) Tick(ctx context.Context) error {
 	inventory := string(inventoryRaw)
 	revision, e := service.ApplyNodeSnapshot(&snap, installed)
 	if e != nil {
-		return e
+		return atSyncStage("snapshot", e)
 	}
 	a.lastSuccess = time.Now()
 	if snap.ConfigCommand != nil && snap.ConfigCommand.Inspect && snap.ConfigGeneration != nodeSettingInt("nodeConfigGeneration") {
@@ -494,18 +495,21 @@ func (a *Agent) Tick(ctx context.Context) error {
 		return service.SetNodeSetting(database.GetDB(), "nodeControlGeneration", strconv.FormatInt(snap.ControlGeneration, 10))
 	}
 	if len(installed) == 0 {
+		if a.runtime != nil {
+			a.stopRuntime()
+		}
 		return service.SetNodeSetting(database.GetDB(), "nodeControlGeneration", strconv.FormatInt(snap.ControlGeneration, 10))
 	}
 	if a.runtime == nil {
 		a.runtime = web.NewServer()
 		if e = a.runtime.StartNodeRuntime(); e != nil {
 			a.stopRuntime()
-			return e
+			return atSyncStage("runtime", e)
 		}
 		a.coreRestart = ""
 	} else if revision != a.revision || inventory != a.inventory || a.provisionRefresh {
 		if e = a.runtime.RefreshNodeRuntime(); e != nil {
-			return e
+			return atSyncStage("runtime", e)
 		}
 	}
 	a.provisionRefresh = false
@@ -550,7 +554,7 @@ func (a *Agent) Run(ctx context.Context) error {
 	for {
 		if e := a.Tick(ctx); e != nil {
 			// Never print configuration bodies or bearer/pairing credentials.
-			a.lastError = "Node synchronization failed; inspect agent journal"
+			a.lastError = publicSyncError(e)
 			log.Printf("node synchronization: %v", e)
 			if a.lastSuccess.IsZero() || time.Since(a.lastSuccess) >= nodewire.LeaseSeconds*time.Second {
 				a.stopRuntime()
@@ -698,7 +702,7 @@ func (a *Agent) applyCoreAction(generation int64, cmd nodewire.CoreAction) {
 	_ = service.SetNodeSetting(database.GetDB(), "nodeCoreActionError", message)
 	_ = service.SetNodeSetting(database.GetDB(), "nodeCoreActionGeneration", strconv.FormatInt(generation, 10))
 }
-func (a *Agent) executeCoreAction(cmd nodewire.CoreAction) error {
+func (a *Agent) executeCoreAction(cmd nodewire.CoreAction) (err error) {
 	cs := &service.CoreService{}
 	if !installedCores()[cmd.Core] {
 		return errors.New("Core is not installed.")
@@ -748,16 +752,37 @@ func (a *Agent) executeCoreAction(cmd nodewire.CoreAction) error {
 		a.coreRestartForce = cmd.Action == "restart"
 		return nil
 	case "uninstall":
-		a.stopRuntime()
+		wasPaused := service.NodeCorePaused(cmd.Core)
+		defer func() {
+			if err != nil {
+				_ = service.SetNodeCorePaused(cmd.Core, wasPaused)
+			}
+		}()
+		// Keep the node scheduler and unrelated daemons alive. Pausing admission
+		// for this core prevents its supervisor from recreating removed files.
+		if a.runtime != nil {
+			a.runtime.FlushNodeTraffic()
+		}
 		if err := service.SetNodeCorePaused(cmd.Core, true); err != nil {
 			return err
 		}
 		switch cmd.Core {
 		case "xray":
+			if (&service.XrayService{}).IsXrayRunning() {
+				if err := cs.StopCore("xray"); err != nil {
+					return err
+				}
+			}
 			return os.Remove(xray.GetBinaryPath())
 		case "ssh":
+			if err := cs.StopCore("ssh"); err != nil {
+				return err
+			}
 			return service.SetNodeSetting(database.GetDB(), "nodeSSHInstalled", "false")
 		case "radius":
+			if err := cs.StopCore("radius"); err != nil {
+				return err
+			}
 			return service.SetNodeSetting(database.GetDB(), "nodeRadiusRemoved", "true") // Built into the agent; removal disables its listener.
 		default:
 			started, err := cs.StartCoreUninstall([]string{cmd.Core}, service.InboundsKeep)

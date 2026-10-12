@@ -170,3 +170,11 @@ for that prerequisite batch. Existing node services keep running during an
 additional core installation; central admission/quota updates and lease expiry
 continue to apply. A fresh node starts its data plane after setup finishes.
 Update the node agent as well as the central panel to receive these changes.
+
+Removing a core pauses/stops that core while the node scheduler and unrelated
+services stay active. Dependencies such as Xray/RADIUS still cannot be removed
+while dependent installed cores need them. Quota synchronization and the central
+lease continue during background removal. If an inbound/client update fails,
+inspect the local node journal: `journalctl -u vpn-ui-node -n 100 --no-pager`.
+The central report distinguishes connection, snapshot and core-start failures
+and does not include configuration bodies or credentials.

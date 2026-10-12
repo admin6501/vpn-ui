@@ -2,6 +2,10 @@ package nodeagent
 
 import (
 	"encoding/json"
+	"errors"
+	"github.com/mhsanaei/3x-ui/v2/corebundle"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -90,5 +94,58 @@ func TestNodeProvisionExplicitXrayReinstallSchedulesActivation(t *testing.T) {
 	}
 	if a.provisionRefresh || a.coreRestart != "" {
 		t.Fatal("acknowledged install repeated on next sync")
+	}
+}
+
+func TestNodeUninstallSSHLeavesRuntimeAndSiblingAdmission(t *testing.T) {
+	t.Setenv("VPNUI_NODE_AGENT", "1")
+	t.Setenv("VPNUI_DB_FOLDER", t.TempDir())
+	t.Setenv("VPNUI_BIN_FOLDER", t.TempDir())
+	if err := database.InitDB(config.GetDBPath()); err != nil {
+		t.Fatal(err)
+	}
+	if err := service.SetNodeSetting(database.GetDB(), "nodeSSHInstalled", "true"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(config.GetBinFolderPath(), corebundle.XrayBinaryName()), []byte("fixture"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	in := model.Inbound{Id: 1, Protocol: model.VLESS, Enable: true, Settings: `{"clients":[]}`}
+	if err := database.GetDB().Create(&in).Error; err != nil {
+		t.Fatal(err)
+	}
+	running := &web.Server{}
+	a := &Agent{runtime: running}
+	if err := a.executeCoreAction(nodewire.CoreAction{Core: "ssh", Action: "uninstall"}); err != nil {
+		t.Fatal(err)
+	}
+	if a.runtime != running {
+		t.Fatal("removing SSH stopped unrelated node runtime")
+	}
+	var retained model.Inbound
+	if err := database.GetDB().First(&retained, in.Id).Error; err != nil {
+		t.Fatal(err)
+	}
+	if !retained.Enable {
+		t.Fatal("removing SSH disabled unrelated VLESS admission")
+	}
+	if !service.NodeCorePaused("ssh") || service.GetNodeSetting("nodeSSHInstalled") != "false" {
+		t.Fatal("SSH removal was not recorded")
+	}
+}
+
+func TestNodeSyncErrorReportsDoNotExposeCredentials(t *testing.T) {
+	for _, operation := range []string{"exchange", "snapshot", "runtime", "installation", "unknown"} {
+		secret := "private-key-and-pair-token-fixture"
+		err := atSyncStage(operation, errors.New(secret))
+		if strings.Contains(publicSyncError(err), secret) {
+			t.Fatal("diagnostic leaked private configuration")
+		}
+		if !strings.Contains(err.Error(), secret) {
+			t.Fatal("local diagnostic detail lost")
+		}
+	}
+	if !strings.Contains(publicSyncError(atSyncStage("runtime", errors.New("fixture"))), "core configuration/start") {
+		t.Fatal("runtime failure still reported as network failure")
 	}
 }

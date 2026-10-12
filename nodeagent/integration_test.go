@@ -353,6 +353,28 @@ func TestNodeRealDataPlane(t *testing.T) {
 	}
 	waitNode(t, 15*time.Second, "RADIUS starts without restarting node", func() bool { return coreAck("5") && radiusBound() && listener() })
 
+	// Removing a built-in core must leave both the node runtime and its other
+	// core process alive; a listening port alone could hide a global restart.
+	nodeXrayPID := func() string {
+		raw, err := exec.Command("pgrep", "-P", strconv.Itoa(child.Process.Pid), "-f", "xray-linux").Output()
+		if err != nil {
+			t.Fatal("node Xray PID unavailable", err)
+		}
+		return strings.TrimSpace(string(raw))
+	}
+	beforeRemovalPID := nodeXrayPID()
+	if err = svc.CoreAction(node.ID, nodewire.CoreAction{Core: "radius", Action: "uninstall"}); err != nil {
+		t.Fatal(err)
+	}
+	waitNode(t, 15*time.Second, "RADIUS removal preserves Xray", func() bool { return coreAck("6") && !radiusBound() && listener() })
+	if nodeXrayPID() != beforeRemovalPID {
+		t.Fatal("removing RADIUS restarted unrelated Xray core")
+	}
+	if err = svc.InstallCores(node.ID, []string{"radius"}); err != nil {
+		t.Fatal(err)
+	}
+	waitNode(t, 15*time.Second, "removed RADIUS can be reinstalled", func() bool { return radiusBound() && listener() })
+
 	// A real network outage exercises the complete 90-second admission lease.
 	unreachable.Store(true)
 	waitNode(t, 100*time.Second, "expired management lease stops VPN", func() bool { return !listener() })
@@ -363,7 +385,7 @@ func TestNodeRealDataPlane(t *testing.T) {
 	}
 	waitNode(t, 15*time.Second, "individual core removed", func() bool {
 		_, e := os.Stat(filepath.Join(folder, "bin", corebundle.XrayBinaryName()))
-		return coreAck("6") && os.IsNotExist(e) && !listener()
+		return coreAck("7") && os.IsNotExist(e) && !listener()
 	})
 	var retained int64
 	db.Model(&model.Inbound{}).Where("id = ?", in.Id).Count(&retained)
