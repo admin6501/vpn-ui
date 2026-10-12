@@ -70,7 +70,7 @@ func RegisterNodeAgentRoutes(g *gin.RouterGroup) {
 }
 func NewNodeController(g *gin.RouterGroup) {
 	nodes := g.Group("/nodes")
-	nodes.Use(requireSuperAdmin())
+	nodes.Use(requirePerm(model.PermManageNodes))
 	nodes.GET("/", func(c *gin.Context) { html(c, "nodes.html", "pages.nodes.title", nil) })
 	nodes.GET("/:id/xray", func(c *gin.Context) {
 		id, err := strconv.Atoi(c.Param("id"))

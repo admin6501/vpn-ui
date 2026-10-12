@@ -1688,7 +1688,10 @@ protocol `externalProxy` settings are a different feature.
 
 ## Dedicated nodes
 
-The browser API `/panel/nodes` requires the main (super) administrator.
+The browser API `/panel/nodes` requires the explicit `manageNodes` permission.
+The main administrator bypasses this check and can grant or revoke it for ordinary
+administrators. It covers all node infrastructure, not just the caller’s inbounds,
+and does not grant central root-administrator operations.
 POST bodies accept JSON or URL-encoded form fields; array form fields repeat the key. Paths are
 relative to the panel's configured web base path:
 
@@ -1716,6 +1719,6 @@ cookies or disclose pairing tokens/agent configuration files.
 See [node setup and accounting limits](docs/NODES.md).
 
 
-Node runtime controls: `POST /panel/nodes/:id/control` accepts `action=start|stop|restart` (superadmin, JSON or form). Stops the VPN runtime, keeping the management agent alive. `POST /panel/nodes/:id/config` accepts `core`, `inspect`, `inbound`, `file`, `text`, and `reset` (JSON or form). `inspect=true` queues a configuration read; other requests queue a save or reset on that node. Results, errors and acknowledged generations are available in `/panel/nodes/list` under `report`. Configuration text is limited to 512 KiB; file names are validated against the agent's generated target catalog, never accepted as arbitrary paths. Updated agents advertise `controlSupported`.
+Node runtime controls: `POST /panel/nodes/:id/control` accepts `action=start|stop|restart` (manageNodes; JSON or form). Stops the VPN runtime, keeping the management agent alive. `POST /panel/nodes/:id/config` accepts `core`, `inspect`, `inbound`, `file`, `text`, and `reset` (JSON or form). `inspect=true` queues a configuration read; other requests queue a save or reset on that node. Results, errors and acknowledged generations are available in `/panel/nodes/list` under `report`. Configuration text is limited to 512 KiB; file names are validated against the agent's generated target catalog, never accepted as arbitrary paths. Updated agents advertise `controlSupported`.
 
-`POST /panel/nodes/:id/core-action` accepts `core` and `action=start|stop|restart|uninstall` (superadmin; JSON or form). Agent reports include `coreActionSupported`, `coreActionGeneration`, `coreActionError`, `pausedCores` and `uninstall` progress. Node-wide control also accepts `reconnect`. Direct `inbound.json` configuration targets are scoped to the selected node/core and validated through the central inbound update service; generated clients are retained, and arbitrary JSON model fields are rejected. Removing cores keeps central inbounds and accounting. Built-in core removal disables its service.
+`POST /panel/nodes/:id/core-action` accepts `core` and `action=start|stop|restart|uninstall` (manageNodes; JSON or form). Agent reports include `coreActionSupported`, `coreActionGeneration`, `coreActionError`, `pausedCores` and `uninstall` progress. Node-wide control also accepts `reconnect`. Direct `inbound.json` configuration targets are scoped to the selected node/core and validated through the central inbound update service; generated clients are retained, and arbitrary JSON model fields are rejected. Removing cores keeps central inbounds and accounting. Built-in core removal disables its service.

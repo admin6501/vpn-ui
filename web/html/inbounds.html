@@ -878,6 +878,13 @@
           console.warn('reseller balance refresh failed', e);
         }
       },
+      async refreshOnlineState() {
+        if (this._onlineRefreshPending) return;
+        this._onlineRefreshPending = true;
+        try { await Promise.all([this.getOnlineUsers(), this.getOnlineMemberships(), this.getLastOnlineMap()]); }
+        catch (error) { console.warn('Online status refresh failed', error); }
+        finally { this._onlineRefreshPending = false; }
+      },
       async getOnlineUsers() {
         const msg = await HttpUtil.post('/panel/api/inbounds/onlines');
         if (!msg.success) {
@@ -1891,7 +1898,10 @@
       this.getDefaultSettings();
       
       // Keep time-based expiration current even when no traffic or row changes.
-      this.accountSummaryTimer = setInterval(() => this.refreshAccountSummary(), 10000);
+      this.accountSummaryTimer = setInterval(() => {
+        this.refreshAccountSummary();
+        this.refreshOnlineState();
+      }, 10000);
       // Initial data fetch
       this.getDBInbounds().then(() => {
         this.loading(false);

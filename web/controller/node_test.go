@@ -51,6 +51,10 @@ func TestNodeAgentHTTPAuthenticationAndScope(t *testing.T) {
 }
 func TestNodeAdministrationRejectsRepresentative(t *testing.T) {
 	f := newIdorFixture(t)
+	f.reza.IsReseller = true
+	if err := database.GetDB().Save(f.reza).Error; err != nil {
+		t.Fatal(err)
+	}
 	r := gin.New()
 	r.Use(func(c *gin.Context) {
 		c.Set("LOGIN_USER_ROW", f.reza)
@@ -162,5 +166,70 @@ func TestNodeXrayMetadataIsScoped(t *testing.T) {
 	r.ServeHTTP(w, httptest.NewRequest("GET", "/panel/nodes/999999/xray/meta", nil))
 	if w.Code != http.StatusNotFound {
 		t.Fatal("nonexistent node metadata accepted")
+	}
+}
+
+func TestNodeManagementDelegatedPermissionAndRevocation(t *testing.T) {
+	f := newIdorFixture(t)
+	f.ali.Permissions = model.PermManageNodes
+	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+	ctx.Set("LOGIN_USER_ROW", f.ali)
+	ctx.Set("base_path", "/")
+	if landingPath(ctx) != "/panel/nodes/" || !templatePerms(ctx)["manageNodes"] || templatePerms(ctx)["superAdmin"] {
+		t.Fatal("delegated node page cannot be reached")
+	}
+	r := gin.New()
+	r.Use(withUser(f.ali))
+	NewNodeController(r.Group("/panel"))
+	call := func(method, path, body string) string {
+		req := httptest.NewRequest(method, path, strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+		return w.Body.String()
+	}
+	body := call("POST", "/panel/nodes/add", `{"name":"Delegated location","address":"node.example.com"}`)
+	if !strings.Contains(body, `"success":true`) {
+		t.Fatal(body)
+	}
+	var node model.RemoteNode
+	if err := database.GetDB().First(&node).Error; err != nil {
+		t.Fatal(err)
+	}
+	for _, action := range []struct{ path, body string }{
+		{"/install", `{"cores":["xray"]}`}, {"/control", `{"action":"restart"}`},
+	} {
+		result := call("POST", fmt.Sprintf("/panel/nodes/%d%s", node.ID, action.path), action.body)
+		if !strings.Contains(result, `"success":true`) {
+			t.Fatal(result)
+		}
+	}
+	if !strings.Contains(call("GET", "/panel/nodes/list", ""), "Delegated location") {
+		t.Fatal("delegated admin cannot see locations")
+	}
+	f.ali.Permissions = 0
+	for _, path := range []string{"/panel/nodes/list", fmt.Sprintf("/panel/nodes/%d/xray/meta", node.ID)} {
+		if !strings.Contains(call("GET", path, ""), `"success":false`) {
+			t.Fatal("revoked permission still reads nodes")
+		}
+	}
+	if !strings.Contains(call("POST", "/panel/nodes/add", `{"name":"Blocked","address":"example.com"}`), `"success":false`) {
+		t.Fatal("revoked permission still writes nodes")
+	}
+	f.ali.IsReseller = true
+	f.ali.Permissions = model.PermManageNodes
+	if !strings.Contains(call("GET", "/panel/nodes/list", ""), `"success":false`) {
+		t.Fatal("stored mask widened representative access")
+	}
+}
+
+func TestNodeManagementDoesNotGrantRootAdministration(t *testing.T) {
+	user := &model.User{Enable: true, Permissions: model.PermManageNodes}
+	_, body := runGuarded(t, user, requireSuperAdmin(), true)
+	if !strings.Contains(body, `"success":false`) {
+		t.Fatal("node management grants root administration")
+	}
+	if model.PermissionsFromSlugs([]string{"manageNodes"}) != model.PermManageNodes || model.PermManageNodes != 1<<14 {
+		t.Fatal("permission storage values changed")
 	}
 }

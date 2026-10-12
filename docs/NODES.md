@@ -5,13 +5,19 @@ subscription tokens and representative limits stay in the central database.
 Assign the same account to inbounds on several nodes to publish those locations in
 one subscription and use one shared quota.
 
+Node management is shared infrastructure access: it allows managing all nodes,
+cores and their configurations. Only the main administrator can grant or revoke
+`manageNodes` through the administrator form. It does not grant central administrator
+management, panel database export/restore, or host reboot. Representatives cannot
+obtain this permission through their stored administrator mask.
+
 ## Setup
 
 1. Update the central panel using `vpn-ui` → Update, or run `deploy.sh` from this repository.
 2. Use an HTTPS panel URL with its exact web path. A publicly trusted certificate
    works without Cloudflare; DNS validation is optional. For a private certificate,
    pass its trusted CA certificate with `--ca-file` on the node.
-3. As the main administrator, open **Nodes / locations**, add a name and the
+3. As the main administrator or an admin granted **Manage nodes and locations**, open **Nodes / locations**, add a name and the
    node's public IP or hostname, and copy its installation command.
 4. Run the copied command as root on a separate location server. It installs the
    agent and systemd service. No VPN core is extracted, installed or started yet.

@@ -59,6 +59,8 @@ const (
 	//
 	// APPENDED, for the reason above.
 	PermAccessOverview
+	// Explicit delegation of shared node infrastructure; existing masks stay unchanged.
+	PermManageNodes
 )
 
 // resellerPerms is what a reseller may do, derived from the role rather than
@@ -107,6 +109,7 @@ var AllPermissions = []PermissionDef{
 	{PermXraySettings, "accessXraySettings"},
 	{PermPanelSettings, "accessPanelSettings"},
 	{PermManageResellers, "manageResellers"},
+	{PermManageNodes, "manageNodes"},
 	{PermAccessOverview, "accessOverview"},
 	{PermOverviewManage, "manageOverview"},
 }

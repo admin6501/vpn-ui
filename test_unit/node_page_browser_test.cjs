@@ -10,6 +10,7 @@ const {chromium}=require('playwright');
   await page.locator('#app:not([v-cloak])').waitFor({state:'visible'});
   await page.locator('.bo-topbar-title').waitFor({state:'visible'});
   if(await page.locator('a-sidebar').count())throw Error('sidebar component not mounted');
+  if(await page.locator('.bo-rail-item[href$="/panel/nodes"]').count()!==1 || await page.locator('.bo-rail-item[href$="/panel/admins"]').count()!==0)throw Error('delegated node menu missing or root administrator menu exposed');
   await page.locator('button.ant-btn-primary').first().click();
   await page.locator('.ant-modal:visible').waitFor({state:'visible'});
   const componentLocale=await page.evaluate(()=>PanelComponentLocales[LanguageManager.getLanguage()]);

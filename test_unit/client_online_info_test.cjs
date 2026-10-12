@@ -35,5 +35,14 @@ const vm = require('node:vm');
  }
  assert.match(page,/:title="accountNames\(dbInbound\)"/,'desktop/mobile summaries expose names on hover');
  assert.match(page,/accountSummary\.expiredEmails/,'header expiry popover exposes scoped names');
+ const onlineStart=page.indexOf('      async refreshOnlineState() {');
+ const onlineEnd=page.indexOf('\n      },',onlineStart);
+ const refresh=vm.runInNewContext('(async function(){'+page.slice(onlineStart+'      async refreshOnlineState() {'.length,onlineEnd)+'\n})',{console});
+ let calls=0, done;
+ const liveState={getOnlineUsers(){calls++;return new Promise(r=>done=r)},async getOnlineMemberships(){calls++},async getLastOnlineMap(){calls++}};
+ const pending=refresh.call(liveState);
+ await refresh.call(liveState);assert.equal(calls,3,'page refresh requests must not overlap');
+ done();await pending;
+ assert.match(page,/this\.refreshOnlineState\(\);/,'page timer refreshes membership state without WebSocket');
  console.log('Info polling and expired-name hover regression checks passed.');
 })().catch(error=>{console.error(error);process.exit(1);});

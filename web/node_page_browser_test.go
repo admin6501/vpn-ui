@@ -62,7 +62,7 @@ func TestNodePageBrowserRuntime(t *testing.T) {
 				t.Fatal(err)
 			}
 			var output bytes.Buffer
-			data := map[string]any{"base_path": "/test/", "title": "pages.nodes.title", "perms": map[string]bool{"superAdmin": true, "accessOverview": true, "accessInbounds": true}}
+			data := map[string]any{"base_path": "/test/", "title": "pages.nodes.title", "perms": map[string]bool{"superAdmin": false, "manageNodes": true, "accessOverview": true, "accessInbounds": true}}
 			if err = tpl.ExecuteTemplate(&output, "nodes.html", data); err != nil {
 				t.Fatal(err)
 			}
@@ -77,7 +77,7 @@ func TestNodePageBrowserRuntime(t *testing.T) {
 			router := gin.New()
 			router.SetHTMLTemplate(tpl)
 			router.Use(func(c *gin.Context) {
-				c.Set("LOGIN_USER_ROW", &model.User{Id: 1, Username: "test-admin", IsSuperAdmin: true, Enable: true})
+				c.Set("LOGIN_USER_ROW", &model.User{Id: 1, Username: "test-admin", Permissions: model.PermManageNodes, Enable: true})
 				c.Set("base_path", "/test/")
 				c.Set("I18n", func(_ weblocale.I18nType, key string, args ...string) string { return key })
 				c.Next()

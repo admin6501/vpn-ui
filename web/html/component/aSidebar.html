@@ -92,12 +92,14 @@
                         title: '{{ i18n "menu.core"}}'
                     },
                     {{ end }}
-                    {{ if .perms.superAdmin }}
+                    {{ if .perms.manageNodes }}
                     {
                         key: '{{ .base_path }}panel/nodes',
                         icon: 'global',
                         title: '{{ i18n "pages.nodes.title"}}'
                     },
+                    {{ end }}
+                    {{ if .perms.superAdmin }}
                     {
                         key: '{{ .base_path }}panel/admins',
                         icon: 'team',

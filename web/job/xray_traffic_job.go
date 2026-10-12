@@ -2,6 +2,7 @@ package job
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 
 	"github.com/mhsanaei/3x-ui/v2/logger"
@@ -216,6 +217,9 @@ func (j *XrayTrafficJob) Run() {
 		vpnInbounds[protocol] = byIP
 	}
 	clientTraffics = append(clientTraffics, j.nftService.CollectAndResetTraffic(vpnSessions, vpnInbounds)...)
+	// A fresh WireGuard-family handshake is a session even before application bytes
+	// reach nft counters. Do not wait for browsing traffic to light the account.
+	clientTraffics = append(clientTraffics, wireguardSessionOnline(vpnSessions, vpnInbounds)...)
 
 	// MTProto and SSH are userspace relays: no client ever gets a tunnel IP, so neither
 	// can use the nft per-IP path above. Each keeps its own per-account byte counters
@@ -479,4 +483,27 @@ func (j *XrayTrafficJob) broadcastTrafficScoped(
 			"lastOnlineMap":     myLastOnline,
 		})
 	}
+}
+
+// wireguardSessionOnline uses the survivors of the enforcing sweep, not raw peers:
+// disabled and over-limit devices must not appear online. Multiple devices count
+// once per account/inbound, and liveness records carry no billable bytes.
+func wireguardSessionOnline(sessions map[string]map[string]string, inbounds map[string]map[string]int) []*xray.ClientTraffic {
+	records := []*xray.ClientTraffic{}
+	seen := map[string]bool{}
+	for _, protocol := range []string{"wg-c", "awg"} {
+		for ip, email := range sessions[protocol] {
+			id := inbounds[protocol][ip]
+			if id <= 0 || strings.TrimSpace(email) == "" {
+				continue
+			}
+			key := fmt.Sprintf("%d:%s", id, service.AccountKeyOf(email))
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
+			records = append(records, &xray.ClientTraffic{Email: email, InboundId: id, Online: true})
+		}
+	}
+	return records
 }
