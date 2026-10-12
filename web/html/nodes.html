@@ -24,7 +24,7 @@
       <a-tag v-if="item.report && Number(item.report.controlGeneration || 0) < item.node.controlGeneration">{{ i18n "pages.nodes.queued" }}</a-tag>
       <a-alert v-if="item.paired && (!item.report || !item.report.controlSupported)" type="info" message='{{ i18n "pages.nodes.agentUpdate" }}'></a-alert>
       <a-button :disabled="!item.paired || !item.report || !item.report.controlSupported" @click="control(item,'reconnect')">{{ i18n "pages.nodes.reconnect" }}</a-button>
-      <a-button @click="openCores(item)">{{ i18n "pages.nodes.cores" }}</a-button>
+      <a-button data-node-action="cores" @click="openCores(item)">{{ i18n "pages.nodes.cores" }}</a-button>
       <a-popconfirm title='{{ i18n "pages.nodes.deleteConfirm" }}' @confirm="remove(item.node.id)"><a-button type="danger">{{ i18n "delete" }}</a-button></a-popconfirm>
     </div>
     <a-alert v-if="item.node.lastError" type="warning" :message="item.node.lastError" style="margin-top:12px"></a-alert>

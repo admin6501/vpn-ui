@@ -57,11 +57,13 @@ const {chromium}=require('playwright');
   await page.evaluate(()=>app.load());
   const card=page.locator('.ant-card').filter({has:page.locator('.ant-card-head-title',{hasText:'Germany'})}).last();
   const buttons=card.locator('.ant-card-body button.ant-btn');
-  await buttons.nth(0).click(); // Core installer
+  await card.locator('button[data-node-action="cores"]').click(); // Core installer
+  await page.waitForFunction(()=>app.coresVisible===true);
   const corePicker=page.locator('.ant-modal:visible');
   await corePicker.waitFor({state:'visible'});
   const xrayChoice=corePicker.locator('.ant-checkbox-wrapper').filter({hasText:'Xray'});
-  if(await xrayChoice.count()!==1)throw Error('Xray is listed more than once in the node installer');
+  const xrayCount=await xrayChoice.count();
+  if(xrayCount!==1)throw Error('Expected one Xray option in the node installer; found '+xrayCount);
   if(!(await xrayChoice.innerText()).includes('VLESS'))throw Error('Xray protocol description disappeared');
   await xrayChoice.click();
   if(await page.evaluate(()=>app.selected.filter(name=>name==='xray').length)!==1)throw Error('Xray checkbox did not select exactly one core');
