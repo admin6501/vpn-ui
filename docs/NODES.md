@@ -69,6 +69,34 @@ remove the agent database or reuse it for a different node. A fresh reinstall
 needs a new node record; attach accounts to new inbounds rather than resetting
 accepted counters on an existing record. Back up `/opt/vpn-ui-node` securely.
 
+## Uninstall a location server
+
+On the **node server**, run:
+
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/admin6501/vpn-ui/main/install-node.sh) --uninstall
+```
+
+Answer Yes to confirm; No or EOF cancels. `--yes` confirms a scripted removal.
+The installer stops/disables the node service, cleans the cores it installed,
+then removes `/opt/vpn-ui-node` and the node systemd unit/drop-ins. Pairing credentials,
+the local database and local binaries are removed. Cleanup failures retain the agent
+files for diagnosis/retry. OS packages and host files of unknown provenance are kept;
+recorded host configuration changes are restored where their backups are available.
+A server with a central panel installation or symlinked node data is refused.
+
+For offline removal, supply a **current** architecture-matching node binary:
+
+```bash
+bash install-node.sh --uninstall --binary ./vpn-ui-node-arm64
+```
+
+Older installed agents need the new cleanup command; the installer downloads a verified
+current agent when necessary, or uses `--binary`. Removal does not need a live central
+panel connection. The central node record remains and becomes offline; remove its
+inbounds and then the node record from the central panel if retiring the location.
+A fresh installation needs a new pairing record as described above.
+
 ## Connection and accounting
 
 The node polls the central panel every five seconds over verified TLS. No inbound

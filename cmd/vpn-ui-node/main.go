@@ -15,6 +15,11 @@ import (
 )
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "--supports-uninstall" {
+		fmt.Println("node-uninstall-v1")
+		return
+	}
+
 	if len(os.Args) > 1 && (os.Args[1] == "-v" || os.Args[1] == "--version") {
 		fmt.Println(config.GetVersion())
 		return
@@ -27,6 +32,7 @@ func main() {
 		command = os.Args[1]
 	}
 	flags := flag.NewFlagSet(command, flag.ExitOnError)
+	confirmed := flags.Bool("yes", false, "confirm node cleanup")
 	path := flags.String("config", "/opt/vpn-ui-node/agent.json", "agent configuration")
 	panel := flags.String("panel-url", "", "exact HTTPS panel URL, including its web path")
 	pair := flags.String("pair-token", "", "single-use enrollment token")
@@ -40,6 +46,12 @@ func main() {
 	switch command {
 	case "enroll":
 		err = nodeagent.Enroll(ctx, *path, *panel, *pair, *ca)
+	case "uninstall":
+		if !*confirmed {
+			err = fmt.Errorf("use install-node.sh --uninstall to confirm removal")
+		} else {
+			err = nodeagent.Uninstall(*path)
+		}
 	case "run":
 		var a *nodeagent.Agent
 		a, err = nodeagent.New(*path)

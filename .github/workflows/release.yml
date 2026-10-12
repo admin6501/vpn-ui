@@ -131,6 +131,11 @@ jobs:
           cp ../install-offline.sh ../install-node.sh .
           bash -n install-offline.sh install-node.sh
           sha256sum vpn-ui-${{ matrix.arch }} vpn-ui-node-${{ matrix.arch }} vpn-ui-auto-migration.zip install-offline.sh install-node.sh > SHA256SUMS
+      - name: Verify node uninstall cancellation, guards and real systemd cleanup
+        run: |
+          bash test_unit/node_uninstall_test.sh
+          go test -race ./nodeagent ./web/service -run 'TestNodeUninstall|TestNodeCleanup|TestUnknownProvenance' -count=1
+          sudo bash test_unit/node_uninstall_systemd_test.sh "$PWD/dist/vpn-ui-node-${{ matrix.arch }}"
       - name: Verify fresh installation and update without installer network access
         run: |
           sudo unshare --net bash install-offline.sh --lang en "$PWD/dist/vpn-ui-${{ matrix.arch }}" > /tmp/offline-install.log 2>&1

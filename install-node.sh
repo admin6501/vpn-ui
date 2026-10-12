@@ -2,6 +2,7 @@
 # Install the dedicated agent; VPN cores are installed only from the central panel.
 set -Eeuo pipefail
 umask 077
+require_node_root() { [[ $EUID == 0 ]] || die 'Run as root.'; }
 say() { printf '%s\n' "$1"; }
 die() { say "$1" >&2; exit 1; }
 offer_apt_prerequisites() {
@@ -62,7 +63,7 @@ install_node() {
             *) die "Unknown option: $1" ;;
         esac
     done
-    [[ $EUID == 0 ]] || die 'Run as root.'
+    require_node_root
     command -v systemctl >/dev/null || die 'systemd is required.'
     [[ -d /run/systemd/system ]] || die 'A running systemd host is required.'
     if systemctl is-active --quiet vpn-ui; then
@@ -158,4 +159,105 @@ UNIT
     say 'Agent is running. Install the required cores from Nodes in the central panel.'
     say 'Logs: journalctl -u vpn-ui-node -f'
 }
-if [[ ${BASH_SOURCE[0]} == "$0" ]]; then install_node "$@"; fi
+node_uninstall_path_exists() { [[ -e $1 || -L $1 ]]; }
+node_uninstall_path_safe() { [[ ! -L $1 ]]; }
+node_cleanup_supported() { "$1" --supports-uninstall >/dev/null 2>&1; }
+run_node_cleanup() {
+    (cd /opt/vpn-ui-node && VPNUI_DB_FOLDER=/opt/vpn-ui-node VPNUI_BIN_FOLDER=/opt/vpn-ui-node/bin \
+        VPNUI_NODE_AGENT=1 "$1" uninstall --yes --config /opt/vpn-ui-node/agent.json)
+}
+
+uninstall_node() {
+    local binary='' confirmed=0 answer stage='' cleanup_cmd
+    local base=/opt/vpn-ui-node unit=vpn-ui-node
+    while (($#)); do
+        case "$1" in
+            --uninstall) shift ;;
+            --yes) confirmed=1; shift ;;
+            --binary) binary=${2:?}; shift 2 ;;
+            *) die "Unknown uninstall option: $1" ;;
+        esac
+    done
+    require_node_root
+    command -v systemctl >/dev/null || die 'systemd is required.'
+    for path in "$base" "$base/bin" "$base/agent.json" "$base/vpn-ui.db" \
+        /etc/systemd/system/vpn-ui-node.service /etc/systemd/system/vpn-ui-node.service.d; do
+        node_uninstall_path_safe "$path" || die "Refusing a symlinked node path: $path"
+    done
+    if systemctl cat vpn-ui.service >/dev/null 2>&1 || node_uninstall_path_exists /opt/vpn-ui/vpn-ui.db; then
+        die 'A central panel installation exists on this host. Refusing shared-host cleanup.'
+    fi
+    if ! node_uninstall_path_exists "$base" && ! systemctl cat "$unit.service" >/dev/null 2>&1; then
+        say 'The dedicated node is not installed; nothing to remove.'
+        return 0
+    fi
+    say 'This removes the dedicated node, its local database, pairing credentials and installed VPN cores.'
+    say 'Operating-system packages and unrelated host configurations are retained.'
+    if [[ $confirmed == 0 ]]; then
+        say 'Permanently uninstall the dedicated node from this server? Yes/No [No]:'
+        if ! IFS= read -r answer; then answer=no; fi
+        case "${answer,,}" in
+            y|yes) ;;
+            *) say 'Uninstall cancelled.'; return 0 ;;
+        esac
+    fi
+    if [[ -z $binary ]] && node_uninstall_path_exists "$base/vpn-ui-node" && node_cleanup_supported "$base/vpn-ui-node"; then
+        binary="$base/vpn-ui-node"
+    fi
+    if node_uninstall_path_exists "$base/vpn-ui.db"; then
+        # Older agents have no cleanup command. Fetch the latest cleanup-capable
+        # agent, or supply --binary for a server without Internet access.
+        if [[ -z $binary ]]; then
+            command -v curl >/dev/null || die 'Supply --binary with a current node binary for offline uninstall.'
+            local arch expected actual
+            case $(uname -m) in
+                x86_64|amd64) arch=amd64 ;;
+                aarch64|arm64) arch=arm64 ;;
+                *) die 'Unsupported architecture.' ;;
+            esac
+            stage=$(mktemp -d /tmp/vpn-ui-node-uninstall.XXXXXXXX)
+            printf -v cleanup_cmd 'rm -rf -- %q' "$stage"
+            trap "$cleanup_cmd" EXIT
+            say 'Downloading the cleanup-capable agent for this older installation.'
+            curl -fL --retry 2 "https://github.com/admin6501/vpn-ui/releases/latest/download/vpn-ui-node-$arch" -o "$stage/vpn-ui-node"
+            curl -fsSL --retry 2 https://github.com/admin6501/vpn-ui/releases/latest/download/SHA256SUMS -o "$stage/SHA256SUMS"
+            expected=$(awk -v name="vpn-ui-node-$arch" '$2==name {print $1}' "$stage/SHA256SUMS")
+            actual=$(sha256sum "$stage/vpn-ui-node" | awk '{print $1}')
+            [[ $expected =~ ^[[:xdigit:]]{64}$ && $actual == "$expected" ]] || die 'Cleanup binary checksum mismatch.'
+            chmod 755 "$stage/vpn-ui-node"
+            binary="$stage/vpn-ui-node"
+        fi
+        binary=$(realpath -- "$binary")
+        node_cleanup_supported "$binary" || die 'This binary cannot uninstall a node; supply a current node binary.'
+    fi
+    say 'Stopping the node and its managed VPN processes.'
+    if systemctl cat "$unit.service" >/dev/null 2>&1; then
+        systemctl stop "$unit.service" || die 'Node stop failed; files were retained.'
+        systemctl is-active --quiet "$unit.service" && die 'Node is still active; files were retained.'
+        systemctl disable "$unit.service" || die 'Node disable failed; files were retained.'
+    fi
+    if node_uninstall_path_exists "$base/vpn-ui.db"; then
+        run_node_cleanup "$binary" || die 'Host cleanup failed; node files were retained for diagnosis/retry.'
+    fi
+    rm -f -- /etc/systemd/system/vpn-ui-node.service
+    rm -rf -- /etc/systemd/system/vpn-ui-node.service.d "$base"
+    systemctl daemon-reload
+    systemctl reset-failed "$unit.service" 2>/dev/null || true
+    [[ -z $stage ]] || rm -rf -- "$stage"
+    [[ -z $stage ]] || trap - EXIT
+    say 'The dedicated node has been uninstalled from this server.'
+    say 'Its central-panel record remains offline; remove its inbounds and node record in the central panel if no longer needed.'
+}
+
+node_main() {
+    if [[ ${1:-} == --help || ${1:-} == -h ]]; then
+        say 'Install/update: bash install-node.sh [--binary FILE] [--panel-url URL] [--pair-token TOKEN] [--ca-file FILE]'
+        say 'Uninstall: bash install-node.sh --uninstall [--yes] [--binary CURRENT_NODE_BINARY]'
+        return 0
+    fi
+    for arg in "$@"; do
+        if [[ $arg == --uninstall ]]; then uninstall_node "$@"; return; fi
+    done
+    install_node "$@"
+}
+if [[ ${BASH_SOURCE[0]} == "$0" ]]; then node_main "$@"; fi
