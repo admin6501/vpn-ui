@@ -51,12 +51,21 @@ const {chromium}=require('playwright');
   });
   await page.route('**/panel/nodes/list',async route=>{
    const response=await route.fetch();const body=await response.json();
-   for(const item of body.obj||[]){item.paired=true;item.online=true;item.report={coreActionSupported:true,coreActionGeneration:String(item.node.coreActionGeneration),coreActionError:'',cores:[{name:'xray',state:'running',detail:''}],controlSupported:true,runtimeRunning:!item.node.paused,controlGeneration:String(item.node.controlGeneration),configGeneration:String(item.node.configGeneration),installed:['xray','openvpn'],configError:'',configTargets:[currentCore==='xray' ? {core:'xray',inbound:0,file:'config.json',label:'Xray template',generated:JSON.stringify({...defaults,inbounds:[...(defaults.inbounds || []),{tag:'turkey-node-vless',protocol:'vless',port:24443,settings:{clients:[]}}]}),current:submitted || JSON.stringify(defaults)} : {core:'openvpn',inbound:0,file:'server.conf',label:'server.conf',format:'conf',current:'# fixture\nport 1194'}]};}
+   for(const item of body.obj||[]){item.paired=true;item.online=true;item.report={catalog:[{name:'xray',title:'Xray'},{name:'awg',title:'AmneziaWG'}],coreActionSupported:true,coreActionGeneration:String(item.node.coreActionGeneration),coreActionError:'',cores:[{name:'xray',state:'running',detail:''}],controlSupported:true,runtimeRunning:!item.node.paused,controlGeneration:String(item.node.controlGeneration),configGeneration:String(item.node.configGeneration),installed:['xray','openvpn'],configError:'',configTargets:[currentCore==='xray' ? {core:'xray',inbound:0,file:'config.json',label:'Xray template',generated:JSON.stringify({...defaults,inbounds:[...(defaults.inbounds || []),{tag:'turkey-node-vless',protocol:'vless',port:24443,settings:{clients:[]}}]}),current:submitted || JSON.stringify(defaults)} : {core:'openvpn',inbound:0,file:'server.conf',label:'server.conf',format:'conf',current:'# fixture\nport 1194'}]};}
    await route.fulfill({response,json:body});
   });
   await page.evaluate(()=>app.load());
   const card=page.locator('.ant-card').filter({has:page.locator('.ant-card-head-title',{hasText:'Germany'})}).last();
   const buttons=card.locator('.ant-card-body button.ant-btn');
+  await buttons.nth(0).click(); // Core installer
+  const corePicker=page.locator('.ant-modal:visible');
+  await corePicker.waitFor({state:'visible'});
+  const xrayChoice=corePicker.locator('.ant-checkbox-wrapper').filter({hasText:'Xray'});
+  if(await xrayChoice.count()!==1)throw Error('Xray is listed more than once in the node installer');
+  if(!(await xrayChoice.innerText()).includes('VLESS'))throw Error('Xray protocol description disappeared');
+  await xrayChoice.click();
+  if(await page.evaluate(()=>app.selected.filter(name=>name==='xray').length)!==1)throw Error('Xray checkbox did not select exactly one core');
+  await corePicker.locator('.ant-modal-close').click();
   await buttons.nth(2).click(); // Stop
   await page.waitForFunction(()=>app.nodes[0].node.paused===true);
   await buttons.nth(1).click(); // Start

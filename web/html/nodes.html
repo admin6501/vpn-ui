@@ -101,7 +101,7 @@ const app = new Vue({
     installPending(){return !!(this.queued || (this.current && this.current.report && this.current.report.provision && this.current.report.provision.running))},
     coreActionPending(){return this.current && this.current.report && (Number(this.current.report.coreActionGeneration || 0)<Number(this.current.node.coreActionGeneration) || !!(this.current.report.uninstall && this.current.report.uninstall.running))},
     configPending(){return this.current && this.current.report && Number(this.current.report.configGeneration || 0)<Number(this.current.node.configGeneration)},
-    catalog(){return this.current && this.current.report ? (this.current.report.catalog || []) : []},
+    catalog(){return this.current && this.current.report ? (this.current.report.catalog || []).filter(core=>core.name!=='xray') : []},
     queued(){return this.current && this.current.report && Number(this.current.report.generation || 0)<Number(this.current.node.coreGeneration)}
   },
   methods:{
