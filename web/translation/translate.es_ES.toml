@@ -1367,6 +1367,7 @@ vpnOutImportKept = "No está en el archivo, por lo que se conserva el valor alma
 "resetOutboundTrafficError" = "Error al reiniciar el tráfico saliente"
 
 [pages.inboundForm]
+"hysteriaObfsHint" = "Contraseña opcional de Salamander. Déjela vacía para desactivar la ofuscación."
 "statusCode" = "Código de estado HTTP"
 "insecure" = "Permitir TLS inseguro"
 "rewriteHost" = "Reescribir host"

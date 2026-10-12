@@ -73,7 +73,7 @@
           </div>
         </div>
 
-        <div v-else class="ai-creds">
+        <div v-if="!card.qr || card.showCredentials" class="ai-creds">
           <div class="ai-kv" v-if="card.server">
             <span class="k">{{ i18n "pages.xray.outbound.address" }}</span>
             <span class="v mono">[[ card.server ]][[ card.port ? ':' + card.port : '' ]]</span>
@@ -109,7 +109,9 @@
       </div>
       <div class="ai-kv">
         <span class="k">{{ i18n "pages.xray.outbound.address" }}</span>
-        <span class="v mono">[[ record.address ]]:[[ record.port ]]</span>
+        <span class="v mono">
+          <div v-for="(endpoint, i) in endpoints" :key="i">[[ endpoint.server ]]:[[ endpoint.port ]]</div>
+        </span>
       </div>
       <div class="ai-kv" v-if="first && first.network">
         <span class="k">{{ i18n "transmission" }}</span>
@@ -179,6 +181,16 @@
       client() { return this.membershipInfoModal.client; },
       cards() { return this.membershipInfoModal.cards || []; },
       first() { return this.cards[0] || null; },
+      endpoints() {
+        const result = [];
+        const seen = new Set();
+        for (const card of this.cards) {
+          if (!card.server) continue;
+          const key = card.server + ':' + card.port;
+          if (!seen.has(key)) { seen.add(key); result.push({ server: card.server, port: card.port }); }
+        }
+        return result.length ? result : [{ server: this.record.address, port: this.record.port }];
+      },
       email() { return (this.client && this.client.email) || ''; },
       online() { return !!(this.app && this.record && this.app.membershipOnline(this.record, this.email)); },
       onlineText() { return this.app && this.record ? this.app.membershipOnlineText(this.record, this.email) : '{{ i18n "offline" }}'; },

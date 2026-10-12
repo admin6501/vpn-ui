@@ -34,8 +34,10 @@ const AccountExport = {
 
         // xray protocols produce a share link; VPN protocols return ''.
         let link = '';
+        let generatedLinks = [];
         try {
           const all = inbound.genAllLinks('', app.remarkModel || '-ieo', client);
+          generatedLinks = Array.isArray(all) ? all : [];
           link = (all && all[0] && all[0].link) ? all[0].link : '';
         } catch (e) { link = ''; }
 
@@ -127,6 +129,7 @@ const AccountExport = {
           enable: !!client.enable,
           link: link,
           qr: link,          // xray link -> QR; overridden per protocol below
+          showCredentials: isSsh,
           configText: '',    // multi-line config embedded in the TXT (WireGuard-C)
         };
 
@@ -250,7 +253,21 @@ const AccountExport = {
           }
         }
 
-        cards.push(base);
+        const shareEndpoints = inbound.stream && Array.isArray(inbound.stream.externalProxy)
+          ? inbound.stream.externalProxy.filter(e => e && String(e.dest || '').trim()) : [];
+        if (shareEndpoints.length && link) {
+          for (const ep of shareEndpoints) {
+            const position = inbound.stream.externalProxy.indexOf(ep);
+            const sharedLink = (generatedLinks[position] && generatedLinks[position].link)
+              || inbound.genLink(ep.dest, ep.port || inbound.port, ep.forceTls || 'same', base.remark, client);
+            cards.push(Object.assign({}, base, {
+              server: ep.dest, port: String(ep.port || inbound.port),
+              remark: base.remark + (ep.remark ? ' (' + ep.remark + ')' : ''),
+              link: sharedLink,
+              qr: sharedLink,
+            }));
+          }
+        } else cards.push(base);
       } catch (e) {
         if (typeof console !== 'undefined') console.warn('export: skipped account', t, e);
       }

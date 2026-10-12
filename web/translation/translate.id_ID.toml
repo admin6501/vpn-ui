@@ -1366,6 +1366,7 @@ vpnOutImportKept = "Tidak ada di file, jadi nilai yang disimpan disimpan:"
 "resetOutboundTrafficError" = "Gagal mereset lalu lintas keluar"
 
 [pages.inboundForm]
+"hysteriaObfsHint" = "Kata sandi Salamander opsional. Kosongkan untuk menonaktifkan penyamaran."
 "statusCode" = "Kode status HTTP"
 "insecure" = "Izinkan TLS tidak aman"
 "rewriteHost" = "Tulis ulang host"

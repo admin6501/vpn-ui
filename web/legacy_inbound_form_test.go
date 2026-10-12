@@ -158,13 +158,13 @@ func TestInboundModalServesTheChosenForm(t *testing.T) {
 			// the old shell carried, and OpenVPN's certificates under the <a-divider>
 			// caption the redesign replaced with .bo-if-sub - which is what proves the
 			// frozen protocol copy was rendered and not the live one.
-			wantContains: []string{`header="Sniffing"`, `cancel-text=`, `<a-divider>Certificates</a-divider>`},
+			wantContains: []string{`header="Sniffing"`, `cancel-text=`, `<a-divider>pages.inboundForm.certificates</a-divider>`},
 			wantAbsent:   []string{`bo-cf-rail`, `bo-if-foot`, `data-sec="identity"`},
 		},
 		{
 			legacy:       false,
 			wantContains: []string{`bo-cf-rail`, `bo-if-foot`, `data-sec="identity"`},
-			wantAbsent:   []string{`<a-divider>Certificates</a-divider>`, `header="Sniffing"`},
+			wantAbsent:   []string{`<a-divider>pages.inboundForm.certificates</a-divider>`, `header="Sniffing"`},
 		},
 	} {
 		var buf bytes.Buffer

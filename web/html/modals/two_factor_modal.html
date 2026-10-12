@@ -1,5 +1,5 @@
 {{define "modals/twoFactorModal"}}
-<a-modal id="two-factor-modal" v-model="twoFactorModal.visible" :title="twoFactorModal.title" :closable="true"
+<a-modal id="two-factor-modal" v-model="twoFactorModal.visible" :title="twoFactorModal.title" :closable="!twoFactorModal.submitting" :mask-closable="!twoFactorModal.submitting"
     :class="themeSwitcher.currentTheme">
     <template v-if="twoFactorModal.type === 'set'">
         <label>{{ i18n "pages.settings.currentPassword" }}</label>
@@ -15,17 +15,17 @@
         </div>
         <a-divider></a-divider>
         <p>{{ i18n "pages.settings.security.twoFactorModalSecondStep" }}</p>
-        <a-input v-model.trim="twoFactorModal.enteredCode" :style="{ width: '100%' }"></a-input>
+        <a-input autocomplete="one-time-code" inputmode="numeric" v-model.trim="twoFactorModal.enteredCode" :style="{ width: '100%' }"></a-input>
     </template>
     <template v-if="twoFactorModal.type === 'confirm'">
         <p>[[ twoFactorModal.description ]]</p>
-        <a-input v-model.trim="twoFactorModal.enteredCode" :style="{ width: '100%' }"></a-input>
+        <a-input autocomplete="one-time-code" inputmode="numeric" v-model.trim="twoFactorModal.enteredCode" :style="{ width: '100%' }"></a-input>
     </template>
     <template slot="footer">
-        <a-button @click="twoFactorModal.cancel">
+        <a-button :disabled="twoFactorModal.submitting" @click="twoFactorModal.cancel">
             <span>{{ i18n "cancel" }}</span>
         </a-button>
-        <a-button type="primary" :disabled="twoFactorModal.enteredCode.length < 6" @click="twoFactorModal.ok">
+        <a-button type="primary" :loading="twoFactorModal.submitting" :disabled="twoFactorModal.enteredCode.length < 6" @click="twoFactorModal.ok">
             <span>{{ i18n "confirm" }}</span>
         </a-button>
     </template>
@@ -44,27 +44,23 @@
         confirm: null,
         totpObject: null,
         qrImage: "",
-        ok() {
-            // No secret here means the disable path: it stays on the server (per-admin
-            // now, and never leaves it), so there is nothing to check against locally.
-            // Hand the entered code to the caller and let the SERVER verify it against
-            // the stored secret.
-            if (!twoFactorModal.token) {
-                ObjectUtil.execute(twoFactorModal.confirm, true, twoFactorModal.enteredCode)
-                twoFactorModal.close()
-                return
-            }
-            // Enrolment: a local check for fast feedback only. The server re-verifies
-            // before storing, since this one can be bypassed.
-            if (twoFactorModal.totpObject && twoFactorModal.totpObject.generate() === twoFactorModal.enteredCode) {
-                ObjectUtil.execute(twoFactorModal.confirm, true)
-
-                twoFactorModal.close()
-            } else {
-                Vue.prototype.$message['error']('{{ i18n "pages.settings.security.twoFactorModalError" }}')
+        submitting: false,
+        async ok() {
+            if (twoFactorModal.submitting) return;
+            twoFactorModal.submitting = true;
+            // Snapshot credentials before an async callback; the server validates
+            // the code with its clock and permitted adjacent time windows.
+            const code = twoFactorModal.enteredCode;
+            const password = twoFactorModal.enteredPassword;
+            try {
+                const saved = await twoFactorModal.confirm(true, code, password);
+                if (saved !== false) twoFactorModal.close();
+            } finally {
+                twoFactorModal.submitting = false;
             }
         },
         cancel() {
+            if (twoFactorModal.submitting) return;
             ObjectUtil.execute(twoFactorModal.confirm, false)
 
             twoFactorModal.close()
@@ -76,6 +72,8 @@
             type = 'set',
             confirm = (success) => { }
         }) {
+            this.enteredCode = "";
+            this.enteredPassword = "";
             this.title = title;
             this.description = description;
             this.token = token;

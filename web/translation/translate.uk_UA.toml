@@ -1366,6 +1366,7 @@ vpnOutImportKept = "немає у файлі, тому збережене зна
 "resetOutboundTrafficError" = "Помилка скидання вихідного трафіку"
 
 [pages.inboundForm]
+"hysteriaObfsHint" = "Необов’язковий пароль Salamander. Залиште порожнім, щоб вимкнути обфускацію."
 "statusCode" = "Код стану HTTP"
 "insecure" = "Дозволити небезпечний TLS"
 "rewriteHost" = "Перезаписувати хост"

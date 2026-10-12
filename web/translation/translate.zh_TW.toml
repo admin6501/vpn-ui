@@ -1366,6 +1366,7 @@ vpnOutImportKept = "不在檔案中，因此保留儲存的值："
 "resetOutboundTrafficError" = "重設出站流量錯誤"
 
 [pages.inboundForm]
+"hysteriaObfsHint" = "選填 Salamander 密碼。留空即可停用流量混淆。"
 "statusCode" = "HTTP狀態碼"
 "insecure" = "允許不安全的TLS"
 "rewriteHost" = "重寫主機"

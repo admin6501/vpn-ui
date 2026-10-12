@@ -1366,6 +1366,7 @@ vpnOutImportKept = "Dosyada olmadığından saklanan değer korunur:"
 "resetOutboundTrafficError" = "Giden trafik sıfırlanırken hata"
 
 [pages.inboundForm]
+"hysteriaObfsHint" = "İsteğe bağlı Salamander parolası. Gizlemeyi devre dışı bırakmak için boş bırakın."
 "statusCode" = "HTTP durum kodu"
 "insecure" = "Güvensiz TLS bağlantısına izin ver"
 "rewriteHost" = "Ana bilgisayarı yeniden yaz"

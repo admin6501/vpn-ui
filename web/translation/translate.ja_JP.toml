@@ -1366,6 +1366,7 @@ vpnOutImportKept = "ファイルにないため、保存された値が保持さ
 "resetOutboundTrafficError" = "送信トラフィックのリセットエラー"
 
 [pages.inboundForm]
+"hysteriaObfsHint" = "Salamander のパスワード（任意）。空欄にすると難読化を無効にします。"
 "statusCode" = "HTTPステータスコード"
 "insecure" = "安全でないTLSを許可"
 "rewriteHost" = "ホストを書き換え"

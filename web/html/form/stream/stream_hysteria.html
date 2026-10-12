@@ -4,6 +4,10 @@
   :label-col="{ md: {span:8} }"
   :wrapper-col="{ md: {span:14} }"
 >
+  <a-form-item label='{{ i18n "password" }} (obfs / Salamander)'>
+    <a-input-password v-model="inbound.stream.hysteriaObfsPassword" autocomplete="new-password"></a-input-password>
+    <div class="bo-if-hint">{{ i18n "pages.inboundForm.hysteriaObfsHint" }}</div>
+  </a-form-item>
   <a-form-item label='{{ i18n "pages.inboundForm.udpIdleTimeout" }}'>
     <a-input-number
       v-model.number="inbound.stream.hysteria.udpIdleTimeout"

@@ -1290,16 +1290,17 @@
             title: '{{ i18n "pages.settings.security.twoFactorModalSetTitle" }}',
             token: newTwoFactorToken,
             type: 'set',
-            confirm: async (success) => {
-              if (!success) return;
+            confirm: async (success, code, password) => {
+              if (!success) return false;
               const msg = await HttpUtil.post('/panel/setting/twoFactor', {
                 enable: true,
                 token: newTwoFactorToken,
-                code: twoFactorModal.enteredCode,
-                password: twoFactorModal.enteredPassword,
+                code,
+                password,
               });
               // Only flip the switch once the server has actually stored it.
               if (msg && msg.success) this.twoFactorEnable = true;
+              return !!(msg && msg.success);
             }
           })
         } else {
@@ -1313,6 +1314,7 @@
               // turning 2FA off should need the authenticator, not just the session.
               const msg = await HttpUtil.post('/panel/setting/twoFactor', { enable: false, code });
               if (msg && msg.success) this.twoFactorEnable = false;
+              return !!(msg && msg.success);
             }
           })
         }

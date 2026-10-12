@@ -148,6 +148,7 @@ func TestSecurityCredentialChangesAndAuthenticatorReplacement(t *testing.T) {
 		t.Fatal("initial enrollment accepted without current password")
 	}
 	enrollment.Set("password", "current-password")
+	enrollment.Set("code", strings.Map(func(r rune) rune { return '۰' + r - '0' }, gotp.NewDefaultTOTP(newSecret).At(time.Now().Unix()+30)))
 	enabled := post("/panel/setting/twoFactor", enrollment, active)
 	if !success(enabled) {
 		t.Fatal("verified enrollment failed")

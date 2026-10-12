@@ -1367,6 +1367,7 @@ vpnOutImportKept = "غير موجود في الملف، لذلك يتم الاح
 "resetOutboundTrafficError" = "خطأ في إعادة تعيين حركات المرور الصادرة"
 
 [pages.inboundForm]
+"hysteriaObfsHint" = "كلمة مرور Salamander اختيارية. اتركها فارغة لتعطيل التمويه."
 "statusCode" = "رمز حالة HTTP"
 "insecure" = "السماح بـ TLS غير آمن"
 "rewriteHost" = "إعادة كتابة المضيف"

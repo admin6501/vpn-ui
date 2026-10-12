@@ -3,6 +3,7 @@ package service
 import (
 	"crypto/subtle"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/mhsanaei/3x-ui/v2/database"
@@ -118,6 +119,26 @@ func VerifyTOTPCode(secret, code string) bool { return verifyTOTP(secret, code) 
 
 // verifyTOTP checks code against secret in constant time across the skew window.
 func verifyTOTP(secret, code string) bool {
+	code = strings.Map(func(r rune) rune {
+		switch {
+		case r >= '۰' && r <= '۹':
+			return '0' + r - '۰'
+		case r >= '٠' && r <= '٩':
+			return '0' + r - '٠'
+		case r == ' ' || r == '\t' || r == '\r' || r == '\n':
+			return -1
+		default:
+			return r
+		}
+	}, code)
+	if len(code) != 6 {
+		return false
+	}
+	for _, r := range code {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
 	if secret == "" || code == "" {
 		return false
 	}

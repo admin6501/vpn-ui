@@ -1641,6 +1641,7 @@ kernelRuntime = "OS kernel"
 "bulkPartial" = "Accounts that will be processed"
 
 [pages.inboundForm]
+"hysteriaObfsHint" = "Optional Salamander password. Leave empty to disable obfuscation."
 "statusCode" = "HTTP status code"
 "insecure" = "Allow insecure TLS"
 "rewriteHost" = "Rewrite host"

@@ -1652,6 +1652,7 @@ kernelRuntime = "کرنل سیستم‌عامل"
 "apply" = "اعمال"
 
 [pages.inboundForm]
+"hysteriaObfsHint" = "رمز اختیاری Salamander؛ برای غیرفعال کردن مبهم‌سازی، خالی بگذارید."
 "statusCode" = "کد وضعیت HTTP"
 "insecure" = "اجازهٔ TLS ناامن"
 "rewriteHost" = "بازنویسی میزبان"

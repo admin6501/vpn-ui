@@ -1847,6 +1847,23 @@ class StreamSettings extends XrayCommonClass {
         }
     }
 
+    get hysteriaObfsPassword() {
+        const mask = this.finalmask.udp.find(mask => mask.type === 'salamander');
+        return mask ? mask.settings.password || '' : '';
+    }
+
+    set hysteriaObfsPassword(password) {
+        const masks = this.finalmask.udp;
+        const mask = masks.find(mask => mask.type === 'salamander');
+        if (!password) {
+            this.finalmask.udp = masks.filter(mask => mask.type !== 'salamander');
+        } else if (mask) {
+            mask.settings.password = password;
+        } else {
+            masks.push(new UdpMask('salamander', { password }));
+        }
+    }
+
     get hasFinalMask() {
         const hasTcp = this.finalmask.tcp && this.finalmask.tcp.length > 0;
         const hasUdp = this.finalmask.udp && this.finalmask.udp.length > 0;

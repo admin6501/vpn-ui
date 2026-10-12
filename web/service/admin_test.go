@@ -565,3 +565,22 @@ func TestMigrationOverviewAccessBackfillsExistingAdmins(t *testing.T) {
 		t.Error("a revoked overview permission was granted again on the next start")
 	}
 }
+
+func TestSecurityTOTPWithLocalizedDigits(t *testing.T) {
+	const secret = "JBSWY3DPEHPK3PXP"
+	code := gotp.NewDefaultTOTP(secret).Now()
+	for _, zero := range []rune{'۰', '٠'} {
+		localized := ""
+		for _, r := range code {
+			localized += string(zero + r - '0')
+		}
+		if !VerifyTOTPCode(secret, " "+localized+"\n") {
+			t.Fatal("localized valid code rejected")
+		}
+	}
+	for _, invalid := range []string{"12345", "1234567", "12a456", "١٢a٤٥٦"} {
+		if VerifyTOTPCode(secret, invalid) {
+			t.Fatal("invalid code accepted")
+		}
+	}
+}
