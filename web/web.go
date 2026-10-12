@@ -201,15 +201,10 @@ func (s *Server) initRouter() (*gin.Engine, error) {
 	if err := engine.SetTrustedProxies(middleware.TrustedProxies()); err != nil {
 		return nil, err
 	}
-	engine.Use(middleware.BrowserOriginProtection())
 
 	webDomain, err := s.settingService.GetWebDomain()
 	if err != nil {
 		return nil, err
-	}
-
-	if webDomain != "" {
-		engine.Use(middleware.DomainValidatorMiddleware(webDomain))
 	}
 
 	secret, err := s.settingService.GetSecret()
@@ -220,6 +215,10 @@ func (s *Server) initRouter() (*gin.Engine, error) {
 	basePath, err := s.settingService.GetBasePath()
 	if err != nil {
 		return nil, err
+	}
+	engine.Use(middleware.BrowserOriginProtection(basePath))
+	if webDomain != "" {
+		engine.Use(middleware.DomainValidatorMiddleware(webDomain))
 	}
 	engine.Use(gzip.Gzip(gzip.DefaultCompression))
 	assetsBasePath := basePath + "assets/"

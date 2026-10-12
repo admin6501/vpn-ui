@@ -75,12 +75,45 @@ func SameOrigin(r *http.Request) bool {
 	target, err := url.Parse(scheme + "://" + r.Host)
 	return err == nil && target.Hostname() != "" && target.User == nil && u.Scheme == scheme && strings.EqualFold(u.Hostname(), target.Hostname()) && originPort(u) == originPort(target)
 }
-func BrowserOriginProtection() gin.HandlerFunc {
+
+// intentionalPanelNavigation permits only a user-initiated top-level GET to a
+// registered HTML page. APIs, logout, WebSocket, iframes and background fetches
+// remain protected. FullPath is the matched route pattern, not a user-controlled
+// suffix that could disguise an API request as a page.
+func intentionalPanelNavigation(c *gin.Context, basePath string) bool {
+	r := c.Request
+	if r.Method != http.MethodGet || r.Header.Get("Sec-Fetch-Mode") != "navigate" ||
+		r.Header.Get("Sec-Fetch-Dest") != "document" || r.Header.Get("Sec-Fetch-User") != "?1" {
+		return false
+	}
+	for _, page := range []string{
+		"/panel/", "/panel/inbounds", "/panel/clients", "/panel/settings",
+		"/panel/xray", "/panel/core", "/panel/admins", "/panel/resellers",
+		"/panel/nodes/", "/panel/nodes/:id/xray",
+	} {
+		if c.FullPath() == strings.TrimSuffix(basePath, "/")+page {
+			return true
+		}
+	}
+	return false
+}
+
+func BrowserOriginProtection(basePaths ...string) gin.HandlerFunc {
+	basePath := "/"
+	if len(basePaths) > 0 && basePaths[0] != "" {
+		basePath = strings.TrimRight(basePaths[0], "/") + "/"
+	}
 	return func(c *gin.Context) {
-		// Explicit foreign origins are rejected even on GET (WebSocket and sensitive
-		// read endpoints). Fetch metadata also closes cross-site navigations without Origin.
-		if !SameOrigin(c.Request) || (c.GetHeader("Sec-Fetch-Site") == "cross-site" &&
-			(c.Request.Method != "GET" && c.Request.Method != "HEAD" || strings.Contains(c.Request.URL.Path, "/panel/") || strings.HasSuffix(c.Request.URL.Path, "/ws") || strings.HasSuffix(c.Request.URL.Path, "/logout"))) {
+		// An external link may retain cross-site metadata across the login-to-panel
+		// redirect when a session exists. That navigation must reach the ordinary
+		// login/permission guards; it grants no authentication or authorization.
+		crossSite := c.GetHeader("Sec-Fetch-Site") == "cross-site"
+		protected := c.Request.Method != http.MethodGet && c.Request.Method != http.MethodHead ||
+			strings.Contains(c.Request.URL.Path, "/panel/") ||
+			strings.HasSuffix(c.Request.URL.Path, "/ws") || strings.HasSuffix(c.Request.URL.Path, "/logout")
+		if !SameOrigin(c.Request) || (crossSite && protected && !intentionalPanelNavigation(c, basePath)) {
+			c.Header("Cache-Control", "no-store")
+			c.Header("X-VPN-UI-Error", "origin-rejected")
 			c.AbortWithStatus(http.StatusForbidden)
 			return
 		}

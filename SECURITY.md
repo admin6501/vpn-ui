@@ -37,6 +37,20 @@ failures or incorrect two-factor codes were submitted on an older version,
 rotate the affected panel passwords and restrict access to those old records.
 Existing copies of backups may still have their old filesystem permissions.
 
+## Browser navigation and domain checks
+
+User-initiated top-level GET navigation to the registered panel HTML pages is allowed
+through Fetch Metadata checks, including the existing-session redirect after opening
+an external link. Login and role/permission guards still decide access. The exception
+matches the configured base path and registered route exactly; it does not permit
+cross-site API reads, POST requests, iframes, logout or WebSocket connections. Explicit
+foreign Origin headers remain rejected.
+
+Domain checks compare DNS names without case or a final root dot and normalize IP
+literals; other domains and malformed authorities remain forbidden. Panel middleware
+403 responses are not cached and include `X-VPN-UI-Error: origin-rejected` or
+`domain-rejected` for diagnosis without exposing credentials or the private base path.
+
 ## HTTPS and reverse proxies
 
 Use HTTPS for browser access. HTTP cannot protect passwords or cookies in transit.
