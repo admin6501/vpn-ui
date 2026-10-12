@@ -3109,7 +3109,7 @@ class Inbound extends XrayCommonClass {
             });
         } else {
             this.stream.externalProxy.forEach((ep) => {
-                orders['o'] = ep.remark;
+                orders['o'] = ep.remark || '';
                 let r = orderChars.split('').map(char => orders[char]).filter(x => x.length > 0).join(separationChar);
                 result.push({
                     remark: r,

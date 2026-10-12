@@ -41,7 +41,7 @@ every 10 seconds while open.
 Hysteria2 uses HTTP/3, including its raw, JSON and Clash subscription profiles.
 Its transport form includes the optional Salamander obfs password; clearing it disables
 Salamander. The field shares the existing UDP Mask setting and is included in client links.
-Membership Info displays External Proxy endpoints and shows SSH login credentials alongside
+Account Info expanders and Membership Info display External Proxy endpoints and shows SSH login credentials alongside
 the QR. Two-factor enrollment validates codes on the server, accepts Persian/Arabic digits,
 and keeps the form open after a rejected request so it can be retried.
 
