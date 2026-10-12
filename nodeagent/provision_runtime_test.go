@@ -67,3 +67,28 @@ func TestNodeProvisionLargeBuildLogFitsReport(t *testing.T) {
 		t.Fatal("trimming changed the local full log")
 	}
 }
+
+func TestNodeProvisionExplicitXrayReinstallSchedulesActivation(t *testing.T) {
+	t.Setenv("VPNUI_DB_FOLDER", t.TempDir())
+	t.Setenv("VPNUI_BIN_FOLDER", t.TempDir())
+	if err := database.InitDB(config.GetDBPath()); err != nil {
+		t.Fatal(err)
+	}
+	running := &web.Server{}
+	a := &Agent{runtime: running}
+	request := &nodewire.Snapshot{CoreGeneration: 1, RequestedCores: []string{"xray"}}
+	if err := a.requestCores(request); err != nil {
+		t.Fatal(err)
+	}
+	if a.runtime != running || !a.provisionRefresh || a.coreRestart != "xray" || !a.coreRestartForce {
+		t.Fatal("explicit core reinstall did not preserve runtime and schedule new binary activation")
+	}
+	a.provisionRefresh = false
+	a.coreRestart = ""
+	if err := a.requestCores(request); err != nil {
+		t.Fatal(err)
+	}
+	if a.provisionRefresh || a.coreRestart != "" {
+		t.Fatal("acknowledged install repeated on next sync")
+	}
+}

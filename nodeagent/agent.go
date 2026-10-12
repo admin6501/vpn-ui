@@ -179,6 +179,7 @@ type Agent struct {
 	lastError        string
 	coreRestart      string
 	coreRestartForce bool
+	provisionRefresh bool
 }
 
 func New(path string) (*Agent, error) {
@@ -362,6 +363,10 @@ func (a *Agent) requestCores(snap *nodewire.Snapshot) error {
 		}
 		switch c {
 		case "xray":
+			if a.runtime != nil {
+				a.coreRestart = "xray"
+				a.coreRestartForce = true
+			}
 		case "radius":
 			if e := service.SetNodeSetting(database.GetDB(), "nodeRadiusRemoved", "false"); e != nil {
 				return e
@@ -377,6 +382,7 @@ func (a *Agent) requestCores(snap *nodewire.Snapshot) error {
 	if len(installable) > 0 && !cs.StartProvision(installable) {
 		return errors.New("Core installation busy")
 	}
+	a.provisionRefresh = true
 	return service.SetNodeSetting(database.GetDB(), "nodeCoreGeneration", generation)
 }
 
@@ -497,12 +503,12 @@ func (a *Agent) Tick(ctx context.Context) error {
 			return e
 		}
 		a.coreRestart = ""
-	} else if revision != a.revision || inventory != a.inventory {
+	} else if revision != a.revision || inventory != a.inventory || a.provisionRefresh {
 		if e = a.runtime.RefreshNodeRuntime(); e != nil {
 			return e
 		}
-		a.coreRestart = ""
 	}
+	a.provisionRefresh = false
 	_ = service.SetNodeSetting(database.GetDB(), "nodeRuntimeRunning", "true")
 	if e = service.SetNodeSetting(database.GetDB(), "nodeControlGeneration", strconv.FormatInt(snap.ControlGeneration, 10)); e != nil {
 		return e
