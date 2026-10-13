@@ -557,10 +557,14 @@
                               <a-icon type="question-circle"></a-icon>
                           </a-tooltip>
                       </template>
-                      <a-input-number
-                          v-model.number="dbInbound.speedLimitDown"
-                          :min="0"
-                      ></a-input-number>
+                      <a-input-group compact>
+  <a-input-number v-model="inboundSpeedDown" :min="0" :style="{ width: '60%' }"></a-input-number>
+  <a-select v-model="inModal.speedDownUnit" :style="{ width: '40%' }">
+    <a-select-option value="KB/s">KB/s</a-select-option>
+    <a-select-option value="MB/s">MB/s</a-select-option>
+    <a-select-option value="Mbps">Mbps</a-select-option>
+  </a-select>
+</a-input-group>
                   </a-form-item>
 
                   <a-form-item>
@@ -573,10 +577,14 @@
                               <a-icon type="question-circle"></a-icon>
                           </a-tooltip>
                       </template>
-                      <a-input-number
-                          v-model.number="dbInbound.speedLimitUp"
-                          :min="0"
-                      ></a-input-number>
+                      <a-input-group compact>
+  <a-input-number v-model="inboundSpeedUp" :min="0" :style="{ width: '60%' }"></a-input-number>
+  <a-select v-model="inModal.speedUpUnit" :style="{ width: '40%' }">
+    <a-select-option value="KB/s">KB/s</a-select-option>
+    <a-select-option value="MB/s">MB/s</a-select-option>
+    <a-select-option value="Mbps">Mbps</a-select-option>
+  </a-select>
+</a-input-group>
                   </a-form-item>
               </template>
 
@@ -591,10 +599,14 @@
                               <a-icon type="question-circle"></a-icon>
                           </a-tooltip>
                       </template>
-                      <a-input-number
-                          v-model.number="dbInbound.speedLimitDown"
-                          :min="0"
-                      ></a-input-number>
+                      <a-input-group compact>
+  <a-input-number v-model="inboundSpeedDown" :min="0" :style="{ width: '60%' }"></a-input-number>
+  <a-select v-model="inModal.speedDownUnit" :style="{ width: '40%' }">
+    <a-select-option value="KB/s">KB/s</a-select-option>
+    <a-select-option value="MB/s">MB/s</a-select-option>
+    <a-select-option value="Mbps">Mbps</a-select-option>
+  </a-select>
+</a-input-group>
                   </a-form-item>
               </template>
 

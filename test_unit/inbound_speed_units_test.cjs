@@ -1,0 +1,31 @@
+'use strict';
+const fs = require('node:fs');
+const vm = require('node:vm');
+const assert = require('node:assert/strict');
+const source = fs.readFileSync('web/html/modals/inbound_modal.html', 'utf8');
+const computedStart = source.indexOf('        computed: {') + '        computed: {'.length;
+const computedEnd = source.indexOf('            // form/client', computedStart);
+const computed = vm.runInNewContext('({' + source.slice(computedStart, computedEnd) + '})');
+const methodsStart = source.indexOf('        methods: {') + '        methods: {'.length;
+const methodsEnd = source.indexOf('\n            },', source.indexOf('            inboundStoredSpeed(', methodsStart)) + '\n            },'.length;
+const methods = vm.runInNewContext('({' + source.slice(methodsStart, methodsEnd) + '})');
+const state = { dbInbound: {speedLimitDown: 1024, speedLimitUp: 2048}, inModal: {speedDownUnit:'KB/s', speedUpUnit:'KB/s'}, ...methods };
+assert.equal(computed.inboundSpeedDown.get.call(state), 1024);
+state.inModal.speedDownUnit='MB/s';
+assert.equal(computed.inboundSpeedDown.get.call(state), 1);
+assert.equal(state.dbInbound.speedLimitDown, 1024, 'unit selection must preserve existing rate');
+computed.inboundSpeedDown.set.call(state, 2.5);
+assert.equal(state.dbInbound.speedLimitDown, 2560);
+state.inModal.speedUpUnit='Mbps';
+computed.inboundSpeedUp.set.call(state, 8);
+assert.equal(state.dbInbound.speedLimitUp, 977, '8 decimal megabits become rounded binary KB/s');
+assert.equal(state.dbInbound.speedLimitDown, 2560, 'upload unit must not change download');
+computed.inboundSpeedUp.set.call(state, 0);
+assert.equal(state.dbInbound.speedLimitUp, 0, 'unlimited remains zero');
+computed.inboundSpeedUp.set.call(state, 0.001);
+assert.equal(state.dbInbound.speedLimitUp, 1, 'positive sub-KB limits must not become unlimited');
+for (const form of ['inbound.html','inbound_legacy.html']) {
+ const html=fs.readFileSync('web/html/form/'+form,'utf8');
+ for (const unit of ['KB/s','MB/s','Mbps']) assert.equal(html.split('<a-select-option value="'+unit+'">').length-1,3, form+' has units for both separate and combined rates');
+}
+console.log('Inbound speed unit conversion, independent directions and both form layouts passed');

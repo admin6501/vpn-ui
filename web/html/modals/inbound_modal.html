@@ -120,6 +120,8 @@
         counts: {},
         inbound: new Inbound(),
         dbInbound: new DBInbound(),
+        speedDownUnit: "KB/s",
+        speedUpUnit: "KB/s",
         ok() {
             ObjectUtil.execute(inModal.confirm, inModal.inbound, inModal.dbInbound);
         },
@@ -132,6 +134,7 @@
             isEdit = false,
         }) {
             HttpUtil.get("/panel/api/inbounds/nodes").then(msg => { if (msg && msg.success) this.nodes = msg.obj || []; }).catch(() => {});
+            this.speedDownUnit = this.speedUpUnit = "KB/s";
             this.title = title;
             this.okText = okText;
             if (inbound) {
@@ -387,6 +390,14 @@
             },
         },
         computed: {
+            inboundSpeedDown: {
+                get() { return this.dbInbound.speedLimitDown / this.inboundSpeedFactor(this.inModal.speedDownUnit); },
+                set(value) { this.dbInbound.speedLimitDown = this.inboundStoredSpeed(value, this.inModal.speedDownUnit); },
+            },
+            inboundSpeedUp: {
+                get() { return this.dbInbound.speedLimitUp / this.inboundSpeedFactor(this.inModal.speedUpUnit); },
+                set(value) { this.dbInbound.speedLimitUp = this.inboundStoredSpeed(value, this.inModal.speedUpUnit); },
+            },
             // form/client is shared with the client modal, and it reads these two
             // by name. It reaches this modal through the protocol forms
             // (vmess / vless / trojan / shadowsocks / hysteria all include it for
@@ -668,6 +679,15 @@
             },
         },
         methods: {
+            inboundSpeedFactor(unit) {
+                return unit === 'Mbps' ? 1000000 / 8 / 1024 : unit === 'MB/s' ? 1024 : 1;
+            },
+            inboundStoredSpeed(value, unit) {
+                const rate = Number(value) * this.inboundSpeedFactor(unit);
+                if (!Number.isFinite(rate)) return value;
+                if (rate < 0) return -Math.max(1, Math.round(Math.abs(rate)));
+                return rate === 0 ? 0 : Math.max(1, Math.round(rate));
+            },
             // Count the form items inside each section and, if that changed, publish it.
             //
             // The equality check is load-bearing, not an optimisation: this runs from

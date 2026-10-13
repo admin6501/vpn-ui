@@ -43,6 +43,7 @@ jobs:
           node test_unit/client_online_info_test.cjs
           node test_unit/client_details_2fa_test.cjs
           node test_unit/export_test/export.test.js
+          node test_unit/inbound_speed_units_test.cjs
       - name: Verify authentication, sessions, origins and private backups
         run: go test -race ./database ./web/session ./web/middleware ./web/controller ./web/service -run '^TestSecurity' -count=1
       - name: Verify administrator, representative and node access boundaries
