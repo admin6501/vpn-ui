@@ -141,6 +141,7 @@ func TestNodeRealDataPlane(t *testing.T) {
 		t.Fatal(err)
 	}
 	child := exec.Command(binary, "-test.run=^TestNodeProcessHelper$", "-test.v")
+	child.Dir = folder // Match the installed node unit; isolate it from the VPN client.
 	child.Env = append(os.Environ(), "VPNUI_TEST_AGENT_HELPER=1", "VPNUI_TEST_AGENT_CONFIG="+cfg, "VPNUI_DB_FOLDER="+folder, "VPNUI_BIN_FOLDER="+filepath.Join(folder, "bin"), "VPNUI_NODE_AGENT=1")
 	agentLog, err := os.Create(filepath.Join(folder, "agent.log"))
 	if err != nil {
@@ -188,6 +189,7 @@ func TestNodeRealDataPlane(t *testing.T) {
 	clientPath := filepath.Join(folder, "client.json")
 	os.WriteFile(clientPath, []byte(clientConf), 0600)
 	client := exec.Command(clientBin, "run", "-c", clientPath)
+	client.Dir = filepath.Dir(clientBin) // Independent client host/workdir; never an agent orphan.
 	client.Stdout = agentLog
 	client.Stderr = agentLog
 	if err = client.Start(); err != nil {
