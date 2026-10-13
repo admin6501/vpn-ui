@@ -94,11 +94,11 @@ func TestComputeSpeedLimits(t *testing.T) {
 		{"separate up only", []speedLimitPolicy{pol(limited(true, 0, 256, 0), "a")}, nil, false, 0, 256 * kb},
 
 		// Limit After: below the threshold the account is not yet armed, so it must be
-		// absent (unlimited), and armed at or above it.
-		{"usage below threshold is unarmed", []speedLimitPolicy{pol(limited(true, 640, 256, gb), "a")}, map[string]int64{"a": gb - 1}, true, 0, 0},
+		// published with unlimited buckets until armed at or above it.
+		{"usage below threshold is unarmed", []speedLimitPolicy{pol(limited(true, 640, 256, gb), "a")}, map[string]int64{"a": gb - 1}, false, 0, 0},
 		{"usage at threshold arms", []speedLimitPolicy{pol(limited(true, 640, 256, gb), "a")}, map[string]int64{"a": gb}, false, 640 * kb, 256 * kb},
 		{"usage above threshold arms", []speedLimitPolicy{pol(limited(true, 640, 256, gb), "a")}, map[string]int64{"a": 5 * gb}, false, 640 * kb, 256 * kb},
-		{"no usage row is unarmed", []speedLimitPolicy{pol(limited(true, 640, 256, gb), "a")}, nil, true, 0, 0},
+		{"no usage row is unarmed", []speedLimitPolicy{pol(limited(true, 640, 256, gb), "a")}, nil, false, 0, 0},
 		// Threshold 0 (the column default) applies from the very first byte.
 		{"zero threshold applies immediately", []speedLimitPolicy{pol(limited(true, 640, 256, 0), "a")}, nil, false, 640 * kb, 256 * kb},
 		{"zero threshold with zero usage", []speedLimitPolicy{pol(limited(true, 640, 256, 0), "a")}, map[string]int64{"a": 0}, false, 640 * kb, 256 * kb},
@@ -169,8 +169,8 @@ func TestSpeedLimitUsesBinaryKB(t *testing.T) {
 	}
 }
 
-// Only limited accounts are published: an unlimited one must not cost the core a
-// bucket, and the file must not name it at all.
+// Unconfigured unlimited accounts stay absent; future-threshold accounts retain
+// prepared unlimited buckets so their live connections can be re-rated.
 func TestSpeedLimitOmitsUnlimitedAccounts(t *testing.T) {
 	policies := []speedLimitPolicy{
 		pol(limited(true, 640, 256, 0), "limited@x"),
@@ -179,8 +179,8 @@ func TestSpeedLimitOmitsUnlimitedAccounts(t *testing.T) {
 		pol(limited(true, 0, 0, 0), "enabled-but-zero@x"), // enabled, no rates
 	}
 	users := computeSpeedLimits(policies, map[string]int64{"unarmed@x": 1}, nil)
-	if len(users) != 1 {
-		t.Fatalf("published %d users (%+v); want only the limited one", len(users), users)
+	if len(users) != 2 {
+		t.Fatalf("published %d users (%+v); want limited and prepared threshold account", len(users), users)
 	}
 	if users[0].Email != "limited@x" {
 		t.Errorf("published %q; want limited@x", users[0].Email)

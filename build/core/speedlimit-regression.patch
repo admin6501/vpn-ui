@@ -1,0 +1,60 @@
+diff --git a/common/speedlimit/threshold_regression_test.go b/common/speedlimit/threshold_regression_test.go
+new file mode 100644
+index 0000000..4444f99
+--- /dev/null
++++ b/common/speedlimit/threshold_regression_test.go
+@@ -0,0 +1,54 @@
++package speedlimit
++
++import (
++	"context"
++	"fmt"
++	"testing"
++	"time"
++)
++
++// Keep upload/download writers alive across threshold crossing, reset and rearm.
++func TestPreparedBucketThresholdResetAndRearm(t *testing.T) {
++	for _, direction := range []string{"upload", "download"} {
++		t.Run(direction, func(t *testing.T) {
++			tb, path := newTestTable(t, `{"users":[{"email":"prepared","downBps":0,"upBps":0,"ips":[]}]}`)
++			limits := tb.lookup("prepared", nil)
++			bucket := limits.Up
++			if direction == "download" {
++				bucket = limits.Down
++			}
++			inner := &countingWriter{}
++			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
++			defer cancel()
++			writer := NewWriter(ctx, inner, bucket)
++			if err := writer.WriteMultiBuffer(makeMB(t, 4096)); err != nil {
++				t.Fatal(err)
++			}
++			const bps = 256 * 1024
++			update := func(down, up int64, age time.Duration) {
++				write(t, path, fmt.Sprintf(`{"users":[{"email":"prepared","downBps":%d,"upBps":%d,"ips":[]}]}`, down, up), age)
++				tb.reloadIfChanged()
++				if tb.lookup("prepared", nil) != limits {
++					t.Fatal("live account bucket replaced")
++				}
++			}
++			for cycle := 0; cycle < 2; cycle++ {
++				update(bps, bps, time.Duration(cycle*2+1)*time.Second)
++				if err := writer.WriteMultiBuffer(makeMB(t, bucket.Burst())); err != nil {
++					t.Fatal(err)
++				}
++				started := time.Now()
++				if err := writer.WriteMultiBuffer(makeMB(t, 64*1024)); err != nil {
++					t.Fatal(err)
++				}
++				if time.Since(started) < 180*time.Millisecond {
++					t.Fatal("live traffic bypassed cap")
++				}
++				update(0, 0, time.Duration(cycle*2+2)*time.Second)
++				if err := writer.WriteMultiBuffer(makeMB(t, 64*1024)); err != nil {
++					t.Fatal(err)
++				}
++			}
++		})
++	}
++}

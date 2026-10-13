@@ -431,6 +431,75 @@ func TestNodeRealDataPlane(t *testing.T) {
 	}
 	in = replacement // Later removal/reinstall assertions target the current ID.
 
+	// Verify sustained throughput on a real node VLESS data plane, not only
+	// sidecar generation. First activation must refresh existing admission.
+	beforeSpeedPID := nodeXrayPID()
+	if err := db.Model(&model.Inbound{}).Where("id = ?", in.Id).Updates(map[string]any{"speed_limit_enable": true, "speed_limit_down": 256}).Error; err != nil {
+		t.Fatal(err)
+	}
+	waitNode(t, 25*time.Second, "speed activation refreshes node Xray admission", func() bool {
+		raw, err := os.ReadFile(filepath.Join(folder, "bin", "speedlimits.json"))
+		if err != nil {
+			return false
+		}
+		var doc struct {
+			Users []struct {
+				Email string `json:"email"`
+				Down  int64  `json:"downBps"`
+			} `json:"users"`
+		}
+		if json.Unmarshal(raw, &doc) != nil {
+			return false
+		}
+		for _, user := range doc.Users {
+			if user.Email == email && user.Down == 256*1024 {
+				return nodeXrayPID() != beforeSpeedPID && listener()
+			}
+		}
+		return false
+	})
+	startedSpeed := time.Now()
+	for i := 0; i < 4; i++ {
+		response, err = httpClient.Get(target.URL)
+		if err != nil {
+			t.Fatal("limited VPN connection failed", err)
+		}
+		transferred, err = io.Copy(io.Discard, response.Body)
+		response.Body.Close()
+		if err != nil || transferred != 256*1024 {
+			t.Fatal("limited VPN payload failed", transferred, err)
+		}
+	}
+	if time.Since(startedSpeed) < time.Second {
+		t.Fatal("real VLESS downloads bypass shared account rate")
+	}
+
+	// Disable admission as quota enforcement does, then reset centrally. The
+	// node must recover without an operator toggling the account off/on.
+	if err := db.Model(&xray.ClientTraffic{}).Where("email = ?", email).Update("enable", false).Error; err != nil {
+		t.Fatal(err)
+	}
+	waitNode(t, 20*time.Second, "node denies depleted account", func() bool {
+		var enabled bool
+		return workerDB.QueryRow("SELECT enable FROM client_traffics WHERE email = ?", email).Scan(&enabled) == nil && !enabled
+	})
+	if err := (&service.InboundService{}).ResetClientTrafficByEmail(email); err != nil {
+		t.Fatal(err)
+	}
+	waitNode(t, 20*time.Second, "traffic reset restores node admission", func() bool {
+		var enabled bool
+		return workerDB.QueryRow("SELECT enable FROM client_traffics WHERE email = ?", email).Scan(&enabled) == nil && enabled && listener()
+	})
+	waitNode(t, 15*time.Second, "reset VPN account carries traffic without manual toggle", func() bool {
+		response, err := httpClient.Get(target.URL)
+		if err != nil {
+			return false
+		}
+		n, err := io.Copy(io.Discard, response.Body)
+		response.Body.Close()
+		return err == nil && n == 256*1024
+	})
+
 	// A real network outage exercises the complete 90-second admission lease.
 	unreachable.Store(true)
 	waitNode(t, 100*time.Second, "expired management lease stops VPN", func() bool { return !listener() })

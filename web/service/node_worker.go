@@ -93,6 +93,7 @@ func ApplyNodeSnapshot(snap *nodewire.Snapshot, installed map[string]bool) (stri
 	for i := range identity.Accounts {
 		identity.Accounts[i].Remaining = 0
 		identity.Accounts[i].ReportedUsage = 0
+		identity.Accounts[i].Usage = nil
 	}
 	for i := range identity.Inbounds {
 		identity.Inbounds[i].Up = 0
@@ -230,6 +231,24 @@ func ApplyNodeSnapshot(snap *nodewire.Snapshot, installed map[string]bool) (stri
 			if e := tx.Save(&m).Error; e != nil {
 				return e
 			}
+		}
+		// Central period usage controls speed thresholds; local meters are cumulative
+		// report cursors and deliberately survive resets. Never zero those meters.
+		speedUsage := make(map[string]int64)
+		for _, a := range snap.Accounts {
+			if a.Usage != nil {
+				if *a.Usage < 0 {
+					return errors.New("Negative node speed usage")
+				}
+				speedUsage[a.Account.Email] = *a.Usage
+			}
+		}
+		speedUsageJSON, err := json.Marshal(speedUsage)
+		if err != nil {
+			return err
+		}
+		if err := SetNodeSetting(tx, "nodeSpeedUsage", string(speedUsageJSON)); err != nil {
+			return err
 		}
 		// Projection synchronizes protocol-specific credentials, membership state and
 		// quota into every daemon's existing clients shape.

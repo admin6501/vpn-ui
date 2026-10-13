@@ -12,6 +12,30 @@ historical statement that no speed limiter exists is obsolete. Current I/O keeps
 TCP copy path; this fork does not add a blanket 24-hour idle timeout. Measure live throughput
 separately from configuration generation.
 
+Download and upload have independent shared account buckets, with KB/s, MB/s and Mbps
+selectors. A client override replaces its inbound default; the most restrictive non-zero
+resolved rate across enabled memberships wins. TCP and UDP use the dispatcher pacing paths,
+including VLESS/Vision, VMess, Trojan, Shadowsocks, Hysteria2, TUIC, AnyTLS, Naive and native
+WireGuard. Native WireGuard is identified by its assigned tunnel host addresses.
+
+Accounts configured with a future consumption threshold keep unlimited buckets before the
+threshold. Crossing it, resetting period traffic and crossing it again re-rate the same live
+buckets. New bucket activation needs one debounced Xray admission refresh so already-open
+unlimited sessions cannot bypass it; this can briefly reconnect Xray clients. Ordinary rate
+changes and threshold crossings do not restart the core. Unconfigured unlimited accounts
+keep the existing native copy path. Token buckets permit a short initial burst and measure
+payload bytes rather than encrypted wire overhead.
+
+On nodes, speed thresholds use central period usage from authenticated snapshots. Cumulative
+node report meters remain intact, so a central reset cannot reset billing cursors. Older panels
+without the optional usage field retain the previous local usage fallback.
+
+Traffic reset projects all authorized memberships, restores quota admission and requests a
+runtime admission refresh even if the cached static Xray configuration is unchanged after an
+API user removal. Reset does not extend an expired deadline, enable manually disabled
+memberships/accounts or unblock a representative. Period and membership usage are cleared;
+lifetime totals, credentials, subscription tokens and ownership remain unchanged.
+
 **Implementation references:** [web/service/speedlimit.go](web/service/speedlimit.go) ·
 [third_party/Xray-core/common/speedlimit/speedlimit.go](third_party/Xray-core/common/speedlimit/speedlimit.go)
 · [third_party/Xray-core/common/speedlimit/io.go](third_party/Xray-core/common/speedlimit/io.go)

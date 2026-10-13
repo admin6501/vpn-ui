@@ -4779,103 +4779,50 @@ func (s *InboundService) ResetClientTrafficLimitByEmail(clientEmail string, tota
 	return needRestart, err
 }
 
-func (s *InboundService) ResetClientTrafficByEmail(clientEmail string) error {
-	db := database.GetDB()
-
-	// Reset traffic stats in ClientTraffic table
-	result := db.Model(xray.ClientTraffic{}).
-		Where("email = ?", clientEmail).
-		Updates(map[string]any{"enable": true, "up": 0, "down": 0})
-
-	err := result.Error
+// resetAccountTraffic restores admission only after clearing period usage.
+// Expired deadlines, blocked representatives and manual membership switches remain intact.
+func (s *InboundService) resetAccountTraffic(tx *gorm.DB, email string) error {
+	var traffic xray.ClientTraffic
+	if err := tx.Where("LOWER(TRIM(email)) = ?", accountKey(email)).First(&traffic).Error; err != nil {
+		return err
+	}
+	enabled := traffic.ExpiryTime <= 0 || traffic.ExpiryTime > time.Now().UnixMilli()
+	account, err := (&AccountService{}).GetAccountByEmailTx(tx, email)
 	if err != nil {
 		return err
 	}
-
-	// The per-inbound breakdown of the row just zeroed. Left behind, it would keep
-	// claiming bytes the account no longer has, so the split would total more than
-	// the account itself.
-	resetMembershipUsage(db, []string{clientEmail})
-
+	if account != nil {
+		enabled = account.Enable && !account.RepresentativeBlocked && (account.ExpiryTime <= 0 || account.ExpiryTime > time.Now().UnixMilli())
+		if _, err := (&AccountService{}).ProjectAccount(tx, account.Id); err != nil {
+			return err
+		}
+	}
+	if err := tx.Model(&xray.ClientTraffic{}).Where("id = ?", traffic.Id).Updates(map[string]any{"up": 0, "down": 0, "enable": enabled}).Error; err != nil {
+		return err
+	}
+	resetMembershipUsage(tx, []string{traffic.Email})
 	return nil
 }
 
+func (s *InboundService) ResetClientTrafficByEmail(clientEmail string) error {
+	err := database.GetDB().Transaction(func(tx *gorm.DB) error { return s.resetAccountTraffic(tx, clientEmail) })
+	if err == nil {
+		MarkSpeedLimitsDirty()
+		RequestAdmissionRefresh()
+	}
+	return err
+}
+
 func (s *InboundService) ResetClientTraffic(id int, clientEmail string) (bool, error) {
-	needRestart := false
-
-	traffic, err := s.GetClientTrafficByEmail(clientEmail)
-	if err != nil {
-		return false, err
-	}
-
-	if !traffic.Enable {
-		inbound, err := s.GetInbound(id)
-		if err != nil {
-			return false, err
-		}
-		clients, err := s.GetClients(inbound)
-		if err != nil {
-			return false, err
-		}
-		for _, client := range clients {
-			if client.Email == clientEmail && client.Enable {
-				s.xrayApi.Init(p.GetAPIPort())
-				cipher := ""
-				if string(inbound.Protocol) == "shadowsocks" {
-					var oldSettings map[string]any
-					err = json.Unmarshal([]byte(inbound.Settings), &oldSettings)
-					if err != nil {
-						return false, err
-					}
-					cipher = oldSettings["method"].(string)
-				}
-				err1 := s.xrayApi.AddUser(string(inbound.Protocol), inbound.Tag, map[string]any{
-					"email":    client.Email,
-					"id":       client.ID,
-					"auth":     client.Auth,
-					"security": client.Security,
-					"flow":     client.Flow,
-					"password": client.Password,
-					"username": client.Username,
-					"cipher":   cipher,
-				})
-				if err1 == nil {
-					logger.Debug("Client enabled due to reset traffic:", clientEmail)
-				} else {
-					logger.Debug("Error in enabling client by api:", err1)
-					needRestart = true
-				}
-				s.xrayApi.Close()
-				break
-			}
-		}
-	}
-
-	// Targeted update, not db.Save(traffic): `traffic` was read at the top of this
-	// function, so saving the whole struct would also write back the all_time and
-	// last_online it held then, discarding whatever the 10s accounting job committed
-	// meanwhile. A reset zeroes up/down and re-enables; it must not rewind the lifetime
-	// counter. Mirrors ResetClientTrafficByEmail, which already updates by column.
-	db := database.GetDB()
-	err = db.Model(xray.ClientTraffic{}).Where("id = ?", traffic.Id).Updates(map[string]any{
-		"up":     0,
-		"down":   0,
-		"enable": true,
-	}).Error
-	if err != nil {
-		return false, err
-	}
-	// Same zeroing on the per-inbound breakdown, see ResetClientTrafficByEmail.
-	resetMembershipUsage(db, []string{traffic.Email})
-
-	return needRestart, nil
+	err := s.ResetClientTrafficByEmail(clientEmail)
+	return err == nil, err
 }
 
 func (s *InboundService) ResetAllClientTraffics(id int) error {
 	db := database.GetDB()
 	now := time.Now().Unix() * 1000
 
-	return db.Transaction(func(tx *gorm.DB) error {
+	err := db.Transaction(func(tx *gorm.DB) error {
 		whereText := "inbound_id "
 		if id == -1 {
 			whereText += " > ?"
@@ -4893,18 +4840,11 @@ func (s *InboundService) ResetAllClientTraffics(id int) error {
 			return err
 		}
 
-		// Reset client traffics
-		result := tx.Model(xray.ClientTraffic{}).
-			Where(whereText, id).
-			Updates(map[string]any{"enable": true, "up": 0, "down": 0})
-
-		if result.Error != nil {
-			return result.Error
+		for _, email := range affected {
+			if err := s.resetAccountTraffic(tx, email); err != nil {
+				return err
+			}
 		}
-
-		// The per-inbound breakdown of the rows just zeroed, or the split would keep
-		// claiming bytes the accounts no longer have.
-		resetMembershipUsage(tx, affected)
 
 		// Update lastTrafficResetTime for the inbound(s)
 		inboundWhereText := "id "
@@ -4914,12 +4854,17 @@ func (s *InboundService) ResetAllClientTraffics(id int) error {
 			inboundWhereText += " = ?"
 		}
 
-		result = tx.Model(model.Inbound{}).
+		result := tx.Model(model.Inbound{}).
 			Where(inboundWhereText, id).
 			Update("last_traffic_reset_time", now)
 
 		return result.Error
 	})
+	if err == nil {
+		MarkSpeedLimitsDirty()
+		RequestAdmissionRefresh()
+	}
+	return err
 }
 
 // ResetAllTraffics zeroes inbound counters. ownerId scopes it to one admin's

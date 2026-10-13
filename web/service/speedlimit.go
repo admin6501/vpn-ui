@@ -53,7 +53,7 @@ import (
 // touch anything in the xray.Config graph: Config.Equals would report a change and the
 // debounced restart would drop every live connection on the box, and threshold
 // crossings happen continuously as users consume data. For the same reason nothing
-// here calls SetToNeedRestart.
+// existing buckets do not request restarts; first bucket activation refreshes admission.
 
 // speedLimitUser is one account's published limits. Field order is fixed by this struct.
 // The rates are BYTES PER SECOND and 0 in a direction means that direction is unlimited;
@@ -372,6 +372,7 @@ func speedLimitIPs(email string, ipMap map[string][]string) []string {
 func computeSpeedLimits(policies []speedLimitPolicy, usage map[string]int64, ipMap map[string][]string) []speedLimitUser {
 	type limits struct {
 		down, up int64
+		prepared bool
 		ipLimit  int
 		strategy string
 	}
@@ -401,6 +402,9 @@ func computeSpeedLimits(policies []speedLimitPolicy, usage map[string]int64, ipM
 			// one inbound no longer have to be limited alike.
 			down, up := resolveSpeedLimitRates(p.inbound, c)
 			m := merged[c.email]
+			// Keep the same buckets before/after a threshold or traffic reset.
+			// Otherwise existing connections opened before the threshold bypass pacing.
+			m.prepared = m.prepared || down > 0 || up > 0
 			// Same email on several inbounds: minimum non-zero wins, per direction and
 			// independently. The bucket is per email, so per-(email, inbound) rates would
 			// hand a user on two inbounds twice their intended bandwidth.
@@ -438,8 +442,8 @@ func computeSpeedLimits(policies []speedLimitPolicy, usage map[string]int64, ipM
 
 	users := make([]speedLimitUser, 0, len(merged))
 	for email, r := range merged {
-		if r.down == 0 && r.up == 0 && r.ipLimit == 0 {
-			continue // fully unlimited: absent from the file, so the core allocates nothing
+		if r.down == 0 && r.up == 0 && r.ipLimit == 0 && !r.prepared {
+			continue // no configured speed entitlement or IP cap
 		}
 		// The default is published as an ABSENCE, not as the word: r.strategy is only ever
 		// non-empty when a cap was contributed, so this also guarantees a strategy never
@@ -600,6 +604,14 @@ func loadSpeedLimitUsage() map[string]int64 {
 	for _, r := range rows {
 		usage[r.Email] = r.Up + r.Down
 	}
+	// A worker's counters are lifetime report cursors, not central period usage.
+	// Optional snapshot values preserve compatibility with older central panels.
+	var centralUsage map[string]int64
+	if json.Unmarshal([]byte(GetNodeSetting("nodeSpeedUsage")), &centralUsage) == nil {
+		for email, bytes := range centralUsage {
+			usage[email] = bytes
+		}
+	}
 	return usage
 }
 
@@ -631,7 +643,7 @@ func WriteSpeedLimits() {
 	policies := loadSpeedLimitPolicies()
 	var usage map[string]int64
 	var ipMap map[string][]string
-	// With nothing limited anywhere, the document is empty whatever the usage and
+	// With no configured policies anywhere, the document is empty whatever the usage and
 	// addresses are, so neither is loaded. That keeps the feature's cost on an operator
 	// who uses neither limiter (the common case) to the one query loadSpeedLimitPolicies
 	// already ran, instead of a full client_traffics scan plus an email->IP index rebuild
@@ -646,14 +658,40 @@ func WriteSpeedLimits() {
 		return
 	}
 	path := xray.GetSpeedLimitPath()
-	if old, readErr := os.ReadFile(path); readErr == nil && bytes.Equal(old, data) {
+	old, readErr := os.ReadFile(path)
+	if readErr == nil && bytes.Equal(old, data) {
 		return
 	}
 	// 0600: the file names every limited account. Nothing but the panel writes it and
 	// nothing but Xray (running as the same user) reads it.
 	if err := backend.WriteFileAtomic(path, data, 0o600); err != nil {
 		logger.Warning("speed limit: write", path, "failed:", err)
+		MarkSpeedLimitsDirty()
+		return
 	}
+	// An existing unlimited dispatch has no pacing wrapper. Only adding a NEW
+	// speed bucket needs admission refresh; rate/threshold changes reuse buckets
+	// in place and never restart the core.
+	if readErr == nil && speedBucketIntroduced(old, data) {
+		RequestAdmissionRefresh()
+	}
+}
+
+func speedBucketIntroduced(old, current []byte) bool {
+	var before, after speedLimitDoc
+	if json.Unmarshal(old, &before) != nil || json.Unmarshal(current, &after) != nil {
+		return false
+	}
+	known := make(map[string]bool, len(before.Users))
+	for _, user := range before.Users {
+		known[user.Email] = true
+	}
+	for _, user := range after.Users {
+		if !known[user.Email] {
+			return true
+		}
+	}
+	return false
 }
 
 // The sidecar has TWO independent inputs and used to be wired to only one of them.

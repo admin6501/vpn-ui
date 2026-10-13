@@ -17,6 +17,7 @@ type EnrollmentReply struct {
 	NodeID int `json:"nodeId"`
 }
 type Account struct {
+	Usage               *int64        `json:"usage,omitempty"` // Central period usage, optional for older panels.
 	Account             model.Account `json:"account"`
 	ProtocolCredentials string        `json:"protocolCredentials,omitempty"`
 	ReportedUsage       int64         `json:"reportedUsage"` // Raw cumulative usage acknowledged by the panel.

@@ -357,7 +357,8 @@ func (s *NodeService) Snapshot(id int) (*nodewire.Snapshot, error) {
 			}
 		}
 		allowed := exists && a.Enable && t.Enable && !a.RepresentativeBlocked && (a.ExpiryTime <= 0 || a.ExpiryTime > now) && (remaining != 0)
-		snap.Accounts = append(snap.Accounts, nodewire.Account{Account: a, ProtocolCredentials: a.ProtocolCredentials, Remaining: remaining, ReportedUsage: reported[a.Id], Allowed: allowed})
+		usage := t.Up + t.Down
+		snap.Accounts = append(snap.Accounts, nodewire.Account{Usage: &usage, Account: a, ProtocolCredentials: a.ProtocolCredentials, Remaining: remaining, ReportedUsage: reported[a.Id], Allowed: allowed})
 	}
 	cursors := []model.NodeCounter{}
 	for _, a := range snap.Accounts {

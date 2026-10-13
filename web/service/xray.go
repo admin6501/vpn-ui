@@ -19,9 +19,11 @@ import (
 )
 
 var (
-	p                 *xray.Process
-	lock              sync.Mutex
-	isNeedXrayRestart atomic.Bool // Indicates that restart was requested for Xray
+	p                      *xray.Process
+	lock                   sync.Mutex
+	xrayAdmissionRequested atomic.Int64
+	xrayAdmissionApplied   atomic.Int64
+	isNeedXrayRestart      atomic.Bool // Indicates that restart was requested for Xray
 	// UnixNano of the most recent restart request, and of the one that opened the
 	// current burst. Both feed the debounce in IsRestartDueAndSetFalse.
 	xrayRestartReqAt   atomic.Int64
@@ -767,6 +769,8 @@ func (s *XrayService) RestartXray(isForce bool) error {
 	}
 	lock.Lock()
 	defer lock.Unlock()
+	admissionGeneration := xrayAdmissionRequested.Load()
+	isForce = isForce || admissionGeneration != xrayAdmissionApplied.Load()
 	logger.Debug("restart Xray, force:", isForce)
 	isManuallyStopped.Store(false)
 
@@ -837,6 +841,7 @@ func (s *XrayService) RestartXray(isForce bool) error {
 	// Re-asserted after every start, because that is exactly when the device has just
 	// come back up. Idempotent, and cheap enough: a restart is not a hot path.
 	vpnOutReassertCarriers()
+	xrayAdmissionApplied.Store(admissionGeneration)
 
 	return nil
 }
@@ -904,6 +909,13 @@ func (s *XrayService) ReapOrphanXray() {
 			_ = proc.Kill()
 		}
 	}
+}
+
+// RequestAdmissionRefresh also refreshes dynamic API admission when the cached
+// static configuration still equals the new one. The normal debounce is retained.
+func RequestAdmissionRefresh() {
+	xrayAdmissionRequested.Inc()
+	(&XrayService{}).SetToNeedRestart()
 }
 
 // SetToNeedRestart marks that Xray needs to be restarted.
