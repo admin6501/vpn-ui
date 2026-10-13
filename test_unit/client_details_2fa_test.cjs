@@ -34,5 +34,13 @@ function fixture(protocol, endpoints=[]) {
  const pending=m.ok();await m.ok();assert.equal(calls,1);resolve(false);await pending;
  assert.equal(m.visible,true);assert.equal(m.enteredPassword,'password');
  m.confirm=async()=>true;await m.ok();assert.equal(m.visible,false);assert.equal(m.enteredPassword,'');
+ const downloaded=[];
+ sandbox.FileManager={downloadTextFile(content,filename,options){downloaded.push({content,filename,options})}};
+ const confText='[Interface]\nPrivateKey = fixture\n[Peer]\nPublicKey = fixture\n';
+ exporter.txt([{email:'wg',configText:confText}], 'wg.txt');
+ assert.equal(downloaded[0].filename,'wg.conf');assert.equal(downloaded[0].content,confText);
+ assert.equal(downloaded[0].options.type,'application/octet-stream');
+ exporter.txt([{email:'wg',configText:confText},{email:'wg',configText:confText}], 'wg');
+ assert.deepEqual(downloaded.slice(1).map(file=>file.filename),['wg-peer-1.conf','wg-peer-2.conf']);
  console.log('External endpoint cards, SSH credentials and server-verified async 2FA passed');
 })().catch(e=>{console.error(e);process.exit(1)});

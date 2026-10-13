@@ -237,7 +237,7 @@
       exportTxt() { if (this.app) this.app.exportClientTxt(this.record, this.client); },
       exportPdf() { if (this.app) this.app.exportClientPdf(this.record, this.client); },
       copy(text) { if (this.app) this.app.copyText(text); },
-      download(text, name) { FileManager.downloadTextFile(text, name, { type: 'text/plain' }); },
+      download(text, name) { FileManager.downloadTextFile(text, name, { type: 'application/octet-stream' }); },
       openZoom(value) {
         if (!value) return;
         this.membershipInfoModal.zoom = { visible: true, value: value };

@@ -79,6 +79,12 @@ function template(file) {
   const obfs=page.locator('#hy-test input').first();await obfs.fill('obfs @?#% exact');
   assert.equal(await page.evaluate(()=>hyState.inbound.stream.finalmask.udp[0].settings.password),'obfs @?#% exact');
   await obfs.fill('');assert.equal(await page.evaluate(()=>hyState.inbound.stream.finalmask.udp.length),0);
+  const confText='[Interface]\nPrivateKey = fixture-private\nAddress = 10.10.0.2/32\n\n[Peer]\nPublicKey = fixture-public\nEndpoint = fixture.example:51820\nAllowedIPs = 0.0.0.0/0\n';
+  const downloaded=page.waitForEvent('download');
+  await page.evaluate(config=>AccountExport.txt([{email:'wg-client',configText:config}], 'wg-client.txt'),confText);
+  const file=await downloaded;
+  assert.equal(file.suggestedFilename(),'wg-client.conf','WireGuard download must be .conf');
+  assert.equal(fs.readFileSync(await file.path(),'utf8'),confText,'WireGuard .conf must contain raw importable INI without report decorations');
   assert.deepEqual(errors,[]);
   console.log('Browser: Account Info mobile expanders (0/1/2 proxies), Membership Info, SSH credentials/QR, 2FA and Hysteria obfs passed');
  } finally {await browser.close()}

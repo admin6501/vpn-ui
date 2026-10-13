@@ -462,7 +462,7 @@
         if (this.app) this.app.copyText(text);
       },
       download(text, name) {
-        FileManager.downloadTextFile(text, name, { type: 'text/plain' });
+        FileManager.downloadTextFile(text, name, { type: 'application/octet-stream' });
       },
       openZoom(value, title) {
         if (!value) return;

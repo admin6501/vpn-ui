@@ -56,7 +56,7 @@ const AccountExport = {
           || proto === Protocols.OPENVPN || proto === Protocols.OPENCONNECT
           || proto === Protocols.SSTP || proto === Protocols.IKEV2
           || proto === Protocols.SSH);
-        const isWgc = (proto === Protocols.WGC);
+        const isWgc = (proto === Protocols.WGC || proto === Protocols.WIREGUARD);
         const isAwg = (proto === Protocols.AWG);
         const isGre = (proto === Protocols.GRE);
         const isMtproto = (proto === Protocols.MTPROTO);
@@ -160,7 +160,7 @@ const AccountExport = {
         // Endpoint = the panel host) and use it as both the QR payload (WireGuard-
         // importable) and the TXT config block. No password/UUID.
         if (isWgc) {
-          const devices = await AccountExport._fetchConfigs(dbInbound.id, client.email, 'wgc-configs');
+          const devices = await AccountExport._fetchConfigs(dbInbound.id, client.email, proto === Protocols.WIREGUARD ? 'wgxray-configs' : 'wgc-configs');
           if (!devices.length) { cards.push(base); continue; }
           for (const dev of devices) {
             cards.push(Object.assign({}, base, {
@@ -524,6 +524,17 @@ const AccountExport = {
   // --- TXT -------------------------------------------------------------------
 
   txt(cards, filename) {
+    // A WireGuard client imports the raw INI, not a decorated account report.
+    // Download one .conf per peer/endpoint; concatenated [Interface] sections
+    // are not a usable multi-client WireGuard configuration.
+    if (cards.length && cards.every(c => c.configText && /^\s*\[Interface\]/m.test(c.configText) && /^\s*\[Peer\]/m.test(c.configText))) {
+      const stem = AccountExport._safeName(String(filename || cards[0].email || 'client').replace(/\.(txt|conf)$/i, ''), 'client');
+      cards.forEach((card, index) => {
+        const suffix = cards.length > 1 ? '-peer-' + (index + 1) : '';
+        FileManager.downloadTextFile(card.configText, stem + suffix + '.conf', { type: 'application/octet-stream' });
+      });
+      return;
+    }
     const W = 52;
     const line = (label, val) =>
       val === '' || val === undefined || val === null

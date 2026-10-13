@@ -517,7 +517,7 @@
                   </a-tooltip>
                   <a-tooltip title='{{ i18n "download" }}'>
                     <a-button :style="{ minWidth: '24px' }" size="small" icon="download"
-                      @click="FileManager.downloadTextFile(infoModal.links[index], `peer-${index + 1}.conf`)"></a-button>
+                      @click="FileManager.downloadTextFile(infoModal.links[index], `peer-${index + 1}.conf`, { type: 'application/octet-stream' })"></a-button>
                   </a-tooltip>
                 </tr-info-title>
                 <div v-text="infoModal.links[index]"

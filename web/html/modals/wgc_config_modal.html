@@ -136,7 +136,7 @@
         const base = wgcConfigModal.email || 'client';
         const suffix = dev.remark ? '-' + String(dev.remark).replace(/[^A-Za-z0-9_.-]/g, '_') : '';
         const name = base + suffix + '.conf';
-        const blob = new Blob([dev.config], { type: 'text/plain' });
+        const blob = new Blob([dev.config], { type: 'application/octet-stream' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
