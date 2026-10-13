@@ -1,14 +1,142 @@
+diff --git a/common/speedlimit/speedlimit.go b/common/speedlimit/speedlimit.go
+index 059cf0bd..1c6014e3 100644
+--- a/common/speedlimit/speedlimit.go
++++ b/common/speedlimit/speedlimit.go
+@@ -48,15 +48,9 @@ const EnvPath = "XRAY_SPEEDLIMIT_FILE"
+ const pollInterval = 2 * time.Second
+ 
+ const (
+-	// minBurst is the floor for a bucket's depth.
+-	//
+-	// rate.Limiter.WaitN reports an error, rather than blocking and draining, when
+-	// a single request exceeds the burst. Xray hands whole buf.MultiBuffers to the
+-	// writers, so a shallow bucket would fail every write on a slow account instead
+-	// of pacing it. This floor keeps buckets deeper than any realistic MultiBuffer;
+-	// wait() in io.go independently chunks its token requests, so correctness never
+-	// rests on the floor alone.
+-	minBurst = 512 * 1024
++	// wait chunks large MultiBuffers, so low rates do not need a 512KB burst
++	// that lets small downloads bypass shaping for minutes.
++	minBurst = 4 * 1024
+ 
+ 	// maxBurst caps bucket depth so that converting a rate to an int burst cannot
+ 	// overflow on 32-bit builds.
+@@ -108,13 +102,19 @@ type sidecarFile struct {
+ // freeze EVERY account's limits at their last good value, so an unknown strategy
+ // falls back to "reject", which is both the stricter reading and what an absent
+ // field has always meant.
++type sidecarBinding struct {
++	Tag string `json:"tag"`
++	IP  string `json:"ip"`
++}
++
+ type sidecarUser struct {
+-	Email    string   `json:"email"`
+-	DownBps  int64    `json:"downBps"`
+-	UpBps    int64    `json:"upBps"`
+-	IPLimit  int      `json:"ipLimit"`
+-	Strategy string   `json:"strategy"`
+-	IPs      []string `json:"ips"`
++	Bindings []sidecarBinding `json:"ipBindings,omitempty"`
++	Email    string           `json:"email"`
++	DownBps  int64            `json:"downBps"`
++	UpBps    int64            `json:"upBps"`
++	IPLimit  int              `json:"ipLimit"`
++	Strategy string           `json:"strategy"`
++	IPs      []string         `json:"ips"`
+ }
+ 
+ // index is an immutable snapshot. It is replaced wholesale on reload, but the
+@@ -128,6 +128,7 @@ type sidecarUser struct {
+ // the linear scan covers a handful of entries. A trie would be more code than
+ // the workload justifies.
+ type index struct {
++	scoped   map[string]map[netip.Addr]string
+ 	byEmail  map[string]*Limits
+ 	exact    map[netip.Addr]string
+ 	prefixes []prefixEntry
+@@ -221,6 +222,20 @@ func (t *table) lookupSession(user *protocol.MemoryUser, inbound *session.Inboun
+ 	if email == "" && inbound != nil && inbound.Source.Address != nil && inbound.Source.Address.Family().IsIP() {
+ 		ip = inbound.Source.Address.IP()
+ 	}
++	if email == "" && inbound != nil && inbound.Name == "wireguard" {
++		// Native WireGuard cannot authenticate an account email at dispatch.
++		// Never fall back to an unrelated tunnel's overlapping global IP pool.
++		addr, ok := netip.AddrFromSlice(ip)
++		if !ok {
++			return nil
++		}
++		t.mu.RLock()
++		defer t.mu.RUnlock()
++		if t.idx == nil {
++			return nil
++		}
++		return t.idx.byEmail[t.idx.scoped[inbound.Tag][addr.Unmap()]]
++	}
+ 	return t.lookup(email, ip)
+ }
+ 
+@@ -344,6 +359,7 @@ func buildIndex(prev *index, f *sidecarFile) (*index, error) {
+ 	// promise that a malformed file changes nothing.
+ 	users := make([]parsedUser, 0, len(f.Users))
+ 	seen := make(map[string]bool, len(f.Users))
++	scoped := make(map[string]map[netip.Addr]string)
+ 	for _, u := range f.Users {
+ 		if u.Email == "" {
+ 			return nil, errors.New("speedlimit: entry with empty email")
+@@ -363,11 +379,26 @@ func buildIndex(prev *index, f *sidecarFile) (*index, error) {
+ 			}
+ 			p.prefixes = append(p.prefixes, pfx)
+ 		}
++		for _, binding := range u.Bindings {
++			addr, err := netip.ParseAddr(binding.IP)
++			if err != nil || binding.Tag == "" {
++				return nil, errors.New("speedlimit: invalid scoped tunnel binding")
++			}
++			addr = addr.Unmap()
++			if scoped[binding.Tag] == nil {
++				scoped[binding.Tag] = make(map[netip.Addr]string)
++			}
++			if owner := scoped[binding.Tag][addr]; owner != "" && owner != u.Email {
++				return nil, errors.New("speedlimit: duplicate scoped tunnel binding")
++			}
++			scoped[binding.Tag][addr] = u.Email
++		}
+ 		users = append(users, p)
+ 	}
+ 
+ 	// Phase 2: commit. Nothing beyond this point may fail.
+ 	idx := &index{
++		scoped:  scoped,
+ 		byEmail: make(map[string]*Limits, len(users)),
+ 		exact:   make(map[netip.Addr]string),
+ 	}
+diff --git a/common/speedlimit/speedlimit_test.go b/common/speedlimit/speedlimit_test.go
+index 715bd716..76c5a2e1 100644
+--- a/common/speedlimit/speedlimit_test.go
++++ b/common/speedlimit/speedlimit_test.go
+@@ -366,7 +366,7 @@ func TestPacingIsApproximatelyTheLimit(t *testing.T) {
+ 	w := NewWriter(context.Background(), inner, l)
+ 
+ 	// Drain the initial burst, which is free by design, then measure.
+-	if err := w.WriteMultiBuffer(makeMB(t, minBurst)); err != nil {
++	if err := w.WriteMultiBuffer(makeMB(t, l.Burst())); err != nil {
+ 		t.Fatal(err)
+ 	}
+ 	start := time.Now()
 diff --git a/common/speedlimit/threshold_regression_test.go b/common/speedlimit/threshold_regression_test.go
 new file mode 100644
-index 0000000..4444f99
+index 0000000..2e5dfde
 --- /dev/null
 +++ b/common/speedlimit/threshold_regression_test.go
-@@ -0,0 +1,54 @@
+@@ -0,0 +1,76 @@
 +package speedlimit
 +
 +import (
 +	"context"
 +	"fmt"
++	xnet "github.com/xtls/xray-core/common/net"
++	"github.com/xtls/xray-core/common/session"
 +	"testing"
 +	"time"
 +)
@@ -56,5 +184,25 @@ index 0000000..4444f99
 +				}
 +			}
 +		})
++	}
++}
++
++func TestWireguardSpeedBindingsAreScopedAndFailClosed(t *testing.T) {
++	tb, _ := newTestTable(t, `{"users":[{"email":"a","downBps":1024,"ipBindings":[{"tag":"wg-a","ip":"10.10.0.2"}]},{"email":"b","downBps":2048,"ipBindings":[{"tag":"wg-b","ip":"10.10.0.2"}]},{"email":"vpn","downBps":4096,"ips":["10.10.0.2/32"]}]}`)
++	for _, tc := range []struct{ tag, email string }{{"wg-a", "a"}, {"wg-b", "b"}, {"missing", ""}} {
++		inbound := &session.Inbound{Name: "wireguard", Tag: tc.tag, Source: xnet.TCPDestination(xnet.ParseAddress("10.10.0.2"), 1234)}
++		got := tb.lookupSession(nil, inbound)
++		if tc.email == "" {
++			if got != nil {
++				t.Fatal("WireGuard borrowed unrelated global tunnel bucket")
++			}
++		} else if got != tb.idx.byEmail[tc.email] {
++			t.Fatal("overlapping inbound selected wrong account")
++		}
++	}
++	before := tb.lookup("a", nil).Down.Limit()
++	_, err := buildIndex(tb.idx, &sidecarFile{Users: []sidecarUser{{Email: "a", DownBps: 99, Bindings: []sidecarBinding{{Tag: "wg-a", IP: "10.10.0.2"}}}, {Email: "b", Bindings: []sidecarBinding{{Tag: "wg-a", IP: "10.10.0.2"}}}}})
++	if err == nil || tb.lookup("a", nil).Down.Limit() != before {
++		t.Fatal("ambiguous binding changed live limits")
 +	}
 +}

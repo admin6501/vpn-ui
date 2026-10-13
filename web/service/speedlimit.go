@@ -65,13 +65,19 @@ import (
 // core reads an absent strategy exactly as it reads an absent ipLimit: the safe default.
 // Omitting the common value is not just brevity, it keeps the compare-then-write quiet:
 // every byte that appears in the document is a byte that can differ between ticks.
+type speedLimitBinding struct {
+	Tag string `json:"tag"`
+	IP  string `json:"ip"`
+}
+
 type speedLimitUser struct {
-	Email    string   `json:"email"`
-	DownBps  int64    `json:"downBps"`
-	UpBps    int64    `json:"upBps"`
-	IPLimit  int      `json:"ipLimit,omitempty"`
-	Strategy string   `json:"strategy,omitempty"`
-	IPs      []string `json:"ips"`
+	Bindings []speedLimitBinding `json:"ipBindings,omitempty"`
+	Email    string              `json:"email"`
+	DownBps  int64               `json:"downBps"`
+	UpBps    int64               `json:"upBps"`
+	IPLimit  int                 `json:"ipLimit,omitempty"`
+	Strategy string              `json:"strategy,omitempty"`
+	IPs      []string            `json:"ips"`
 }
 
 // speedLimitDoc is the sidecar's whole schema.
@@ -652,7 +658,14 @@ func WriteSpeedLimits() {
 		usage = loadSpeedLimitUsage()
 		ipMap = BuildVpnEmailToIPMap()
 	}
-	data, err := speedLimitDocument(policies, usage, ipMap)
+	users := computeSpeedLimits(policies, usage, ipMap)
+	if len(users) > 0 {
+		bindings := nativeWireguardSpeedBindings()
+		for i := range users {
+			users[i].Bindings = bindings[users[i].Email]
+		}
+	}
+	data, err := json.Marshal(speedLimitDoc{Users: users})
 	if err != nil {
 		logger.Warning("speed limit: marshal failed:", err)
 		return
@@ -677,18 +690,63 @@ func WriteSpeedLimits() {
 	}
 }
 
+// WireGuard tunnel addresses are scoped to inbound tags: separate listeners
+// may legitimately use identical address pools for different accounts.
+func nativeWireguardSpeedBindings() map[string][]speedLimitBinding {
+	result := make(map[string][]speedLimitBinding)
+	var inbounds []*model.Inbound
+	if database.GetDB().Where("protocol = ? AND enable = ?", model.WireGuard, true).Order("id ASC").Find(&inbounds).Error != nil {
+		return result
+	}
+	for _, inbound := range inbounds {
+		var settings struct {
+			Clients []struct {
+				Email     string   `json:"email"`
+				Addresses []string `json:"addresses"`
+			} `json:"clients"`
+		}
+		if json.Unmarshal([]byte(inbound.Settings), &settings) != nil {
+			continue
+		}
+		for _, client := range settings.Clients {
+			if client.Email == "" {
+				continue
+			}
+			for _, address := range client.Addresses {
+				ip, _, err := net.ParseCIDR(address)
+				if err != nil {
+					ip = net.ParseIP(address)
+				}
+				if ip != nil {
+					result[client.Email] = append(result[client.Email], speedLimitBinding{Tag: inbound.Tag, IP: ip.String()})
+				}
+			}
+		}
+	}
+	return result
+}
+
 func speedBucketIntroduced(old, current []byte) bool {
 	var before, after speedLimitDoc
 	if json.Unmarshal(old, &before) != nil || json.Unmarshal(current, &after) != nil {
 		return false
 	}
 	known := make(map[string]bool, len(before.Users))
+	knownBindings := make(map[string]bool)
 	for _, user := range before.Users {
 		known[user.Email] = true
+		for _, binding := range user.Bindings {
+			knownBindings[user.Email+"\x00"+binding.Tag+"\x00"+binding.IP] = true
+		}
 	}
 	for _, user := range after.Users {
 		if !known[user.Email] {
 			return true
+		}
+		for _, binding := range user.Bindings {
+			if !knownBindings[user.Email+"\x00"+binding.Tag+"\x00"+binding.IP] {
+				return true
+			}
 		}
 	}
 	return false

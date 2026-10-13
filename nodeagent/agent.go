@@ -507,6 +507,13 @@ func (a *Agent) Tick(ctx context.Context) error {
 		return service.SetNodeSetting(database.GetDB(), "nodeControlGeneration", strconv.FormatInt(snap.ControlGeneration, 10))
 	}
 	if a.runtime == nil {
+		// Update an already-installed managed Xray when the agent is upgraded.
+		// Fresh nodes and nodes where Xray was removed still install nothing.
+		if installed["xray"] {
+			if _, e = corebundle.ExtractXray(config.GetBinFolderPath()); e != nil {
+				return atSyncStage("runtime", e)
+			}
+		}
 		a.runtime = web.NewServer()
 		if e = a.runtime.StartNodeRuntime(); e != nil {
 			a.stopRuntime()

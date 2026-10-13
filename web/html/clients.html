@@ -767,20 +767,30 @@
       async getDBInbounds() {
         const msg = await HttpUtil.get('/panel/api/inbounds/list');
         if (msg.success) this.setInbounds(msg.obj || []);
-        await this.loadClients();
+        await Promise.all([this.loadClients(), this.loadOnlineState()]);
       },
       // Not called getLastOnline: that name is the mixin's per-email LOOKUP, and
       // shadowing it made every rendered row fire two requests and then format a
       // Promise as a date.
       async loadOnlineState() {
+        const generation = this._onlineStateGeneration = (this._onlineStateGeneration || 0) + 1;
         const [onlines, memberships, last] = await Promise.all([
           HttpUtil.post('/panel/api/inbounds/onlines'),
           HttpUtil.post('/panel/api/inbounds/onlineMemberships'),
           HttpUtil.post('/panel/api/inbounds/lastOnline'),
         ]);
+        if (generation !== this._onlineStateGeneration) return;
         if (onlines && onlines.success) this.onlineClients = onlines.obj || [];
         if (memberships && memberships.success) this.onlineMemberships = memberships.obj || [];
         if (last && last.success) this.lastOnlineMap = last.obj || {};
+      },
+      // Live status continues even when the operator disables full table refresh.
+      async refreshLiveState() {
+        if (this._liveStatePending) return;
+        this._liveStatePending = true;
+        try { await Promise.all([this.loadOnlineState(), this.loadClients(true)]); }
+        catch (error) { console.warn('Client live status refresh failed', error); }
+        finally { this._liveStatePending = false; }
       },
       async refreshResellerBalance() {
         if (!RESELLER.isReseller) return;
@@ -836,15 +846,21 @@
           if (msg && msg.success) { this.ownerTransfer.visible = false; await this.loadClients(); }
         } finally { this.ownerTransfer.loading = false; }
       },
-      async loadClients() {
+      async loadClients(liveOnly = false) {
+        const generation = this._clientLoadGeneration = (this._clientLoadGeneration || 0) + (liveOnly ? 0 : 1);
+        const countGeneration = this._clientCountGeneration = (this._clientCountGeneration || 0) + 1;
         const q = `?page=${this.pagination.current}&size=${this.pagination.pageSize}`
           + `&search=${encodeURIComponent(this.search || '')}`
           + `&sort=${encodeURIComponent(this.sortKey)}`;
         const msg = await HttpUtil.get('/panel/api/clients/list' + q);
-        if (!msg || !msg.success) return;
-        this.canTransferOwnership = !!(msg.obj && msg.obj.canTransferOwnership);
-        this.clients = (msg.obj && msg.obj.rows) || [];
-        this.clientCounts = { online: msg.obj.online || 0, enabled: msg.obj.enabled || 0, disabled: msg.obj.disabled || 0 };
+        if (!msg || !msg.success || !msg.obj || generation !== this._clientLoadGeneration) return;
+        if (countGeneration === this._clientCountGeneration) {
+          this.clientCounts = { online: msg.obj.online || 0, enabled: msg.obj.enabled || 0, disabled: msg.obj.disabled || 0 };
+        }
+        // Keep rows, selection and ordering stable when full table refresh is off.
+        if (liveOnly) return;
+        this.canTransferOwnership = !!msg.obj.canTransferOwnership;
+        this.clients = msg.obj.rows || [];
         this.pagination.total = (msg.obj && msg.obj.total) || 0;
         // Taken from the ANSWER, not from what was asked. The server falls back to
         // newest for an ordering it does not know, and a stale key left in this
@@ -889,7 +905,7 @@
       },
       async reload(showSpin) {
         if (showSpin) this.spinning = true;
-        await Promise.all([this.getDBInbounds(), this.loadOnlineState(), this.loadAssignable()]);
+        await Promise.all([this.getDBInbounds(), this.loadAssignable()]);
         this.spinning = false;
       },
 
@@ -1307,10 +1323,15 @@
       },
     },
     async mounted() {
-      await this.getDefaultSettings();
-      await this.reload(true);
+      this.liveStateTimer = setInterval(() => this.refreshLiveState(), 10000);
+      try {
+        await this.getDefaultSettings();
+        await this.reload(true);
+      } catch (error) { console.warn('Client initial refresh failed', error); }
+      finally { this.spinning = false; }
       if (this.isRefreshEnabled) this.startDataRefreshLoop();
     },
+    beforeDestroy() { clearInterval(this.liveStateTimer); },
   });
 </script>
 {{ template "page/body_end" .}}

@@ -1816,36 +1816,6 @@ func BuildVpnEmailToIPMap() map[string][]string {
 		}
 	}
 
-	// Xray-native WireGuard dispatches decrypted traffic without an email.
-	// Its stable per-client tunnel addresses resolve the shared speed bucket.
-	var nativeWG []*model.Inbound
-	db.Where("protocol = ? AND enable = ?", model.WireGuard, true).Find(&nativeWG)
-	for _, inbound := range nativeWG {
-		var settings struct {
-			Clients []struct {
-				Email     string   `json:"email"`
-				Addresses []string `json:"addresses"`
-			} `json:"clients"`
-		}
-		if json.Unmarshal([]byte(inbound.Settings), &settings) != nil {
-			continue
-		}
-		for _, client := range settings.Clients {
-			if client.Email == "" {
-				continue
-			}
-			for _, address := range client.Addresses {
-				ip, _, err := net.ParseCIDR(address)
-				if err != nil {
-					ip = net.ParseIP(address)
-				}
-				if ip != nil {
-					result[client.Email] = append(result[client.Email], ip.String())
-				}
-			}
-		}
-	}
-
 	// --- OpenVPN: one deterministic CCD IP per enabled transport block ---
 	var ovpnInbounds []*model.Inbound
 	db.Where("protocol = ? AND enable = ?", "openvpn", true).Find(&ovpnInbounds)

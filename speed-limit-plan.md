@@ -16,14 +16,15 @@ Download and upload have independent shared account buckets, with KB/s, MB/s and
 selectors. A client override replaces its inbound default; the most restrictive non-zero
 resolved rate across enabled memberships wins. TCP and UDP use the dispatcher pacing paths,
 including VLESS/Vision, VMess, Trojan, Shadowsocks, Hysteria2, TUIC, AnyTLS, Naive and native
-WireGuard. Native WireGuard is identified by its assigned tunnel host addresses.
+WireGuard. Native WireGuard is identified by inbound tag and assigned tunnel host
+addresses, so overlapping pools on different listeners cannot select another account.
 
 Accounts configured with a future consumption threshold keep unlimited buckets before the
 threshold. Crossing it, resetting period traffic and crossing it again re-rate the same live
 buckets. New bucket activation needs one debounced Xray admission refresh so already-open
 unlimited sessions cannot bypass it; this can briefly reconnect Xray clients. Ordinary rate
 changes and threshold crossings do not restart the core. Unconfigured unlimited accounts
-keep the existing native copy path. Token buckets permit a short initial burst and measure
+keep the existing native copy path. Token buckets permit a one-second initial burst (4 KB minimum) and measure
 payload bytes rather than encrypted wire overhead.
 
 On nodes, speed thresholds use central period usage from authenticated snapshots. Cumulative

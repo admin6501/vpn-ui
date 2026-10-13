@@ -1,9 +1,11 @@
 package service
 
 import (
+	"encoding/json"
 	"github.com/mhsanaei/3x-ui/v2/database"
 	"github.com/mhsanaei/3x-ui/v2/database/model"
 	"github.com/mhsanaei/3x-ui/v2/xray"
+	"os"
 	"testing"
 	"time"
 )
@@ -68,17 +70,45 @@ func TestResetRestoresAllEligibleMemberships(t *testing.T) {
 
 func TestSpeedLimitNativeWireguardAddressIdentity(t *testing.T) {
 	path := newLimiterSidecar(t)
-	ib := seedInboundWithClients(t, model.WireGuard, 47113, []map[string]any{{"email": "wg-speed", "enable": true, "addresses": []string{"10.99.0.2/24"}, "speedLimitDown": 128, "speedLimitUp": 64}})
-	_ = ib
-	WriteSpeedLimits()
-	_ = path
-	ips := BuildVpnEmailToIPMap()["wg-speed"]
-	if len(ips) != 1 || ips[0] != "10.99.0.2" {
-		t.Fatalf("wrong peer identity: %v", ips)
+	a := seedInboundWithClients(t, model.WireGuard, 47113, []map[string]any{{"email": "wg-speed-a", "enable": true, "addresses": []string{"10.99.0.2/24"}, "speedLimitDown": 128, "speedLimitUp": 64}})
+	a.Tag += "-a"
+	if err := database.GetDB().Model(a).Update("tag", a.Tag).Error; err != nil {
+		t.Fatal(err)
 	}
-	users := computeSpeedLimits(loadSpeedLimitPolicies(), nil, BuildVpnEmailToIPMap())
-	if len(users) != 1 || users[0].DownBps != 128*1024 || users[0].UpBps != 64*1024 || len(users[0].IPs) != 1 || users[0].IPs[0] != "10.99.0.2/32" {
-		t.Fatalf("wrong peer limit: %+v", users)
+	b := seedInboundWithClients(t, model.WireGuard, 47114, []map[string]any{{"email": "wg-speed-b", "enable": true, "addresses": []string{"10.99.0.2/24"}, "speedLimitDown": 256, "speedLimitUp": 32}})
+	WriteSpeedLimits()
+	if len(BuildVpnEmailToIPMap()["wg-speed-a"]) != 0 {
+		t.Fatal("native WireGuard leaked into ambiguous global tunnel routing")
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc speedLimitDoc
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		t.Fatal(err)
+	}
+	if len(doc.Users) != 2 {
+		t.Fatalf("missing WireGuard limits: %+v", doc)
+	}
+	for _, pair := range []struct {
+		email    string
+		tag      string
+		down, up int64
+	}{{"wg-speed-a", a.Tag, 128 * 1024, 64 * 1024}, {"wg-speed-b", b.Tag, 256 * 1024, 32 * 1024}} {
+		var found bool
+		for _, user := range doc.Users {
+			if user.Email != pair.email {
+				continue
+			}
+			found = true
+			if user.DownBps != pair.down || user.UpBps != pair.up || len(user.IPs) != 0 || len(user.Bindings) != 1 || user.Bindings[0].Tag != pair.tag || user.Bindings[0].IP != "10.99.0.2" {
+				t.Fatalf("wrong scoped peer limit: %+v", user)
+			}
+		}
+		if !found {
+			t.Fatal("missing peer", pair.email)
+		}
 	}
 }
 

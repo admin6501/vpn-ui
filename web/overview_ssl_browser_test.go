@@ -40,7 +40,7 @@ func TestOverviewSSLBrowserRuntime(t *testing.T) {
 			}
 			data := map[string]any{"base_path": "/test/", "title": "menu.settings", "perms": map[string]bool{"superAdmin": true, "accessOverview": true, "accessInbounds": true, "accessCoreSettings": true, "panelSettings": true}}
 			pages := map[string][]byte{}
-			for _, name := range []string{"index.html", "settings.html", "clients.html"} {
+			for _, name := range []string{"index.html", "settings.html", "clients.html", "inbounds.html"} {
 				var out bytes.Buffer
 				if err := tpl.ExecuteTemplate(&out, name, data); err != nil {
 					t.Fatal(err)
@@ -57,6 +57,9 @@ func TestOverviewSSLBrowserRuntime(t *testing.T) {
 				case r.URL.Path == "/test/panel/clients":
 					w.Header().Set("Content-Type", "text/html")
 					w.Write(pages["clients.html"])
+				case r.URL.Path == "/test/panel/inbounds":
+					w.Header().Set("Content-Type", "text/html")
+					w.Write(pages["inbounds.html"])
 				case r.URL.Path == "/test/panel/settings":
 					w.Header().Set("Content-Type", "text/html")
 					w.Write(pages["settings.html"])
@@ -67,7 +70,7 @@ func TestOverviewSSLBrowserRuntime(t *testing.T) {
 			}))
 			defer server.Close()
 			script, _ := filepath.Abs("../test_unit/overview_ssl_browser_test.cjs")
-			ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+			ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 			defer cancel()
 			cmd := exec.CommandContext(ctx, "node", script)
 			cmd.Env = append(os.Environ(), "OVERVIEW_SSL_URL="+server.URL+"/test/panel/", "NODE_UI_LANG="+lang)
@@ -76,6 +79,15 @@ func TestOverviewSSLBrowserRuntime(t *testing.T) {
 			} else {
 				t.Log(string(out))
 			}
+			liveScript, _ := filepath.Abs("../test_unit/live_status_browser_test.cjs")
+			liveCmd := exec.CommandContext(ctx, "node", liveScript)
+			liveCmd.Env = cmd.Env
+			if out, err := liveCmd.CombinedOutput(); err != nil {
+				t.Fatalf("live status browser failed: %v\n%s", err, out)
+			} else {
+				t.Log(string(out))
+			}
+
 		})
 	}
 }
