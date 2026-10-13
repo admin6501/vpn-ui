@@ -44,6 +44,9 @@ func ApplyNodeSnapshot(snap *nodewire.Snapshot, installed map[string]bool) (stri
 	if snap.Version != nodewire.Version || snap.NodeID <= 0 || snap.LeaseSeconds != nodewire.LeaseSeconds {
 		return "", errors.New("Incompatible node protocol")
 	}
+	if err := validateNodeInboundIdentities(snap.Inbounds); err != nil {
+		return "", err
+	}
 	if len(snap.Files) > 1000 {
 		return "", errors.New("Too many certificate files")
 	}
@@ -100,6 +103,9 @@ func ApplyNodeSnapshot(snap *nodewire.Snapshot, installed map[string]bool) (stri
 	digest := sha256.Sum256(raw)
 	revision := hex.EncodeToString(digest[:])
 	e := database.GetDB().Transaction(func(tx *gorm.DB) error {
+		if err := reserveNodeInboundTags(tx, snap.Inbounds); err != nil {
+			return err
+		}
 		if e := tx.Model(&model.Inbound{}).Where("1 = 1").Update("enable", false).Error; e != nil {
 			return e
 		}

@@ -3,6 +3,7 @@ package nodeagent
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -31,6 +32,7 @@ import (
 	"github.com/mhsanaei/3x-ui/v2/xray"
 	"github.com/op/go-logging"
 	"golang.org/x/net/proxy"
+	"gorm.io/gorm"
 )
 
 func TestNodeProcessHelper(t *testing.T) {
@@ -374,6 +376,58 @@ func TestNodeRealDataPlane(t *testing.T) {
 		t.Fatal(err)
 	}
 	waitNode(t, 15*time.Second, "removed RADIUS can be reinstalled", func() bool { return radiusBound() && listener() })
+
+	// A deleted inbound's local meter remains, but its tag must not block a new
+	// centrally assigned ID. Exercise the same reuse with a live Xray client.
+	workerDB, err := sql.Open("sqlite3", filepath.Join(folder, "vpn-ui.db")+"?_busy_timeout=3000")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer workerDB.Close()
+	retiredID := in.Id
+	var oldUp, oldDown int64
+	if err := workerDB.QueryRow("SELECT up,down FROM inbounds WHERE id = ?", retiredID).Scan(&oldUp, &oldDown); err != nil {
+		t.Fatal(err)
+	}
+	replacement := in
+	replacement.Id = 0
+	replacement.Up, replacement.Down, replacement.AllTime = 0, 0, 0
+	if err := db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("inbound_id = ?", retiredID).Delete(&model.AccountInbound{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Delete(&model.Inbound{}, retiredID).Error; err != nil {
+			return err
+		}
+		return tx.Create(&replacement).Error
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := (&service.AccountService{}).ApplyMemberships(email, []int{replacement.Id}, nil, true); err != nil {
+		t.Fatal(err)
+	}
+	waitNode(t, 25*time.Second, "reused inbound tag synchronizes without losing retired meter", func() bool {
+		var oldTag, newTag string
+		var enabled bool
+		var up, down int64
+		if workerDB.QueryRow("SELECT tag,enable,up,down FROM inbounds WHERE id = ?", retiredID).Scan(&oldTag, &enabled, &up, &down) != nil {
+			return false
+		}
+		if workerDB.QueryRow("SELECT tag FROM inbounds WHERE id = ?", replacement.Id).Scan(&newTag) != nil {
+			return false
+		}
+		return !enabled && oldTag != newTag && newTag == replacement.Tag && up >= oldUp && down >= oldDown && listener()
+	})
+	response, err = httpClient.Get(target.URL)
+	if err != nil {
+		t.Fatal("VPN traffic failed after tag reuse", err)
+	}
+	transferred, err := io.Copy(io.Discard, response.Body)
+	response.Body.Close()
+	if err != nil || transferred != 256*1024 {
+		t.Fatal("VPN payload lost after tag reuse", transferred, err)
+	}
+	in = replacement // Later removal/reinstall assertions target the current ID.
 
 	// A real network outage exercises the complete 90-second admission lease.
 	unreachable.Store(true)

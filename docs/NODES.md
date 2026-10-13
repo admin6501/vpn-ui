@@ -178,3 +178,20 @@ lease continue during background removal. If an inbound/client update fails,
 inspect the local node journal: `journalctl -u vpn-ui-node -n 100 --no-pager`.
 The central report distinguishes connection, snapshot and core-start failures
 and does not include configuration bodies or credentials.
+
+### Reused inbound tags and report conflicts
+
+The agent retains inactive inbound rows to preserve final cumulative meters.
+When a new central inbound reuses an old tag, synchronization now releases that
+tag from the retired local row inside the snapshot transaction. It keeps the
+central routing tag, inbound IDs, client credentials and counters intact, and
+also supports tag swaps between existing IDs. Updating the existing agent repairs
+this conflict on its next valid snapshot; its database/configuration are retained.
+
+The central panel records counter identities when issuing their scoped snapshot,
+so removing an assignment before its first report does not reject its final meter.
+Legacy unknown zero counters are ignored without granting permission for later
+positive counters. Foreign positive usage and counter regression remain rejected.
+The journal distinguishes HTTP 409 codes `counter_out_of_scope`,
+`counter_regressed`, `sequence_gap` and `invalid_report`. Update both the panel
+and agent for these diagnostics and counter-history handling.

@@ -21,6 +21,7 @@ import (
 	"github.com/mhsanaei/3x-ui/v2/nodewire"
 	"github.com/mhsanaei/3x-ui/v2/xray"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type NodeService struct{}
@@ -288,6 +289,17 @@ func (s *NodeService) Snapshot(id int) (*nodewire.Snapshot, error) {
 			return nil, e
 		}
 	}
+	// Authorize retained meters when issuing their scoped assignment, rather
+	// than waiting for the first report (the assignment can be removed meanwhile).
+	if len(ids) > 0 {
+		cursors := make([]model.NodeCounter, 0, len(ids))
+		for _, inboundID := range ids {
+			cursors = append(cursors, model.NodeCounter{NodeID: id, Kind: "inbound", InboundID: inboundID})
+		}
+		if err := db.Clauses(clause.OnConflict{DoNothing: true}).CreateInBatches(cursors, 100).Error; err != nil {
+			return nil, err
+		}
+	}
 	if len(ids) == 0 {
 		return snap, nil
 	}
@@ -346,6 +358,18 @@ func (s *NodeService) Snapshot(id int) (*nodewire.Snapshot, error) {
 		}
 		allowed := exists && a.Enable && t.Enable && !a.RepresentativeBlocked && (a.ExpiryTime <= 0 || a.ExpiryTime > now) && (remaining != 0)
 		snap.Accounts = append(snap.Accounts, nodewire.Account{Account: a, ProtocolCredentials: a.ProtocolCredentials, Remaining: remaining, ReportedUsage: reported[a.Id], Allowed: allowed})
+	}
+	cursors := []model.NodeCounter{}
+	for _, a := range snap.Accounts {
+		cursors = append(cursors, model.NodeCounter{NodeID: id, Kind: "account", AccountID: a.Account.Id})
+	}
+	for _, m := range snap.Memberships {
+		cursors = append(cursors, model.NodeCounter{NodeID: id, Kind: "membership", AccountID: m.AccountId, InboundID: m.InboundId})
+	}
+	if len(cursors) > 0 {
+		if err := db.Clauses(clause.OnConflict{DoNothing: true}).CreateInBatches(cursors, 100).Error; err != nil {
+			return nil, err
+		}
 	}
 	return snap, nil
 }
@@ -418,7 +442,7 @@ func (s *NodeService) AcceptReport(id int, report nodewire.Report) error {
 			return nil
 		}
 		if report.Sequence != n.LastSequence+1 {
-			return errors.New("Unexpected report sequence; preserve the agent state")
+			return &nodeReportConflict{code: "sequence_gap", message: "Unexpected report sequence; preserve the agent state"}
 		}
 		var inbounds []model.Inbound
 		if e := tx.Where("node_id = ?", id).Find(&inbounds).Error; e != nil {
@@ -479,10 +503,16 @@ func (s *NodeService) AcceptReport(id int, report nodewire.Report) error {
 			// Removed assignments may finish reporting their final retained counters;
 			// only an already accepted identity can use that path.
 			if !scoped && !known {
-				return errors.New("Counter is outside this node's assignments")
+				// Legacy inactive tombstones can have no accepted cursor. A zero
+				// record carries no bill: ignore it without authorizing its ID.
+				// A later positive foreign counter must still be rejected.
+				if record.Up == 0 && record.Down == 0 {
+					continue
+				}
+				return &nodeReportConflict{code: "counter_out_of_scope", message: "Counter is outside this node's assignments"}
 			}
 			if record.Up < cursor.Up || record.Down < cursor.Down {
-				return errors.New("Counter moved backwards; re-pair a reinstalled node")
+				return &nodeReportConflict{code: "counter_regressed", message: "Counter moved backwards; re-pair a reinstalled node"}
 			}
 			up, down := record.Up-cursor.Up, record.Down-cursor.Down
 			if record.Kind == "account" && (up > 0 || down > 0) {

@@ -47,6 +47,12 @@ func TestNodeAgentHTTPAuthenticationAndScope(t *testing.T) {
 		if w.Code != tc.status {
 			t.Fatalf("status=%d want=%d", w.Code, tc.status)
 		}
+		if tc.status == 409 && (w.Header().Get("X-VPN-UI-Node-Error") != "sequence_gap" || w.Body.Len() != 0) {
+			t.Fatal("conflict diagnostic missing or raw error exposed")
+		}
+		if tc.status == 403 && w.Header().Get("X-VPN-UI-Node-Error") != "" {
+			t.Fatal("conflict diagnostics exposed before authentication")
+		}
 	}
 }
 func TestNodeAdministrationRejectsRepresentative(t *testing.T) {

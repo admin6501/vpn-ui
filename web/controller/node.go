@@ -57,6 +57,7 @@ func RegisterNodeAgentRoutes(g *gin.RouterGroup) {
 			return
 		}
 		if e = svc.AcceptReport(id, report); e != nil {
+			c.Header("X-VPN-UI-Node-Error", service.NodeReportConflictCode(e))
 			c.AbortWithStatus(409)
 			return
 		}

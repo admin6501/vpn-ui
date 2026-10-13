@@ -110,6 +110,12 @@ func exchange(ctx context.Context, client *http.Client, c Config, path string, i
 	defer response.Body.Close()
 	if response.StatusCode != http.StatusOK {
 		io.Copy(io.Discard, io.LimitReader(response.Body, 4096))
+		if response.StatusCode == http.StatusConflict {
+			switch code := response.Header.Get("X-VPN-UI-Node-Error"); code {
+			case "sequence_gap", "counter_out_of_scope", "counter_regressed", "invalid_report":
+				return fmt.Errorf("Panel returned HTTP 409 (%s)", code)
+			}
+		}
 		return fmt.Errorf("Panel returned HTTP %d", response.StatusCode)
 	}
 	return json.NewDecoder(io.LimitReader(response.Body, 64<<20)).Decode(output)
