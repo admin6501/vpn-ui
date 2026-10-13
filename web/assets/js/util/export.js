@@ -7,6 +7,18 @@
 // protocols (L2TP/PPTP/OpenVPN/OpenConnect/SSTP/IKEv2) have no importable payload, so
 // they render server/port/user/pass without a QR.
 const AccountExport = {
+  ovpnTransports(record) {
+    if (!record || record.protocol !== Protocols.OPENVPN) return [];
+    const settings = record.toInbound().settings;
+    return ['udp', 'tcp'].filter(proto => settings[proto + 'Enable']);
+  },
+
+  downloadOvpn(record, proto) {
+    if (!this.ovpnTransports(record).includes(proto)) return;
+    const base = (typeof basePath !== 'undefined' ? basePath : '').replace(/\/$/, '');
+    window.open(base + '/panel/api/inbounds/' + encodeURIComponent(record.id) + '/ovpn/' + proto, '_blank', 'noopener');
+  },
+
   // --- data ------------------------------------------------------------------
 
   // buildCards turns [{inboundId, email}] targets into renderable card objects,

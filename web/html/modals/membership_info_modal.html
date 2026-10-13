@@ -46,6 +46,12 @@
     </div>
 
     <a-spin :spinning="membershipInfoModal.loading">
+<div class="ai-btns" v-if="ovpnTransports(record).length">
+  <a-button v-for="transport in ovpnTransports(record)" :key="transport"
+    icon="download" @click="downloadOvpn(record, transport)">
+    {{ i18n "download" }} .ovpn ([[ transport.toUpperCase() ]])
+  </a-button>
+</div>
       <!-- What the customer installs, first and largest. -->
       <div v-if="!cards.length && !membershipInfoModal.loading" class="ai-none">
         {{ i18n "pages.clients.nothingToHandOver" }}
@@ -201,6 +207,8 @@
       },
     },
     methods: {
+      ovpnTransports(record) { return AccountExport.ovpnTransports(record); },
+      downloadOvpn(record, proto) { AccountExport.downloadOvpn(record, proto); },
       async refreshOnline() {
         if (!this.app || this._onlinePending) return;
         this._onlinePending = true;

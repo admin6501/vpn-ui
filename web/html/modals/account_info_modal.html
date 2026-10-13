@@ -144,6 +144,12 @@
 
         <div class="ai-item-b" v-if="accountInfoModal.open === m.record.id">
           <a-spin :spinning="!!accountInfoModal.loading[m.record.id]">
+<div class="ai-btns" v-if="ovpnTransports(m.record).length">
+  <a-button v-for="transport in ovpnTransports(m.record)" :key="transport"
+    icon="download" @click="downloadOvpn(m.record, transport)">
+    {{ i18n "download" }} .ovpn ([[ transport.toUpperCase() ]])
+  </a-button>
+</div>
             <div v-if="cardsFor(m.record.id).length === 0 && !accountInfoModal.loading[m.record.id]"
               class="ai-none">{{ i18n "pages.clients.nothingToHandOver" }}</div>
 
@@ -381,6 +387,8 @@
       },
     },
     methods: {
+      ovpnTransports(record) { return AccountExport.ovpnTransports(record); },
+      downloadOvpn(record, proto) { AccountExport.downloadOvpn(record, proto); },
       async refreshOnline() {
         if (!this.app || this._onlinePending) return;
         this._onlinePending = true;
