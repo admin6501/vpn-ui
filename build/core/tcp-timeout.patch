@@ -72,3 +72,107 @@ index 0000000..d8c5929
 +		}
 +	}
 +}
+diff --git a/transport/internet/system_listener.go b/transport/internet/system_listener.go
+index 1999953e..bc50d2cb 100644
+--- a/transport/internet/system_listener.go
++++ b/transport/internet/system_listener.go
+@@ -87,6 +87,8 @@ func (dl *DefaultListener) Listen(ctx context.Context, addr net.Addr, sockopt *S
+ 		network = addr.Network()
+ 		address = addr.String()
+ 		lc.Control = getControlFunc(ctx, sockopt, dl.controllers)
++		// Go defaults to MPTCP listeners; honor the explicit Xray setting.
++		lc.SetMultipathTCP(sockopt != nil && sockopt.TcpMptcp)
+ 		// default disable keepalive
+ 		lc.KeepAlive = -1
+ 		if sockopt != nil {
+@@ -107,9 +109,6 @@ func (dl *DefaultListener) Listen(ctx context.Context, addr net.Addr, sockopt *S
+ 				lc.KeepAliveConfig.Enable = true
+ 				lc.KeepAliveConfig.Interval = time.Duration(sockopt.TcpKeepAliveInterval) * time.Second
+ 			}
+-			if sockopt.TcpMptcp {
+-				lc.SetMultipathTCP(true)
+-			}
+ 		}
+ 	case *net.UnixAddr:
+ 		lc.Control = nil
+diff --git a/transport/internet/listener_tproxy_regression_test.go b/transport/internet/listener_tproxy_regression_test.go
+new file mode 100644
+--- /dev/null
++++ b/transport/internet/listener_tproxy_regression_test.go
+@@ -0,0 +1,76 @@
++//go:build linux
++
++package internet
++
++import (
++	"context"
++	"github.com/xtls/xray-core/common/net"
++	"golang.org/x/sys/unix"
++	"os"
++	"syscall"
++	"testing"
++)
++
++func TestListenerExplicitTCPDespiteGoMPTCPDefault(t *testing.T) {
++	t.Setenv("GODEBUG", "multipathtcp=1")
++	for _, configured := range []bool{false, true} {
++		var opts *SocketConfig
++		if configured {
++			opts = &SocketConfig{TcpKeepAliveIdle: 60, TcpKeepAliveInterval: 15, TcpUserTimeout: 120000}
++		}
++		l, err := (&DefaultListener{}).Listen(context.Background(), &net.TCPAddr{IP: net.ParseIP("127.0.0.1")}, opts)
++		if err != nil {
++			t.Fatal(err)
++		}
++		raw, err := l.(*net.TCPListener).SyscallConn()
++		if err != nil {
++			l.Close()
++			t.Fatal(err)
++		}
++		var protocol int
++		var optionErr error
++		err = raw.Control(func(fd uintptr) { protocol, optionErr = unix.GetsockoptInt(int(fd), unix.SOL_SOCKET, unix.SO_PROTOCOL) })
++		l.Close()
++		if err != nil || optionErr != nil {
++			t.Fatalf("socket inspection: %v %v", err, optionErr)
++		}
++		if protocol != syscall.IPPROTO_TCP {
++			t.Fatalf("unrequested MPTCP protocol: %d", protocol)
++		}
++	}
++}
++func TestListenerTPROXYSurvivesGoMPTCPDefault(t *testing.T) {
++	if os.Geteuid() != 0 {
++		t.Skip("root required for transparent socket and mark")
++	}
++	t.Setenv("GODEBUG", "multipathtcp=1")
++	opts := &SocketConfig{Mark: 255, Tproxy: SocketConfig_TProxy, TcpKeepAliveIdle: 60, TcpKeepAliveInterval: 15, TcpUserTimeout: 120000}
++	l, err := (&DefaultListener{}).Listen(context.Background(), &net.TCPAddr{IP: net.ParseIP("127.0.0.1")}, opts)
++	if err != nil {
++		t.Fatal(err)
++	}
++	defer l.Close()
++	raw, err := l.(*net.TCPListener).SyscallConn()
++	if err != nil {
++		t.Fatal(err)
++	}
++	var transparent, mark, interval int
++	var optionErr error
++	err = raw.Control(func(fd uintptr) {
++		transparent, optionErr = unix.GetsockoptInt(int(fd), unix.SOL_IP, unix.IP_TRANSPARENT)
++		if optionErr != nil {
++			return
++		}
++		mark, optionErr = unix.GetsockoptInt(int(fd), unix.SOL_SOCKET, unix.SO_MARK)
++		if optionErr != nil {
++			return
++		}
++		interval, optionErr = unix.GetsockoptInt(int(fd), unix.IPPROTO_TCP, unix.TCP_KEEPINTVL)
++	})
++	if err != nil || optionErr != nil {
++		t.Fatalf("socket inspection: %v %v", err, optionErr)
++	}
++	if transparent != 1 || mark != 255 || interval != 15 {
++		t.Fatalf("incomplete TPROXY: transparent=%d mark=%d interval=%d", transparent, mark, interval)
++	}
++}
