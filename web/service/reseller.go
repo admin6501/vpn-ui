@@ -591,7 +591,7 @@ func applyToSettings(data *model.Inbound, q ChargeQuote,
 // Returns an inactive ticket for an admin or super admin: they have no balance,
 // so there is nothing to price and nothing to roll back.
 func (s *ResellerService) PrepareClientCreate(user *model.User, data *model.Inbound) (ChargeTicket, error) {
-	if user == nil || (!user.IsReseller && (user.RepresentativeRoleID == 0 || user.IsSuperAdmin)) {
+	if !user.IsRepresentativeAccount() {
 		return ChargeTicket{}, nil
 	}
 	profile, err := s.ProfileFor(user.Id)

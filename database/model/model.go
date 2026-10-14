@@ -840,3 +840,12 @@ func (u *User) EffectivePermissions() Permission {
 	}
 	return u.Permissions
 }
+
+// IsRepresentativeAccount follows the same identity precedence as Can. Imported
+// owners and administrators may retain a PasarGuard representative role ID.
+func (u *User) IsRepresentativeAccount() bool {
+	if u == nil || u.IsPanelOwner || u.IsSuperAdmin {
+		return false
+	}
+	return u.IsReseller || (u.RepresentativeRoleID > 0 && u.AdminRoleID == 0)
+}

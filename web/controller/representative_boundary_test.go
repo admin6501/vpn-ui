@@ -112,3 +112,35 @@ func TestRepresentativeClientReadModelRedactsServerSecrets(t *testing.T) {
 		t.Fatal("redaction changed stored server configuration")
 	}
 }
+
+func TestRepresentativeBoundaryPreservesAdministratorAccess(t *testing.T) {
+	f := newIdorFixture(t)
+	for _, kind := range []string{"ordinary", "imported-super", "imported-owner", "delegated-role"} {
+		t.Run(kind, func(t *testing.T) {
+			admin := *f.ali
+			switch kind {
+			case "imported-super":
+				admin.IsSuperAdmin = true
+				admin.RepresentativeRoleID = 42
+			case "imported-owner":
+				admin.IsPanelOwner = true
+				admin.RepresentativeRoleID = 42
+			case "delegated-role":
+				admin.AdminRoleID = 9
+				admin.AdminRole = &model.AdminRole{ID: 9, Permissions: admin.Permissions}
+				admin.RepresentativeRoleID = 42
+			}
+			if isRepresentative(&admin) {
+				t.Fatal("administrator was classified as representative")
+			}
+			perms := templatePerms(permCtx(&admin))
+			if !perms["accessInboundManagement"] || !perms["checkUpdates"] || templateReseller(permCtx(&admin))["isReseller"] != false {
+				t.Fatal("administrator UI controls were hidden")
+			}
+			w := f.as(t, &admin, "GET", "/panel/api/inbounds/list", "")
+			if strings.Contains(w.Body.String(), "pages.admins.forbidden") || !strings.Contains(w.Body.String(), f.aliEmail) {
+				t.Fatalf("administrator lost inbound API access: %s", w.Body.String())
+			}
+		})
+	}
+}

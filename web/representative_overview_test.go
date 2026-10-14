@@ -60,3 +60,23 @@ func TestRepresentativeOverviewHidesInboundManagementAndUpdates(t *testing.T) {
 	}
 
 }
+
+func TestAdministratorSidebarKeepsGrantedInbounds(t *testing.T) {
+	tpl, err := (&Server{}).getHtmlTemplate(template.FuncMap{"i18n": func(key string, args ...string) (string, error) { return key, nil }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Render with the established capability map as well as the new map. A missing
+	// optional UI flag must not hide a granted administrator navigation entry.
+	for _, granted := range []bool{false, true} {
+		var page bytes.Buffer
+		data := map[string]any{"base_path": "/test/", "title": "menu.dashboard", "perms": map[string]bool{"accessInbounds": granted}, "reseller": map[string]any{"isReseller": false}}
+		if err = tpl.ExecuteTemplate(&page, "index.html", data); err != nil {
+			t.Fatal(err)
+		}
+		body := strings.ReplaceAll(page.String(), `\/`, `/`)
+		if strings.Contains(body, "key: '/test/panel/inbounds'") != granted {
+			t.Fatalf("admin sidebar did not honor inbound permission=%v", granted)
+		}
+	}
+}

@@ -44,11 +44,11 @@ jobs:
           node test_unit/client_details_2fa_test.cjs
           node test_unit/export_test/export.test.js
           node test_unit/inbound_speed_units_test.cjs
-          go test ./web -run TestRepresentativeOverview -count=1
+          go test ./web -run 'TestRepresentativeOverview|TestAdministratorSidebar' -count=1
       - name: Verify authentication, sessions, origins and private backups
         run: go test -race ./database ./web/session ./web/middleware ./web/controller ./web/service -run '^TestSecurity' -count=1
       - name: Verify administrator, representative and node access boundaries
-        run: go test ./web/controller ./web/service ./web ./nodeagent -run 'TestCrossAdminIsolation|TestResellerIsolation|TestRepresentativeInbound|TestRepresentativeUpdate|TestRepresentativeClientRead|TestPasarGuardReadAllDoesNotWidenOwnWrite|TestPasarGuardMissingResetPermission|TestNodeAgentHTTPAuthenticationAndScope|TestNodeAdministrationRejectsRepresentative|TestNodeManagement|TestRepresentativeRoleWritesDeny|TestMigratedGlobalTwoFactorSecretIsNotServed' -count=1
+        run: go test ./web/controller ./web/service ./web ./nodeagent -run 'TestCrossAdminIsolation|TestResellerIsolation|TestRepresentativeInbound|TestRepresentativeBoundaryPreservesAdministratorAccess|TestRepresentativeUpdate|TestRepresentativeClientRead|TestPasarGuardReadAllDoesNotWidenOwnWrite|TestPasarGuardMissingResetPermission|TestNodeAgentHTTPAuthenticationAndScope|TestNodeAdministrationRejectsRepresentative|TestNodeManagement|TestRepresentativeRoleWritesDeny|TestMigratedGlobalTwoFactorSecretIsNotServed' -count=1
       - name: Verify bounded QUIC trailer decoding
         working-directory: third_party/quic-go
         run: go test ./http3 -run TestResponseTrailer -count=1

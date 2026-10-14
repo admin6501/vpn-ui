@@ -144,7 +144,7 @@ func overviewAccess(user *model.User) bool {
 	if user == nil {
 		return false
 	}
-	if user.RepresentativeRoleID > 0 {
+	if user.RepresentativeRoleID > 0 && isRepresentative(user) {
 		return user.Can(model.PermAccessOverview)
 	}
 	if user.IsReseller {
@@ -177,7 +177,7 @@ func overviewManage(user *model.User) bool {
 	if user == nil {
 		return false
 	}
-	if user.RepresentativeRoleID > 0 {
+	if user.RepresentativeRoleID > 0 && isRepresentative(user) {
 		return user.IsSuperAdmin
 	}
 	if user.IsReseller {
@@ -281,7 +281,7 @@ func requirePerm(perm model.Permission) gin.HandlerFunc {
 		}
 		resetAction := strings.Contains(c.FullPath(), "resetClientTraffic") || strings.Contains(c.FullPath(), "resetAll")
 		allowed := user.Can(perm)
-		if resetAction && user.RepresentativeRoleID > 0 && !user.IsSuperAdmin {
+		if resetAction && user.RepresentativeRoleID > 0 && isRepresentative(user) {
 			allowed = user.RepresentativeRole != nil && user.RepresentativeRole.Policy().Allows("users", "reset_usage", user.RepresentativeLimited, user.Id, user.Id)
 		}
 		if !allowed {
@@ -292,7 +292,7 @@ func requirePerm(perm model.Permission) gin.HandlerFunc {
 			deny(c, http.StatusForbidden, "pages.admins.forbidden", landingPath(c))
 			return
 		}
-		if user.RepresentativeRoleID > 0 && !user.IsSuperAdmin {
+		if user.RepresentativeRoleID > 0 && isRepresentative(user) {
 			action := ""
 			if strings.Contains(c.FullPath(), "resetClientTraffic") || strings.Contains(c.FullPath(), "resetAll") {
 				action = "reset_usage"
@@ -516,7 +516,7 @@ func requirePanelOwner() gin.HandlerFunc {
 
 // Representative identity must survive the per-request role scope flag.
 func isRepresentative(user *model.User) bool {
-	return user != nil && (user.IsReseller || user.RepresentativeRoleID > 0)
+	return user.IsRepresentativeAccount()
 }
 
 func requireNotRepresentative() gin.HandlerFunc {
