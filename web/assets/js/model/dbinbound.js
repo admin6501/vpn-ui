@@ -23,6 +23,8 @@ class DBInbound {
         this.speedLimitDown = 0;
         this.speedLimitUp = 0;
         this.speedLimitAfter = 0;
+        this.speedLimitDownUnit = "KB/s";
+        this.speedLimitUpUnit = "KB/s";
         // Declared here or they do not exist: cloneProps below skips any key the
         // destination does not already own, so an undeclared field would be dropped on
         // every load from the server and posted back as undefined. Defaulted to the

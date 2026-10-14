@@ -1192,6 +1192,17 @@ func (s *InboundService) validateInboundConfig(inbound *model.Inbound) error {
 		return common.NewError("Speed limit threshold cannot be negative")
 	}
 
+	for _, unit := range []*string{&inbound.SpeedLimitDownUnit, &inbound.SpeedLimitUpUnit} {
+		if *unit == "" {
+			*unit = "KB/s"
+		}
+		switch *unit {
+		case "KB/s", "MB/s", "Mbps":
+		default:
+			return common.NewError("Invalid speed display unit")
+		}
+	}
+
 	// IP limit. The resolver already reads a negative as "absent" so nothing bad can
 	// reach the core, but that defence is SILENT: an operator posting -1 would get a
 	// 200 and an account with no limit, and nothing would say why. Reject it here for
@@ -1830,6 +1841,8 @@ func (s *InboundService) UpdateInbound(inbound *model.Inbound) (*model.Inbound, 
 	oldInbound.SpeedLimitDown = inbound.SpeedLimitDown
 	oldInbound.SpeedLimitUp = inbound.SpeedLimitUp
 	oldInbound.SpeedLimitAfter = inbound.SpeedLimitAfter
+	oldInbound.SpeedLimitDownUnit = inbound.SpeedLimitDownUnit
+	oldInbound.SpeedLimitUpUnit = inbound.SpeedLimitUpUnit
 	oldInbound.IPLimit = inbound.IPLimit
 	oldInbound.IPLimitStrategy = inbound.IPLimitStrategy
 	oldInbound.Listen = inbound.Listen

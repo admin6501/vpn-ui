@@ -1863,6 +1863,7 @@
       // '' means every interface, which is what the aggregate netIO already is.
       ifaceFilter: '',
       quotaBalance: Object.assign({}, RESELLER),
+      overviewRevoked: false,
       userStats: { total: 0, online: 0, depleted: 0, expired: 0, expiring: 0 },
       userStatsTimer: null,
       userStatsLoading: false,
@@ -3030,6 +3031,17 @@
         this.loadingStates.spinning = spinning;
         this.loadingTip = tip;
       },
+      revokeOverview() {
+        if (this.overviewRevoked) return;
+        this.overviewRevoked = true;
+        this.loadingStates.fetched = false;
+        this.status = new Status();
+        this.stopPolling();
+        clearInterval(this.coreStatusesTimer);
+        clearInterval(this.userStatsTimer);
+        // Resolve the reachable page with CURRENT permissions on the server.
+        window.location.replace(basePath + 'panel/');
+      },
       async getStatus() {
         try {
           const msg = await HttpUtil.get('/panel/api/server/status');
@@ -3039,12 +3051,15 @@
             }
 
             this.setStatus(msg.obj, true);
+          } else if (msg.obj && msg.obj.overviewDenied) {
+            this.revokeOverview();
           }
         } catch (e) {
           console.error("Failed to get status:", e);
         }
       },
       setStatus(data) {
+        if (this.overviewRevoked) return;
         this.status = new Status(data);
         // Feed the bento vitals sparklines and throughput chart. Runs off the
         // same push that already updates the page, so it costs no extra request.
@@ -3484,6 +3499,7 @@
 
       // Initial status fetch
       await this.getStatus();
+      if (this.overviewRevoked) return;
       await this.getCoreStatuses();
       this.coreStatusesTimer = setInterval(() => this.getCoreStatuses(), 10000);
       this.checkDistroSupport();
@@ -3512,6 +3528,9 @@
         window.wsClient.connect();
         window.wsClient.on('connected', () => this.stopPolling());
         
+        window.wsClient.on('overview_access', (payload) => {
+          if (payload && payload.allowed === false) this.revokeOverview();
+        });
         // Listen for status updates
         window.wsClient.on('status', (payload) => {
           this.setStatus(payload);

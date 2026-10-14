@@ -29,6 +29,7 @@ this includes the existing fork fixes.
 Client download and upload limits accept KB/s, MB/s (1024-based bytes) or Mbps
 (decimal megabits). Empty inherits the inbound limit; zero means unlimited.
 Positive values are stored to the nearest KB/s, with a minimum of 1 KB/s.
+Inbound forms retain the chosen download and upload display units after saving and reopening; this does not change the actual rate.
 Super administrators can create accounts without an inbound, attach protocols later,
 and edit account settings without using the first inbound as an anchor. Disabling
 one inbound or membership leaves the account and its other memberships intact.

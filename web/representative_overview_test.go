@@ -45,6 +45,10 @@ func TestRepresentativeOverviewHidesInboundManagementAndUpdates(t *testing.T) {
 				return
 			}
 			w.Header().Set("Content-Type", "application/json")
+			if strings.HasSuffix(r.URL.Path, "/defaultSettings") {
+				fmt.Fprint(w, `{"success":true,"obj":{"ipLimitEnable":false,"xrayAccessLogEnable":false,"geofileAutoUpdate":false}}`)
+				return
+			}
 			if strings.HasSuffix(r.URL.Path, "/resellerBalance") {
 				fmt.Fprint(w, `{"success":true,"obj":{"isReseller":true,"unlimited":false,"allowanceBytes":107374182400,"spentBytes":26843545600,"availableBytes":80530636800}}`)
 				return

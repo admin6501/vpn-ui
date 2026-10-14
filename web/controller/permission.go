@@ -144,10 +144,9 @@ func overviewAccess(user *model.User) bool {
 	if user == nil {
 		return false
 	}
-	if user.RepresentativeRoleID > 0 && isRepresentative(user) {
-		return user.Can(model.PermAccessOverview)
-	}
-	if user.IsReseller {
+	// The per-representative switch is authoritative even when an imported
+	// role carries system.read or a read-all request clears IsReseller.
+	if isRepresentative(user) {
 		access, _ := resellerOverviewGrants(user)
 		return access
 	}
@@ -170,10 +169,7 @@ func overviewManage(user *model.User) bool {
 	if user == nil {
 		return false
 	}
-	if user.RepresentativeRoleID > 0 && isRepresentative(user) {
-		return user.IsSuperAdmin
-	}
-	if user.IsReseller {
+	if isRepresentative(user) {
 		access, manage := resellerOverviewGrants(user)
 		return access && manage
 	}
@@ -232,12 +228,18 @@ func requireXrayOrOverviewManage() gin.HandlerFunc {
 // the same question from two columns is how one of them ends up wrong.
 func requireOverviewAccess() gin.HandlerFunc {
 	return func(c *gin.Context) {
+		c.Header("Cache-Control", "no-store")
 		user := session.GetLoginUser(c)
 		if user == nil {
 			deny(c, http.StatusUnauthorized, "pages.login.loginAgain", c.GetString("base_path"))
 			return
 		}
 		if !overviewAccess(user) {
+			if !wantsHTML(c) {
+				c.JSON(http.StatusOK, gin.H{"success": false, "msg": I18nWeb(c, "pages.admins.forbidden"), "obj": gin.H{"overviewDenied": true}})
+				c.Abort()
+				return
+			}
 			deny(c, http.StatusForbidden, "pages.admins.forbidden", landingPath(c))
 			return
 		}

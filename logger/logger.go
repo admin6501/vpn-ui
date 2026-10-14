@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"github.com/mhsanaei/3x-ui/v2/config"
@@ -14,13 +15,15 @@ import (
 
 const (
 	maxLogBufferSize = 10240                 // Maximum log entries kept in memory
-	logFileName      = "vpn-ui.log"            // Log file name
+	logFileName      = "vpn-ui.log"          // Log file name
 	timeFormat       = "2006/01/02 15:04:05" // Log timestamp format
 )
 
 var (
 	logger  *logging.Logger
 	logFile *os.File
+
+	logBufferMu sync.RWMutex
 
 	// logBuffer maintains recent log entries in memory for web UI retrieval
 	logBuffer []struct {
@@ -178,6 +181,8 @@ func Errorf(format string, args ...any) {
 
 // addToBuffer adds a log entry to the in-memory ring buffer for web UI retrieval.
 func addToBuffer(level string, newLog string) {
+	logBufferMu.Lock()
+	defer logBufferMu.Unlock()
 	t := time.Now()
 	if len(logBuffer) >= maxLogBufferSize {
 		logBuffer = logBuffer[1:]
@@ -197,6 +202,8 @@ func addToBuffer(level string, newLog string) {
 
 // GetLogs retrieves up to c log entries from the buffer that are at or below the specified level.
 func GetLogs(c int, level string) []string {
+	logBufferMu.RLock()
+	defer logBufferMu.RUnlock()
 	var output []string
 	logLevel, _ := logging.LogLevel(level)
 

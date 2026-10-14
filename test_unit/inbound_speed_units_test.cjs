@@ -29,3 +29,24 @@ for (const form of ['inbound.html','inbound_legacy.html']) {
  for (const unit of ['KB/s','MB/s','Mbps']) assert.equal(html.split('<a-select-option value="'+unit+'">').length-1,3, form+' has units for both separate and combined rates');
 }
 console.log('Inbound speed unit conversion, independent directions and both form layouts passed');
+// Open-close round trip retains display preferences without converting the
+// canonical rate again. Unit choices belong to the saved DB model, not a modal.
+const unitStart=source.indexOf('        get speedDownUnit()');
+const unitEnd=source.indexOf('        ok() {',unitStart);
+const unitAccessors=source.slice(unitStart,unitEnd);
+const modal=vm.runInNewContext('({dbInbound:{speedLimitDown:20480,speedLimitUp:20480,speedLimitDownUnit:"MB/s",speedLimitUpUnit:"Mbps"},'+unitAccessors+'})');
+assert.equal(modal.speedDownUnit,'MB/s');
+assert.equal(modal.speedUpUnit,'Mbps');
+const saved=JSON.parse(JSON.stringify(modal.dbInbound));
+modal.dbInbound={speedLimitDown:0,speedLimitUp:0};
+assert.equal(modal.speedDownUnit,'KB/s','legacy and new forms keep the old default');
+modal.dbInbound=saved;
+assert.equal(modal.speedDownUnit,'MB/s','reopening keeps download unit');
+assert.equal(modal.speedUpUnit,'Mbps','reopening keeps independent upload unit');
+modal.speedDownUnit='Mbps';
+assert.equal(modal.dbInbound.speedLimitDownUnit,'Mbps');
+assert.equal(modal.dbInbound.speedLimitDown,20480,'switching display unit does not change actual rate');
+const editPage=fs.readFileSync('web/html/inbounds.html','utf8');
+assert.equal(editPage.split('speedLimitDownUnit: dbInbound.speedLimitDownUnit').length-1,4,'create/edit/clone/toggle payloads must retain preference');
+assert.equal(editPage.split('speedLimitUpUnit: dbInbound.speedLimitUpUnit').length-1,4);
+console.log('Saved independent speed units survive modal reopening without altering limits');

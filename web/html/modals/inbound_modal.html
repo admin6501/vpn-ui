@@ -120,8 +120,10 @@
         counts: {},
         inbound: new Inbound(),
         dbInbound: new DBInbound(),
-        speedDownUnit: "KB/s",
-        speedUpUnit: "KB/s",
+        get speedDownUnit() { return this.dbInbound.speedLimitDownUnit || "KB/s"; },
+        set speedDownUnit(unit) { this.dbInbound.speedLimitDownUnit = unit; },
+        get speedUpUnit() { return this.dbInbound.speedLimitUpUnit || "KB/s"; },
+        set speedUpUnit(unit) { this.dbInbound.speedLimitUpUnit = unit; },
         ok() {
             ObjectUtil.execute(inModal.confirm, inModal.inbound, inModal.dbInbound);
         },
@@ -134,7 +136,6 @@
             isEdit = false,
         }) {
             HttpUtil.get("/panel/api/inbounds/nodes").then(msg => { if (msg && msg.success) this.nodes = msg.obj || []; }).catch(() => {});
-            this.speedDownUnit = this.speedUpUnit = "KB/s";
             this.title = title;
             this.okText = okText;
             if (inbound) {
@@ -1354,6 +1355,8 @@
                         speedLimitDown: dbInbound.speedLimitDown,
                         speedLimitUp: dbInbound.speedLimitUp,
                         speedLimitAfter: dbInbound.speedLimitAfter,
+                        speedLimitDownUnit: dbInbound.speedLimitDownUnit,
+                        speedLimitUpUnit: dbInbound.speedLimitUpUnit,
                         ipLimit: dbInbound.ipLimit,
                         ipLimitStrategy: dbInbound.ipLimitStrategy,
                         listen: inbound.listen,

@@ -163,9 +163,8 @@ func templatePerms(c *gin.Context) map[string]bool {
 	// ignores by design. Resolving that here keeps it out of the templates, which
 	// would otherwise have to spell the disjunction at every control and at the nav
 	// entry, and would get it wrong once.
-	if user.IsReseller {
-		perms["accessOverview"], perms["manageOverview"] = resellerOverviewGrants(user)
-	}
+	perms["accessOverview"] = overviewAccess(user)
+	perms["manageOverview"] = overviewManage(user)
 	return perms
 }
 
@@ -177,6 +176,9 @@ func templatePerms(c *gin.Context) map[string]bool {
 // Manage requires AllowOverview too: it scopes a page they have to be able to reach
 // first, and a profile carrying only the second is a half-saved form, not a grant.
 func resellerOverviewGrants(user *model.User) (access, manage bool) {
+	if user == nil || !user.Enable || !isRepresentative(user) {
+		return false, false
+	}
 	var svc service.ResellerService
 	p, err := svc.ProfileFor(user.Id)
 	if err != nil {

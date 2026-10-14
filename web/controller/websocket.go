@@ -132,6 +132,7 @@ func (w *WebSocketController) readPump(client *websocket.Client, conn *ws.Conn) 
 // writePump pumps messages from the hub to the WebSocket connection
 func (w *WebSocketController) writePump(client *websocket.Client, conn *ws.Conn, snapshot *model.User) {
 	ticker := time.NewTicker(pingPeriod)
+	overviewDeniedSent := false
 	defer func() {
 		if r := common.Recover("WebSocket writePump panic"); r != nil {
 			logger.Error("WebSocket writePump panic recovered:", r)
@@ -156,7 +157,22 @@ func (w *WebSocketController) writePump(client *websocket.Client, conn *ws.Conn,
 
 			message, permitted := filterSocketMessage(current, message)
 			if !permitted {
+				if !overviewDeniedSent && !overviewAccess(current) {
+					notice, _ := json.Marshal(websocket.Message{Type: websocket.MessageTypeOverviewAccess, Payload: gin.H{"allowed": false}, Time: time.Now().UnixMilli()})
+					if err := conn.WriteMessage(ws.TextMessage, notice); err != nil {
+						return
+					}
+					overviewDeniedSent = true
+				}
 				continue
+			}
+			if overviewDeniedSent {
+				var delivered struct {
+					Type websocket.MessageType `json:"type"`
+				}
+				if json.Unmarshal(message, &delivered) == nil && delivered.Type == websocket.MessageTypeStatus {
+					overviewDeniedSent = false
+				}
 			}
 
 			// Send each message individually (no batching)
@@ -189,6 +205,9 @@ func filterSocketMessage(user *model.User, message []byte) ([]byte, bool) {
 	}
 	if json.Unmarshal(message, &envelope) != nil {
 		return message, true
+	}
+	if envelope.Type == websocket.MessageTypeXrayState {
+		return message, overviewAccess(user) || (!isRepresentative(user) && (user.Can(model.PermXraySettings) || user.Can(model.PermCoreSettings)))
 	}
 	if envelope.Type != websocket.MessageTypeStatus {
 		return message, true

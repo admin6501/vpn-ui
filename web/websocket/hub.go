@@ -15,13 +15,14 @@ import (
 type MessageType string
 
 const (
-	MessageTypeStatus       MessageType = "status"       // Server status update
-	MessageTypeTraffic      MessageType = "traffic"      // Traffic statistics update
-	MessageTypeInbounds     MessageType = "inbounds"     // Inbounds list update
-	MessageTypeNotification MessageType = "notification" // System notification
-	MessageTypeXrayState    MessageType = "xray_state"   // Xray state change
-	MessageTypeOutbounds    MessageType = "outbounds"    // Outbounds list update
-	MessageTypeInvalidate   MessageType = "invalidate"   // Lightweight signal telling frontend to re-fetch data via REST
+	MessageTypeOverviewAccess MessageType = "overview_access" // Permission revocation; no host information
+	MessageTypeStatus         MessageType = "status"          // Server status update
+	MessageTypeTraffic        MessageType = "traffic"         // Traffic statistics update
+	MessageTypeInbounds       MessageType = "inbounds"        // Inbounds list update
+	MessageTypeNotification   MessageType = "notification"    // System notification
+	MessageTypeXrayState      MessageType = "xray_state"      // Xray state change
+	MessageTypeOutbounds      MessageType = "outbounds"       // Outbounds list update
+	MessageTypeInvalidate     MessageType = "invalidate"      // Lightweight signal telling frontend to re-fetch data via REST
 )
 
 // Message represents a WebSocket message

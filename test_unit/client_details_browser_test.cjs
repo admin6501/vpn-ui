@@ -20,6 +20,30 @@ function template(file) {
   await page.addStyleTag({path:'web/assets/ant-design-vue/antd.min.css'});
   for (const path of ['web/assets/moment/moment.min.js','web/assets/vue/vue.min.js','web/assets/ant-design-vue/antd.min.js','web/assets/otpauth/otpauth.umd.min.js','web/assets/qrcode/qrious2.min.js','web/assets/js/util/index.js','web/assets/uri/URI.min.js','web/assets/js/model/inbound.js','web/assets/js/model/dbinbound.js','web/assets/js/util/export.js']) await page.addScriptTag({path});
   await page.addScriptTag({content:'const themeSwitcher={currentTheme:"light"}; const app={};'});
+  const speedSource=fs.readFileSync('web/html/modals/inbound_modal.html','utf8');
+  const accessors=speedSource.slice(speedSource.indexOf('        get speedDownUnit()'),speedSource.indexOf('        ok() {',speedSource.indexOf('        get speedDownUnit()')));
+  const computedStart=speedSource.indexOf('        computed: {')+'        computed: {'.length;
+  const speedComputed=speedSource.slice(computedStart,speedSource.indexOf('            // form/client',computedStart));
+  const methodsStart=speedSource.indexOf('        methods: {')+'        methods: {'.length;
+  const speedMethods=speedSource.slice(methodsStart,speedSource.indexOf('\n            },',speedSource.indexOf('            inboundStoredSpeed(',methodsStart))+'\n            },'.length);
+  await page.evaluate(()=>{
+   const el=document.createElement('div');el.id='saved-speed-unit-test';document.body.appendChild(el);
+   el.innerHTML='<a-select v-model="inModal.speedDownUnit"><a-select-option value="KB/s">KB/s</a-select-option><a-select-option value="MB/s">MB/s</a-select-option><a-select-option value="Mbps">Mbps</a-select-option></a-select><a-input-number v-model="inboundSpeedDown"></a-input-number>';
+  });
+  await page.addScriptTag({content:`const savedSpeedModal={dbInbound:new DBInbound({speedLimitDown:20480,speedLimitUp:977,speedLimitDownUnit:'MB/s',speedLimitUpUnit:'Mbps'}),${accessors}}; const savedSpeedForm=new Vue({el:'#saved-speed-unit-test',data:{inModal:savedSpeedModal},computed:{dbInbound(){return this.inModal.dbInbound},${speedComputed}},methods:{${speedMethods}}});`});
+  const speedInput=page.locator('#saved-speed-unit-test input');
+  assert.equal(await speedInput.inputValue(),'20','saved MB/s must render as 20, not 20480');
+  await speedInput.fill('25');await speedInput.press('Tab');
+  await page.waitForFunction(()=>savedSpeedModal.dbInbound.speedLimitDown===25600);
+  await page.evaluate(()=>{
+   const saved=JSON.parse(JSON.stringify(savedSpeedModal.dbInbound));
+   savedSpeedModal.dbInbound=new DBInbound();
+   savedSpeedModal.dbInbound=new DBInbound(saved);
+  });
+  assert.equal(await speedInput.inputValue(),'25','reopening keeps MB/s display and canonical rate');
+  assert.equal(await page.evaluate(()=>savedSpeedModal.speedDownUnit),'MB/s');
+  assert.equal(await page.evaluate(()=>savedSpeedModal.speedUpUnit),'Mbps','upload choice remains independent');
+  await page.evaluate(()=>{savedSpeedForm.$destroy();document.querySelector('#saved-speed-unit-test').remove()});
   await page.addScriptTag({content:factor.script});
   await page.addScriptTag({content:member.script});
   await page.addScriptTag({content:account.script});

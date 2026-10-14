@@ -35,3 +35,13 @@ behavior. The release workflow also exercises both CPU architectures, native VPN
 integration, node billing and synchronization, subscriptions, browser navigation,
 installation/rollback and dependency scans. These checks do not replace testing
 an operator's own firewall, kernel and client networks.
+
+## Representative Overview permission follow-up
+
+An imported or default representative role can contain `system.read=true` while
+that representative's explicit Overview switch is off. The switch now governs
+navigation, direct page access, server APIs and live WebSocket status consistently.
+It also governs Overview management separately. Removing access hides an already
+open dashboard and navigates back through the server's current page permissions;
+client operations remain available. Host status/Xray events are withheld without
+the required view permission, and Overview responses use `Cache-Control: no-store`.

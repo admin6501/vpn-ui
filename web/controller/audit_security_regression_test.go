@@ -171,6 +171,10 @@ func TestSecurityAuditWebsocketOverviewRevocationIsLive(t *testing.T) {
 	}
 	messages <- status
 	messages <- []byte(`{"type":"invalidate","payload":{"inbounds":true},"time":2}`)
+	_, notice, err := conn.ReadMessage()
+	if err != nil || !strings.Contains(string(notice), `"overview_access"`) || strings.Contains(string(notice), "123456789") {
+		t.Fatalf("missing safe overview revocation: %s %v", notice, err)
+	}
 	_, msg, err := conn.ReadMessage()
 	if err != nil || !strings.Contains(string(msg), `"invalidate"`) {
 		t.Fatalf("revoked overview leaked or legitimate client event lost: %s %v", msg, err)

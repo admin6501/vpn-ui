@@ -306,6 +306,9 @@ type Inbound struct {
 	SpeedLimitDown     int   `json:"speedLimitDown" form:"speedLimitDown" gorm:"default:0"`         // KB/s, 0 = unlimited
 	SpeedLimitUp       int   `json:"speedLimitUp" form:"speedLimitUp" gorm:"default:0"`             // KB/s, 0 = unlimited; unused when SpeedLimitSeparate is false
 	SpeedLimitAfter    int64 `json:"speedLimitAfter" form:"speedLimitAfter" gorm:"default:0"`       // Threshold in bytes on up+down; 0 = apply immediately
+	// Presentation metadata only: rates above remain canonical KB/s.
+	SpeedLimitDownUnit string `json:"speedLimitDownUnit" form:"speedLimitDownUnit" gorm:"default:KB/s"`
+	SpeedLimitUpUnit   string `json:"speedLimitUpUnit" form:"speedLimitUpUnit" gorm:"default:KB/s"`
 
 	// IP Limit: the DEFAULT cap on how many distinct client source addresses ONE account
 	// on this inbound may hold at once. 0 = no limit.
