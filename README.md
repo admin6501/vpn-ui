@@ -169,6 +169,13 @@ and roles. Other super administrators cannot edit or delete that account or modi
 its assigned role. Sensitive database, executable and authentication operations
 require ownership as well as their normal permission checks.
 
+**Panel settings** grants the complete settings page through roles or custom
+permissions: panel and subscription settings, Telegram, LDAP, SSL certificates,
+and systemd service management. The permission is checked on every settings API
+request. Password and two-factor changes target the caller only; protected owner
+account management, database exports and executable replacement retain their
+separate authorization checks.
+
 ## Multi-location nodes
 
 Use the dedicated, outbound-only agent to manage location servers and install selected

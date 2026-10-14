@@ -51,6 +51,8 @@ jobs:
         run: go test -race ./web/controller ./web/service ./web/session -run 'TestSecurityAudit' -count=1
       - name: Verify explicit representative Overview grants, live revocation and concurrent logs
         run: go test -race ./logger ./web/controller -run 'TestConcurrentLogBuffer|TestRepresentativeOverview|TestSecurityAuditWebsocket|TestInboundSpeedUnits' -count=1
+      - name: Verify complete delegated panel settings and owner-account isolation
+        run: go test -race ./web/controller -run 'TestDelegatedPanelSettings|TestSecurityNonOwnerCannotReplaceDatabaseAuthenticationOrExecutable|TestSecurityOtherSuperCannotEditProtectedOwnerOrAssignedRole' -count=1
       - name: Verify administrator, representative and node access boundaries
         run: go test ./web/controller ./web/service ./web ./nodeagent -run 'TestCrossAdminIsolation|TestResellerIsolation|TestRepresentativeInbound|TestRepresentativeBoundaryPreservesAdministratorAccess|TestRepresentativeUpdate|TestRepresentativeClientRead|TestPasarGuardReadAllDoesNotWidenOwnWrite|TestPasarGuardMissingResetPermission|TestNodeAgentHTTPAuthenticationAndScope|TestNodeAdministrationRejectsRepresentative|TestNodeManagement|TestRepresentativeRoleWritesDeny|TestRepresentativeOverview|TestMigratedGlobalTwoFactorSecretIsNotServed' -count=1
       - name: Verify bounded QUIC trailer decoding
@@ -105,7 +107,7 @@ jobs:
           export NODE_UI_CHROME=$(node -e 'console.log(require("playwright").chromium.executablePath())')
           node test_unit/client_details_browser_test.cjs
           RUN_NODE_UI_BROWSER=1 go test ./web/middleware -run '^TestSecurityBrowserPanelNavigationRuntime$' -count=1 -timeout 60s
-          RUN_NODE_UI_BROWSER=1 go test ./web -run '^Test(NodePageBrowserRuntime|OverviewSSLBrowserRuntime|RepresentativeOverviewHidesInboundManagementAndUpdates|AdminRolesBrowserRuntime)$' -count=1 -timeout 600s
+          RUN_NODE_UI_BROWSER=1 go test ./web -run '^Test(NodePageBrowserRuntime|OverviewSSLBrowserRuntime|RepresentativeOverviewHidesInboundManagementAndUpdates|AdminRolesBrowserRuntime|DelegatedSettingsBrowserRuntime)$' -count=1 -timeout 600s
       - name: Verify ownership transfer and online counts
         run: go test -tags netgo,osusergo ./web/service ./web/controller -run 'TestSaveAccount|TestLeavingAnAccount|TestIndependentAccount|TestMembershipEnable|TestDisabledMembership|TestRemovingTheLastMembership|TestToggleClientEnableByEmail|TestRenameAccount|TestSortAccountRows|TestAccountSort|TestClientLimit|TestResolveUserLimitOverride|TestAllocateBlockIP|TestOldestBlockSession|TestAdmit|TestSpeedLimit|TestAdminRoles|TestAdminOwner|TestAccountOwnershipTransfer|TestPasarGuard|TestOverview|TestVerifiedProvisioned|TestOffline|TestMigrationAccountsVerifiesExistingImported'
       - name: Verify imported subscription quotas and legacy credentials

@@ -9,17 +9,9 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// The SSL certificate manager's HTTP surface. Routes are registered in
-// setting.go's initRouter so the gating sits next to saveService's, which is the
-// only other escalation-class route on that group.
-//
-// THE SPLIT, AND WHY IT IS WHERE IT IS. Reading rides the group's existing
-// PermPanelSettings gate: a status page reveals which names this host holds a
-// certificate for, which the same admin already reads off the inbound forms.
-// Every MUTATING route carries its own requireSuperAdmin(), for the reason stated
-// at core.go:44-49: driving acme.sh as a subprocess and then writing the files the
-// webserver loads as its own TLS identity is equivalent to running code as root
-// here, and no permission bit stands in for that.
+// The SSL certificate manager's HTTP surface. All read and write routes use the
+// explicit PermPanelSettings grant in setting.go. Roles and custom permissions
+// grant the complete settings page, independently of administrator ownership.
 //
 // THE CLOUDFLARE TOKEN NEVER LEAVES THIS FILE. It is read straight out of the
 // form into the service request and is never logged, never stored in a setting and
@@ -228,8 +220,8 @@ func (a *SettingController) sslUseManaged(c *gin.Context) {
 // sslUnassign clears a listener's certificate setting, so it serves plain HTTP
 // after the next restart.
 //
-// The other half of the switch the page draws. Super-admin like every other
-// mutation, and for the ordinary reason: it decides what the panel's own listener
+// The other half of the switch the page draws. Authorized like every other
+// mutation through the explicit panel-settings grant: it decides what the panel's own listener
 // presents as its identity.
 //
 // Takes no profile. Clearing a setting does not depend on which certificate was in

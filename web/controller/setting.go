@@ -8,7 +8,6 @@ import (
 
 	"github.com/mhsanaei/3x-ui/v2/database/model"
 	"github.com/mhsanaei/3x-ui/v2/util/crypto"
-	"github.com/mhsanaei/3x-ui/v2/web/entity"
 	"github.com/mhsanaei/3x-ui/v2/web/service"
 	"github.com/mhsanaei/3x-ui/v2/web/session"
 
@@ -60,8 +59,8 @@ func (a *SettingController) initRouter(g *gin.RouterGroup) {
 	g = g.Group("/setting")
 	g.Use(requirePerm(model.PermPanelSettings))
 
-	g.POST("/all", requirePanelOwner(), a.getAllSetting)
-	g.POST("/update", requirePanelOwner(), a.updateSetting)
+	g.POST("/all", a.getAllSetting)
+	g.POST("/update", a.updateSetting)
 	securityLimiter := newLoginLimiter().middleware()
 	g.POST("/updateUser", securityLimiter, a.updateUser)
 	g.POST("/twoFactor", securityLimiter, a.updateTwoFactor)
@@ -72,18 +71,12 @@ func (a *SettingController) initRouter(g *gin.RouterGroup) {
 	// and any field that round trip got wrong would be saved along with it.
 	g.POST("/inboundForm", a.setLegacyInboundForm)
 	g.GET("/getDefaultJsonConfig", a.getDefaultXrayConfig)
+	g.GET("/inboundTags", a.getInboundTags)
 	g.GET("/service", a.serviceStatus)
 	g.GET("/service/log", a.serviceLog)
-	// Writes a systemd unit as root: escalation-class, so no permission bit stands
-	// in for it.
-	g.POST("/service", requirePanelOwner(), a.saveService)
-
-	// The SSL certificate manager. Reading rides the PermPanelSettings gate above;
-	// every route that ACTS carries requirePanelOwner() inline, for the same reason
-	// saveService does and the reason spelled out at core.go:44-49. Driving acme.sh
-	// as a subprocess and then writing the files this webserver loads as its own TLS
-	// identity is running code as root on the host, and no permission bit stands in
-	// for that. Handlers are in ssl.go; the gating stays here, where the group is.
+	// The panel-settings grant intentionally includes systemd and SSL management.
+	// Administrator-account ownership is protected by its own separate routes.
+	g.POST("/service", a.saveService)
 	g.GET("/ssl/status", a.sslStatus)
 	g.GET("/ssl/run-status", a.sslRunStatus)
 	// A POST only because it carries the identifier list. It contacts no CA and
@@ -93,21 +86,33 @@ func (a *SettingController) initRouter(g *gin.RouterGroup) {
 	// would use for a set of names, without contacting anything.
 	g.POST("/ssl/suggest", a.sslSuggest)
 	g.GET("/ssl/consumers", a.sslConsumers)
-	g.POST("/ssl/start", requirePanelOwner(), a.sslStart)
-	g.POST("/ssl/use-managed", requirePanelOwner(), a.sslUseManaged)
+	g.POST("/ssl/start", a.sslStart)
+	g.POST("/ssl/use-managed", a.sslUseManaged)
 	// The other half of the switch: clearing a listener's setting so it stops
 	// serving TLS at all. Same gate, because it decides the panel's own identity.
-	g.POST("/ssl/unassign", requirePanelOwner(), a.sslUnassign)
-	g.POST("/ssl/rollback", requirePanelOwner(), a.sslRollback)
+	g.POST("/ssl/unassign", a.sslUnassign)
+	g.POST("/ssl/rollback", a.sslRollback)
 	// Deleting a certificate takes private keys off disk and can strand a listener,
-	// so it sits on the same super-admin gate as everything else that mutates here.
-	g.POST("/ssl/delete-profile", requirePanelOwner(), a.sslDeleteProfile)
-	g.POST("/ssl/adopt", requirePanelOwner(), a.sslAdopt)
+	// so it uses the same explicit panel-settings grant as other SSL mutations.
+	g.POST("/ssl/delete-profile", a.sslDeleteProfile)
+	g.POST("/ssl/adopt", a.sslAdopt)
 	// Taking over what deploy.sh and vpn-ui.sh installed. Writes certificate
 	// material and can re-point a listener, so it takes the same gate as issuing.
-	g.POST("/ssl/sync", requirePanelOwner(), a.sslSync)
-	g.POST("/ssl/auto-renew", requirePanelOwner(), a.sslAutoRenew)
-	g.POST("/ssl/nickname", requirePanelOwner(), a.sslNickname)
+	g.POST("/ssl/sync", a.sslSync)
+	g.POST("/ssl/auto-renew", a.sslAutoRenew)
+	g.POST("/ssl/nickname", a.sslNickname)
+}
+
+// getInboundTags supplies the metadata LDAP settings need without requiring
+// inbound-management access or exposing clients, credentials or daemon configs.
+func (a *SettingController) getInboundTags(c *gin.Context) {
+	rows := make([]struct {
+		Tag      string         `json:"tag"`
+		Protocol model.Protocol `json:"protocol"`
+		Port     int            `json:"port"`
+	}, 0)
+	err := database.GetDB().Model(&model.Inbound{}).Select("tag, protocol, port").Order("tag").Find(&rows).Error
+	jsonObj(c, rows, err)
 }
 
 // serviceStatus returns the current systemd unit state for the panel.
@@ -139,6 +144,10 @@ func (a *SettingController) getAllSetting(c *gin.Context) {
 		jsonMsg(c, I18nWeb(c, "pages.settings.toasts.getSettings"), err)
 		return
 	}
+	// 2FA belongs to individual accounts. Never expose the retired global secret,
+	// including to an administrator granted full shared panel settings.
+	allSetting.TwoFactorEnable = false
+	allSetting.TwoFactorToken = ""
 	jsonObj(c, allSetting, nil)
 }
 
@@ -157,12 +166,19 @@ func (a *SettingController) getDefaultSettings(c *gin.Context) {
 
 // updateSetting updates all settings with the provided data.
 func (a *SettingController) updateSetting(c *gin.Context) {
-	allSetting := &entity.AllSetting{}
-	err := c.ShouldBind(allSetting)
+	allSetting, err := a.settingService.GetAllSetting()
 	if err != nil {
+		jsonMsg(c, I18nWeb(c, "pages.settings.toasts.getSettings"), err)
+		return
+	}
+	legacyEnable, legacyToken := allSetting.TwoFactorEnable, allSetting.TwoFactorToken
+	if err := c.ShouldBind(allSetting); err != nil {
 		jsonMsg(c, I18nWeb(c, "pages.settings.toasts.modifySettings"), err)
 		return
 	}
+	// Only /twoFactor may change the caller's authenticator. Settings updates
+	// cannot replace anyone's 2FA or rewrite the retired global credentials.
+	allSetting.TwoFactorEnable, allSetting.TwoFactorToken = legacyEnable, legacyToken
 	err = a.settingService.UpdateAllSetting(allSetting)
 	jsonMsg(c, I18nWeb(c, "pages.settings.toasts.modifySettings"), err)
 }

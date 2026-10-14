@@ -66,8 +66,7 @@ func TestSecurityNonOwnerCannotReplaceDatabaseAuthenticationOrExecutable(t *test
 	for _, tc := range []struct{ method, path string }{
 		{"GET", "/panel/api/server/getDb"}, {"POST", "/panel/api/server/importDB"},
 		{"POST", "/panel/api/server/uploadPanelBinary"}, {"POST", "/panel/api/server/applyPanelBinary"},
-		{"POST", "/panel/setting/update"}, {"POST", "/panel/setting/all"},
-		{"POST", "/panel/setting/service"}, {"POST", "/panel/core/config/openvpn"},
+		{"POST", "/panel/core/config/openvpn"},
 	} {
 		req := httptest.NewRequest(tc.method, tc.path, nil)
 		req.Header.Set("X-Requested-With", "XMLHttpRequest")

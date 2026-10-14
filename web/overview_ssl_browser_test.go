@@ -38,7 +38,7 @@ func TestOverviewSSLBrowserRuntime(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			data := map[string]any{"base_path": "/test/", "title": "menu.settings", "perms": map[string]bool{"superAdmin": true, "accessOverview": true, "accessInbounds": true, "accessCoreSettings": true, "panelSettings": true}}
+			data := map[string]any{"base_path": "/test/", "title": "menu.settings", "perms": map[string]bool{"panelOwner": true, "superAdmin": true, "accessOverview": true, "accessInbounds": true, "accessCoreSettings": true, "panelSettings": true}}
 			pages := map[string][]byte{}
 			for _, name := range []string{"index.html", "settings.html", "clients.html", "inbounds.html"} {
 				var out bytes.Buffer

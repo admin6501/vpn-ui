@@ -202,6 +202,7 @@
       // The caller's own 2FA state, rendered server-side. Not part of allSetting:
       // 2FA is per-admin now, and the settings blob goes to every logged-in admin.
       twoFactorEnable: {{ .two_factor }},
+      settingKeys: [],
       loadingStates: {
         fetched: false,
         spinning: false
@@ -409,6 +410,7 @@
 
           this.oldAllSetting = new AllSetting(msg.obj);
           this.allSetting = new AllSetting(msg.obj);
+          this.settingKeys = Object.keys(msg.obj);
           app.changeRemarkSample();
           this.saveBtnDisable = true;
         }
@@ -1182,7 +1184,7 @@
         return IntlUtil.formatDate(d);
       },
       async loadInboundTags() {
-        const msg = await HttpUtil.get("/panel/api/inbounds/list");
+        const msg = await HttpUtil.get("/panel/setting/inboundTags");
         if (msg && msg.success && Array.isArray(msg.obj)) {
           this.inboundOptions = msg.obj.map(ib => ({
             label: `${ib.tag} (${ib.protocol}@${ib.port})`,
@@ -1194,7 +1196,9 @@
       },
       async updateAllSetting() {
         this.loading(true);
-        const msg = await HttpUtil.post("/panel/setting/update", this.allSetting);
+        // Post the fields returned by the settings API, preserving its contract.
+        const payload = Object.fromEntries(this.settingKeys.map(key => [key, this.allSetting[key]]));
+        const msg = await HttpUtil.post("/panel/setting/update", payload);
         this.loading(false);
         if (msg.success) {
           await this.getAllSetting();

@@ -1,5 +1,15 @@
 # Security audit fixes — 2026-10-14
 
+Delegated settings follow-up: the explicitly granted panel-settings permission
+now opens and manages the complete settings page through roles or custom grants,
+including Telegram, LDAP, certificates and the systemd service. Settings API
+routes use this grant rather than an additional owner-only check. Per-account
+password/2FA operations still target only the caller, and the retired global 2FA
+secret is never returned. Protected owner-account edits, database access and
+executable replacement retain their separate guards. API tests cover manual and
+role grants, absent/revoked permissions and input validation; Chromium verifies
+load/save/reload in English and Persian.
+
 These fixes address the six confirmed findings reviewed against
 `67cb5d40a85764a28fb26e3f7c227486d75e3242`. Update both the central panel and
 location agents to receive the embedded Xray fix.
