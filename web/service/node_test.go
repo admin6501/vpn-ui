@@ -256,33 +256,35 @@ func TestNodeCoreMappingCoversEveryPanelProtocol(t *testing.T) {
 
 func TestNodeCertificateBundleCoversOpenVpnAndRejectsInvalidPaths(t *testing.T) {
 	directory := t.TempDir()
-	cert := filepath.Join(directory, "certificate.pem")
-	if err := os.WriteFile(cert, []byte("synthetic-test-certificate"), 0600); err != nil {
-		t.Fatal(err)
+	material := makeTestCert(t, testCertOpts{sans: []string{"node.example.test"}})
+	cert, key, static := filepath.Join(directory, "certificate.pem"), filepath.Join(directory, "key.pem"), filepath.Join(directory, "tc.key")
+	for path, data := range map[string][]byte{cert: material.certPEM, key: material.keyPEM, static: []byte("-----BEGIN OpenVPN Static key V1-----\n" + strings.Repeat("ab", 256) + "\n-----END OpenVPN Static key V1-----\n")} {
+		if err := os.WriteFile(path, data, 0600); err != nil {
+			t.Fatal(err)
+		}
 	}
-	settings := map[string]any{"tlsUseFile": true, "caCertFile": cert, "serverCertFile": cert, "serverKeyFile": cert, "tlsCryptFile": cert, "unrelatedPath": "/must/not/be/read"}
-	raw, _ := json.Marshal(settings)
-	in := model.Inbound{Settings: string(raw)}
+	raw, _ := json.Marshal(map[string]any{"tlsUseFile": true, "caCertFile": cert, "serverCertFile": cert, "serverKeyFile": key, "tlsCryptFile": static, "unrelatedPath": "/must/not/be/read"})
+	in := model.Inbound{Protocol: model.OPENVPN, Settings: string(raw)}
 	files := map[string][]byte{}
 	if err := snapshotCertificateFiles(&in, files); err != nil {
 		t.Fatal(err)
 	}
-	if len(files) != 1 {
+	if len(files) != 3 {
 		t.Fatal("certificate content not deduplicated")
 	}
 	var projected map[string]any
 	json.Unmarshal([]byte(in.Settings), &projected)
-	for _, key := range []string{"caCertFile", "serverCertFile", "serverKeyFile", "tlsCryptFile"} {
-		if !strings.HasPrefix(projected[key].(string), "nodefile:") {
-			t.Errorf("%s not transferred", key)
+	for _, field := range []string{"caCertFile", "serverCertFile", "serverKeyFile", "tlsCryptFile"} {
+		if !strings.HasPrefix(projected[field].(string), "nodefile:") {
+			t.Errorf("%s not transferred", field)
 		}
 	}
 	if projected["unrelatedPath"] != "/must/not/be/read" {
-		t.Fatal("arbitrary file path treated as a certificate")
+		t.Fatal("arbitrary path rewritten")
 	}
-	in.Settings = `{"serverKeyFile":"/does-not-exist"}`
+	in.Settings = `{"tlsUseFile":true,"serverKeyFile":"/does-not-exist"}`
 	if snapshotCertificateFiles(&in, files) == nil {
-		t.Fatal("missing required certificate ignored")
+		t.Fatal("missing certificate ignored")
 	}
 }
 

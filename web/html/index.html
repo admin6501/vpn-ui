@@ -132,6 +132,7 @@
       </dl>
     </article>
 
+    {{ if not .reseller.isReseller }}
     <!-- ===== throughput ===== -->
     <article class="bo-tile bo-t-flow" aria-label='{{ i18n "pages.index.overallSpeed" }}'>
       <div class="bo-tile-head">
@@ -195,6 +196,7 @@
       </div>
     </article>
 
+    {{ end }}
     <!-- ===== user status ===== -->
     <article class="bo-tile bo-t-users" aria-label='{{ i18n "clients" }}'>
       <div class="bo-tile-head"><h3 class="bo-tile-title">{{ i18n "clients" }}</h3></div>

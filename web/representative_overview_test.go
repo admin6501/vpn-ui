@@ -23,7 +23,7 @@ func TestRepresentativeOverviewHidesInboundManagementAndUpdates(t *testing.T) {
 		t.Fatal(err)
 	}
 	body := strings.ReplaceAll(page.String(), `\/`, `/`)
-	for _, forbidden := range []string{"@click=\"checkForUpdate(true)\"", "key: '/test/panel/inbounds'"} {
+	for _, forbidden := range []string{"@click=\"checkForUpdate(true)\"", "key: '/test/panel/inbounds'", `class="bo-tile bo-t-flow"`} {
 		if strings.Contains(body, forbidden) {
 			t.Fatalf("representative page exposed %s", forbidden)
 		}

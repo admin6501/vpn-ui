@@ -411,7 +411,7 @@ func (s *CoreService) openvpnConfigTargets() []coreConfigTarget {
 				Path:   fmt.Sprintf("%s/server-%s.conf", svc.configDir(inbound.Id), proto),
 				Format: "conf",
 				render: func() (string, error) {
-					return svc.buildServerConfig(ib, st, pr, port, svc.binaryPath()), nil
+					return svc.buildServerConfig(ib, st, pr, port, svc.binaryPath())
 				},
 			})
 		}

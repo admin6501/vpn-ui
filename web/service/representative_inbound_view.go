@@ -8,7 +8,7 @@ import (
 func redactRepresentativeInboundSecrets(row *model.Inbound) {
 	var settings map[string]json.RawMessage
 	if json.Unmarshal([]byte(row.Settings), &settings) == nil {
-		for _, key := range []string{"privateKey", "secretKey", "privateKeyFile", "keyFile", "serverKey", "serverKeyFile", "serverPrivateKey", "hostKeys", "tlsCryptKey", "caKey"} {
+		for _, key := range []string{"privateKey", "secretKey", "privateKeyFile", "keyFile", "serverKey", "serverKeyFile", "serverPrivateKey", "hostKey", "hostKeys", "tlsCryptKey", "caKey"} {
 			delete(settings, key)
 		}
 		if body, err := json.Marshal(settings); err == nil {

@@ -1211,6 +1211,9 @@ func (s *InboundService) validateInboundConfig(inbound *model.Inbound) error {
 	}
 
 	if inbound.Protocol == "openvpn" {
+		if _, err := (&OpenVpnService{}).parseSettings(inbound); err != nil {
+			return common.NewError("Invalid OpenVPN settings:", err)
+		}
 		var st struct {
 			TcpEnable      bool   `json:"tcpEnable"`
 			TcpPort        int    `json:"tcpPort"`

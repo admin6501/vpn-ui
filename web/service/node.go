@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"math"
 	"net"
-	"os"
 	"sort"
 	"strings"
 	"time"
@@ -373,60 +372,6 @@ func (s *NodeService) Snapshot(id int) (*nodewire.Snapshot, error) {
 		}
 	}
 	return snap, nil
-}
-
-// Only certificate fields may copy files; arbitrary paths embedded in unrelated
-// settings never become a file-reading API for the agent.
-func snapshotCertificateFiles(inbound *model.Inbound, files map[string][]byte) error {
-	for _, p := range []*string{&inbound.Settings, &inbound.StreamSettings} {
-		if *p == "" {
-			continue
-		}
-		var obj any
-		if e := json.Unmarshal([]byte(*p), &obj); e != nil {
-			return e
-		}
-		var walk func(any) error
-		walk = func(value any) error {
-			switch v := value.(type) {
-			case map[string]any:
-				for k, item := range v {
-					if k == "certificateFile" || k == "keyFile" || k == "caCertFile" || k == "serverCertFile" || k == "serverKeyFile" || k == "tlsCryptFile" {
-						path, ok := item.(string)
-						if !ok || path == "" {
-							continue
-						}
-						data, e := os.ReadFile(path)
-						if e != nil {
-							return fmt.Errorf("Inbound #%d certificate file unavailable", inbound.Id)
-						}
-						if len(data) > 4<<20 {
-							return errors.New("Certificate file too large")
-						}
-						hash := sha256.Sum256(data)
-						name := hex.EncodeToString(hash[:])
-						files[name] = data
-						v[k] = "nodefile:" + name
-					} else if e := walk(item); e != nil {
-						return e
-					}
-				}
-			case []any:
-				for _, item := range v {
-					if e := walk(item); e != nil {
-						return e
-					}
-				}
-			}
-			return nil
-		}
-		if e := walk(obj); e != nil {
-			return e
-		}
-		data, _ := json.Marshal(obj)
-		*p = string(data)
-	}
-	return nil
 }
 
 func (s *NodeService) AcceptReport(id int, report nodewire.Report) error {

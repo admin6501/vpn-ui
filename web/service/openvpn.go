@@ -354,6 +354,9 @@ func (s *OpenVpnService) GetOpenVpnInbounds() ([]*model.Inbound, error) {
 func (s *OpenVpnService) parseSettings(inbound *model.Inbound) (*openvpnSettings, error) {
 	settings := &openvpnSettings{}
 	err := json.Unmarshal([]byte(inbound.Settings), settings)
+	if err == nil {
+		err = validateOpenVPNScalars(settings)
+	}
 	return settings, err
 }
 
@@ -500,8 +503,11 @@ func (s *OpenVpnService) generateServerConfigs(inbound *model.Inbound, preserveL
 			continue
 		}
 		confPath := fmt.Sprintf("%s/server-%s.conf", dir, proto)
-		conf := applyCoreConfigOverride("openvpn", inbound.Id, "server-"+proto+".conf",
-			s.buildServerConfig(inbound, settings, proto, ports[proto], binaryPath))
+		generated, err := s.buildServerConfig(inbound, settings, proto, ports[proto], binaryPath)
+		if err != nil {
+			return err
+		}
+		conf := applyCoreConfigOverride("openvpn", inbound.Id, "server-"+proto+".conf", generated)
 		if err := s.writeFile(confPath, conf); err != nil {
 			return err
 		}
@@ -627,7 +633,13 @@ func (s *OpenVpnService) writeClientConfigDir(inbound *model.Inbound, settings *
 }
 
 // buildServerConfig returns the OpenVPN server config content for a given protocol.
-func (s *OpenVpnService) buildServerConfig(inbound *model.Inbound, settings *openvpnSettings, proto string, port int, binaryPath string) string {
+func (s *OpenVpnService) buildServerConfig(inbound *model.Inbound, settings *openvpnSettings, proto string, port int, binaryPath string) (string, error) {
+	if err := validateOpenVPNScalars(settings); err != nil {
+		return "", err
+	}
+	if proto != "tcp" && proto != "udp" {
+		return "", fmt.Errorf("invalid OpenVPN transport")
+	}
 	id := inbound.Id
 	dir := s.configDir(id)
 
@@ -732,15 +744,15 @@ func (s *OpenVpnService) buildServerConfig(inbound *model.Inbound, settings *ope
 	}
 	b.WriteString(fmt.Sprintf("mssfix %d\n", mssfix))
 	caPath, certPath, keyPath, tcPath := s.certPaths(inbound, settings)
-	b.WriteString(fmt.Sprintf("ca %s\n", caPath))
-	b.WriteString(fmt.Sprintf("cert %s\n", certPath))
-	b.WriteString(fmt.Sprintf("key %s\n", keyPath))
+	b.WriteString(fmt.Sprintf("ca %s\n", openVPNToken(caPath)))
+	b.WriteString(fmt.Sprintf("cert %s\n", openVPNToken(certPath)))
+	b.WriteString(fmt.Sprintf("key %s\n", openVPNToken(keyPath)))
 	// tls-crypt is optional. Emitting the directive with an empty path (the shape a
 	// file-mode inbound that left the key box blank used to produce) makes openvpn
 	// refuse the whole config, so the line is written only when there is a key to
 	// point it at.
 	if settings.tlsCryptEnabled() && tcPath != "" {
-		b.WriteString(fmt.Sprintf("tls-crypt %s\n", tcPath))
+		b.WriteString(fmt.Sprintf("tls-crypt %s\n", openVPNToken(tcPath)))
 	}
 	b.WriteString("dh none\n")
 	ciphers := s.effectiveCiphers(settings.dataCiphers())
@@ -770,7 +782,7 @@ func (s *OpenVpnService) buildServerConfig(inbound *model.Inbound, settings *ope
 	b.WriteString("verb 3\n")
 	b.WriteString(fmt.Sprintf("explicit-exit-notify %s\n", explicitExitNotify))
 
-	return b.String()
+	return b.String(), nil
 }
 
 // clientCertContent returns the CA cert + tls-crypt key PEM to embed in a client

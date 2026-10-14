@@ -1,0 +1,135 @@
+diff --git a/transport/internet/system_listener.go b/transport/internet/system_listener.go
+--- a/transport/internet/system_listener.go
++++ b/transport/internet/system_listener.go
+@@ -22,21 +22,26 @@
+ 
+ func getControlFunc(ctx context.Context, sockopt *SocketConfig, controllers []func(network, address string, c syscall.RawConn) error) func(network, address string, c syscall.RawConn) error {
+ 	return func(network, address string, c syscall.RawConn) error {
+-		return c.Control(func(fd uintptr) {
+-			for _, controller := range controllers {
+-				if err := controller(network, address, c); err != nil {
+-					errors.LogInfoInner(ctx, err, "failed to apply external controller")
++		for _, controller := range controllers {
++			if err := controller(network, address, c); err != nil {
++				return errors.New("failed to apply external controller").Base(err)
++			}
++		}
++		var setupErr error
++		if err := c.Control(func(fd uintptr) {
++			if sockopt != nil {
++				if err := applyInboundSocketOptions(network, fd, sockopt); err != nil {
++					setupErr = errors.New("failed to apply listener socket options").Base(err)
++					return
+ 				}
+ 			}
+-
+-			if sockopt != nil {
+-				if err := applyInboundSocketOptions(network, fd, sockopt); err != nil {
+-					errors.LogInfoInner(ctx, err, "failed to apply socket options to incoming connection")
+-				}
+-			}
+-
++			// Reuse-port is a best-effort optimization; mandatory configured
++			// options above must succeed before the listener can be reported ready.
+ 			setReusePort(fd)
+-		})
++		}); err != nil {
++			return err
++		}
++		return setupErr
+ 	}
+ }
+ 
+diff --git a/transport/internet/listener_socket_error_regression_test.go b/transport/internet/listener_socket_error_regression_test.go
+new file mode 100644
+--- /dev/null
++++ b/transport/internet/listener_socket_error_regression_test.go
+@@ -0,0 +1,88 @@
++//go:build linux
++
++package internet
++
++import (
++	"context"
++	stderrors "errors"
++	"github.com/xtls/xray-core/common/net"
++	"golang.org/x/sys/unix"
++	"os"
++	"syscall"
++	"testing"
++)
++
++func TestListenerRejectsIncompleteSocketSetup(t *testing.T) {
++	opts := &SocketConfig{TcpCongestion: "vpn_ui_invalid_congestion"}
++	listener, err := (&DefaultListener{}).Listen(context.Background(), &net.TCPAddr{IP: net.ParseIP("127.0.0.1")}, opts)
++	if listener != nil {
++		listener.Close()
++		t.Fatal("invalid configured socket returned a ready listener")
++	}
++	if err == nil {
++		t.Fatal("socket error was swallowed")
++	}
++}
++
++func TestListenerRejectsExternalControllerFailure(t *testing.T) {
++	denied := stderrors.New("controller denied socket")
++	listener := &DefaultListener{controllers: []func(string, string, syscall.RawConn) error{
++		func(_ string, _ string, c syscall.RawConn) error {
++			// A real controller can inspect its socket without nested RawConn.Control.
++			if err := c.Control(func(uintptr) {}); err != nil {
++				return err
++			}
++			return denied
++		},
++	}}
++	l, err := listener.Listen(context.Background(), &net.TCPAddr{IP: net.ParseIP("127.0.0.1")}, nil)
++	if l != nil {
++		l.Close()
++		t.Fatal("controller rejection was ignored")
++	}
++	if !stderrors.Is(err, denied) {
++		t.Fatalf("controller failure not propagated: %v", err)
++	}
++}
++
++func TestListenerRejectsUDPSocketControllerFailure(t *testing.T) {
++	denied := stderrors.New("UDP controller denied socket")
++	listener := &DefaultListener{controllers: []func(string, string, syscall.RawConn) error{
++		func(string, string, syscall.RawConn) error { return denied },
++	}}
++	l, err := listener.ListenPacket(context.Background(), &net.UDPAddr{IP: net.ParseIP("127.0.0.1")}, nil)
++	if l != nil {
++		l.Close()
++		t.Fatal("UDP controller rejection was ignored")
++	}
++	if !stderrors.Is(err, denied) {
++		t.Fatalf("UDP setup error missing: %v", err)
++	}
++}
++
++func TestListenerTPROXYUDPOptionsAreApplied(t *testing.T) {
++	if os.Geteuid() != 0 {
++		t.Skip("root required for transparent socket and mark")
++	}
++	opts := &SocketConfig{Mark: 255, Tproxy: SocketConfig_TProxy, ReceiveOriginalDestAddress: true}
++	l, err := (&DefaultListener{}).ListenPacket(context.Background(), &net.UDPAddr{IP: net.ParseIP("127.0.0.1")}, opts)
++	if err != nil {
++		t.Fatal(err)
++	}
++	defer l.Close()
++	raw, err := l.(*net.UDPConn).SyscallConn()
++	if err != nil {
++		t.Fatal(err)
++	}
++	var transparent, mark int
++	var optionErr error
++	err = raw.Control(func(fd uintptr) {
++		transparent, optionErr = unix.GetsockoptInt(int(fd), unix.SOL_IP, unix.IP_TRANSPARENT)
++		if optionErr == nil {
++			mark, optionErr = unix.GetsockoptInt(int(fd), unix.SOL_SOCKET, unix.SO_MARK)
++		}
++	})
++	if err != nil || optionErr != nil || transparent != 1 || mark != 255 {
++		t.Fatalf("incomplete UDP TPROXY: %d %d %v %v", transparent, mark, err, optionErr)
++	}
++}

@@ -55,13 +55,13 @@ func NewServerController(g *gin.RouterGroup) *ServerController {
 // initRouter sets up the routes for server status, Xray management, and utility endpoints.
 func (a *ServerController) initRouter(g *gin.RouterGroup) {
 
-	g.GET("/status", a.status)
+	g.GET("/status", requireOverviewAccess(), a.status)
 	g.GET("/userStats", a.userStats)
 	g.GET("/resellerBalance", requireOverviewAccess(), (&InboundController{}).resellerBalance)
-	g.GET("/serverName", a.getServerName)
-	g.GET("/panelLocation", a.panelLocation)
-	g.GET("/cpuHistory/:bucket", a.getCpuHistoryBucket)
-	g.GET("/getXrayVersion", a.getXrayVersion)
+	g.GET("/serverName", requireOverviewAccess(), a.getServerName)
+	g.GET("/panelLocation", requireOverviewAccess(), a.panelLocation)
+	g.GET("/cpuHistory/:bucket", requireOverviewAccess(), a.getCpuHistoryBucket)
+	g.GET("/getXrayVersion", requireOverviewAccess(), a.getXrayVersion)
 	// Owner-account protection also covers database replacement, authentication
 	// secrets and executable replacement, which could bypass ordinary admin CRUD.
 	g.GET("/getConfigJson", requireOverviewManage(), requirePanelOwner(), a.getConfigJson)
@@ -71,11 +71,11 @@ func (a *ServerController) initRouter(g *gin.RouterGroup) {
 	g.GET("/getNewmldsa65", a.getNewmldsa65)
 	g.GET("/getNewmlkem768", a.getNewmlkem768)
 	g.GET("/getNewVlessEnc", a.getNewVlessEnc)
-	g.GET("/distroStatus", a.distroStatus)
-	g.GET("/geofileStatus", a.geofileStatus)
+	g.GET("/distroStatus", requireOverviewAccess(), a.distroStatus)
+	g.GET("/geofileStatus", requireOverviewAccess(), a.geofileStatus)
 	// The in-flight geofile download, so an overview that was reopened mid-transfer
 	// can re-attach instead of looking idle. Read-only, like geofileStatus beside it.
-	g.GET("/geofileProgress", a.geofileProgress)
+	g.GET("/geofileProgress", requireOverviewAccess(), a.geofileProgress)
 	g.GET("/checkUpdate", requireNotRepresentative(), a.checkUpdate)
 	g.GET("/updateProgress", requireNotRepresentative(), a.updateProgress)
 	// Reports (once) that the panel came back from a self-update. Gated to match
@@ -148,7 +148,9 @@ func (a *ServerController) startTask() {
 }
 
 // status returns the current server status information.
-func (a *ServerController) status(c *gin.Context) { jsonObj(c, a.lastStatus, nil) }
+func (a *ServerController) status(c *gin.Context) {
+	jsonObj(c, service.StatusForUser(a.lastStatus, session.GetLoginUser(c)), nil)
+}
 
 // userStats supplies the same scoped account counters to Overview and Inbounds.
 func (a *ServerController) userStats(c *gin.Context) {

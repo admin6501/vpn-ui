@@ -182,12 +182,39 @@ func ClearSession(c *gin.Context) {
 // IsCurrentUserSession revalidates a captured login for long-lived connections.
 // The snapshot is taken at authentication; changes must not inherit new credentials.
 func IsCurrentUserSession(snapshot *model.User) bool {
+	return CurrentUserSession(snapshot) != nil
+}
+
+// CurrentUserSession returns fresh permissions for a long-lived connection,
+// retaining the original credential binding. Revocation applies before delivery.
+func CurrentUserSession(snapshot *model.User) *model.User {
 	if snapshot == nil || database.GetDB() == nil {
-		return false
+		return nil
 	}
+	db := database.GetDB()
 	var current model.User
-	if database.GetDB().First(&current, snapshot.Id).Error != nil || !current.Enable {
-		return false
+	if db.First(&current, snapshot.Id).Error != nil || !current.Enable {
+		return nil
 	}
-	return subtle.ConstantTimeCompare([]byte(authBinding(snapshot)), []byte(authBinding(&current))) == 1
+	if subtle.ConstantTimeCompare([]byte(authBinding(snapshot)), []byte(authBinding(&current))) != 1 {
+		return nil
+	}
+	if current.AdminRoleID > 0 && !current.IsSuperAdmin && !current.IsReseller {
+		var role model.AdminRole
+		if db.First(&role, current.AdminRoleID).Error != nil {
+			if !current.IsPanelOwner {
+				return nil
+			}
+		} else {
+			current.AdminRole = &role
+		}
+	}
+	if current.RepresentativeRoleID > 0 && current.IsRepresentativeAccount() {
+		var role model.RepresentativeRole
+		if db.First(&role, current.RepresentativeRoleID).Error != nil {
+			return nil
+		}
+		current.RepresentativeRole = &role
+	}
+	return &current
 }

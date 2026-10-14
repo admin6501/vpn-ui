@@ -163,16 +163,9 @@ func overviewAccess(user *model.User) bool {
 // are two independent booleans in the database, and an import or a hand-edited row can
 // carry the pair the modal will not.
 //
-// READ THIS BEFORE WIDENING ANYTHING ONTO THIS BIT. The operator deliberately chose,
-// 2026-07-31 and with the consequence spelled out, that this permission reaches the
-// escalation-class overview actions: the panel update (which replaces the running
-// binary as root), config.json (every inbound's secrets across all admins), the logs
-// (other admins' clients and IPs), and backup / restore / DB import-export (the whole
-// SQLite file, users table and bcrypt hashes included). So a delegated admin or a
-// reseller holding this bit can take the panel. That is the operator's call, not an
-// oversight, and it is why what stayed behind requireSuperAdmin stayed: admin
-// management (it mints super admins), the host reboot, core uninstall, and the systemd
-// unit. None of those are on the overview, so none of them are what this bit is for.
+// Overview management is an operational grant. Executable replacement, raw
+// daemon configuration and full database export additionally require the panel
+// owner; do not widen those actions to delegated administrators or resellers.
 func overviewManage(user *model.User) bool {
 	if user == nil {
 		return false

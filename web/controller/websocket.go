@@ -1,6 +1,8 @@
 package controller
 
 import (
+	"encoding/json"
+	"github.com/mhsanaei/3x-ui/v2/web/service"
 	"net/http"
 	"time"
 
@@ -141,7 +143,8 @@ func (w *WebSocketController) writePump(client *websocket.Client, conn *ws.Conn,
 	for {
 		select {
 		case message, ok := <-client.Send:
-			if !session.IsCurrentUserSession(snapshot) {
+			current := session.CurrentUserSession(snapshot)
+			if current == nil {
 				return
 			}
 			conn.SetWriteDeadline(time.Now().Add(writeWait))
@@ -149,6 +152,11 @@ func (w *WebSocketController) writePump(client *websocket.Client, conn *ws.Conn,
 				// Hub closed the channel
 				conn.WriteMessage(ws.CloseMessage, []byte{})
 				return
+			}
+
+			message, permitted := filterSocketMessage(current, message)
+			if !permitted {
+				continue
 			}
 
 			// Send each message individually (no batching)
@@ -169,4 +177,32 @@ func (w *WebSocketController) writePump(client *websocket.Client, conn *ws.Conn,
 			}
 		}
 	}
+}
+
+// Status follows the same live authorization and representative traffic scope
+// as REST. Client-specific messages keep their existing per-user delivery.
+func filterSocketMessage(user *model.User, message []byte) ([]byte, bool) {
+	var envelope struct {
+		Type    websocket.MessageType `json:"type"`
+		Payload json.RawMessage       `json:"payload"`
+		Time    int64                 `json:"time"`
+	}
+	if json.Unmarshal(message, &envelope) != nil {
+		return message, true
+	}
+	if envelope.Type != websocket.MessageTypeStatus {
+		return message, true
+	}
+	if !overviewAccess(user) {
+		return nil, false
+	}
+	if !isRepresentative(user) {
+		return message, true
+	}
+	var status service.Status
+	if json.Unmarshal(envelope.Payload, &status) != nil {
+		return nil, false
+	}
+	result, err := json.Marshal(websocket.Message{Type: envelope.Type, Time: envelope.Time, Payload: service.StatusForUser(&status, user)})
+	return result, err == nil
 }

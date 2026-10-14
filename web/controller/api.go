@@ -68,10 +68,15 @@ func (a *APIController) initRouter(g *gin.RouterGroup, customGeo *service.Custom
 	// Extra routes
 	// Mails the entire SQLite DB (every admin's inbounds, client credentials, and
 	// the users table with its bcrypt hashes) to a Telegram chat: escalation-class.
-	api.GET("/backuptotgbot", requireOverviewManage(), a.BackuptoTgbot)
+	a.registerBackupRoute(api)
 }
 
 // BackuptoTgbot sends a backup of the panel data to Telegram bot admins.
 func (a *APIController) BackuptoTgbot(c *gin.Context) {
 	a.Tgbot.SendBackupToAdmins()
+	jsonMsg(c, "", nil)
+}
+
+func (a *APIController) registerBackupRoute(api *gin.RouterGroup) {
+	api.POST("/backuptotgbot", requireOverviewManage(), requirePanelOwner(), a.BackuptoTgbot)
 }

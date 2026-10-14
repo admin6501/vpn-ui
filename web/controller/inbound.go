@@ -661,6 +661,10 @@ func (a *InboundController) addInbound(c *gin.Context) {
 		return
 	}
 
+	if err := service.ValidateInboundCertificatePaths(session.GetLoginUser(c), nil, inbound); err != nil {
+		jsonMsg(c, I18nWeb(c, "somethingWentWrong"), err)
+		return
+	}
 	if coreMissingForInbound(c, inbound) {
 		return
 	}
@@ -858,6 +862,15 @@ func (a *InboundController) updateInbound(c *gin.Context) {
 	err = c.ShouldBind(inbound)
 	if err != nil {
 		jsonMsg(c, I18nWeb(c, "pages.inbounds.toasts.inboundUpdateSuccess"), err)
+		return
+	}
+	stored, loadErr := a.inboundService.GetInbound(id)
+	if loadErr != nil {
+		jsonMsg(c, I18nWeb(c, "somethingWentWrong"), loadErr)
+		return
+	}
+	if err := service.ValidateInboundCertificatePaths(session.GetLoginUser(c), stored, inbound); err != nil {
+		jsonMsg(c, I18nWeb(c, "somethingWentWrong"), err)
 		return
 	}
 	// An inbound whose core was uninstalled cannot serve anything, so it must not be
@@ -2079,6 +2092,10 @@ func (a *InboundController) importInbound(c *gin.Context) {
 	}
 	// Import is a create by another name, and it was the one path with no gate at all:
 	// an exported inbound for a core this host never installed came straight in.
+	if err := service.ValidateInboundCertificatePaths(session.GetLoginUser(c), nil, inbound); err != nil {
+		jsonMsg(c, I18nWeb(c, "somethingWentWrong"), err)
+		return
+	}
 	if coreMissingForInbound(c, inbound) {
 		return
 	}
