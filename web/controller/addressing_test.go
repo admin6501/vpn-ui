@@ -111,22 +111,11 @@ func TestAddressingIsScopedToTheCaller(t *testing.T) {
 		}
 	})
 
-	t.Run("a reseller sees only their own account", func(t *testing.T) {
+	t.Run("a reseller cannot inspect inbound address pools", func(t *testing.T) {
 		w := f.as(t, sara, http.MethodGet, path, "")
-		success, report := addressingBody(t, w.Body.Bytes())
-		if !success {
-			t.Fatalf("the reseller holds the read bit and the grant, so this must succeed: %s", w.Body.String())
-		}
-		if len(report.Accounts) != 1 {
-			t.Fatalf("want exactly the reseller's own account, got %#v", report.Accounts)
-		}
-		if report.Accounts[0].Email != saraEmail {
-			t.Fatalf("the reseller was shown %q, another seller's account on a shared inbound", report.Accounts[0].Email)
-		}
-		// The pool itself is not secret: it is the inbound's own configuration, and
-		// the reseller is granted the inbound.
-		if len(report.Subnets) == 0 {
-			t.Error("the pool should still be reported")
+		success, _ := addressingBody(t, w.Body.Bytes())
+		if success || !strings.Contains(w.Body.String(), "pages.admins.forbidden") {
+			t.Fatalf("reseller inbound introspection was not denied: %s", w.Body.String())
 		}
 	})
 

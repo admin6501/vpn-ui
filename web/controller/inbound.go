@@ -45,6 +45,7 @@ func NewInboundController(g *gin.RouterGroup) *InboundController {
 
 // initRouter initializes the routes for inbound-related operations.
 func (a *InboundController) initRouter(g *gin.RouterGroup) {
+	g.Use(requireRepresentativeClientRoute(g.BasePath()))
 
 	// Every route here needs BOTH a permission (whether the caller may do this at
 	// all) and an ownership assertion (which objects they may do it to). A bit alone

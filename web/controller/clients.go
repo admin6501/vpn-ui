@@ -40,6 +40,8 @@ func (a *ClientsController) initRouter(g *gin.RouterGroup) {
 	// The rows are then narrowed per caller inside ListAccounts.
 	g.GET("/list", a.list)
 	g.GET("/assignable", a.assignable)
+	g.GET("/inbounds", a.inbounds)
+	g.GET("/balance", (&InboundController{}).resellerBalance)
 	g.GET("/owners", requireSuperAdmin(), a.owners)
 	g.POST("/transferOwner", requireSuperAdmin(), a.transferOwner)
 }
@@ -103,4 +105,16 @@ func (a *ClientsController) transferOwner(c *gin.Context) {
 		(&service.XrayService{}).SetToNeedRestart()
 	}
 	jsonMsg(c, "", err)
+}
+
+// Client cards need transport endpoints and their own credentials, not server
+// private keys or TLS certificate paths. This read model cannot edit inbounds.
+func (a *ClientsController) inbounds(c *gin.Context) {
+	user := session.GetLoginUser(c)
+	rows, err := (&service.InboundService{}).GetInboundsFor(user)
+	if err != nil {
+		jsonObj(c, nil, err)
+		return
+	}
+	jsonObj(c, rows, nil)
 }

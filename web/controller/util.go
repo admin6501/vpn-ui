@@ -152,6 +152,8 @@ func templatePerms(c *gin.Context) map[string]bool {
 	for _, d := range model.AllPermissions {
 		perms[d.Slug] = user.Can(d.Bit)
 	}
+	perms["accessInboundManagement"] = user.Can(model.PermAccessInbounds) && !isRepresentative(user)
+	perms["checkUpdates"] = !isRepresentative(user)
 	perms["superAdmin"] = user.IsSuperAdmin
 	perms["panelOwner"] = user.IsPanelOwner
 	perms["manageAdmins"] = user.CanManageAdmins()
@@ -194,7 +196,7 @@ func resellerOverviewGrants(user *model.User) (access, manage bool) {
 func templateReseller(c *gin.Context) map[string]any {
 	out := map[string]any{"isReseller": false}
 	user := session.GetLoginUser(c)
-	if user == nil || !user.IsReseller {
+	if !isRepresentative(user) {
 		return out
 	}
 	var svc service.ResellerService

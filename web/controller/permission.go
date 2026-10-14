@@ -123,6 +123,9 @@ func landingPath(c *gin.Context) string {
 			continue
 		}
 		if user.Can(p.perm) {
+			if p.perm == model.PermAccessInbounds && isRepresentative(user) {
+				return c.GetString("base_path") + "panel/clients"
+			}
 			return c.GetString("base_path") + p.path
 		}
 	}
@@ -505,6 +508,46 @@ func requirePanelOwner() gin.HandlerFunc {
 		}
 		if !user.IsPanelOwner {
 			deny(c, http.StatusForbidden, "pages.admins.ownerOnly", landingPath(c))
+			return
+		}
+		c.Next()
+	}
+}
+
+// Representative identity must survive the per-request role scope flag.
+func isRepresentative(user *model.User) bool {
+	return user != nil && (user.IsReseller || user.RepresentativeRoleID > 0)
+}
+
+func requireNotRepresentative() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if isRepresentative(session.GetLoginUser(c)) {
+			deny(c, http.StatusForbidden, "pages.admins.forbidden", landingPath(c))
+			return
+		}
+		c.Next()
+	}
+}
+
+// Only account operations and account artifacts remain available in this legacy
+// API namespace. New inbound operations fail closed for representatives.
+func requireRepresentativeClientRoute(prefix string) gin.HandlerFunc {
+	allowed := map[string]bool{
+		"/resellerBalance": true, "/getClientTraffics/:email": true, "/getClientTrafficsById/:id": true,
+		"/clientIps/:email": true, "/clearClientIps/:email": true, "/addClient": true,
+		"/:id/delClient/:clientId": true, "/updateClient/:clientId": true,
+		"/renameUnservedAccount": true, "/saveAccount": true, "/delAccount/:email": true,
+		"/:id/setMembershipEnable/:email": true, "/bulkUpdateClients": true, "/bulkPreview": true,
+		"/bulkMembership": true, "/:id/resetClientTraffic/:email": true,
+		"/onlines": true, "/onlineMemberships": true, "/lastOnline": true,
+		"/updateClientTraffic/:email": true, "/:id/delClientByEmail/:email": true,
+		"/:id/ovpn/:proto": true, "/:id/wgc-configs": true, "/:id/wgxray-configs": true,
+		"/:id/awg-configs": true, "/:id/gre-configs": true, "/:id/ssh-configs": true,
+		"/:id/ikev2-remote-id": true,
+	}
+	return func(c *gin.Context) {
+		if isRepresentative(session.GetLoginUser(c)) && !allowed[strings.TrimPrefix(c.FullPath(), prefix)] {
+			deny(c, http.StatusForbidden, "pages.admins.forbidden", landingPath(c))
 			return
 		}
 		c.Next()

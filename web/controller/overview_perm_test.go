@@ -337,8 +337,8 @@ func TestResellerOverviewAccessComesFromTheProfile(t *testing.T) {
 	if w.Code != http.StatusTemporaryRedirect {
 		t.Errorf("status %d, want a redirect for a reseller without allowOverview", w.Code)
 	}
-	if got := w.Header().Get("Location"); got != "/panel/inbounds" {
-		t.Errorf("redirected to %q, want /panel/inbounds", got)
+	if got := w.Header().Get("Location"); got != "/panel/clients" {
+		t.Errorf("redirected to %q, want /panel/clients", got)
 	}
 }
 
@@ -466,14 +466,14 @@ func TestLandingPathOnlyNamesReachablePages(t *testing.T) {
 	if got := landingPath(permCtx(newReseller(t, 21, true, false))); got != "/panel/" {
 		t.Errorf("a reseller with allowOverview landed on %q, want /panel/", got)
 	}
-	if got := landingPath(permCtx(newReseller(t, 22, false, false))); got != "/panel/inbounds" {
-		t.Errorf("a reseller without allowOverview landed on %q, want /panel/inbounds", got)
+	if got := landingPath(permCtx(newReseller(t, 22, false, false))); got != "/panel/clients" {
+		t.Errorf("a reseller without allowOverview landed on %q, want /panel/clients", got)
 	}
 	// No profile row at all is a broken account, not a privileged one: it must not
 	// resolve to the overview.
 	broken := &model.User{Id: 23, Enable: true, IsReseller: true}
-	if got := landingPath(permCtx(broken)); got != "/panel/inbounds" {
-		t.Errorf("a reseller with no profile landed on %q, want /panel/inbounds", got)
+	if got := landingPath(permCtx(broken)); got != "/panel/clients" {
+		t.Errorf("a reseller with no profile landed on %q, want /panel/clients", got)
 	}
 }
 

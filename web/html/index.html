@@ -422,6 +422,19 @@
     </article>
     {{ end }}
 
+    {{ if .reseller.isReseller }}
+    <article class="bo-tile bo-t-vpnui" data-testid="representative-quota" aria-label='{{ i18n "pages.resellers.totalTraffic" }}'>
+      <div class="bo-tile-head"><h3 class="bo-tile-title">{{ i18n "pages.resellers.totalTraffic" }}</h3></div>
+      <div class="bo-vpnui-body">
+        <div class="ai-kv"><span class="k">{{ i18n "pages.resellers.totalTraffic" }}</span>
+          <span class="v num">[[ quotaBalance.unlimited ? '{{ i18n "pages.resellers.unlimited" }}' : SizeFormatter.sizeFormat(quotaBalance.allowanceBytes || 0) ]]</span></div>
+        <div class="ai-kv"><span class="k">{{ i18n "pages.resellers.used" }}</span>
+          <span class="v num">[[ SizeFormatter.sizeFormat(quotaBalance.spentBytes || 0) ]]</span></div>
+        <div class="ai-kv"><span class="k">{{ i18n "pages.resellers.available" }}</span>
+          <span class="v num">[[ quotaBalance.unlimited ? '{{ i18n "pages.resellers.unlimited" }}' : SizeFormatter.sizeFormat(quotaBalance.availableBytes || 0) ]]</span></div>
+      </div>
+    </article>
+    {{ else }}
     <!-- ===== VPN-UI panel + updater ===== -->
     <article class="bo-tile bo-t-vpnui" aria-label="VPN-UI">
       <div class="bo-tile-head">
@@ -510,6 +523,7 @@
         </div>
       </div>
     </article>
+    {{ end }}
 
 
     <!-- ===== connections ===== -->
@@ -1846,6 +1860,7 @@
       serverName: '',
       // '' means every interface, which is what the aggregate netIO already is.
       ifaceFilter: '',
+      quotaBalance: Object.assign({}, RESELLER),
       userStats: { total: 0, online: 0, depleted: 0, expired: 0, expiring: 0 },
       userStatsTimer: null,
       userStatsLoading: false,
@@ -2243,7 +2258,16 @@
           if (msg && msg.success && msg.obj) this.serverName = msg.obj.serverName || '';
         } catch (e) { /* best-effort */ }
       },
+      async fetchQuotaBalance() {
+        if (!RESELLER.isReseller || this._quotaPending) return;
+        this._quotaPending = true;
+        try {
+          const msg = await HttpUtil.get('/panel/api/server/resellerBalance');
+          if (msg && msg.success && msg.obj) this.quotaBalance = msg.obj;
+        } finally { this._quotaPending = false; }
+      },
       async fetchUserStats() {
+        this.fetchQuotaBalance().catch(() => {});
         if (this.userStatsLoading) return;
         this.userStatsLoading = true;
         try {
@@ -2375,7 +2399,7 @@
       // HttpUtil so a plain admin's overview does not get a permission toast for
       // asking. Every failure is silent: this is good news or nothing.
       async announceUpdateResult() {
-        if (!PERMS.manageOverview) return;
+        if (!PERMS.checkUpdates || !PERMS.manageOverview) return;
         try {
           const resp = await axios.get('/panel/api/server/updateResult');
           const obj = resp && resp.data ? resp.data.obj : null;
@@ -2390,6 +2414,7 @@
       // Runs automatically on every overview load (manual=false, silent) and on
       // the "Check for Update" button (manual=true, surfaces errors in the card).
       async checkForUpdate(manual) {
+        if (!PERMS.checkUpdates) return;
         this.panelUpdate.checking = true;
         this.panelUpdate.error = '';
         try {
@@ -2494,6 +2519,7 @@
       // when the panel could not answer (which, mid-update, usually means it is
       // restarting).
       async readPanelUpdateProgress() {
+        if (!PERMS.checkUpdates) return;
         try {
           const p = await HttpUtil.get('/panel/api/server/updateProgress');
           if (!p || !p.success || !p.obj) return null;
@@ -2521,6 +2547,7 @@
       // overview, rebuilt from scratch, shows an idle tile. `running` is what tells
       // the two apart; the phase alone cannot, because terminal phases stick.
       async resumePanelUpdate() {
+        if (!PERMS.checkUpdates) return;
         let st = null;
         try {
           const p = await HttpUtil.get('/panel/api/server/updateProgress');

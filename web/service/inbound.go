@@ -69,6 +69,13 @@ func (s *InboundService) GetInboundsFor(user *model.User) ([]*model.Inbound, err
 	if err != nil {
 		return nil, err
 	}
+	// Every representative read, including WebSocket refreshes, excludes server
+	// private keys. Account credentials remain subject to the existing role scope.
+	if user.IsReseller || user.RepresentativeRoleID > 0 {
+		for _, row := range inbounds {
+			redactRepresentativeInboundSecrets(row)
+		}
+	}
 	if !user.IsReseller {
 		return inbounds, nil
 	}

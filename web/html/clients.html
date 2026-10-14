@@ -765,7 +765,7 @@
       // both halves: the inbounds every action reads through, and the account rows
       // the table lists.
       async getDBInbounds() {
-        const msg = await HttpUtil.get('/panel/api/inbounds/list');
+        const msg = await HttpUtil.get('/panel/api/clients/inbounds');
         if (msg.success) this.setInbounds(msg.obj || []);
         await Promise.all([this.loadClients(), this.loadOnlineState()]);
       },
@@ -794,7 +794,7 @@
       },
       async refreshResellerBalance() {
         if (!RESELLER.isReseller) return;
-        const msg = await HttpUtil.get('/panel/api/inbounds/resellerBalance');
+        const msg = await HttpUtil.get('/panel/api/clients/balance');
         if (!msg || !msg.success || !msg.obj) return;
         const b = msg.obj;
         this.resellerBalance = {

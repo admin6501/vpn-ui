@@ -62,6 +62,7 @@ func (f *idorFixture) as(t *testing.T, user *model.User, method, path, body stri
 		c.Next()
 	})
 	NewInboundController(r.Group("/panel/api/inbounds"))
+	NewClientsController(r.Group("/panel/api/clients", requirePerm(model.PermAccessInbounds)))
 
 	req := httptest.NewRequest(method, path, strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -523,7 +524,7 @@ func TestResellerIsolation(t *testing.T) {
 	// without going through it. The middleware cannot stand in: `owns` passes because
 	// the reseller genuinely holds this inbound, which is the whole premise of the
 	// role. So one GET returned every account on it, credentials included.
-	t.Run("get by id returns only the caller's own clients", func(t *testing.T) {
+	t.Run("client read model returns only the caller's own clients", func(t *testing.T) {
 		f := newResellerFixture(t)
 		// The inbound's own counters, which cover both accounts on it. They are what
 		// the Inbounds page sums into its usage band, and they are not derived from
@@ -533,7 +534,7 @@ func TestResellerIsolation(t *testing.T) {
 			t.Fatalf("seed the inbound totals: %v", err)
 		}
 		w := f.as(t, f.sara, http.MethodGet,
-			fmt.Sprintf("/panel/api/inbounds/get/%d", f.aliInbound.Id), "")
+			"/panel/api/clients/inbounds", "")
 		body := w.Body.String()
 
 		// On the RAW body, not a parsed struct: the settings blob crosses the wire as
@@ -551,7 +552,7 @@ func TestResellerIsolation(t *testing.T) {
 		}
 
 		var resp struct {
-			Obj struct {
+			Obj []struct {
 				Settings    string               `json:"settings"`
 				ClientStats []xray.ClientTraffic `json:"clientStats"`
 				Up          int64                `json:"up"`
@@ -562,12 +563,15 @@ func TestResellerIsolation(t *testing.T) {
 		if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 			t.Fatalf("decode response: %v", err)
 		}
+		if len(resp.Obj) != 1 {
+			t.Fatalf("unexpected assigned inbounds: %d", len(resp.Obj))
+		}
 		var settings struct {
 			Clients []struct {
 				Email string `json:"email"`
 			} `json:"clients"`
 		}
-		if err := json.Unmarshal([]byte(resp.Obj.Settings), &settings); err != nil {
+		if err := json.Unmarshal([]byte(resp.Obj[0].Settings), &settings); err != nil {
 			t.Fatalf("decode settings blob: %v", err)
 		}
 		if len(settings.Clients) != 1 || settings.Clients[0].Email != f.saraEmail {
@@ -577,16 +581,16 @@ func TestResellerIsolation(t *testing.T) {
 		// The other half of the filter. GetInbound does not preload ClientStats, so the
 		// route loads them itself before filtering (the inbound's own counters are
 		// rescoped from these rows, and unloaded rows would read as zero usage).
-		for _, stat := range resp.Obj.ClientStats {
+		for _, stat := range resp.Obj[0].ClientStats {
 			if stat.Email != f.saraEmail {
 				t.Errorf("clientStats leaked %q", stat.Email)
 			}
 		}
 		// And the inbound's own counters, which the Inbounds page sums into its usage
 		// band: Sara's 1000/1000/2000, not the whole inbound's.
-		if resp.Obj.Up != 1000 || resp.Obj.Down != 1000 || resp.Obj.AllTime != 2000 {
+		if resp.Obj[0].Up != 1000 || resp.Obj[0].Down != 1000 || resp.Obj[0].AllTime != 2000 {
 			t.Errorf("up/down/allTime = %d/%d/%d; want the reseller's own 1000/1000/2000",
-				resp.Obj.Up, resp.Obj.Down, resp.Obj.AllTime)
+				resp.Obj[0].Up, resp.Obj[0].Down, resp.Obj[0].AllTime)
 		}
 
 		// And the filter must be a no-op for an admin: Ali still sees his own client

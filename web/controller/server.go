@@ -57,6 +57,7 @@ func (a *ServerController) initRouter(g *gin.RouterGroup) {
 
 	g.GET("/status", a.status)
 	g.GET("/userStats", a.userStats)
+	g.GET("/resellerBalance", requireOverviewAccess(), (&InboundController{}).resellerBalance)
 	g.GET("/serverName", a.getServerName)
 	g.GET("/panelLocation", a.panelLocation)
 	g.GET("/cpuHistory/:bucket", a.getCpuHistoryBucket)
@@ -75,8 +76,8 @@ func (a *ServerController) initRouter(g *gin.RouterGroup) {
 	// The in-flight geofile download, so an overview that was reopened mid-transfer
 	// can re-attach instead of looking idle. Read-only, like geofileStatus beside it.
 	g.GET("/geofileProgress", a.geofileProgress)
-	g.GET("/checkUpdate", a.checkUpdate)
-	g.GET("/updateProgress", a.updateProgress)
+	g.GET("/checkUpdate", requireNotRepresentative(), a.checkUpdate)
+	g.GET("/updateProgress", requireNotRepresentative(), a.updateProgress)
 	// Reports (once) that the panel came back from a self-update. Gated to match
 	// updatePanel: reading it CLEARS it, so an admin without the bit loading the
 	// dashboard first would otherwise consume the notice meant for whoever ran the
