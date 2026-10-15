@@ -37,7 +37,25 @@ const {chromium}=require('playwright');
   await page.waitForFunction(()=>!clientMembershipModal.visible);
   await page.reload({waitUntil:'networkidle'});
   await page.waitForFunction(()=>Array.isArray(app.clients)&&app.clients.some(x=>x.email==='new-group-user'&&x.memberships.length===2&&x.groupIds.length===1));
+  for (const enable of [false,true]) {
+   const saved=page.waitForResponse(r=>r.url().endsWith('/inbounds/saveAccount'));
+   await page.evaluate(enable=>app.toggleEnable(app.clients.find(x=>x.email==='new-group-user'),enable),enable);
+   const response=await(await saved).json();assert.equal(response.success,true,JSON.stringify(response));
+   await page.waitForFunction(enable=>app.clients.some(x=>x.email==='new-group-user'&&x.enable===enable&&x.memberships.length===2&&x.groupIds.length===1),enable);
+  }
+  const ownership=await page.request.post(base+'fixtures/representative');assert.equal(ownership.ok(),true);
+  for (const actor of ['delegate','representative']) {
+   await page.setExtraHTTPHeaders({'X-Test-Actor':actor});
+   await page.reload({waitUntil:'networkidle'});
+   await page.waitForFunction(()=>Array.isArray(app.clients)&&app.clients.some(x=>x.email==='new-group-user'));
+   for (const enable of [false,true]) {
+    const saved=page.waitForResponse(r=>r.url().includes('/inbounds/updateClient/'));
+    await page.evaluate(enable=>app.toggleEnable(app.clients.find(x=>x.email==='new-group-user'),enable),enable);
+    const response=await(await saved).json();assert.equal(response.success,true,JSON.stringify({actor,response}));
+    await page.waitForFunction(enable=>app.clients.some(x=>x.email==='new-group-user'&&x.enable===enable&&x.memberships.length===2&&x.groupIds.length===1),enable);
+   }
+  }
   assert.deepEqual(errors,[]);
-  console.log('Group editing dynamically updated an existing user; new user selected a group; ungrouped inbound excluded.');
+  console.log('Group editing dynamically updated an existing user; new user selected a group; ungrouped inbound excluded; account enable/disable preserved its group.');
  } finally {await browser.close()}
 })().catch(e=>{console.error(e);process.exit(1)});

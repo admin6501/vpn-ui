@@ -51,6 +51,9 @@ func TestOverviewSSLBrowserRuntime(t *testing.T) {
 				switch {
 				case strings.HasPrefix(r.URL.Path, "/test/assets/"):
 					http.StripPrefix("/test/", http.FileServer(http.FS(assetsFS))).ServeHTTP(w, r)
+				case r.URL.Path == "/test/panel/api/clients/groups":
+					w.Header().Set("Content-Type", "application/json")
+					w.Write([]byte(`{"success":true,"msg":"","obj":[]}`))
 				case r.URL.Path == "/test/panel/overview":
 					w.Header().Set("Content-Type", "text/html")
 					w.Write(pages["index.html"])
