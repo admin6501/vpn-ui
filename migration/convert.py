@@ -110,10 +110,10 @@ def convert(backup, schema, output, destination_db=None):
         with target:
             for table in ['users', 'representative_roles', 'reseller_profiles', 'reseller_clients', 'inbound_accesses', 'pasar_guard_resources', 'pasar_guard_subscriptions', 'pasar_guard_secrets']:
                 target.execute('DELETE FROM "'+table+'"')
-            for table in ['account_groups', 'group_inbounds', 'client_groups']:
+            for table in ['representative_group_accesses', 'account_groups', 'group_inbounds', 'client_groups']:
                 if target.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (table,)).fetchone():
                     target.execute('DELETE FROM "'+table+'"')
-            target.execute('DELETE FROM settings WHERE key=?', ('clientGroupsMigrationV1',))
+            target.execute('DELETE FROM settings WHERE key IN (?,?)', ('clientGroupsMigrationV1','representativeGroupsMigrationV2'))
             owner_id = int(owners[0]['id'])
             for r in source['admin_roles']:
                 insert(target, 'representative_roles', {
@@ -135,7 +135,7 @@ def convert(backup, schema, output, destination_db=None):
                         'unlimited': not int(a['data_limit'] or 0), 'created_by': owner_id})
             insert(target, 'pasar_guard_secrets', {'id': 1, 'signing_key': source['jwt'][0]['secret_key']})
             # Preserve full records, including host fields unsupported by the native UI.
-            for kind in ['hosts', 'groups', 'inbounds', 'core_configs', 'settings', 'user_usage_logs', 'user_hwids', 'users', 'admins', 'admin_roles', 'inbounds_groups_association']:
+            for kind in ['hosts', 'groups', 'inbounds', 'core_configs', 'settings', 'user_usage_logs', 'user_hwids', 'users', 'admins', 'admin_roles', 'inbounds_groups_association', 'users_groups_association']:
                 for idx, row in enumerate(source.get(kind, [])):
                     insert(target, 'pasar_guard_resources', {'kind': kind, 'source_id': int(row.get('id') or idx+1), 'data': compact(row)})
             inbound_by_tag = {}

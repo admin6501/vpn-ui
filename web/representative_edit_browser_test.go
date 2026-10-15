@@ -13,11 +13,13 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/mhsanaei/3x-ui/v2/config"
 	"github.com/mhsanaei/3x-ui/v2/database"
 	"github.com/mhsanaei/3x-ui/v2/database/model"
 	"github.com/mhsanaei/3x-ui/v2/logger"
 	"github.com/mhsanaei/3x-ui/v2/web/controller"
 	weblocale "github.com/mhsanaei/3x-ui/v2/web/locale"
+	"github.com/mhsanaei/3x-ui/v2/web/service"
 	"github.com/nicksnyder/go-i18n/v2/i18n"
 	"github.com/op/go-logging"
 	"github.com/pelletier/go-toml/v2"
@@ -47,7 +49,8 @@ func TestRepresentativeEditBrowserRuntime(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				if err := database.InitDB(filepath.Join(t.TempDir(), "representative-edit.db")); err != nil {
+				t.Setenv("VPNUI_DB_FOLDER", t.TempDir())
+				if err := database.InitDB(config.GetDBPath()); err != nil {
 					t.Fatal(err)
 				}
 				db := database.GetDB()
@@ -87,6 +90,16 @@ func TestRepresentativeEditBrowserRuntime(t *testing.T) {
 					creatorID = manager.Id
 				}
 				if err := db.Create(&model.ResellerProfile{UserId: rep.Id, CreatedBy: creatorID, ConsumptionBased: true, AllowanceBytes: 10 << 30}).Error; err != nil {
+					t.Fatal(err)
+				}
+				if kind == "owner" {
+					second := model.Inbound{UserId: owner.Id, Tag: "second-group-inbound", Remark: "Additional group", Port: 12001, Protocol: model.Trojan, Settings: `{"clients":[]}`, StreamSettings: `{}`}
+					if err := db.Create(&second).Error; err != nil {
+						t.Fatal(err)
+					}
+				}
+				(&service.AccountService{}).MigrationAccounts()
+				if err := (&service.GroupService{}).Migrate(); err != nil {
 					t.Fatal(err)
 				}
 				actor := &owner
@@ -148,7 +161,11 @@ func TestRepresentativeEditBrowserRuntime(t *testing.T) {
 				if err := db.Where("user_id = ?", rep.Id).Find(&grants).Error; err != nil {
 					t.Fatal(err)
 				}
-				if len(grants) != 1 || grants[0].InboundId != inbound.Id {
+				wantGrants := 1
+				if kind == "owner" {
+					wantGrants = 2
+				}
+				if len(grants) != wantGrants || grants[0].InboundId != inbound.Id {
 					t.Fatal("editing metadata changed existing inbound access")
 				}
 				if stored.Password != rep.Password {

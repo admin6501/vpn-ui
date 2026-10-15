@@ -28,12 +28,17 @@ func registerGroups(g *gin.RouterGroup) {
 			ID         int    `form:"id"`
 			Name       string `form:"name"`
 			InboundIDs []int  `form:"inboundIds"`
+			Disabled   *bool  `form:"disabled"`
 		}
 		if err := c.ShouldBind(&form); err != nil {
 			jsonMsg(c, "", err)
 			return
 		}
-		row, touched, err := (&service.GroupService{}).Save(session.GetLoginUser(c), form.ID, form.Name, form.InboundIDs)
+		disabled := []bool{}
+		if form.Disabled != nil {
+			disabled = append(disabled, *form.Disabled)
+		}
+		row, touched, err := (&service.GroupService{}).Save(session.GetLoginUser(c), form.ID, form.Name, form.InboundIDs, disabled...)
 		if err == nil {
 			(&InboundController{}).reconcileForInbounds(touched, true)
 		}

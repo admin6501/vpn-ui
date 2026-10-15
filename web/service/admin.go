@@ -428,7 +428,7 @@ func (s *AdminService) ReassignInbounds(fromId, toId int) (int64, error) {
 // IsSuperAdmin first; this returns only explicit grants.
 func (s *AdminService) AccessibleInboundIds(userId int) ([]int, error) {
 	var ids []int
-	err := database.GetDB().Model(&model.InboundAccess{}).
+	err := effectiveInboundAccess(database.GetDB()).
 		Where("user_id = ?", userId).Pluck("inbound_id", &ids).Error
 	return ids, err
 }
@@ -436,7 +436,7 @@ func (s *AdminService) AccessibleInboundIds(userId int) ([]int, error) {
 // CanAccessInbound reports whether userId has been granted this inbound.
 func (s *AdminService) CanAccessInbound(inboundId, userId int) (bool, error) {
 	var n int64
-	err := database.GetDB().Model(&model.InboundAccess{}).
+	err := effectiveInboundAccess(database.GetDB()).
 		Where("inbound_id = ? AND user_id = ?", inboundId, userId).Count(&n).Error
 	return n > 0, err
 }
@@ -457,7 +457,7 @@ func (s *AdminService) CanAccessAllInbounds(ids []int, userId int) (bool, error)
 		want = append(want, id)
 	}
 	var n int64
-	err := database.GetDB().Model(&model.InboundAccess{}).
+	err := effectiveInboundAccess(database.GetDB()).
 		Where("inbound_id IN (?) AND user_id = ?", want, userId).Count(&n).Error
 	if err != nil {
 		return false, err
@@ -490,8 +490,7 @@ func (s *AdminService) CanAccessClientEmail(email string, userId int) (bool, err
 		return false, nil
 	}
 	var n int64
-	err = db.Model(&model.InboundAccess{}).
-		Where("inbound_id IN (?) AND user_id = ?", ids, userId).Count(&n).Error
+	err = effectiveInboundAccess(db).Where("inbound_id IN (?) AND user_id = ?", ids, userId).Count(&n).Error
 	return n > 0, err
 }
 
@@ -560,7 +559,7 @@ func (s *AdminService) ClientEmailAccess() (map[string]map[int]bool, error) {
 	db := database.GetDB()
 
 	var grants []model.InboundAccess
-	if err := db.Model(&model.InboundAccess{}).Find(&grants).Error; err != nil {
+	if err := effectiveInboundAccess(db).Find(&grants).Error; err != nil {
 		return nil, err
 	}
 	adminsByInbound := make(map[int]map[int]bool, len(grants))

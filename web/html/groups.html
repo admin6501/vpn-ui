@@ -7,7 +7,7 @@
   <a-empty v-if="!groups.length" description='{{ i18n "pages.groups.noGroups" }}'></a-empty>
   <a-list :data-source="groups">
     <a-list-item slot="renderItem" slot-scope="group">
-      <div><b>[[ group.name ]]</b><div>{{ i18n "pages.groups.members" }}: [[ group.members ]]</div>
+      <div><b>[[ group.name ]]</b> <a-tag v-if="group.pasarGuardId">PasarGuard #[[ group.pasarGuardId ]]</a-tag> <a-tag v-if="group.disabled" color="orange">{{ i18n "disabled" }}</a-tag><div>{{ i18n "pages.groups.members" }}: [[ group.members ]]</div>
         <a-tag v-for="id in group.inboundIds" :key="id">[[ inboundName(id) ]]</a-tag>
       </div>
       <a-button slot="actions" @click="edit(group)">{{ i18n "edit" }}</a-button>
@@ -19,6 +19,7 @@
   <a-alert v-if="error" type="error" show-icon :message="error" style="margin-bottom:12px"></a-alert>
   <a-form layout="vertical">
     <a-form-item label='{{ i18n "pages.roles.name" }}'><a-input v-model.trim="form.name" :max-length="200"></a-input></a-form-item>
+    <a-form-item label='{{ i18n "disabled" }}'><a-switch v-model="form.disabled"></a-switch></a-form-item>
     <a-form-item label='{{ i18n "pages.clients.inbounds" }}'>
       <a-select mode="multiple" v-model="form.inboundIds" :filter-option="filterInbound" style="width:100%">
         <a-select-option v-for="ib in inbounds" :key="ib.inboundId" :value="ib.inboundId">[[ inboundName(ib.inboundId) ]]</a-select-option>
@@ -32,13 +33,13 @@
 {{template "component/aSidebar" .}}
 {{template "component/aThemeSwitch" .}}
 <script>
-const app = new Vue({el:'#app',delimiters:['[[',']]'],mixins:[MediaQueryMixin],data:{themeSwitcher,pageTitle:'{{ i18n "pages.groups.title" }}',pageClass:'',spinning:false,groups:[],inbounds:[],form:{visible:false,id:0,name:'',inboundIds:[]},saving:false,error:''},
+const app = new Vue({el:'#app',delimiters:['[[',']]'],mixins:[MediaQueryMixin],data:{themeSwitcher,pageTitle:'{{ i18n "pages.groups.title" }}',pageClass:'',spinning:false,groups:[],inbounds:[],form:{visible:false,id:0,name:'',disabled:false,inboundIds:[]},saving:false,error:''},
  methods:{
   async load(){const [g,i]=await Promise.all([HttpUtil.get('/panel/groups/list'),HttpUtil.get('/panel/groups/inbounds')]);if(g&&g.success)this.groups=g.obj||[];if(i&&i.success)this.inbounds=i.obj||[];},
   inboundName(id){const ib=this.inbounds.find(x=>x.inboundId===id);return ib ? (ib.remark||('#'+id))+' · '+ib.protocol+' :'+ib.port : '#'+id;},
   filterInbound(input,option){return option.componentOptions.children[0].text.toLowerCase().includes(input.toLowerCase());},
-  edit(group){this.error='';this.form={visible:true,id:group?group.id:0,name:group?group.name:'',inboundIds:group?group.inboundIds.slice():[]};},
-  async save(){if(this.saving)return;this.saving=true;this.error='';try{const m=await HttpUtil.post('/panel/groups/save',{id:this.form.id,name:this.form.name,inboundIds:this.form.inboundIds});if(m&&m.success){this.form.visible=false;await this.load();}else this.error=m&&m.msg||'{{ i18n "somethingWentWrong" }}';}catch(e){this.error=e.message;}finally{this.saving=false;}},
+  edit(group){this.error='';this.form={visible:true,id:group?group.id:0,name:group?group.name:'',disabled:group?!!group.disabled:false,inboundIds:group?group.inboundIds.slice():[]};},
+  async save(){if(this.saving)return;this.saving=true;this.error='';try{const m=await HttpUtil.post('/panel/groups/save',{id:this.form.id,name:this.form.name,disabled:this.form.disabled,inboundIds:this.form.inboundIds});if(m&&m.success){this.form.visible=false;await this.load();}else this.error=m&&m.msg||'{{ i18n "somethingWentWrong" }}';}catch(e){this.error=e.message;}finally{this.saving=false;}},
   async remove(group){const m=await HttpUtil.post('/panel/groups/delete/'+group.id);if(m&&m.success)await this.load();}
  },mounted(){this.load();}});
 </script>

@@ -163,6 +163,30 @@ func TestGroupsDynamicUnionAndEmptyGroupPreserveAccounts(t *testing.T) {
 	if !reflect.DeepEqual(ids, []int{a.Id}) {
 		t.Fatal("empty group lost its existing users", ids)
 	}
+	if _, _, err := gs.Save(root, g.ID, "Shared", []int{a.Id}, true); err != nil {
+		t.Fatal(err)
+	}
+	ids, _ = accounts.InboundIdsForEmail("b")
+	if len(ids) != 0 {
+		t.Fatal("disabled group kept serving members", ids)
+	}
+	ids, _ = accounts.InboundIdsForEmail("a")
+	if !reflect.DeepEqual(ids, []int{b.Id}) {
+		t.Fatal("disabled group removed overlapping membership", ids)
+	}
+	for _, old := range before {
+		stored := noInboundAccount(t, accounts, old.Email)
+		if !reflect.DeepEqual(*stored, old) {
+			t.Fatal("disabled group changed account data")
+		}
+	}
+	if _, _, err := gs.Save(root, g.ID, "Shared", []int{a.Id}, false); err != nil {
+		t.Fatal(err)
+	}
+	ids, _ = accounts.InboundIdsForEmail("b")
+	if !reflect.DeepEqual(ids, []int{a.Id}) {
+		t.Fatal("re-enabled group lost its members", ids)
+	}
 }
 func TestGroupsMutationRollsBackAllUsersOnAdmissionFailure(t *testing.T) {
 	accounts := newAccountsDB(t)

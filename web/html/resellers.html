@@ -118,8 +118,8 @@
                     </div>
                     <div class="bo-spec-row">
                       <span class="bo-spec-ico bo-spec-ico--loc"><svg class="bo-icon bo-icon-14" aria-hidden="true"><use href="#bo-i-grid"></use></svg></span>
-                      <dt class="bo-spec-key">{{ i18n "pages.resellers.inboundAccess" }}</dt>
-                      <dd class="bo-spec-val num">[[ (reseller.inboundIds || []).length ]]</dd>
+                      <dt class="bo-spec-key">{{ i18n "pages.groups.title" }}</dt>
+                      <dd class="bo-spec-val num">[[ (reseller.groupIds || []).length ]]</dd>
                     </div>
                     <!-- Whether this reseller may open the panel overview, which reports the
                          whole server rather than only what they sold. Off for a new reseller. -->
@@ -232,7 +232,7 @@
       pageClass: '',
       spinning: false,
       resellers: [],
-      allInbounds: [],
+      allGroups: [],
       recharge: { visible: false, confirmLoading: false, id: 0, username: '', availableBytes: 0, gb: 0 },
       // Cascade-or-keep choice for deleting a reseller that still owns accounts;
       // mode defaults to the non-destructive 'keep'.
@@ -254,9 +254,9 @@
         if (!msg || !msg.success) return;
         this.resellers = msg.obj || [];
       },
-      async loadInbounds() {
-        const msg = await HttpUtil.get('/panel/resellers/inbounds');
-        if (msg && msg.success) this.allInbounds = msg.obj || [];
+      async loadGroups() {
+        const msg = await HttpUtil.get('/panel/resellers/groups');
+        if (msg && msg.success) this.allGroups = msg.obj || [];
       },
       // Called as a method rather than passed around as a reference: sizeFormat reads
       // this.ONE_KB off the class, so a detached copy formats every size as NaN.
@@ -272,7 +272,7 @@
       openAdd() {
         resellerModal.show({
           title: '{{ i18n "pages.resellers.add" }}',
-          allInbounds: this.allInbounds,
+          allGroups: this.allGroups,
           isEdit: false,
           confirm: async (reseller) => {
             const msg = await HttpUtil.post('/panel/resellers/add', resellerModal.toPayload(reseller));
@@ -287,7 +287,7 @@
       openEdit(reseller) {
         resellerModal.show({
           title: '{{ i18n "pages.resellers.edit" }}',
-          allInbounds: this.allInbounds,
+          allGroups: this.allGroups,
           reseller,
           isEdit: true,
           confirm: async (edited) => {
@@ -358,7 +358,7 @@
     },
     async mounted() {
       await resellerModal.loadRoles();
-      await this.loadInbounds();
+      await this.loadGroups();
       await this.loadResellers(true);
     },
   });

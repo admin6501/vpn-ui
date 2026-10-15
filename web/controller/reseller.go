@@ -54,6 +54,7 @@ type resellerForm struct {
 	// A blank entry is how the UI sends "none": an omitted field would bind as nil
 	// and could not be told apart from "leave alone".
 	InboundIds []string `json:"inboundIds" form:"inboundIds"`
+	GroupIDs   []string `json:"groupIds" form:"groupIds"`
 }
 
 // inboundIds parses the wire form's ids, dropping blanks and unparseable entries
@@ -69,6 +70,24 @@ func (f *resellerForm) inboundIds() []int {
 		}
 	}
 	return out
+}
+
+func (f *resellerForm) groupIDs() *[]int {
+	if f.GroupIDs == nil {
+		return nil
+	}
+	ids := []int{}
+	for _, raw := range f.GroupIDs {
+		if raw == "" {
+			continue
+		}
+		id, err := strconv.Atoi(raw)
+		if err != nil || id <= 0 {
+			id = -1
+		}
+		ids = append(ids, id)
+	}
+	return &ids
 }
 
 // spec maps the wire form onto the service's shape.
@@ -89,6 +108,7 @@ func (f *resellerForm) spec() service.ResellerSpec {
 		AllowOverview:        f.AllowOverview,
 		AllowOverviewManage:  f.AllowOverviewManage,
 		InboundIds:           f.inboundIds(),
+		GroupIDs:             f.groupIDs(),
 	}
 }
 
@@ -143,6 +163,7 @@ func (a *ResellerController) initRouter(g *gin.RouterGroup) {
 	g.POST("/roles/update/:id", requireSuperAdmin(), a.saveRole)
 	g.POST("/roles/delete/:id", requireSuperAdmin(), a.deleteRole)
 	g.GET("/inbounds", a.inbounds)
+	g.GET("/groups", a.groups)
 	g.POST("/add", a.add)
 	g.POST("/update/:id", a.update)
 	g.POST("/del/:id", a.del)
@@ -169,6 +190,11 @@ func (a *ResellerController) inbounds(c *gin.Context) {
 		return
 	}
 	jsonObj(c, list, nil)
+}
+
+func (a *ResellerController) groups(c *gin.Context) {
+	rows, err := (&service.GroupService{}).List(session.GetLoginUser(c), false)
+	jsonObj(c, rows, err)
 }
 
 func (a *ResellerController) add(c *gin.Context) {
