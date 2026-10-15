@@ -45,6 +45,7 @@ func initModels() error {
 		&model.GroupInbound{},
 		&model.AccountGroup{},
 		&model.RepresentativeGroupAccess{},
+		&model.AdminGroupAccess{},
 		&model.PasarGuardSubscription{},
 		&model.PasarGuardSecret{},
 		&model.RepresentativeRole{},

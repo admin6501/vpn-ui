@@ -65,7 +65,7 @@ func TestGroupsManagementAndAccountIsolation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	delegate := model.User{Username: "group-editor", Enable: true, Permissions: model.PermAccessInbounds | model.PermEditInbound | model.PermEditClient}
+	delegate := model.User{Username: "group-editor", Enable: true, Permissions: model.PermAccessInbounds | model.PermAccessGroups | model.PermCreateGroup | model.PermEditGroup | model.PermDeleteGroup | model.PermEditClient}
 	if err := database.GetDB().Create(&delegate).Error; err != nil {
 		t.Fatal(err)
 	}

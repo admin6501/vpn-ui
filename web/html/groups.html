@@ -2,7 +2,7 @@
 {{ template "page/body_start" .}}{{ template "page/shell_start" . }}
 <a-card title='{{ i18n "pages.groups.title" }}'>
   <a-alert type="info" show-icon message='{{ i18n "pages.groups.hint" }}' style="margin-bottom:16px"></a-alert>
-  <a-button type="primary" icon="plus" @click="edit(null)">{{ i18n "pages.groups.add" }}</a-button>
+  <a-button {{if not .perms.createGroup}}disabled{{end}} type="primary" icon="plus" @click="edit(null)">{{ i18n "pages.groups.add" }}</a-button>
   <a-button icon="reload" @click="load()"></a-button>
   <a-empty v-if="!groups.length" description='{{ i18n "pages.groups.noGroups" }}'></a-empty>
   <a-list :data-source="groups">
@@ -10,8 +10,8 @@
       <div><b>[[ group.name ]]</b> <a-tag v-if="group.pasarGuardId">PasarGuard #[[ group.pasarGuardId ]]</a-tag> <a-tag v-if="group.disabled" color="orange">{{ i18n "disabled" }}</a-tag><div>{{ i18n "pages.groups.members" }}: [[ group.members ]]</div>
         <a-tag v-for="id in group.inboundIds" :key="id">[[ inboundName(id) ]]</a-tag>
       </div>
-      <a-button slot="actions" @click="edit(group)">{{ i18n "edit" }}</a-button>
-      <a-popconfirm slot="actions" title='{{ i18n "delete" }}؟' @confirm="remove(group)"><a-button type="danger">{{ i18n "delete" }}</a-button></a-popconfirm>
+      <a-button {{if not .perms.editGroup}}disabled{{end}} slot="actions" @click="edit(group)">{{ i18n "edit" }}</a-button>
+      <a-popconfirm {{if not .perms.deleteGroup}}disabled{{end}} slot="actions" title='{{ i18n "delete" }}؟' @confirm="remove(group)"><a-button {{if not .perms.deleteGroup}}disabled{{end}} type="danger">{{ i18n "delete" }}</a-button></a-popconfirm>
     </a-list-item>
   </a-list>
 </a-card>

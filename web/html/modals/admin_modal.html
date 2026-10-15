@@ -43,20 +43,17 @@
 
 
 
-    <!-- Which inbounds this admin can see. Anything unticked does not exist for them:
-         not in their list, and every route that names it answers not-found. A super
-         admin sees everything by role, so a checklist would imply a limit that is
-         not there. -->
+    <!-- Group grants define scope; permissions separately define operations. -->
     <a-form-item v-if="!adminModal.admin.isSuperAdmin">
       <template slot="label">
         <a-tooltip>
-          <template slot="title">{{ i18n "pages.admins.inboundAccessDesc" }}</template>
-          {{ i18n "pages.admins.inboundAccess" }}
+          <template slot="title">{{ i18n "pages.groups.adminHint" }}</template>
+          {{ i18n "pages.groups.title" }}
           <a-icon type="question-circle"></a-icon>
         </a-tooltip>
       </template>
-      <a-alert v-if="!adminModal.allInbounds.length" type="info" show-icon
-        message='{{ i18n "pages.admins.noInbounds" }}'></a-alert>
+      <a-alert v-if="!adminModal.allGroups.length" type="info" show-icon
+        message='{{ i18n "pages.groups.noGroups" }}'></a-alert>
       <template v-else>
         <a-checkbox :checked="adminModal.allChecked" :indeterminate="adminModal.someChecked"
           @change="adminModal.toggleAll">
@@ -64,13 +61,11 @@
         </a-checkbox>
         <a-divider :style="{ margin: '8px 0' }"></a-divider>
         <div :style="{ maxHeight: '180px', overflowY: 'auto' }">
-          <a-checkbox-group v-model="adminModal.admin.inboundIds" :style="{ width: '100%' }">
+          <a-checkbox-group v-model="adminModal.admin.groupIds" :style="{ width: '100%' }">
             <a-row>
-              <a-col :span="24" v-for="ib in adminModal.allInbounds" :key="ib.id">
-                <a-checkbox :value="ib.id">
-                  [[ ib.remark || ('#' + ib.id) ]]
-                  <a-tag :style="{ marginLeft: '4px' }">[[ ib.protocol ]]</a-tag>
-                  <span :style="{ color: '#8c8c8c' }">:[[ ib.port ]]</span>
+              <a-col :span="24" v-for="group in adminModal.allGroups" :key="group.id">
+                <a-checkbox :value="group.id">
+                  [[ group.name ]] <a-tag v-if="group.disabled">{{ i18n "disabled" }}</a-tag>
                 </a-checkbox>
               </a-col>
             </a-row>
@@ -110,6 +105,10 @@
     createInbound: '{{ i18n "pages.admins.createInbound" }}',
     editInbound: '{{ i18n "pages.admins.editInbound" }}',
     deleteInbound: '{{ i18n "pages.admins.deleteInbound" }}',
+    accessGroups: '{{ i18n "pages.groups.access" }}',
+    createGroup: '{{ i18n "pages.groups.create" }}',
+    editGroup: '{{ i18n "pages.groups.edit" }}',
+    deleteGroup: '{{ i18n "pages.groups.delete" }}',
     createClient: '{{ i18n "pages.admins.createClient" }}',
     editClient: '{{ i18n "pages.admins.editClient" }}',
     deleteClient: '{{ i18n "pages.admins.deleteClient" }}',
@@ -132,38 +131,38 @@
     isSelf: false,
     confirm: null,
     allPermissions: [],
-    allInbounds: [],
+    allGroups: [],
     allRoles: [],
     canDemote: true,
-    admin: { id: 0, username: '', password: '', nickname: '', enable: true, isSuperAdmin: false, permissions: [], inboundIds: [] },
+    admin: { id: 0, username: '', password: '', nickname: '', enable: true, isSuperAdmin: false, permissions: [], groupIds: [] },
 
     permLabel(slug) {
       return PERMISSION_LABELS[slug] || slug;
     },
     get allChecked() {
-      return adminModal.allInbounds.length > 0 &&
-        adminModal.admin.inboundIds.length === adminModal.allInbounds.length;
+      return adminModal.allGroups.length > 0 &&
+        adminModal.admin.groupIds.length === adminModal.allGroups.length;
     },
     get someChecked() {
-      const n = adminModal.admin.inboundIds.length;
-      return n > 0 && n < adminModal.allInbounds.length;
+      const n = adminModal.admin.groupIds.length;
+      return n > 0 && n < adminModal.allGroups.length;
     },
     toggleAll(e) {
-      adminModal.admin.inboundIds = e.target.checked
-        ? adminModal.allInbounds.map(ib => ib.id)
+      adminModal.admin.groupIds = e.target.checked
+        ? adminModal.allGroups.map(ib => ib.id)
         : [];
     },
     ok() {
       ObjectUtil.execute(adminModal.confirm, adminModal.admin);
     },
-    show({ allRoles = [], title = '', okText = '{{ i18n "sure" }}', admin = null, allPermissions = [], allInbounds = [], confirm = () => { }, isEdit = false }) {
+    show({ allRoles = [], title = '', okText = '{{ i18n "sure" }}', admin = null, allPermissions = [], allGroups = [], confirm = () => { }, isEdit = false }) {
       this.title = title;
       this.okText = okText;
       this.confirm = confirm;
       this.isEdit = isEdit;
       this.allPermissions = allPermissions;
       this.allRoles = allRoles;
-      this.allInbounds = allInbounds;
+      this.allGroups = allGroups;
       if (isEdit && admin) {
         this.admin = {
           id: admin.id,
@@ -175,10 +174,10 @@
           enable: admin.enable,
           isSuperAdmin: admin.isSuperAdmin,
           permissions: admin.isSuperAdmin ? allPermissions.slice() : (admin.permissions || []).slice(),
-          inboundIds: admin.isSuperAdmin ? allInbounds.map(ib=>ib.id) : (admin.inboundIds || []).slice(),
+          groupIds: admin.isSuperAdmin ? allGroups.map(ib=>ib.id) : (admin.groupIds || []).slice(),
         };
       } else {
-        this.admin = { adminRoleId: 0, isPanelOwner:false, id: 0, username: '', password: '', nickname: '', enable: true, isSuperAdmin: false, permissions: [], inboundIds: [] };
+        this.admin = { adminRoleId: 0, isPanelOwner:false, id: 0, username: '', password: '', nickname: '', enable: true, isSuperAdmin: false, permissions: [], groupIds: [] };
       }
       this.canDemote = !admin || admin.canDemote !== false;
       this.isSelf = isEdit && admin && admin.id === app.currentAdminId;
@@ -206,7 +205,7 @@
         permissions: admin.isSuperAdmin ? [] : (admin.permissions.length ? admin.permissions : ['']),
         // A blank entry is how "none" is sent: an omitted key binds as nil server-side
         // and cannot be told apart from "leave the existing grants alone".
-        inboundIds: admin.isSuperAdmin ? [''] : (admin.inboundIds.length ? admin.inboundIds : ['']),
+        groupIds: admin.isSuperAdmin ? [''] : (admin.groupIds.length ? admin.groupIds : ['']),
       };
     },
     close() {

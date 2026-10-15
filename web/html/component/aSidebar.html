@@ -71,7 +71,7 @@
                         title: '{{ i18n "menu.clients"}}'
                     },
                     {{ end }}
-                    {{ if and .perms.editInbound (not .reseller.isReseller) }}
+                    {{ if and .perms.accessGroups (not .reseller.isReseller) }}
                     {
                         key: '{{ .base_path }}panel/groups',
                         icon: 'cluster',

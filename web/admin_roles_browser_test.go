@@ -3,11 +3,15 @@ package web
 import (
 	"context"
 	"github.com/gin-gonic/gin"
+	"github.com/mhsanaei/3x-ui/v2/config"
 	"github.com/mhsanaei/3x-ui/v2/database"
 	"github.com/mhsanaei/3x-ui/v2/database/model"
+	"github.com/mhsanaei/3x-ui/v2/logger"
 	"github.com/mhsanaei/3x-ui/v2/web/controller"
 	weblocale "github.com/mhsanaei/3x-ui/v2/web/locale"
+	"github.com/mhsanaei/3x-ui/v2/web/service"
 	"github.com/nicksnyder/go-i18n/v2/i18n"
+	"github.com/op/go-logging"
 	"github.com/pelletier/go-toml/v2"
 	"golang.org/x/text/language"
 	"html/template"
@@ -25,6 +29,7 @@ func TestAdminRolesBrowserRuntime(t *testing.T) {
 	if os.Getenv("RUN_NODE_UI_BROWSER") != "1" {
 		t.Skip("enable Chromium browser checks")
 	}
+	logger.InitLogger(logging.CRITICAL)
 	bundle := i18n.NewBundle(language.MustParse("en-US"))
 	bundle.RegisterUnmarshalFunc("toml", toml.Unmarshal)
 	langs := []string{"en_US", "fa_IR", "ar_EG", "es_ES", "id_ID", "ja_JP", "pt_BR", "ru_RU", "tr_TR", "uk_UA", "vi_VN", "zh_CN", "zh_TW"}
@@ -42,12 +47,23 @@ func TestAdminRolesBrowserRuntime(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if err := database.InitDB(filepath.Join(t.TempDir(), "admin-browser.db")); err != nil {
+			t.Setenv("VPNUI_DB_FOLDER", t.TempDir())
+			if err := database.InitDB(config.GetDBPath()); err != nil {
 				t.Fatal(err)
 			}
 			db := database.GetDB()
 			var owner model.User
 			db.Where("is_panel_owner = ?", true).First(&owner)
+			for _, ib := range []model.Inbound{{UserId: owner.Id, Tag: "admin-group-a", Remark: "Admin group A", Protocol: model.VLESS, Port: 12001, Settings: `{"clients":[]}`, StreamSettings: `{}`}, {UserId: owner.Id, Tag: "admin-group-b", Remark: "Admin group B", Protocol: model.Trojan, Port: 12002, Settings: `{"clients":[]}`, StreamSettings: `{}`}} {
+				if err := db.Create(&ib).Error; err != nil {
+					t.Fatal(err)
+				}
+			}
+			(&service.AccountService{}).MigrationAccounts()
+			if err := (&service.GroupService{}).Migrate(); err != nil {
+				t.Fatal(err)
+			}
+
 			current := func() *model.User {
 				var u model.User
 				db.First(&u, owner.Id)

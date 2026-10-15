@@ -61,6 +61,11 @@ const (
 	PermAccessOverview
 	// Explicit delegation of shared node infrastructure; existing masks stay unchanged.
 	PermManageNodes
+	// Group management is independently delegated; never insert bits above.
+	PermAccessGroups
+	PermCreateGroup
+	PermEditGroup
+	PermDeleteGroup
 )
 
 // resellerPerms is what a reseller may do, derived from the role rather than
@@ -101,6 +106,10 @@ var AllPermissions = []PermissionDef{
 	{PermCreateInbound, "createInbound"},
 	{PermEditInbound, "editInbound"},
 	{PermDeleteInbound, "deleteInbound"},
+	{PermAccessGroups, "accessGroups"},
+	{PermCreateGroup, "createGroup"},
+	{PermEditGroup, "editGroup"},
+	{PermDeleteGroup, "deleteGroup"},
 	{PermCreateClient, "createClient"},
 	{PermEditClient, "editClient"},
 	{PermDeleteClient, "deleteClient"},

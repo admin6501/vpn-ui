@@ -12,10 +12,16 @@ import (
 
 // effectiveInboundAccess is shared by page, object and broadcast authorization.
 // Legacy grants remain for compatibility, but cannot authorize a representative
-// once GroupAccess has been enabled. Ordinary administrators keep their grants.
+// once GroupAccess has been enabled. Native administrators use group grants,
+// with a temporary creator grant for new inbounds awaiting their first group.
 func effectiveInboundAccess(tx *gorm.DB) *gorm.DB {
-	const representative = `u.group_access = 1 AND u.is_super_admin = 0 AND u.is_panel_owner = 0 AND (u.is_reseller = 1 OR (u.representative_role_id > 0 AND u.admin_role_id = 0))`
-	sql := `SELECT ia.id, ia.user_id, ia.inbound_id FROM inbound_accesses ia JOIN users u ON u.id=ia.user_id WHERE NOT (` + representative + `) UNION SELECT 0 AS id, rg.user_id, gi.inbound_id FROM representative_group_accesses rg JOIN users u ON u.id=rg.user_id JOIN group_inbounds gi ON gi.group_id=rg.group_id JOIN client_groups cg ON cg.id=rg.group_id WHERE cg.disabled=0 AND ` + representative
+	const representative = `u.is_panel_owner = 0 AND (u.is_reseller = 1 OR (u.representative_role_id > 0 AND u.admin_role_id = 0))`
+	const grouped = `u.group_access = 1 AND u.is_super_admin = 0`
+	sql := `SELECT ia.id, ia.user_id, ia.inbound_id FROM inbound_accesses ia JOIN users u ON u.id=ia.user_id WHERE NOT (` + grouped + `) UNION
+ SELECT 0 AS id, rg.user_id, gi.inbound_id FROM representative_group_accesses rg JOIN users u ON u.id=rg.user_id JOIN group_inbounds gi ON gi.group_id=rg.group_id JOIN client_groups cg ON cg.id=rg.group_id WHERE cg.disabled=0 AND ` + grouped + ` AND ` + representative + ` UNION
+ SELECT 0 AS id, ag.user_id, gi.inbound_id FROM admin_group_accesses ag JOIN users u ON u.id=ag.user_id JOIN group_inbounds gi ON gi.group_id=ag.group_id WHERE ` + grouped + ` AND NOT (` + representative + `) UNION
+ SELECT 0 AS id, ia.user_id, ia.inbound_id FROM inbound_accesses ia JOIN users u ON u.id=ia.user_id JOIN inbounds ib ON ib.id=ia.inbound_id AND ib.user_id=u.id WHERE ia.pending_group=1 AND NOT EXISTS (SELECT 1 FROM group_inbounds gi WHERE gi.inbound_id=ia.inbound_id) AND ` + grouped + ` AND NOT (` + representative + `)`
+
 	return tx.Table("(" + sql + ") AS inbound_accesses")
 }
 
