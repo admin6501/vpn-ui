@@ -81,7 +81,10 @@ const pgRole = {
       });
       if (msg && msg.success) {
         await resellerModal.loadRoles();
-        if (!resellerModal.isEdit && !resellerModal.reseller.representativeRoleId && msg.obj) resellerModal.reseller.representativeRoleId = msg.obj.id;
+        if (!resellerModal.isEdit && !resellerModal.reseller.representativeRoleId && msg.obj) {
+          resellerModal.reseller.representativeRoleId = msg.obj.id;
+          resellerModal.onRoleChange();
+        }
         this.visible = false;
       }
     } finally {this.loading = false;}

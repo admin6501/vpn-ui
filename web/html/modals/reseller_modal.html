@@ -36,7 +36,8 @@
 
     <a-form-item label='{{ i18n "pages.resellers.role" }}'>
       <a-select v-model="resellerModal.reseller.representativeRoleId" :loading="resellerModal.rolesLoading"
-        :disabled="resellerModal.isEdit && {{not .perms.superAdmin}}" placeholder='{{ i18n "pages.roles.select" }}'>
+        @change="resellerModal.onRoleChange()"
+        :disabled="resellerModal.rolesLoading || (resellerModal.isEdit && {{not .perms.superAdmin}})" placeholder='{{ i18n "pages.roles.select" }}'>
  <template slot="notFoundContent">{{ i18n "pages.roles.empty" }}</template>
         <a-select-option v-for="role in resellerModal.roles" :key="role.id" :value="role.id">[[ role.name ]]</a-select-option>
       </a-select>
@@ -131,12 +132,12 @@
         message='{{ i18n "pages.groups.noGroups" }}'></a-alert>
       <template v-else>
         <a-checkbox :checked="resellerModal.allChecked" :indeterminate="resellerModal.someChecked"
-          @change="resellerModal.toggleAll">
+          :disabled="resellerModal.rolesLoading" @change="resellerModal.toggleAll">
           <span :style="{ fontWeight: 500 }">{{ i18n "pages.resellers.selectAllInbounds" }}</span>
         </a-checkbox>
         <a-divider :style="{ margin: '8px 0' }"></a-divider>
         <div :style="{ maxHeight: '180px', overflowY: 'auto' }">
-          <a-checkbox-group v-model="resellerModal.reseller.groupIds" :style="{ width: '100%' }">
+          <a-checkbox-group v-model="resellerModal.reseller.groupIds" :disabled="resellerModal.rolesLoading" :style="{ width: '100%' }">
             <a-row>
               <a-col :span="24" v-for="ib in resellerModal.availableGroups" :key="ib.id">
                 <a-checkbox :value="ib.id">
@@ -164,18 +165,36 @@
     confirm: null,
     allGroups: [],
     roles: [], rolesLoading: false,
- async loadRoles() {
- this.rolesLoading = true;
- try { const msg = await HttpUtil.get("/panel/resellers/roles");
- if (msg && msg.success) { this.roles = msg.obj || [];
- if (!this.isEdit && !this.roles.some(r => r.id === this.reseller.representativeRoleId)) this.reseller.representativeRoleId = this.roles.length === 1 ? this.roles[0].id : undefined;
- } } finally { this.rolesLoading = false; }
- },
+    async loadRoles() {
+      this.rolesLoading = true;
+      try {
+        const msg = await HttpUtil.get('/panel/resellers/roles');
+        if (msg && msg.success) {
+          this.roles = msg.obj || [];
+          if (!this.isEdit && !this.roles.some(r => r.id === this.reseller.representativeRoleId)) {
+            this.reseller.representativeRoleId = this.roles.length === 1 ? this.roles[0].id : undefined;
+            this.onRoleChange();
+          }
+        }
+      } finally { this.rolesLoading = false; }
+    },
     reseller: {
       id: 0, username: '', password: '', nickname: '', enable: true, representativeRoleId: undefined,
       unlimited: false, allowanceGb: 0, daysPerGb: 0, minCreateGb: 0, minAddGb: 0,
       allowOverview: false, allowOverviewManage: false, twoFactorRequired: false,
       groupIds: [],
+    },
+
+    onRoleChange() {
+      const role = this.roles.find(r => r.id === this.reseller.representativeRoleId);
+      if (!role) { this.reseller.groupIds = []; return; }
+      let access;
+      try { access = JSON.parse(role.access || '{}') || {}; }
+      catch (_) { this.reseller.groupIds = []; return; }
+      const allowed = access.allowed_group_ids;
+      this.reseller.groupIds = this.allGroups
+        .filter(g => !Array.isArray(allowed) || allowed.includes(g.id))
+        .map(g => g.id);
     },
 
     get availableGroups() {
@@ -253,9 +272,13 @@
         };
       }
       this.visible = true;
- await this.loadRoles();
- const groups = await HttpUtil.get("/panel/resellers/groups");
- if (groups && groups.success) this.allGroups = groups.obj || [];
+      this.rolesLoading = true;
+      try {
+        const groups = await HttpUtil.get('/panel/resellers/groups');
+        if (groups && groups.success) this.allGroups = groups.obj || [];
+        await this.loadRoles();
+        if (!this.isEdit) this.onRoleChange();
+      } finally { this.rolesLoading = false; }
     },
     // Bodies are form-urlencoded (a global axios interceptor Qs.stringify's them), and Qs
     // emits an array as repeated keys, which is what Gin binds into []string. Numbers are
