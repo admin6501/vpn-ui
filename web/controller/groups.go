@@ -13,7 +13,7 @@ import (
 )
 
 func registerGroups(g *gin.RouterGroup) {
-	groups := g.Group("/groups", requireNotRepresentative(), requirePerm(model.PermEditInbound))
+	groups := g.Group("/groups", requireNotRepresentative(), requirePerm(model.PermAccessGroups))
 	groups.GET("", func(c *gin.Context) { html(c, "groups.html", "pages.groups.title", nil) })
 	groups.GET("/list", func(c *gin.Context) {
 		rows, err := (&service.GroupService{}).List(session.GetLoginUser(c), true)

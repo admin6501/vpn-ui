@@ -41,9 +41,10 @@ type AdminView struct {
 	TwoFactorEnable bool     `json:"twoFactorEnable"`
 	Permissions     []string `json:"permissions"`
 	InboundCount    int64    `json:"inboundCount"`
-	// InboundIds is what this admin may see, for the modal's checklist. Always [] for
-	// a super admin: they see everything by role, not by grant.
+	// InboundIds is retained for API compatibility. GroupIDs drives the grant
+	// checklist; super administrators see all groups independently of these grants.
 	InboundIds []int `json:"inboundIds"`
+	GroupIDs   []int `json:"groupIds"`
 }
 
 func toAdminView(u *model.User, inbounds int64, inboundIds []int) AdminView {
@@ -129,6 +130,20 @@ func (s *AdminService) GetAdmins() ([]AdminView, error) {
 		}
 		u.AdminRole = byRole[u.AdminRoleID]
 		view := toAdminView(u, counts[u.Id], ids)
+		groupIDs, err := adminGroupIDs(db, u.Id)
+		if err != nil {
+			return nil, err
+		}
+		view.GroupIDs = groupIDs
+		if u.GroupAccess {
+			view.InboundIds, err = s.AccessibleInboundIds(u.Id)
+			if err != nil {
+				return nil, err
+			}
+			if view.InboundIds == nil {
+				view.InboundIds = []int{}
+			}
+		}
 		view.CanDemote = enabledOwners > 0 || enabledSupers > 1 || !u.IsSuperAdmin
 		out = append(out, view)
 	}
@@ -170,6 +185,8 @@ type AdminSpec struct {
 	// they had. Empty means no access at all, which is a legitimate state (an admin
 	// who has not been given anything yet), so it must not be read as "leave alone".
 	InboundIds []int
+	// Nil preserves grants on metadata-only updates; empty explicitly revokes all.
+	GroupIDs *[]int
 }
 
 // validate checks the parts that do not need the database.
@@ -229,17 +246,17 @@ func (s *AdminService) AddAdmin(spec AdminSpec) (*model.User, error) {
 			return err
 		}
 		if !spec.Enable {
-			return tx.Model(model.User{}).Where("id = ?", user.Id).Update("enable", false).Error
+			if err := tx.Model(model.User{}).Where("id = ?", user.Id).Update("enable", false).Error; err != nil {
+				return err
+			}
 		}
-		return nil
+		return writeAdminAccess(tx, user.Id, spec, true)
 	})
 	if err != nil {
 		return nil, err
 	}
 	user.Enable = spec.Enable
-	if err := s.SetInboundAccess(user.Id, spec.InboundIds); err != nil {
-		return nil, err
-	}
+	user.GroupAccess = AdminGroupsMigrated(db)
 	return user, nil
 }
 
@@ -331,11 +348,7 @@ func (s *AdminService) UpdateAdmin(id int, spec AdminSpec) error {
 		if err := tx.Model(&model.User{}).Where("id = ?", id).Updates(updates).Error; err != nil {
 			return err
 		}
-		ids := spec.InboundIds
-		if spec.IsSuperAdmin {
-			ids = nil
-		}
-		return setAdminInboundAccess(tx, id, ids)
+		return writeAdminAccess(tx, id, spec, false)
 	})
 }
 
@@ -393,7 +406,15 @@ func (s *AdminService) DeleteAdmin(id int) error {
 	if owned > 0 {
 		return fmt.Errorf("this admin still owns %d inbound(s); delete or reassign them first", owned)
 	}
-	return db.Where("id = ?", id).Delete(&model.User{}).Error
+	return db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("user_id = ?", id).Delete(&model.AdminGroupAccess{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("user_id = ?", id).Delete(&model.InboundAccess{}).Error; err != nil {
+			return err
+		}
+		return tx.Where("id = ?", id).Delete(&model.User{}).Error
+	})
 }
 
 // ReassignInbounds moves every inbound owned by one admin to another, so a super
@@ -503,6 +524,30 @@ func (s *AdminService) GrantInbound(userId, inboundId int) error {
 	}
 	var n int64
 	db := database.GetDB()
+	var user model.User
+	if err := db.First(&user, userId).Error; err != nil {
+		return err
+	}
+	if user.GroupAccess && !user.IsRepresentativeAccount() && !user.IsSuperAdmin {
+		return db.Transaction(func(tx *gorm.DB) error {
+			var inbound model.Inbound
+			if err := tx.First(&inbound, inboundId).Error; err != nil {
+				return err
+			}
+			if inbound.UserId != userId {
+				return ErrInboundNotAssignable
+			}
+			var count int64
+			if err := tx.Model(&model.GroupInbound{}).Where("inbound_id = ?", inboundId).Count(&count).Error; err != nil {
+				return err
+			}
+			if count > 0 {
+				return nil
+			}
+			grant := model.InboundAccess{UserId: userId, InboundId: inboundId, PendingGroup: true}
+			return tx.Where("user_id = ? AND inbound_id = ?", userId, inboundId).Assign(map[string]any{"pending_group": true}).FirstOrCreate(&grant).Error
+		})
+	}
 	if err := db.Model(&model.InboundAccess{}).
 		Where("user_id = ? AND inbound_id = ?", userId, inboundId).Count(&n).Error; err != nil {
 		return err

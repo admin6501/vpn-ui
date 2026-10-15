@@ -37,7 +37,10 @@ func (s *GroupService) Migrate() error {
 	if err := s.migrateV1(); err != nil {
 		return err
 	}
-	return s.migrateImportedGroupsAndGrants()
+	if err := s.migrateImportedGroupsAndGrants(); err != nil {
+		return err
+	}
+	return s.migrateAdminGroups()
 }
 
 func (s *GroupService) migrateV1() error {
@@ -173,7 +176,7 @@ func (s *GroupService) List(user *model.User, management bool) ([]GroupView, err
 	if user == nil || !user.Enable {
 		return rows, errors.New("not found")
 	}
-	if management && (user.IsRepresentativeAccount() || !user.Can(model.PermEditInbound)) {
+	if management && (user.IsRepresentativeAccount() || !user.Can(model.PermAccessGroups)) {
 		return rows, errors.New("not allowed")
 	}
 	visible, err := (&AccountService{}).AssignableInboundsFor(user)
@@ -213,7 +216,14 @@ func (s *GroupService) List(user *model.User, management bool) ([]GroupView, err
 			}
 			ok = ok && found
 		}
-		if !management && g.Disabled {
+		if !user.IsRepresentativeAccount() && user.GroupAccess && !user.IsSuperAdmin {
+			var n int64
+			if err := tx.Model(&model.AdminGroupAccess{}).Where("user_id = ? AND group_id = ?", user.Id, g.ID).Count(&n).Error; err != nil {
+				return nil, err
+			}
+			ok = n > 0 // Explicit group grants also cover empty and disabled groups.
+		}
+		if !management && (g.Disabled || (len(ids) == 0 && !user.IsSuperAdmin)) {
 			ok = false
 		}
 		if user.IsRepresentativeAccount() && user.GroupAccess {
@@ -301,7 +311,14 @@ func projectGroups(tx *gorm.DB, accountID int) ([]int, error) {
 	return accounts.ProjectAccount(tx, accountID)
 }
 func (s *GroupService) Save(user *model.User, id int, name string, inboundIDs []int, disabled ...bool) (*GroupView, []int, error) {
-	if user == nil || user.IsRepresentativeAccount() || !user.Can(model.PermEditInbound) {
+	action := model.PermCreateGroup
+	if id > 0 {
+		action = model.PermEditGroup
+	}
+	if !user.Can(action) {
+		return nil, nil, errors.New("not allowed")
+	}
+	if user == nil || user.IsRepresentativeAccount() || !user.Can(model.PermAccessGroups) {
 		return nil, nil, errors.New("not allowed")
 	}
 	name = strings.TrimSpace(name)
@@ -336,7 +353,7 @@ func (s *GroupService) Save(user *model.User, id int, name string, inboundIDs []
 			return nil, nil, errors.New("not found")
 		}
 	}
-	if len(inboundIDs) == 0 && !user.IsSuperAdmin {
+	if len(inboundIDs) == 0 && !user.IsSuperAdmin && !user.GroupAccess {
 		return nil, nil, errors.New("only a super administrator can create or empty an unserved group")
 	}
 	group := model.ClientGroup{ID: id, Name: name}
@@ -356,6 +373,11 @@ func (s *GroupService) Save(user *model.User, id int, name string, inboundIDs []
 		if id == 0 {
 			if err := tx.Create(&group).Error; err != nil {
 				return err
+			}
+			if user.GroupAccess && !user.IsSuperAdmin {
+				if err := tx.Create(&model.AdminGroupAccess{UserID: user.Id, GroupID: group.ID}).Error; err != nil {
+					return err
+				}
 			}
 		} else {
 			if err := tx.Model(&group).Updates(map[string]any{"name": name, "disabled": group.Disabled}).Error; err != nil {
@@ -394,6 +416,11 @@ func (s *GroupService) Save(user *model.User, id int, name string, inboundIDs []
 				return err
 			}
 		}
+		if len(inboundIDs) > 0 {
+			if err := tx.Where("pending_group = ? AND inbound_id IN ?", true, inboundIDs).Delete(&model.InboundAccess{}).Error; err != nil {
+				return err
+			}
+		}
 		ids := []int{}
 		if err := tx.Model(&model.AccountGroup{}).Where("group_id = ?", group.ID).Order("account_id").Pluck("account_id", &ids).Error; err != nil {
 			return err
@@ -425,6 +452,9 @@ func unionGroupIDs(a, b []int) []int {
 	return out
 }
 func (s *GroupService) Delete(user *model.User, id int) error {
+	if !user.Can(model.PermDeleteGroup) {
+		return errors.New("not allowed")
+	}
 	groups, err := s.List(user, true)
 	if err != nil {
 		return err
@@ -452,6 +482,12 @@ func (s *GroupService) Delete(user *model.User, id int) error {
 		if count > 0 {
 			return errors.New("group is assigned to representatives; reassign them before deleting it")
 		}
+		if err := tx.Model(&model.AdminGroupAccess{}).Where("group_id = ? AND user_id != ?", id, user.Id).Count(&count).Error; err != nil {
+			return err
+		}
+		if count > 0 {
+			return errors.New("group is assigned to administrators; reassign them before deleting it")
+		}
 		var roles []model.RepresentativeRole
 		if err := tx.Find(&roles).Error; err != nil {
 			return err
@@ -471,6 +507,9 @@ func (s *GroupService) Delete(user *model.User, id int) error {
 					return errors.New("group is used by a representative role")
 				}
 			}
+		}
+		if err := tx.Where("group_id = ?", id).Delete(&model.AdminGroupAccess{}).Error; err != nil {
+			return err
 		}
 		if err := tx.Where("group_id = ?", id).Delete(&model.GroupInbound{}).Error; err != nil {
 			return err

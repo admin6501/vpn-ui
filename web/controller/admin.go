@@ -23,10 +23,10 @@ type adminForm struct {
 	Enable       bool     `json:"enable" form:"enable"`
 	IsSuperAdmin bool     `json:"isSuperAdmin" form:"isSuperAdmin"`
 	Permissions  []string `json:"permissions" form:"permissions"`
-	// InboundIds arrives as repeated `inboundIds` keys (Qs arrayFormat:'repeat').
-	// A blank entry is how the UI sends "none": an omitted field would bind as nil
-	// and could not be told apart from "leave alone".
+	// InboundIds is retained for legacy callers before the V3 group migration.
+	// GroupIDs uses a blank entry to revoke all; omission preserves existing grants.
 	InboundIds []string `json:"inboundIds" form:"inboundIds"`
+	GroupIDs   []string `json:"groupIds" form:"groupIds"`
 }
 
 // inboundIds parses the wire form's ids, dropping blanks and unparseable entries
@@ -55,6 +55,7 @@ func (f *adminForm) spec() service.AdminSpec {
 		Enable:       f.Enable,
 		IsSuperAdmin: f.IsSuperAdmin,
 		InboundIds:   f.inboundIds(),
+		GroupIDs:     (&resellerForm{GroupIDs: f.GroupIDs}).groupIDs(),
 	}
 }
 
@@ -84,6 +85,7 @@ func (a *AdminController) initRouter(g *gin.RouterGroup) {
 	g.POST("/roles/delete/:id", a.deleteRole)
 	g.GET("/permissions", a.permissions)
 	g.GET("/inbounds", a.inbounds)
+	g.GET("/groups", a.groups)
 	g.POST("/add", a.add)
 	g.POST("/update/:id", a.update)
 	g.POST("/del/:id", a.del)
@@ -105,9 +107,8 @@ func (a *AdminController) permissions(c *gin.Context) {
 	jsonObj(c, model.AllPermissions, nil)
 }
 
-// inbounds lists every inbound as {id, remark, protocol, port}, for the modal's
-// access checklist. Super-admin only (the whole group is), so a panel-wide list is
-// the point rather than a leak.
+// inbounds retains the legacy read endpoint for administrator-management clients.
+// The current grant checklist uses groups instead.
 func (a *AdminController) inbounds(c *gin.Context) {
 	list, err := a.adminService.AllInboundsBrief()
 	if err != nil {
@@ -115,6 +116,11 @@ func (a *AdminController) inbounds(c *gin.Context) {
 		return
 	}
 	jsonObj(c, list, nil)
+}
+
+func (a *AdminController) groups(c *gin.Context) {
+	rows, err := a.adminService.AssignableGroups(session.GetLoginUser(c))
+	jsonObj(c, rows, err)
 }
 
 func (a *AdminController) add(c *gin.Context) {

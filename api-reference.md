@@ -1795,7 +1795,9 @@ an overview-management or super-administrator grant alone cannot bypass this che
 | POST | `/panel/groups/save` | Create/update using `id`, `name`, repeated `inboundIds`, optional `disabled` |
 | POST | `/panel/groups/delete/:id` | Delete an unused group |
 
-Management requires `editInbound` and is denied to representatives. The service
+Management requires `accessGroups` and is denied to representatives. Creation,
+editing and deletion additionally require `createGroup`, `editGroup` and
+`deleteGroup`, respectively. The service
 checks the editor's scope against every old and new inbound. Groups with users or
 referenced by representative roles or explicit representative group grants cannot be deleted without reassignment.
 Changing a group's inbound set updates the union for **all** its existing users
@@ -1832,3 +1834,22 @@ representative grants to an equal inbound union, preferring complete imported
 groups and using singleton groups for the remainder. Restarting does not restore
 removed grants or deleted imported groups. A disabled group retains its members
 and grants but stops projecting inbounds and authorizing representative access.
+
+Administrator forms use repeated `groupIds`, with `GET /panel/admins/groups`
+providing the protected owner/super-administrator checklist, including empty and
+disabled groups. Omitted group IDs preserve grants during edits; a blank entry
+explicitly revokes all groups. Individual `inboundIds` assignments are rejected
+after `administratorGroupsMigrationV3`. Role permissions control operations;
+administrator-to-group grants control scope. Group changes immediately affect
+HTTP and broadcast scope. Administrative infrastructure access includes disabled
+groups so their operators can reconfigure/re-enable them; customer selection and
+representative grants retain their enabled-group behavior.
+
+The transactional V3 upgrade converts legacy administrator grants to an equal
+inbound union and preserves the former `editInbound` group-management capability
+using the four new bits, once. It does not rewrite customer data. New inbounds
+remain ungrouped; a temporary creator grant permits configuration until the first
+group assignment. The grant is retired on assignment and never returns when the
+inbound is removed from a group. Only the actor's own administrator grant is
+removed automatically when deleting their unused group; other assigned admins,
+representatives, customers or representative roles still prevent deletion.

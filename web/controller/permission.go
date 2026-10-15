@@ -94,7 +94,7 @@ var landingPages = []struct {
 }{
 	{model.PermAccessOverview, "panel/"},
 	{model.PermAccessInbounds, "panel/inbounds"},
-	{model.PermEditInbound, "panel/groups"},
+	{model.PermAccessGroups, "panel/groups"},
 	{model.PermManageResellers, "panel/resellers"},
 	{model.PermManageNodes, "panel/nodes/"},
 	{model.PermPanelSettings, "panel/settings"},

@@ -43,9 +43,9 @@
                     <span v-else :style="{ color: '#8c8c8c' }">{{ i18n "none" }}</span>
                   </template>
 
-                  <template slot="inboundAccess" slot-scope="text, admin">
+                  <template slot="groupAccess" slot-scope="text, admin">
                     <span v-if="admin.isSuperAdmin" :style="{ color: '#8c8c8c' }">{{ i18n "all" }}</span>
-                    <span v-else>[[ admin.inboundIds.length ]]</span>
+                    <span v-else>[[ admin.groupIds.length ]]</span>
                   </template>
 
                   <template slot="permissions" slot-scope="text, admin">
@@ -118,7 +118,7 @@
     { title: '{{ i18n "pages.admins.nickname" }}', dataIndex: 'nickname', align: 'center', width: 70 },
     { title: '{{ i18n "status" }}', align: 'center', width: 50, scopedSlots: { customRender: 'enable' } },
     { title: '{{ i18n "pages.admins.twoFactor" }}', align: 'center', width: 45, scopedSlots: { customRender: 'twoFactor' } },
-    { title: '{{ i18n "pages.admins.inboundAccess" }}', align: 'center', width: 45, scopedSlots: { customRender: 'inboundAccess' } },
+    { title: '{{ i18n "pages.groups.title" }}', align: 'center', width: 45, scopedSlots: { customRender: 'groupAccess' } },
     { title: '{{ i18n "pages.admins.permissions" }}', align: 'left', width: 180, scopedSlots: { customRender: 'permissions' } },
     { title: '', align: 'center', width: 30, scopedSlots: { customRender: 'action' } },
   ];
@@ -145,7 +145,7 @@
       // Permission slugs come from the server rather than a hard-coded copy, so the
       // UI can never offer a permission this build does not enforce.
       allPermissions: [],
-      allInbounds: [],
+      allGroups: [],
       currentAdminId: {{ .me }},
       columns,
     },
@@ -180,9 +180,9 @@
         const msg = await HttpUtil.get('/panel/admins/permissions');
         if (msg && msg.success) this.allPermissions = (msg.obj || []).map(p => p.slug);
       },
-      async loadInbounds() {
-        const msg = await HttpUtil.get('/panel/admins/inbounds');
-        if (msg && msg.success) this.allInbounds = msg.obj || [];
+      async loadGroups() {
+        const msg = await HttpUtil.get('/panel/admins/groups');
+        if (msg && msg.success) this.allGroups = msg.obj || [];
       },
       permLabel(slug) {
         return PERMISSION_LABELS[slug] || slug;
@@ -192,7 +192,7 @@
           title: '{{ i18n "pages.admins.add" }}',
           allRoles: this.roles,
           allPermissions: this.allPermissions,
-          allInbounds: this.allInbounds,
+          allGroups: this.allGroups,
           isEdit: false,
           confirm: async (admin) => {
             adminModal.loading();
@@ -210,7 +210,7 @@
           title: '{{ i18n "pages.admins.edit" }}',
           allRoles: this.roles,
           allPermissions: this.allPermissions,
-          allInbounds: this.allInbounds,
+          allGroups: this.allGroups,
           admin,
           isEdit: true,
           confirm: async (edited) => {
@@ -266,7 +266,7 @@
     async mounted() {
       await this.loadPermissions();
       await this.loadRoles();
-      await this.loadInbounds();
+      await this.loadGroups();
       await this.loadAdmins(true);
     },
   });

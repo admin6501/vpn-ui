@@ -133,9 +133,12 @@ func (u *User) NeedsTwoFactorEnrollment() bool {
 //
 // Super admins are never listed here; they see every inbound by role.
 type InboundAccess struct {
-	Id        int `json:"id" gorm:"primaryKey;autoIncrement"`
-	UserId    int `json:"userId" gorm:"index:idx_access_user_inbound,unique,priority:1;index"`
-	InboundId int `json:"inboundId" gorm:"index:idx_access_user_inbound,unique,priority:2;index"`
+	// PendingGroup lets a creator manage a newly created, ungrouped inbound.
+	// It is removed on the first group assignment and never revives on removal.
+	PendingGroup bool `json:"-" gorm:"not null;default:0"`
+	Id           int  `json:"id" gorm:"primaryKey;autoIncrement"`
+	UserId       int  `json:"userId" gorm:"index:idx_access_user_inbound,unique,priority:1;index"`
+	InboundId    int  `json:"inboundId" gorm:"index:idx_access_user_inbound,unique,priority:2;index"`
 }
 
 // ResellerProfile holds one reseller's balance and the levers an admin sets on

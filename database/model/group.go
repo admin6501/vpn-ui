@@ -25,3 +25,10 @@ type RepresentativeGroupAccess struct {
 	UserID  int `gorm:"primaryKey" json:"userId"`
 	GroupID int `gorm:"primaryKey;index" json:"groupId"`
 }
+
+// AdminGroupAccess controls an ordinary administrator's infrastructure scope.
+// Permission bits independently decide which operations they may perform.
+type AdminGroupAccess struct {
+	UserID  int `gorm:"primaryKey" json:"userId"`
+	GroupID int `gorm:"primaryKey;index" json:"groupId"`
+}

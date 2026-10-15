@@ -14,14 +14,25 @@ const {chromium}=require('playwright');
   await page.evaluate(()=>adminModal.close());
   await page.evaluate(()=>app.openRole());await page.locator('#admin-role-modal .ant-modal').waitFor();
   await page.evaluate(()=>{app.roleModal.name='Location operator';app.roleModal.permissions=['manageNodes']});
+  for(const slug of ['accessGroups','createGroup','editGroup','deleteGroup']){
+   const label=await page.evaluate(slug=>PERMISSION_LABELS[slug],slug);
+   if(!label||label===slug)throw Error('missing group permission label '+slug);
+   await page.locator('#admin-role-modal .ant-checkbox-wrapper').filter({hasText:label}).locator('input').check();
+  }
   await page.locator('#admin-role-modal .ant-modal-footer button.ant-btn-primary').click();
   await page.waitForFunction(()=>app.roles.length===1);
   await page.evaluate(()=>{app.openAdd();adminModal.admin.username='operator';adminModal.admin.password='browser-role-test-password'});
   await page.locator('#admin-modal .ant-select').click();
   await page.locator('.ant-select-dropdown:visible .ant-select-dropdown-menu-item').filter({hasText:'Location operator'}).click();
   if(!await page.evaluate(()=>adminModal.admin.permissions.includes('manageNodes')))throw Error('role selection did not inherit permissions');
+  await page.locator('#admin-modal .ant-checkbox-wrapper').filter({hasText:'Admin group A'}).locator('input').check();
+  const saved=page.waitForResponse(r=>r.url().endsWith('/admins/add'));
+
   await page.locator('#admin-modal .ant-modal-footer button.ant-btn-primary').click();
-  await page.waitForFunction(()=>app.admins.some(u=>u.username==='operator' && u.adminRoleName==='Location operator'));
+  const response=await saved;const payload=new URLSearchParams(response.request().postData());
+  if(payload.has('inboundIds')||!payload.has('groupIds'))throw Error('admin form submitted individual inbounds');
+  await page.waitForFunction(()=>app.admins.some(u=>u.username==='operator' && u.adminRoleName==='Location operator' && u.groupIds.length===1 && u.permissions.includes('accessGroups')));
+
   await page.evaluate(async()=>{await app.loadRoles()});
   if(!await page.evaluate(()=>app.roles[0].adminCount===1))throw Error('role membership count missing');
   const refusal=await page.evaluate(async()=>await HttpUtil.post('/panel/admins/roles/delete/'+app.roles[0].id));
