@@ -2,7 +2,10 @@ package web
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
+	"github.com/mhsanaei/3x-ui/v2/database/model"
+	"github.com/mhsanaei/3x-ui/v2/web/service"
 	"html/template"
 	"net/http"
 	"net/http/httptest"
@@ -45,6 +48,11 @@ func TestRepresentativeOverviewHidesInboundManagementAndUpdates(t *testing.T) {
 				return
 			}
 			w.Header().Set("Content-Type", "application/json")
+			if strings.HasSuffix(r.URL.Path, "/api/server/status") {
+				snapshot := service.Status{TcpCount: 37, UdpCount: 19, Loads: []float64{0, 0, 0}}
+				json.NewEncoder(w).Encode(map[string]any{"success": true, "obj": service.StatusForUser(&snapshot, &model.User{IsReseller: true})})
+				return
+			}
 			if strings.HasSuffix(r.URL.Path, "/defaultSettings") {
 				fmt.Fprint(w, `{"success":true,"obj":{"ipLimitEnable":false,"xrayAccessLogEnable":false,"geofileAutoUpdate":false}}`)
 				return
