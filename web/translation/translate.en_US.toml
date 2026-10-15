@@ -1961,3 +1961,10 @@ other = "Remove this core? Its inbounds, users and counters will be kept; affect
 
 [pages.nodes.sharedCores]
 other = "Shared dependencies may serve other cores. Stop dependent cores before stopping a shared dependency; remove dependent cores before removing Xray. RADIUS and SSH are built into the agent: removal disables their feature."
+
+[pages.accountSecurity]
+title = "Account security"
+required = "Your administrator requires two-factor authentication. Set it up before using the panel. Once enabled, it cannot be disabled while this requirement is active."
+requireTwoFactor = "Require two-factor authentication"
+requireDesc = "The representative must set up their own authenticator before using the panel. Removing this requirement keeps any existing two-factor authentication enabled."
+pending = "Awaiting setup"

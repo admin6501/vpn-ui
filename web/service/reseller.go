@@ -1077,6 +1077,7 @@ type ResellerView struct {
 	Nickname             string `json:"nickname"`
 	Enable               bool   `json:"enable"`
 	TwoFactorEnable      bool   `json:"twoFactorEnable"`
+	TwoFactorRequired    bool   `json:"twoFactorRequired"`
 	ConsumptionBased     bool   `json:"consumptionBased"`
 	RepresentativeRoleID int    `json:"representativeRoleId"`
 
@@ -1105,6 +1106,8 @@ type ResellerSpec struct {
 	Enable               bool
 	ConsumptionBased     bool
 	RepresentativeRoleID int
+	// Nil preserves the policy on update for older API clients.
+	TwoFactorRequired *bool
 
 	// AllowanceGB seeds the balance on CREATE and is ignored on update, where
 	// Recharge is the only way to move it: an admin typing over the total would
@@ -1205,6 +1208,7 @@ func (s *ResellerService) GetResellers(caller *model.User) ([]ResellerView, erro
 			Nickname:             u.Nickname,
 			Enable:               u.Enable,
 			TwoFactorEnable:      u.TwoFactorEnable,
+			TwoFactorRequired:    u.TwoFactorRequired,
 			ConsumptionBased:     p.ConsumptionBased,
 			RepresentativeRoleID: u.RepresentativeRoleID,
 			AllowanceBytes:       p.AllowanceBytes,
@@ -1342,6 +1346,9 @@ func (s *ResellerService) AddReseller(caller *model.User, spec ResellerSpec) (*m
 		RepresentativeRoleID: spec.RepresentativeRoleID,
 		Permissions:          0,
 	}
+	if spec.TwoFactorRequired != nil {
+		user.TwoFactorRequired = *spec.TwoFactorRequired
+	}
 	err = db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Create(user).Error; err != nil {
 			return err
@@ -1457,6 +1464,9 @@ func (s *ResellerService) UpdateReseller(caller *model.User, id int, spec Resell
 	}
 	if profile.ConsumptionBased {
 		updates["representative_role_id"] = spec.RepresentativeRoleID
+	}
+	if spec.TwoFactorRequired != nil {
+		updates["two_factor_required"] = *spec.TwoFactorRequired
 	}
 	if !spec.Enable {
 		updates["session_version"] = gorm.Expr("session_version + 1")

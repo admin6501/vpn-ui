@@ -193,7 +193,7 @@ func CurrentUserSession(snapshot *model.User) *model.User {
 	}
 	db := database.GetDB()
 	var current model.User
-	if db.First(&current, snapshot.Id).Error != nil || !current.Enable {
+	if db.First(&current, snapshot.Id).Error != nil || !current.Enable || current.NeedsTwoFactorEnrollment() {
 		return nil
 	}
 	if subtle.ConstantTimeCompare([]byte(authBinding(snapshot)), []byte(authBinding(&current))) != 1 {

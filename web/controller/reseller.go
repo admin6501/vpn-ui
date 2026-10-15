@@ -32,6 +32,7 @@ type resellerForm struct {
 	Nickname             string `json:"nickname" form:"nickname"`
 	Enable               bool   `json:"enable" form:"enable"`
 	RepresentativeRoleID int    `json:"representativeRoleId" form:"representativeRoleId"`
+	TwoFactorRequired    *bool  `json:"twoFactorRequired" form:"twoFactorRequired"`
 
 	Unlimited bool `json:"unlimited" form:"unlimited"`
 	// AllowanceGB seeds the balance on create and is ignored on update, where
@@ -79,6 +80,7 @@ func (f *resellerForm) spec() service.ResellerSpec {
 		Enable:               f.Enable,
 		ConsumptionBased:     true,
 		RepresentativeRoleID: f.RepresentativeRoleID,
+		TwoFactorRequired:    f.TwoFactorRequired,
 		AllowanceGB:          f.AllowanceGB,
 		Unlimited:            f.Unlimited,
 		DaysPerGB:            f.DaysPerGB,

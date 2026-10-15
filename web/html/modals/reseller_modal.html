@@ -42,6 +42,11 @@
       <a-switch v-model="resellerModal.reseller.enable"></a-switch>
     </a-form-item>
 
+    <a-form-item label='{{ i18n "pages.accountSecurity.requireTwoFactor" }}'>
+      <a-switch v-model="resellerModal.reseller.twoFactorRequired"></a-switch>
+      <p class="bo-muted">{{ i18n "pages.accountSecurity.requireDesc" }}</p>
+    </a-form-item>
+
     <!-- Off by default: the overview reports the whole server (every inbound, total
          traffic, system load), none of which is the reseller's to see. Granted only
          where the reseller is trusted with that view. -->
@@ -167,7 +172,7 @@
     reseller: {
       id: 0, username: '', password: '', nickname: '', enable: true, representativeRoleId: undefined,
       unlimited: false, allowanceGb: 0, daysPerGb: 0, minCreateGb: 0, minAddGb: 0,
-      allowOverview: false, allowOverviewManage: false,
+      allowOverview: false, allowOverviewManage: false, twoFactorRequired: false,
       inboundIds: [],
     },
 
@@ -208,6 +213,7 @@
           password: '', // blank means "keep the current one"
           nickname: reseller.nickname || '',
           enable: !!reseller.enable,
+          twoFactorRequired: !!reseller.twoFactorRequired,
           unlimited: !!reseller.unlimited,
           // Every balance movement is a whole number of GB (create, recharge), so the
           // round is exact and only exists to keep a float out of the form.
@@ -223,7 +229,7 @@
         this.reseller = {
           id: 0, username: '', password: '', nickname: '', enable: true, representativeRoleId: undefined,
           unlimited: false, allowanceGb: 0, daysPerGb: 0, minCreateGb: 0, minAddGb: 0,
-          allowOverview: false, allowOverviewManage: false,
+          allowOverview: false, allowOverviewManage: false, twoFactorRequired: false,
           inboundIds: [],
         };
       }
@@ -241,6 +247,7 @@
         password: reseller.password,
         nickname: reseller.nickname,
         enable: reseller.enable,
+        twoFactorRequired: !!reseller.twoFactorRequired,
         unlimited: reseller.unlimited,
         // On edit this is the unchanged current balance: the field is disabled, so posting
         // it back is a no-op whichever way the server reads it. Recharge moves the balance.

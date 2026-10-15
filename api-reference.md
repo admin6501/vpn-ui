@@ -59,6 +59,31 @@ assertion and soft logs the session out, which is one forced re-login and not a 
 An account with 2FA that sent no code gets HTTP 200, `success:false`, and
 `obj: {"twoFactorRequired": true}`. Resend with `twoFactorCode`.
 
+### Representative two-factor enrollment
+
+All authenticated accounts can use `GET /panel/security` and
+`POST /panel/setting/twoFactor` without the shared panel-settings permission.
+Enrollment posts `enable=true`, `password` (the current password), `token` (a
+new Base32 TOTP secret) and `code` (a valid six-digit code for that secret).
+Disabling posts `enable=false` and a code for the stored authenticator. The
+target account always comes from the session; a submitted user ID is ignored.
+Keep the refreshed cookie returned after changing two-factor authentication;
+older cookies are revoked. Stored secrets are never returned by these routes.
+
+Representative add/update forms accept `twoFactorRequired=true|false`, and the
+reseller list returns it alongside `twoFactorEnable`. Omission preserves the
+existing requirement on update and defaults to false on creation. Existing
+manager permissions and representative ownership checks apply.
+
+A representative whose manager requires 2FA but who has not enrolled can sign
+in with a password only to complete enrollment. Until then, HTML panel
+navigations redirect to `/panel/security`; panel/API requests return HTTP 403
+with `success:false` and `obj:{"twoFactorEnrollmentRequired":true,"redirect":"/<basePath>/panel/security"}`.
+WebSocket connections and existing live deliveries are blocked too. Account
+security and logout remain available. Once enrolled, login requires the normal
+TOTP code. A representative cannot disable required 2FA; removing the manager's
+requirement preserves the enrolled authenticator.
+
 **Unauthenticated API requests get `404`, not `401`.** `checkAPIAuth` (`web/controller/api.go`)
 aborts with 404 to hide which endpoints exist. A 404 from `/panel/api/...` therefore means "not
 logged in" at least as often as it means "wrong URL".

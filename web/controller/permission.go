@@ -112,6 +112,9 @@ func landingPath(c *gin.Context) string {
 	if user == nil {
 		return ""
 	}
+	if user.NeedsTwoFactorEnrollment() {
+		return c.GetString("base_path") + "panel/security"
+	}
 	for _, p := range landingPages {
 		// The overview is asked through overviewAccess rather than Can, so a reseller
 		// whose profile opens it lands there and one whose profile does not never gets

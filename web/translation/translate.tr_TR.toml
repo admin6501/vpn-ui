@@ -1957,3 +1957,10 @@ other = "Bu çekirdek kaldırılsın mı? Gelenleri, kullanıcıları ve sayaçl
 
 [pages.nodes.sharedCores]
 other = "Paylaşılan bağımlılıklar diğer çekirdeklere hizmet edebilir. Paylaşılan bir bağımlılığı durdurmadan önce bağımlı çekirdekleri durdurun; Xray'yi çıkarmadan önce bağımlı çekirdekleri çıkarın. RADIUS ve SSH aracıya yerleşiktir: kaldırma, bunların özelliklerini devre dışı bırakır."
+
+[pages.accountSecurity]
+title = "Hesap güvenliği"
+required = "Yöneticiniz iki adımlı doğrulamayı zorunlu kılıyor. Paneli kullanmadan önce ayarlayın. Zorunluluk devam ederken kapatılamaz."
+requireTwoFactor = "İki adımlı doğrulamayı zorunlu kıl"
+requireDesc = "Temsilci paneli kullanmadan önce kendi doğrulayıcısını ayarlamalıdır. Bu zorunluluğun kaldırılması mevcut doğrulamayı kapatmaz."
+pending = "Kurulum bekleniyor"

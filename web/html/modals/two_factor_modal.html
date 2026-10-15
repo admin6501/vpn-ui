@@ -69,6 +69,7 @@
             title = '',
             description = '',
             token = '',
+            label = 'Administrator',
             type = 'set',
             confirm = (success) => { }
         }) {
@@ -86,7 +87,7 @@
             this.totpObject = token
                 ? new OTPAuth.TOTP({
                     issuer: "VPN-UI",
-                    label: "Administrator",
+                    label,
                     algorithm: "SHA1",
                     digits: 6,
                     period: 30,

@@ -1957,3 +1957,10 @@ other = "Remover este núcleo? Seus inbounds, usuários e contadores serão mant
 
 [pages.nodes.sharedCores]
 other = "Dependências compartilhadas podem servir outros núcleos. Pare os núcleos dependentes antes de parar uma dependência compartilhada; remova os núcleos dependentes antes de remover Xray. RADIUS e SSH estão integrados ao agente: a remoção desativa seu recurso."
+
+[pages.accountSecurity]
+title = "Segurança da conta"
+required = "O administrador exige autenticação de dois fatores. Configure antes de usar o painel. Ela não pode ser desativada enquanto for obrigatória."
+requireTwoFactor = "Exigir autenticação de dois fatores"
+requireDesc = "O representante deve configurar seu próprio autenticador antes de usar o painel. Remover essa exigência mantém ativa a autenticação já configurada."
+pending = "Aguardando configuração"

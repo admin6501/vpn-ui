@@ -1957,3 +1957,10 @@ other = "Hapus inti ini? Masuknya, pengguna dan penghitungnya akan disimpan; kon
 
 [pages.nodes.sharedCores]
 other = "Ketergantungan bersama dapat melayani inti lain. Hentikan inti yang bergantung sebelum menghentikan ketergantungan bersama; hapus inti yang bergantung sebelum menghapus Xray. RADIUS dan SSH dimasukkan ke dalam agen: penghapusan akan menonaktifkan fiturnya."
+
+[pages.accountSecurity]
+title = "Keamanan akun"
+required = "Administrator mewajibkan autentikasi dua faktor. Siapkan sebelum menggunakan panel. Fitur ini tidak dapat dinonaktifkan selama diwajibkan."
+requireTwoFactor = "Wajibkan autentikasi dua faktor"
+requireDesc = "Perwakilan harus menyiapkan aplikasi autentikator sendiri sebelum menggunakan panel. Menghapus kewajiban ini tidak menonaktifkan autentikasi yang sudah aktif."
+pending = "Menunggu penyiapan"

@@ -58,7 +58,7 @@ func (w *WebSocketController) HandleWebSocket(c *gin.Context) {
 	// Check authentication. The user is captured rather than discarded: the socket
 	// is tagged with their id so scoped payloads reach only them.
 	user := session.GetLoginUser(c)
-	if user == nil {
+	if user == nil || user.NeedsTwoFactorEnrollment() {
 		logger.Warningf("Unauthorized WebSocket connection attempt from %s", getRemoteIp(c))
 		c.AbortWithStatus(http.StatusUnauthorized)
 		return

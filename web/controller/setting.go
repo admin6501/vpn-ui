@@ -55,15 +55,19 @@ func (a *SettingController) initRouter(g *gin.RouterGroup) {
 	// Login is still required: this group descends from /panel, which carries
 	// checkLogin. The response is trimmed for callers without PermPanelSettings.
 	g.Group("/setting").POST("/defaultSettings", a.getDefaultSettings)
+	// Personal security is available to every authenticated account, independently
+	// of permission to read or change shared panel settings.
+	securityLimiter := newLoginLimiter().middleware()
+	personal := g.Group("/setting")
+	personal.Use((&BaseController{}).checkLogin)
+	personal.POST("/twoFactor", securityLimiter, a.updateTwoFactor)
 
 	g = g.Group("/setting")
 	g.Use(requirePerm(model.PermPanelSettings))
 
 	g.POST("/all", a.getAllSetting)
 	g.POST("/update", a.updateSetting)
-	securityLimiter := newLoginLimiter().middleware()
 	g.POST("/updateUser", securityLimiter, a.updateUser)
-	g.POST("/twoFactor", securityLimiter, a.updateTwoFactor)
 	g.POST("/restartPanel", a.restartPanel)
 	// Its own route rather than a field in AllSetting: the switch is on the
 	// inbounds page, which never loads the settings blob, so posting through
@@ -258,6 +262,10 @@ func (a *SettingController) updateTwoFactor(c *gin.Context) {
 	form := &twoFactorForm{}
 	if err := c.ShouldBind(form); err != nil {
 		jsonMsg(c, I18nWeb(c, "pages.settings.security.twoFactor"), err)
+		return
+	}
+	if !form.Enable && isRepresentative(user) && user.TwoFactorRequired {
+		jsonMsg(c, I18nWeb(c, "pages.settings.security.twoFactor"), errors.New(I18nWeb(c, "pages.accountSecurity.required")))
 		return
 	}
 	if form.Enable && user.TwoFactorEnable {
