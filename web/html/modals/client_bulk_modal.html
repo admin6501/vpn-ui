@@ -213,16 +213,13 @@
             {{ i18n "pages.clients.selectAll" }}
           </a-checkbox>
         </div>
-        <a-checkbox-group v-model="clientsBulkModal.selected" :style="{ width: '100%' }">
-          <div class="bo-cf-ib" v-for="ib in clientsBulkModal.assignable" :key="ib.inboundId"
-            :class="{ on: clientsBulkModal.selected.includes(ib.inboundId) }">
-            <a-checkbox :value="ib.inboundId">
-              [[ ib.remark || ('#' + ib.inboundId) ]]
-              <a-tag>[[ ib.protocol ]]</a-tag>
-              <span class="bo-dim">:[[ ib.port ]]</span>
-            </a-checkbox>
+        <a-alert v-if="!clientsBulkModal.groups.length" type="warning" show-icon message='{{ i18n "pages.groups.noGroups" }}'></a-alert>
+        <a-checkbox-group v-model="clientsBulkModal.selectedGroups" @change="() => clientsBulkModal.changeGroups()" :style="{ width: '100%' }">
+          <div class="bo-cf-ib" v-for="group in clientsBulkModal.groups" :key="group.id" :class="{ on: clientsBulkModal.selectedGroups.includes(group.id) }">
+            <a-checkbox :value="group.id">[[ group.name ]] <a-tag>[[ group.inboundIds.length ]] {{ i18n "pages.clients.inbounds" }}</a-tag></a-checkbox>
           </div>
         </a-checkbox-group>
+        <div class="bo-dim" style="margin-top:12px">{{ i18n "pages.groups.hint" }}</div>
         <a-alert v-if="clientsBulkModal.protocolClash" type="error" show-icon
           :style="{ marginTop: '12px' }"
           message='{{ i18n "pages.clients.sameProtocolRefused" }}'></a-alert>
@@ -292,10 +289,12 @@
     // preview last because it is the check you run before committing.
     tabs: [
       { key: 'identity', icon: 'user',            label: '{{ i18n "pages.clients.tabIdentity" }}' },
-      { key: 'inbounds', icon: 'cluster',         label: '{{ i18n "pages.clients.inbounds" }}' },
+      { key: 'inbounds', icon: 'cluster',         label: '{{ i18n "pages.groups.title" }}' },
       { key: 'preview',  icon: 'unordered-list',  label: '{{ i18n "pages.clients.tabPreview" }}' },
     ],
 
+    groups: [],
+    selectedGroups: [],
     assignable: [],
     selected: [],
     quantity: 1,
@@ -328,10 +327,10 @@
 
     // --- the inbound checklist ----------------------------------------------
     get allChecked() {
-      return this.assignable.length > 0 && this.selected.length === this.assignable.length;
+      return this.groups.length > 0 && this.selectedGroups.length === this.groups.length;
     },
     get someChecked() {
-      return this.selected.length > 0 && this.selected.length < this.assignable.length;
+      return this.selectedGroups.length > 0 && this.selectedGroups.length < this.groups.length;
     },
     get protocolClash() {
       const seen = {};
@@ -343,8 +342,12 @@
       }
       return false;
     },
+    changeGroups() {
+      this.selected = [...new Set(this.groups.filter(g => this.selectedGroups.includes(g.id)).flatMap(g => g.inboundIds))];
+    },
     toggleAll(e) {
-      this.selected = e.target.checked ? this.assignable.map(i => i.inboundId) : [];
+      this.selectedGroups = e.target.checked ? this.groups.map(g => g.id) : [];
+      this.changeGroups();
     },
 
     // --- the batch, as the settings currently describe it -------------------
@@ -599,7 +602,7 @@
       // second request would be refused outright for duplicate emails.
       this.confirmLoading = true;
       const msg = await HttpUtil.post('/panel/api/inbounds/addClient',
-        { id: ids[0], inboundIds: ids, settings: JSON.stringify({ clients }) });
+        { id: ids[0], inboundIds: ids, groupIds: this.selectedGroups.length ? this.selectedGroups : [''], settings: JSON.stringify({ clients }) });
       this.confirmLoading = false;
       if (msg && msg.success) {
         this.close();
@@ -607,10 +610,14 @@
       }
     },
 
-    show({ title = '', okText = '{{ i18n "sure" }}', assignable = [], existing = {},
+    async show({ title = '', okText = '{{ i18n "sure" }}', assignable = [], existing = {},
            onDone = null }) {
       this.title = title;
       this.okText = okText;
+      const groupResponse = await HttpUtil.get('/panel/api/clients/groups');
+      if (!groupResponse || !groupResponse.success) return;
+      this.groups = groupResponse.obj || [];
+      this.selectedGroups = [];
       this.assignable = assignable;
       this.existing = existing || {};
       this.onDone = onDone;

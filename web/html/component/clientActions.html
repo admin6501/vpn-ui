@@ -104,6 +104,7 @@
           // once, so a key bolted on later is bound to nothing and the checkbox
           // group would tick boxes that never re-render.
           inboundIds: [],
+          groups: [],
           progress: { running: false, done: 0, total: 0, applied: 0, skipped: 0, etaText: '' },
         },
       };
@@ -159,7 +160,10 @@
       exportSelectedTxt() { this.exportTxt(this.resolveSelectedTargets(), 'accounts'); },
       exportSelectedPdf() { this.exportPdf(this.resolveSelectedTargets(), 'accounts'); },
       // --- bulk operations ----------------------------------------------
-      openBulkOps() {
+      async openBulkOps() {
+        const response = await HttpUtil.get('/panel/api/clients/groups');
+        if (!response || !response.success) return;
+        this.bulkOps.groups = response.obj || [];
         if (!this.selectedCount()) { this.$message.warning('{{ i18n "pages.inbounds.exportNoneSelected" }}'); return; }
         this.bulkOps.progress = { running: false, done: 0, total: 0, applied: 0, skipped: 0, etaText: '' };
         // The inbound picks do NOT survive the modal closing: they name a
@@ -182,7 +186,7 @@
       // already loaded and already filtered to what this caller may assign. The
       // guard is for the Inbounds page, which mixes this in and does not hold one:
       // it never opens the modal, so the list is simply empty there.
-      bulkAssignable() { return this.assignable || []; },
+      bulkAssignable() { return this.bulkOps.groups || []; },
       bulkAllInboundsChecked() {
         const all = this.bulkAssignable();
         return all.length > 0 && this.bulkOps.inboundIds.length === all.length;
@@ -193,7 +197,7 @@
       },
       bulkToggleAllInbounds(e) {
         this.bulkOps.inboundIds = e.target.checked
-          ? this.bulkAssignable().map(i => i.inboundId) : [];
+          ? this.bulkAssignable().map(i => i.id) : [];
       },
       // Two inbounds of the same ambiguous protocol in ONE batch, which the server
       // refuses for every account it would apply to. Said here so the whole run is
@@ -205,8 +209,8 @@
       bulkProtocolClash() {
         if (this.bulkOps.op !== 'addInbounds') return false;
         const seen = {};
-        for (const id of this.bulkOps.inboundIds) {
-          const ib = this.bulkAssignable().find(x => x.inboundId === id);
+        for (const id of [...new Set(this.bulkAssignable().filter(g => this.bulkOps.inboundIds.includes(g.id)).flatMap(g => g.inboundIds))]) {
+          const ib = (this.assignable || []).find(x => x.inboundId === id);
           if (!ib || !BULK_AMBIGUOUS_PROTOCOLS.includes(ib.protocol)) continue;
           if (seen[ib.protocol]) return true;
           seen[ib.protocol] = true;
@@ -377,7 +381,7 @@
           const group = accounts.slice(i, i + BATCH);
           const targets = [].concat.apply([], group);
           const msg = await HttpUtil.post('/panel/api/inbounds/bulkMembership',
-            { data: JSON.stringify({ op: b.op, inboundIds, targets }) });
+            { data: JSON.stringify({ op: b.op, groupIds: inboundIds, targets }) });
           if (!msg.success) { ok = false; break; }
           const r = msg.obj || {};
           b.progress.applied += (r.applied || 0);

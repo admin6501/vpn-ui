@@ -1965,3 +1965,14 @@ required = "Quản trị viên yêu cầu xác thực hai yếu tố. Hãy thi�
 requireTwoFactor = "Yêu cầu xác thực hai yếu tố"
 requireDesc = "Đại lý phải thiết lập ứng dụng xác thực của mình trước khi dùng bảng điều khiển. Gỡ yêu cầu này không tắt xác thực đã được bật."
 pending = "Đang chờ thiết lập"
+
+[pages.groups]
+title = "Nhóm"
+add = "Thêm nhóm"
+hint = "Thay đổi nhóm áp dụng cho mọi thành viên. Thêm kết nối vào mới vào nhóm trước khi sử dụng."
+noGroups = "Chưa có nhóm. Hãy thêm kết nối vào vào một nhóm trước."
+members = "Người dùng"
+allowed = "Nhóm được phép"
+all = "Cho phép mọi nhóm"
+addMembership = "Thêm vào nhóm"
+removeMembership = "Xóa khỏi nhóm"

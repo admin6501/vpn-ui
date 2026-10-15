@@ -1965,3 +1965,14 @@ required = "El administrador exige autenticación de dos factores. Configúrala 
 requireTwoFactor = "Exigir autenticación de dos factores"
 requireDesc = "El representante debe configurar su propio autenticador antes de usar el panel. Quitar este requisito mantiene activa la autenticación ya configurada."
 pending = "Pendiente de configuración"
+
+[pages.groups]
+title = "Grupos"
+add = "Añadir grupo"
+hint = "Los cambios del grupo se aplican a todos sus usuarios. Añade las nuevas entradas a un grupo antes de usarlas."
+noGroups = "No hay grupos disponibles. Añade entradas a un grupo primero."
+members = "Usuarios"
+allowed = "Grupos permitidos"
+all = "Permitir todos los grupos"
+addMembership = "Añadir a grupos"
+removeMembership = "Quitar de grupos"

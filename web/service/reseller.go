@@ -1416,19 +1416,46 @@ func (s *ResellerService) UpdateReseller(caller *model.User, id int, spec Resell
 	if err != nil {
 		return err
 	}
+	roleChanged := false
 	if profile.ConsumptionBased {
 		if spec.AllowanceGB == 0 {
 			spec.Unlimited = true
 		}
-		if caller == nil || !caller.IsSuperAdmin {
+		if spec.RepresentativeRoleID == 0 {
+			spec.RepresentativeRoleID = user.RepresentativeRoleID
+		}
+		roleChanged = spec.RepresentativeRoleID != user.RepresentativeRoleID
+		if roleChanged && !caller.IsSuperAdmin {
 			return errors.New("only the owner can assign representative roles")
 		}
 		var role model.RepresentativeRole
 		if spec.RepresentativeRoleID <= 0 || database.GetDB().First(&role, spec.RepresentativeRoleID).Error != nil || role.IsOwner {
 			return errors.New("invalid representative role")
 		}
-		if err := enforceRoleInboundAccess(&role, spec.InboundIds); err != nil {
-			return err
+		// Imported grants can predate the role's group/template restrictions.
+		// Editing credentials or metadata must preserve those grants; validate
+		// newly assigned inbounds, or every requested inbound when changing roles.
+		toValidate := spec.InboundIds
+		if !roleChanged {
+			var assigned []int
+			if err := database.GetDB().Model(&model.InboundAccess{}).Where("user_id = ?", id).Pluck("inbound_id", &assigned).Error; err != nil {
+				return err
+			}
+			existing := make(map[int]bool, len(assigned))
+			for _, inboundID := range assigned {
+				existing[inboundID] = true
+			}
+			toValidate = make([]int, 0)
+			for _, inboundID := range spec.InboundIds {
+				if !existing[inboundID] {
+					toValidate = append(toValidate, inboundID)
+				}
+			}
+		}
+		if roleChanged || len(toValidate) > 0 {
+			if err := enforceRoleInboundAccess(&role, toValidate); err != nil {
+				return err
+			}
 		}
 		spec.DaysPerGB = 0
 		spec.MinCreateGB = 0
@@ -1462,7 +1489,7 @@ func (s *ResellerService) UpdateReseller(caller *model.User, id int, spec Resell
 		"is_super_admin": false,
 		"is_reseller":    true,
 	}
-	if profile.ConsumptionBased {
+	if roleChanged {
 		updates["representative_role_id"] = spec.RepresentativeRoleID
 	}
 	if spec.TwoFactorRequired != nil {
@@ -1493,12 +1520,12 @@ func (s *ResellerService) UpdateReseller(caller *model.User, id int, spec Resell
 		if profile.ConsumptionBased {
 			profileUpdates["allowance_bytes"] = gbToBytes(spec.AllowanceGB)
 		}
-		return tx.Model(&model.ResellerProfile{}).Where("user_id = ?", user.Id).Updates(profileUpdates).Error
+		if err := tx.Model(&model.ResellerProfile{}).Where("user_id = ?", user.Id).Updates(profileUpdates).Error; err != nil {
+			return err
+		}
+		return setAdminInboundAccess(tx, user.Id, spec.InboundIds)
 	})
-	if err != nil {
-		return err
-	}
-	return adminService.SetInboundAccess(user.Id, spec.InboundIds)
+	return err
 }
 
 // Recharge moves a reseller's allowance. Positive tops them up; negative takes

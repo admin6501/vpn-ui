@@ -1964,3 +1964,14 @@ required = "Yöneticiniz iki adımlı doğrulamayı zorunlu kılıyor. Paneli ku
 requireTwoFactor = "İki adımlı doğrulamayı zorunlu kıl"
 requireDesc = "Temsilci paneli kullanmadan önce kendi doğrulayıcısını ayarlamalıdır. Bu zorunluluğun kaldırılması mevcut doğrulamayı kapatmaz."
 pending = "Kurulum bekleniyor"
+
+[pages.groups]
+title = "Gruplar"
+add = "Grup ekle"
+hint = "Grup değişiklikleri tüm üyelerine uygulanır. Yeni gelen bağlantıları kullanmadan önce bir gruba ekleyin."
+noGroups = "Kullanılabilir grup yok. Önce gelen bağlantıları bir gruba ekleyin."
+members = "Kullanıcılar"
+allowed = "İzin verilen gruplar"
+all = "Tüm gruplara izin ver"
+addMembership = "Gruplara ekle"
+removeMembership = "Gruplardan çıkar"

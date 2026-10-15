@@ -210,6 +210,9 @@ func runWebServer() {
 	// client model. Never blocks startup.
 	accountMigrations := &service.AccountService{}
 	accountMigrations.MigrationAccounts()
+	if err := (&service.GroupService{}).Migrate(); err != nil {
+		log.Fatalf("Groups migration failed: %v", err)
+	}
 	// Seed the per-inbound usage breakdown from the usage that already exists, which
 	// needs the memberships above to be there. Also on every start and for the same
 	// reason: MigrateDB is reached only by the `migrate` subcommand and the DB-import

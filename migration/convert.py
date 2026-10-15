@@ -110,6 +110,10 @@ def convert(backup, schema, output, destination_db=None):
         with target:
             for table in ['users', 'representative_roles', 'reseller_profiles', 'reseller_clients', 'inbound_accesses', 'pasar_guard_resources', 'pasar_guard_subscriptions', 'pasar_guard_secrets']:
                 target.execute('DELETE FROM "'+table+'"')
+            for table in ['account_groups', 'group_inbounds', 'client_groups']:
+                if target.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (table,)).fetchone():
+                    target.execute('DELETE FROM "'+table+'"')
+            target.execute('DELETE FROM settings WHERE key=?', ('clientGroupsMigrationV1',))
             owner_id = int(owners[0]['id'])
             for r in source['admin_roles']:
                 insert(target, 'representative_roles', {

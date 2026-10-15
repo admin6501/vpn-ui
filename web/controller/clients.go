@@ -40,6 +40,10 @@ func (a *ClientsController) initRouter(g *gin.RouterGroup) {
 	// The rows are then narrowed per caller inside ListAccounts.
 	g.GET("/list", a.list)
 	g.GET("/assignable", a.assignable)
+	g.GET("/groups", func(c *gin.Context) {
+		rows, err := (&service.GroupService{}).List(session.GetLoginUser(c), false)
+		jsonObj(c, rows, err)
+	})
 	g.GET("/inbounds", a.inbounds)
 	g.GET("/balance", (&InboundController{}).resellerBalance)
 	g.GET("/owners", requireSuperAdmin(), a.owners)

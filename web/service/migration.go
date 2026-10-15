@@ -204,6 +204,9 @@ func (s *ServerService) ImportForeignDB(src dbFile, activate bool) (*ImportRepor
 		// (MigrateDB has just done those), then the backfill that reads them.
 		accountService := &AccountService{}
 		accountService.MigrationAccounts()
+		if err := (&GroupService{}).Migrate(); err != nil {
+			return nil, err
+		}
 		// Imported wireguard inbounds get their clients array and their device
 		// address here for the same reason: until they have one they cannot be
 		// offered as somewhere to put an account.

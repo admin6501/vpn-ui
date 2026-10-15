@@ -83,6 +83,7 @@ type AccountCredentials struct {
 
 // AccountRow is one line of the Clients table.
 type AccountRow struct {
+	GroupIDs      []int  `json:"groupIds"`
 	OwnerID       int    `json:"ownerId"`
 	OwnerUsername string `json:"ownerUsername"`
 	Id            int    `json:"id"`
@@ -237,6 +238,14 @@ func (s *AccountService) ListAccounts(user *model.User, page, size int, search, 
 	// the rows rather than added to AccountRow because nothing on the page renders
 	// it: the table has no created column, and a field the browser never reads is a
 	// field that goes stale without anyone noticing.
+	groupIDs := map[int][]int{}
+	var groupLinks []model.AccountGroup
+	if err := db.Order("group_id").Find(&groupLinks).Error; err != nil {
+		return nil, err
+	}
+	for _, link := range groupLinks {
+		groupIDs[link.AccountID] = append(groupIDs[link.AccountID], link.GroupID)
+	}
 	createdAt := make(map[int]int64, len(accounts))
 	for i := range accounts {
 		account := &accounts[i]
@@ -257,6 +266,7 @@ func (s *AccountService) ListAccounts(user *model.User, page, size int, search, 
 			UserLimitOverride: account.UserLimitOverride,
 			Memberships:       mine, OwnedByReseller: owner[key],
 		}
+		row.GroupIDs = append([]int{}, groupIDs[account.Id]...)
 		row.OwnerID = owner[key]
 		if row.OwnerID == 0 {
 			row.OwnerID = rootID

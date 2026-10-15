@@ -219,16 +219,13 @@
             {{ i18n "pages.clients.selectAll" }}
           </a-checkbox>
         </div>
-        <a-checkbox-group v-model="clientMembershipModal.selected" :style="{ width: '100%' }">
-          <div class="bo-cf-ib" v-for="ib in clientMembershipModal.assignable" :key="ib.inboundId"
-            :class="{ on: clientMembershipModal.selected.includes(ib.inboundId) }">
-            <a-checkbox :value="ib.inboundId">
-              [[ ib.remark || ('#' + ib.inboundId) ]]
-              <a-tag>[[ ib.protocol ]]</a-tag>
-              <span class="bo-dim">:[[ ib.port ]]</span>
-            </a-checkbox>
+        <a-alert v-if="!clientMembershipModal.groups.length" type="warning" show-icon message='{{ i18n "pages.groups.noGroups" }}'></a-alert>
+        <a-checkbox-group v-model="clientMembershipModal.selectedGroups" @change="() => clientMembershipModal.changeGroups()" :style="{ width: '100%' }">
+          <div class="bo-cf-ib" v-for="group in clientMembershipModal.groups" :key="group.id" :class="{ on: clientMembershipModal.selectedGroups.includes(group.id) }">
+            <a-checkbox :value="group.id">[[ group.name ]] <a-tag>[[ group.inboundIds.length ]] {{ i18n "pages.clients.inbounds" }}</a-tag></a-checkbox>
           </div>
         </a-checkbox-group>
+        <div class="bo-dim" style="margin-top:12px">{{ i18n "pages.groups.hint" }}</div>
         <!-- Refused by the server, so saying so here saves a round trip that comes
              back as an opaque failure. l2tp, pptp and ikev2 authenticate through a
              shared daemon that does not name the inbound, so an account on two of
@@ -396,6 +393,8 @@
     isEdit: false,
     title: '',
     okText: '',
+    groups: [],
+    selectedGroups: [],
     assignable: [],
     selected: [],
     totalGb: 0,
@@ -425,7 +424,7 @@
     // because the server mints every one of them and most operators never look.
     tabs: [
       { key: 'identity',    icon: 'user',    label: '{{ i18n "pages.clients.tabIdentity" }}' },
-      { key: 'inbounds',    icon: 'cluster', label: '{{ i18n "pages.clients.inbounds" }}' },
+      { key: 'inbounds',    icon: 'cluster', label: '{{ i18n "pages.groups.title" }}' },
       { key: 'credentials', icon: 'key',     label: '{{ i18n "pages.clients.credentials" }}' },
       // Last because it is the one an operator opens deliberately. Every field in it
       // is empty by default and empty means "whatever the inbound says", so an
@@ -467,10 +466,10 @@
     get deviceLimitSupported() { return this.assignable.some(m => this.selected.includes(m.inboundId) && m.deviceLimitSupported); },
     get ipLimitSupported() { return this.assignable.some(m => this.selected.includes(m.inboundId) && m.ipLimitSupported); },
     get allChecked() {
-      return this.assignable.length > 0 && this.selected.length === this.assignable.length;
+      return this.groups.length > 0 && this.selectedGroups.length === this.groups.length;
     },
     get someChecked() {
-      return this.selected.length > 0 && this.selected.length < this.assignable.length;
+      return this.selectedGroups.length > 0 && this.selectedGroups.length < this.groups.length;
     },
     get protocolClash() {
       const seen = {};
@@ -482,8 +481,12 @@
       }
       return false;
     },
+    changeGroups() {
+      this.selected = [...new Set(this.groups.filter(g => this.selectedGroups.includes(g.id)).flatMap(g => g.inboundIds))];
+    },
     toggleAll(e) {
-      this.selected = e.target.checked ? this.assignable.map(i => i.inboundId) : [];
+      this.selectedGroups = e.target.checked ? this.groups.map(g => g.id) : [];
+      this.changeGroups();
     },
 
     // Every key this form ever binds, present from the moment `client` is assigned.
@@ -518,7 +521,11 @@
       };
     },
 
-    show({ row = null, storedBy = {}, assignable = [], onDone = null }) {
+    async show({ row = null, storedBy = {}, assignable = [], onDone = null }) {
+      const groupResponse = await HttpUtil.get('/panel/api/clients/groups');
+      if (!groupResponse || !groupResponse.success) return;
+      this.groups = groupResponse.obj || [];
+      this.selectedGroups = [];
       this.assignable = assignable;
       this.onDone = onDone;
       this.isEdit = !!row;
@@ -550,7 +557,8 @@
         this.days = row.expiryTime > 0
           ? Math.max(0, Math.ceil((row.expiryTime - Date.now()) / 86400000))
           : (row.expiryTime < 0 ? Math.round(Math.abs(row.expiryTime) / 86400000) : 0);
-        this.selected = (row.memberships || []).map(m => m.inboundId);
+        this.selectedGroups = (row.groupIds || []).filter(id => this.groups.some(g => g.id === id));
+        this.changeGroups();
         // null on the wire is what "inherits the inbound" looks like, and it has to
         // come back as an EMPTY box rather than as a 0: 0 is a real value in two of
         // these three fields and means unlimited. Number(null) is 0, so the null
@@ -1162,7 +1170,7 @@
       const client = this.entryFor('mtproto', email, ib.inboundId);
       return await HttpUtil.post(
         '/panel/api/inbounds/updateClient/' + encodeURIComponent((m && m.clientId) || email),
-        { id: ib.inboundId, inboundIds: ids, settings: JSON.stringify({ clients: [client] }) });
+        { id: ib.inboundId, inboundIds: ids, groupIds: this.selectedGroups.length ? this.selectedGroups : [''], settings: JSON.stringify({ clients: [client] }) });
     },
 
     // Super administrators write the account directly and attach memberships
@@ -1172,7 +1180,7 @@
       const first = this.assignable.find(x => x.inboundId === ids[0]);
       const client = this.entryFor(first ? first.protocol : '', email, ids[0]);
       const msg = await HttpUtil.post('/panel/api/inbounds/addClient',
-        { id: ids[0], inboundIds: ids, settings: JSON.stringify({ clients: [client] }) });
+        { id: ids[0], inboundIds: ids, groupIds: this.selectedGroups.length ? this.selectedGroups : [''], settings: JSON.stringify({ clients: [client] }) });
       if (!msg || !msg.success) return msg;
       return (await this.writeAdtag(email, ids, ids[0])) || msg;
     },
@@ -1195,7 +1203,7 @@
     // when a membership that needs one is created.
     async saveAccount(email, ids) {
       const client = this.entryFor('', email, ids[0] || 0);
-      const body = { settings: JSON.stringify({ clients: [client] }) };
+      const body = { settings: JSON.stringify({ clients: [client] }), groupIds: this.selectedGroups.length ? this.selectedGroups : [''] };
       if (ids.length) {
         body.inboundIds = ids;
       } else {
@@ -1236,7 +1244,7 @@
       const client = this.entryFor(anchorIb ? anchorIb.protocol : anchor.protocol,
                                    email, anchor.inboundId);
 
-      const body = { id: anchor.inboundId, inboundIds: ids,
+      const body = { id: anchor.inboundId, inboundIds: ids, groupIds: this.selectedGroups.length ? this.selectedGroups : [''],
                      settings: JSON.stringify({ clients: [client] }) };
       // Unticking everything. The server force-includes the addressed inbound in the
       // membership set otherwise (it is the one the modal was opened from), so the

@@ -1,0 +1,126 @@
+package web
+
+import (
+	"context"
+	"github.com/gin-gonic/gin"
+	"github.com/mhsanaei/3x-ui/v2/config"
+	"github.com/mhsanaei/3x-ui/v2/database"
+	"github.com/mhsanaei/3x-ui/v2/database/model"
+	"github.com/mhsanaei/3x-ui/v2/logger"
+	"github.com/mhsanaei/3x-ui/v2/web/controller"
+	weblocale "github.com/mhsanaei/3x-ui/v2/web/locale"
+	"github.com/mhsanaei/3x-ui/v2/web/service"
+	"github.com/nicksnyder/go-i18n/v2/i18n"
+	"github.com/op/go-logging"
+	"github.com/pelletier/go-toml/v2"
+	"golang.org/x/text/language"
+	"html/template"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+)
+
+func TestGroupsBrowserRuntime(t *testing.T) {
+	if os.Getenv("RUN_NODE_UI_BROWSER") != "1" {
+		t.Skip("enable Chromium checks")
+	}
+	gin.SetMode(gin.TestMode)
+	logger.InitLogger(logging.CRITICAL)
+	bundle := i18n.NewBundle(language.MustParse("en-US"))
+	bundle.RegisterUnmarshalFunc("toml", toml.Unmarshal)
+	for _, lang := range []string{"en_US", "fa_IR"} {
+		if _, err := bundle.LoadMessageFile("translation/translate." + lang + ".toml"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, lang := range []string{"en-US", "fa-IR"} {
+		t.Run(lang, func(t *testing.T) {
+			localizer := i18n.NewLocalizer(bundle, lang)
+			tpl, err := (&Server{}).getHtmlTemplate(template.FuncMap{"i18n": func(key string, _ ...string) (string, error) {
+				return localizer.Localize(&i18n.LocalizeConfig{MessageID: key})
+			}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Setenv("VPNUI_DB_FOLDER", t.TempDir())
+			if err := database.InitDB(config.GetDBPath()); err != nil {
+				t.Fatal(err)
+			}
+			db := database.GetDB()
+			var root model.User
+			if err := db.Where("is_super_admin = ?", true).First(&root).Error; err != nil {
+				t.Fatal(err)
+			}
+			inbounds := []model.Inbound{{UserId: root.Id, Tag: "group-vless", Remark: "First inbound", Protocol: model.VLESS, Port: 443, Enable: true, Settings: `{"clients":[{"email":"existing-user","id":"11111111-1111-4111-8111-111111111111","password":"kept-password","subId":"kept-sub","enable":true}]}`, StreamSettings: `{"network":"tcp","security":"none"}`}, {UserId: root.Id, Tag: "group-trojan", Remark: "Second inbound", Protocol: model.Trojan, Port: 444, Enable: true, Settings: `{"clients":[]}`, StreamSettings: `{"network":"tcp","security":"none"}`}}
+			if err := db.Create(&inbounds).Error; err != nil {
+				t.Fatal(err)
+			}
+			accounts := &service.AccountService{}
+			accounts.MigrationAccounts()
+			if err := (&service.GroupService{}).Migrate(); err != nil {
+				t.Fatal(err)
+			}
+			third := model.Inbound{UserId: root.Id, Tag: "ungrouped", Remark: "Ungrouped inbound", Protocol: model.VLESS, Port: 445, Enable: true, Settings: `{"clients":[]}`, StreamSettings: `{"network":"tcp","security":"none"}`}
+			if err := db.Create(&third).Error; err != nil {
+				t.Fatal(err)
+			}
+			r := gin.New()
+			r.SetHTMLTemplate(tpl)
+			r.Use(func(c *gin.Context) {
+				c.Set("LOGIN_USER_ROW", &root)
+				c.Set("base_path", "/test/")
+				c.Set("I18n", func(_ weblocale.I18nType, key string, _ ...string) string {
+					v, _ := localizer.Localize(&i18n.LocalizeConfig{MessageID: key})
+					return v
+				})
+				c.Next()
+			})
+			controller.NewXUIController(r.Group("/test"))
+			controller.NewClientsController(r.Group("/test/panel/api/clients"))
+			controller.NewInboundController(r.Group("/test/panel/api/inbounds"))
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, rq *http.Request) {
+				if strings.HasPrefix(rq.URL.Path, "/test/assets/") {
+					http.StripPrefix("/test/", http.FileServer(http.FS(assetsFS))).ServeHTTP(w, rq)
+					return
+				}
+				r.ServeHTTP(w, rq)
+			}))
+			defer srv.Close()
+			script, _ := filepath.Abs("../test_unit/groups_browser_test.cjs")
+			ctx, cancel := context.WithTimeout(context.Background(), 80*time.Second)
+			defer cancel()
+			cmd := exec.CommandContext(ctx, "node", script)
+			cmd.Env = append(os.Environ(), "GROUPS_URL="+srv.URL+"/test/panel/groups")
+			if out, err := cmd.CombinedOutput(); err != nil {
+				t.Fatalf("browser: %v\n%s", err, out)
+			} else {
+				t.Log(string(out))
+			}
+			var existing model.Account
+			if err := db.Where("email = ?", "existing-user").First(&existing).Error; err != nil {
+				t.Fatal(err)
+			}
+			if existing.UUID != "11111111-1111-4111-8111-111111111111" || existing.SubID != "kept-sub" {
+				t.Fatal("migration or group edits replaced existing identity")
+			}
+			var created model.Account
+			if err := db.Where("email = ?", "new-group-user").First(&created).Error; err != nil {
+				t.Fatal(err)
+			}
+			ids, err := accounts.GetMembershipInboundIds(created.Id)
+			if err != nil || len(ids) != 2 {
+				t.Fatal("new user did not receive group's inbounds", ids, err)
+			}
+			var memberships int64
+			db.Model(&model.AccountInbound{}).Where("inbound_id = ?", third.Id).Count(&memberships)
+			if memberships != 0 {
+				t.Fatal("ungrouped inbound received users")
+			}
+		})
+	}
+}

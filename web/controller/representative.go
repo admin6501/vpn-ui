@@ -6,6 +6,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/mhsanaei/3x-ui/v2/database"
 	"github.com/mhsanaei/3x-ui/v2/database/model"
+	"github.com/mhsanaei/3x-ui/v2/web/service"
 	"gorm.io/gorm"
 	"strconv"
 	"strings"
@@ -44,6 +45,30 @@ func (a *ResellerController) saveRole(c *gin.Context) {
 		if json.Unmarshal([]byte(value), &object) != nil || object == nil {
 			jsonMsg(c, "Role", errors.New("invalid role policy"))
 			return
+		}
+	}
+	if service.GroupsMigrated(database.GetDB()) {
+		var policy struct {
+			IDs []int `json:"allowed_group_ids"`
+		}
+		if err := json.Unmarshal([]byte(f.Access), &policy); err != nil {
+			jsonMsg(c, "Role", err)
+			return
+		}
+		seen := map[int]bool{}
+		for _, id := range policy.IDs {
+			if id <= 0 {
+				jsonMsg(c, "Role", errors.New("invalid group"))
+				return
+			}
+			seen[id] = true
+		}
+		if len(seen) > 0 {
+			var count int64
+			if err := database.GetDB().Model(&model.ClientGroup{}).Where("id IN ?", policy.IDs).Count(&count).Error; err != nil || count != int64(len(seen)) {
+				jsonMsg(c, "Role", errors.New("group not found"))
+				return
+			}
 		}
 	}
 	role := model.RepresentativeRole{Name: f.Name, Permissions: f.Permissions, Limits: f.Limits, Features: f.Features, Access: f.Access,

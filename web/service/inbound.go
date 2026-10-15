@@ -1603,6 +1603,9 @@ func (s *InboundService) DelInbound(id int) (bool, error) {
 		}
 	}
 
+	if err := db.Where("inbound_id = ?", id).Delete(&model.GroupInbound{}).Error; err != nil {
+		return false, err
+	}
 	return needRestart, db.Delete(model.Inbound{}, id).Error
 }
 
@@ -2951,7 +2954,11 @@ func (s *InboundService) AdmitAccount(inboundId int, email string) error {
 	if inbound == nil {
 		return fmt.Errorf("inbound %d not found", inboundId)
 	}
-	existing, err := s.GetClients(inbound)
+	return admitAccountOnInbound(inbound, email)
+}
+
+func admitAccountOnInbound(inbound *model.Inbound, email string) error {
+	existing, err := (&InboundService{}).GetClients(inbound)
 	if err != nil {
 		return err
 	}
@@ -2996,6 +3003,7 @@ type BulkClientTarget struct {
 // many inbounds. Op is one of addDays/subDays/addTraffic/subTraffic/enable/disable.
 // Days is used by the day ops; AmountBytes by the traffic ops.
 type BulkClientUpdateRequest struct {
+	GroupIDs      []int  `json:"groupIds"`
 	Op            string `json:"op"`
 	Days          int64  `json:"days"`
 	AmountBytes   int64  `json:"amountBytes"`
