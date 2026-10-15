@@ -124,9 +124,14 @@
         <span class="v">[[ first.network ]]</span>
       </div>
       <div class="ai-kv">
-        <span class="k">{{ i18n "pages.clients.summaryUsed" }}</span>
+        <span class="k">{{ i18n "pages.clients.attributedUsage" }}</span>
         <span class="v">[[ used ]]</span>
       </div>
+      <div class="ai-kv" v-if="sharedBytes > 0">
+        <span class="k">{{ i18n "pages.clients.unattributedUsage" }}</span>
+        <span class="v">[[ sharedText ]]</span>
+      </div>
+      <p class="ai-hint" v-if="sharedBytes > 0">{{ i18n "pages.clients.unattributedUsageHint" }}</p>
       <div class="ai-kv" v-if="first && first.expiry">
         <span class="k">{{ i18n "pages.clients.summaryExpires" }}</span>
         <span class="v">[[ first.expiry ]]</span>
@@ -203,8 +208,13 @@
       enabled() { return !!(this.client && this.client.enable); },
       used() {
         if (!this.app || !this.record || !this.client) return '';
-        return SizeFormatter.sizeFormat(this.app.getInboundSumStats(this.record, this.client.email) || 0);
+        return SizeFormatter.sizeFormat(this.app.getAttributedInboundSumStats(this.record, this.client.email));
       },
+      sharedBytes() {
+        if (!this.app || !this.record || !this.client) return 0;
+        return this.app.getSharedInboundSumStats(this.record, this.client.email);
+      },
+      sharedText() { return SizeFormatter.sizeFormat(this.sharedBytes); },
     },
     methods: {
       ovpnTransports(record) { return AccountExport.ovpnTransports(record); },

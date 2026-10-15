@@ -40,6 +40,7 @@ jobs:
       - name: Verify client online identity, expiry tooltips and quota ordering
         run: |
           go test ./web/service ./web/job ./xray -run 'TestMembershipOnline|TestMtprotoMetrics|TestAppendUnrecorded|TestWireguardHandshake|TestCoreTraffic|TestAccountSort|TestOverview' -count=1
+          go test ./web/service -run 'TestClientStatsForSeparatesSharedPool|TestAttachClientStats|TestAddClientTraffic|TestMigrationMembershipUsage|TestRepairMembershipUsage' -count=1
           node test_unit/client_online_info_test.cjs
           node test_unit/client_details_2fa_test.cjs
           node test_unit/export_test/export.test.js
@@ -108,6 +109,7 @@ jobs:
           export NODE_PATH=/tmp/vpn-ui-browser-tests/node_modules
           export NODE_UI_CHROME=$(node -e 'console.log(require("playwright").chromium.executablePath())')
           node test_unit/client_details_browser_test.cjs
+          node test_unit/account_usage_breakdown_browser_test.cjs
           RUN_NODE_UI_BROWSER=1 go test ./web/middleware -run '^TestSecurityBrowserPanelNavigationRuntime$' -count=1 -timeout 60s
           RUN_NODE_UI_BROWSER=1 go test ./web -run '^Test(NodePageBrowserRuntime|OverviewSSLBrowserRuntime|RepresentativeOverviewHidesInboundManagementAndUpdates|AdminRolesBrowserRuntime|DelegatedSettingsBrowserRuntime|RepresentativeEditBrowserRuntime|GroupsBrowserRuntime)$' -count=1 -timeout 600s
       - name: Verify ownership transfer and online counts

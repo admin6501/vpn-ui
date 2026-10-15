@@ -113,6 +113,15 @@
         <span class="ai-chip">[[ memberships.length ]]</span>
       </div>
 
+      <div class="ai-usage-note" v-if="sharedBytes > 0">
+        <div class="ai-kv">
+          <span class="k">{{ i18n "pages.clients.unattributedUsage" }}</span>
+          <b class="v">[[ sharedText ]]</b>
+        </div>
+        <p>{{ i18n "pages.clients.unattributedUsageHint" }}</p>
+      </div>
+      <div class="ai-lbl ai-usage-label" v-if="memberships.length">{{ i18n "pages.clients.attributedUsage" }}</div>
+
       <div v-if="!memberships.length" class="ai-empty">
         {{ i18n "pages.clients.noInbounds" }}
       </div>
@@ -226,7 +235,7 @@
               <span class="v">[[ firstCard(m.record.id).network ]]</span>
             </div>
             <div class="ai-kv">
-              <span class="k">{{ i18n "pages.clients.summaryUsed" }}</span>
+              <span class="k">{{ i18n "pages.clients.attributedUsage" }}</span>
               <span class="v">[[ m.used ]]</span>
             </div>
           </a-spin>
@@ -333,12 +342,19 @@
               client: client,
               enabled: this.app.membershipEnabled(this.row, record),
               lamp: this.app.membershipLampClass(record, client.email),
-              used: SizeFormatter.sizeFormat(this.app.getInboundSumStats(record, client.email) || 0),
+              used: SizeFormatter.sizeFormat(this.app.getAttributedInboundSumStats(record, client.email)),
+              sharedBytes: this.app.getSharedInboundSumStats(record, client.email),
             });
           });
         });
         return out;
       },
+      // Every Xray candidate carries the SAME unresolved pool. Sum would repeat
+      // it once per inbound, causing the reported 71 GB / 71 GB discrepancy.
+      sharedBytes() {
+        return this.memberships.reduce((bytes, m) => Math.max(bytes, m.sharedBytes), 0);
+      },
+      sharedText() { return SizeFormatter.sizeFormat(this.sharedBytes); },
       subLink() {
         if (!this.row || !this.row.subId) return '';
         return (this.subSettings.subURI || '') + this.row.subId;

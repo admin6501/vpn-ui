@@ -373,6 +373,9 @@ func (s *InboundService) clientStatsFor(
 			// A zero here would read as "this customer has never used it", which is
 			// what the pooling exists to avoid saying.
 			if pooledHere && split.pooled.Up+split.pooled.Down+split.pooled.AllTime > 0 {
+				row.SharedUp = split.pooled.Up
+				row.SharedDown = split.pooled.Down
+				row.SharedAllTime = split.pooled.AllTime
 				row.InboundUp += split.pooled.Up
 				row.InboundDown += split.pooled.Down
 				row.InboundAllTime += split.pooled.AllTime
