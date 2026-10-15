@@ -1853,3 +1853,14 @@ group assignment. The grant is retired on assignment and never returns when the
 inbound is removed from a group. Only the actor's own administrator grant is
 removed automatically when deleting their unused group; other assigned admins,
 representatives, customers or representative roles still prevent deletion.
+
+Native backup restore (`POST /panel/api/server/importDB`, multipart field `db`)
+replaces the database, prepares restored accounts/groups and schedules the panel
+reload within that same authorized request. The browser must not depend on a
+second authenticated restart request: imported credentials can invalidate the
+previous session. A success response includes the localized message in both
+`msg` and the legacy string `obj`. The operator signs in with the restored
+credentials when required. Schema/account/group migration or Xray startup failure
+returns an error and attempts to reopen the previous database; a failed
+file replacement during recovery retains the fallback file. Native and foreign imports serialize their
+shared staging paths. Invalid uploads leave the current database running.

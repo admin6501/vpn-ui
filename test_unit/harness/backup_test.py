@@ -48,7 +48,7 @@ def run(panel, sc, cfg: dict, result, log=None) -> None:
         log(f"-> {st.name} [{st.status.value}] {st.detail}")
 
     # Shared state threaded through the ordered subtests below.
-    state = {"backup": None, "marker_added": False}
+    state = {"backup": None, "with_marker": None, "marker_added": False}
 
     def _download():
         db = panel.download_db()          # raises unless it's a real SQLite file
@@ -63,6 +63,8 @@ def run(panel, sc, cfg: dict, result, log=None) -> None:
         panel.add_client(iid, client)
         present = bool(panel.get_client(iid, MARKER_EMAIL))
         state["marker_added"] = present
+        if present:
+            state["with_marker"] = panel.download_db()
         return present, f"marker present after add={present}", "added post-backup marker account"
 
     def _restore_reverts():
@@ -70,17 +72,32 @@ def run(panel, sc, cfg: dict, result, log=None) -> None:
             return False, "no backup captured (download failed)", ""
         if not state["marker_added"]:
             return False, "marker not created (mutate failed)", ""
-        panel.import_db(state["backup"])
-        # importDB swaps the DB + restarts Xray/l2tp/pptp; give the panel a moment
-        # to finish InitDB + daemon restarts, then re-login (session may drop).
-        time.sleep(3)
-        panel.login()
-        marker_gone = not panel.get_client(iid, MARKER_EMAIL)
-        inbound_survived = bool(panel.get_inbound(iid))
-        ok = marker_gone and inbound_survived
-        return (ok,
-                f"marker_gone={marker_gone} inbound_survived={inbound_survived}",
-                f"post-restore: marker gone={marker_gone}, inbound {iid} present={inbound_survived}")
+        if not state["with_marker"]:
+            return False, "second snapshot not captured", ""
+        # Restore two different snapshots, then return to the original so this
+        # phase leaves no marker behind. The endpoint now schedules the panel
+        # restart itself; wait/retry across the listener being replaced.
+        checks = []
+        for snapshot, expect_marker in [(state["backup"], False),
+                                        (state["with_marker"], True),
+                                        (state["backup"], False)]:
+            panel.import_db(snapshot)
+            time.sleep(3)
+            deadline = time.monotonic() + 30
+            while True:
+                try:
+                    panel.login()
+                    marker_present = bool(panel.get_client(iid, MARKER_EMAIL))
+                    inbound_survived = bool(panel.get_inbound(iid))
+                    break
+                except Exception:
+                    if time.monotonic() >= deadline:
+                        raise
+                    time.sleep(0.5)
+            checks.append(marker_present == expect_marker and inbound_survived)
+        return (all(checks),
+                f"three restores A/B/A verified={checks}",
+                "different snapshots restore their exact marker state and retain the original inbound")
 
     log(f":: backup-restore — db download + restore-reverts on inbound {iid} ({ib.protocol})")
     subtest("db-download", _download)

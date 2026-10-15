@@ -26,9 +26,10 @@ var filenameRegex = regexp.MustCompile(`^[a-zA-Z0-9_\-.]+$`)
 type ServerController struct {
 	BaseController
 
-	serverService  service.ServerService
-	settingService service.SettingService
-	inboundService service.InboundService
+	serverService       service.ServerService
+	settingService      service.SettingService
+	inboundService      service.InboundService
+	restartAfterRestore func(time.Duration) error
 
 	lastStatus *service.Status
 
@@ -695,8 +696,6 @@ func (a *ServerController) importDB(c *gin.Context) {
 		return
 	}
 	defer file.Close()
-	// Always restart Xray before return
-	defer a.serverService.RestartXrayService()
 	// lastGetStatusTime removed; no longer needed
 	// Import it
 	err = a.serverService.ImportDB(file)
@@ -704,7 +703,19 @@ func (a *ServerController) importDB(c *gin.Context) {
 		jsonMsg(c, I18nWeb(c, "pages.index.importDatabaseError"), err)
 		return
 	}
-	jsonObj(c, I18nWeb(c, "pages.index.importDatabaseSuccess"), nil)
+	// The imported credentials can invalidate the current session immediately.
+	// Schedule this inside the authorized restore request; a follow-up browser
+	// request to /setting/restartPanel may no longer be authenticated/authorized.
+	restart := a.restartAfterRestore
+	if restart == nil {
+		restart = (&service.PanelService{}).RestartPanel
+	}
+	if err = restart(3 * time.Second); err != nil {
+		jsonMsg(c, I18nWeb(c, "pages.index.importDatabaseError"), fmt.Errorf("database restored but panel restart failed: %w", err))
+		return
+	}
+	message := I18nWeb(c, "pages.index.importDatabaseSuccess")
+	jsonMsgObj(c, message, message, nil)
 }
 
 // importForeignDB imports a stock 3x-ui (or vpn-ui) backup over the current

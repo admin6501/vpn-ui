@@ -90,6 +90,16 @@ func TestOverviewSSLBrowserRuntime(t *testing.T) {
 			} else {
 				t.Log(string(out))
 			}
+			restoreScript, _ := filepath.Abs("../test_unit/restore_browser_test.cjs")
+			restoreCtx, restoreCancel := context.WithTimeout(context.Background(), 45*time.Second)
+			defer restoreCancel()
+			restoreCmd := exec.CommandContext(restoreCtx, "node", restoreScript)
+			restoreCmd.Env = cmd.Env
+			if out, err := restoreCmd.CombinedOutput(); err != nil {
+				t.Fatalf("restore browser failed: %v\n%s", err, out)
+			} else {
+				t.Log(string(out))
+			}
 
 		})
 	}
