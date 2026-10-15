@@ -1093,6 +1093,7 @@ type ResellerView struct {
 	AllowOverviewManage bool `json:"allowOverviewManage"`
 
 	InboundIds  []int `json:"inboundIds"`
+	GroupIDs    []int `json:"groupIds"`
 	ClientCount int64 `json:"clientCount"`
 	CreatedBy   int   `json:"createdBy"`
 }
@@ -1125,6 +1126,8 @@ type ResellerSpec struct {
 	// InboundIds is the exact set this reseller may sell on. Replaces whatever
 	// they had; empty means none, which is a legitimate state.
 	InboundIds []int
+	// Nil preserves group grants on metadata-only edits; empty explicitly revokes.
+	GroupIDs *[]int
 }
 
 // GetResellers lists the resellers this caller may manage. A super admin sees
@@ -1195,6 +1198,16 @@ func (s *ResellerService) GetResellers(caller *model.User) ([]ResellerView, erro
 			p = *current
 		}
 		gs := grantsBy[u.Id]
+		groupIDs, err := representativeGroupIDs(db, u.Id)
+		if err != nil {
+			return nil, err
+		}
+		if u.GroupAccess {
+			gs, err = (&AdminService{}).AccessibleInboundIds(u.Id)
+			if err != nil {
+				return nil, err
+			}
+		}
 		if gs == nil {
 			gs = []int{} // marshal as [], not null: the UI ticks against it
 		}
@@ -1221,6 +1234,7 @@ func (s *ResellerService) GetResellers(caller *model.User) ([]ResellerView, erro
 			AllowOverview:        p.AllowOverview,
 			AllowOverviewManage:  p.AllowOverviewManage,
 			InboundIds:           gs,
+			GroupIDs:             groupIDs,
 			ClientCount:          countBy[u.Id],
 			CreatedBy:            p.CreatedBy,
 		})
@@ -1286,6 +1300,9 @@ func (s *ResellerService) AssignableInbounds(caller *model.User) ([]InboundBrief
 
 // AddReseller creates a reseller and its profile.
 func (s *ResellerService) AddReseller(caller *model.User, spec ResellerSpec) (*model.User, error) {
+	if err := s.validateGroupSpec(caller, nil, &spec); err != nil {
+		return nil, err
+	}
 	if spec.ConsumptionBased {
 		if spec.AllowanceGB == 0 {
 			spec.Unlimited = true
@@ -1297,8 +1314,10 @@ func (s *ResellerService) AddReseller(caller *model.User, spec ResellerSpec) (*m
 		if err := database.GetDB().First(&role, spec.RepresentativeRoleID).Error; err != nil || role.IsOwner {
 			return nil, errors.New("invalid representative role")
 		}
-		if err := enforceRoleInboundAccess(&role, spec.InboundIds); err != nil {
-			return nil, err
+		if spec.GroupIDs == nil {
+			if err := enforceRoleInboundAccess(&role, spec.InboundIds); err != nil {
+				return nil, err
+			}
 		}
 		// Owner-only assignment prevents delegating privileges an admin does not own.
 		if caller == nil || !caller.IsSuperAdmin {
@@ -1362,7 +1381,7 @@ func (s *ResellerService) AddReseller(caller *model.User, spec ResellerSpec) (*m
 				return err
 			}
 		}
-		return tx.Create(&model.ResellerProfile{
+		if err := tx.Create(&model.ResellerProfile{
 			UserId:              user.Id,
 			ConsumptionBased:    spec.ConsumptionBased,
 			AllowanceBytes:      gbToBytes(spec.AllowanceGB),
@@ -1373,15 +1392,26 @@ func (s *ResellerService) AddReseller(caller *model.User, spec ResellerSpec) (*m
 			AllowOverview:       spec.AllowOverview,
 			AllowOverviewManage: spec.AllowOverviewManage,
 			CreatedBy:           caller.Id,
-		}).Error
+		}).Error; err != nil {
+			return err
+		}
+		if spec.GroupIDs != nil {
+			if err := setRepresentativeGroups(tx, user.Id, *spec.GroupIDs); err != nil {
+				return err
+			}
+			ids, err := groupInboundIDs(tx, *spec.GroupIDs)
+			if err != nil {
+				return err
+			}
+			return setAdminInboundAccess(tx, user.Id, ids)
+		}
+		return setAdminInboundAccess(tx, user.Id, spec.InboundIds)
 	})
 	if err != nil {
 		return nil, err
 	}
 	user.Enable = spec.Enable
-	if err := adminService.SetInboundAccess(user.Id, spec.InboundIds); err != nil {
-		return nil, err
-	}
+	user.GroupAccess = spec.GroupIDs != nil
 	return user, nil
 }
 
@@ -1414,6 +1444,9 @@ func (s *ResellerService) manageable(caller *model.User, id int) (*model.User, *
 func (s *ResellerService) UpdateReseller(caller *model.User, id int, spec ResellerSpec) error {
 	user, profile, err := s.manageable(caller, id)
 	if err != nil {
+		return err
+	}
+	if err := s.validateGroupSpec(caller, user, &spec); err != nil {
 		return err
 	}
 	roleChanged := false
@@ -1452,7 +1485,7 @@ func (s *ResellerService) UpdateReseller(caller *model.User, id int, spec Resell
 				}
 			}
 		}
-		if roleChanged || len(toValidate) > 0 {
+		if spec.GroupIDs == nil && !user.GroupAccess && (roleChanged || len(toValidate) > 0) {
 			if err := enforceRoleInboundAccess(&role, toValidate); err != nil {
 				return err
 			}
@@ -1465,8 +1498,10 @@ func (s *ResellerService) UpdateReseller(caller *model.User, id int, spec Resell
 	if spec.Username == "" {
 		return errors.New("username is required")
 	}
-	if err := s.assertAssignable(caller, spec.InboundIds); err != nil {
-		return err
+	if spec.GroupIDs == nil && !user.GroupAccess {
+		if err := s.assertAssignable(caller, spec.InboundIds); err != nil {
+			return err
+		}
 	}
 
 	db := database.GetDB()
@@ -1522,6 +1557,19 @@ func (s *ResellerService) UpdateReseller(caller *model.User, id int, spec Resell
 		}
 		if err := tx.Model(&model.ResellerProfile{}).Where("user_id = ?", user.Id).Updates(profileUpdates).Error; err != nil {
 			return err
+		}
+		if spec.GroupIDs != nil {
+			if err := setRepresentativeGroups(tx, user.Id, *spec.GroupIDs); err != nil {
+				return err
+			}
+			ids, err := groupInboundIDs(tx, *spec.GroupIDs)
+			if err != nil {
+				return err
+			}
+			return setAdminInboundAccess(tx, user.Id, ids)
+		}
+		if user.GroupAccess {
+			return nil
 		}
 		return setAdminInboundAccess(tx, user.Id, spec.InboundIds)
 	})
@@ -1607,6 +1655,9 @@ func (s *ResellerService) DeleteReseller(caller *model.User, id int, mode string
 func (s *ResellerService) dropReseller(userId int) error {
 	return database.GetDB().Transaction(func(tx *gorm.DB) error {
 		if err := tx.Where("user_id = ?", userId).Delete(&model.ResellerProfile{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("user_id = ?", userId).Delete(&model.RepresentativeGroupAccess{}).Error; err != nil {
 			return err
 		}
 		if err := tx.Where("user_id = ?", userId).Delete(&model.InboundAccess{}).Error; err != nil {

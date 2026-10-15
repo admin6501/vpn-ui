@@ -101,6 +101,7 @@ type User struct {
 	// table (read on EVERY request by session.loadLoginUser) stays narrow.
 	IsReseller              bool                `json:"isReseller" gorm:"default:0"`
 	RepresentativeRoleID    int                 `json:"representativeRoleId"`
+	GroupAccess             bool                `json:"-" gorm:"default:0"`
 	RepresentativeOverrides string              `json:"-"`
 	RepresentativeRole      *RepresentativeRole `json:"-" gorm:"-"`
 	RepresentativeLimited   bool                `json:"-" gorm:"-"`

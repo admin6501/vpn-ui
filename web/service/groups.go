@@ -30,10 +30,17 @@ func GroupsMigrated(tx *gorm.DB) bool {
 	return tx.Where("key = ?", groupsMigrationKey).First(&marker).Error == nil && marker.Value == "1"
 }
 
-// Migrate creates exactly one compatibility group per existing inbound. It only
-// adds associations: no projection, credential rewrite, or membership recreation.
-// The marker and all rows commit together; later inbounds stay ungrouped.
+// Migrate applies the versioned compatibility and imported-group migrations.
+// Existing customer memberships and credentials are never rewritten.
+// Each migration commits with its marker; later inbounds stay ungrouped.
 func (s *GroupService) Migrate() error {
+	if err := s.migrateV1(); err != nil {
+		return err
+	}
+	return s.migrateImportedGroupsAndGrants()
+}
+
+func (s *GroupService) migrateV1() error {
 	return database.GetDB().Transaction(func(tx *gorm.DB) error {
 		if GroupsMigrated(tx) {
 			return nil
@@ -206,6 +213,16 @@ func (s *GroupService) List(user *model.User, management bool) ([]GroupView, err
 			}
 			ok = ok && found
 		}
+		if !management && g.Disabled {
+			ok = false
+		}
+		if user.IsRepresentativeAccount() && user.GroupAccess {
+			var n int64
+			if err := tx.Model(&model.RepresentativeGroupAccess{}).Where("user_id = ? AND group_id = ?", user.Id, g.ID).Count(&n).Error; err != nil {
+				return nil, err
+			}
+			ok = ok && n > 0
+		}
 		if !ok {
 			continue
 		}
@@ -248,7 +265,7 @@ func (s *GroupService) Resolve(user *model.User, groupIDs []int) ([]int, error) 
 }
 func groupUnion(tx *gorm.DB, accountID int) ([]int, error) {
 	ids := []int{}
-	err := tx.Model(&model.GroupInbound{}).Select("DISTINCT group_inbounds.inbound_id").Joins("JOIN account_groups ag ON ag.group_id = group_inbounds.group_id").Where("ag.account_id = ?", accountID).Order("group_inbounds.inbound_id").Pluck("group_inbounds.inbound_id", &ids).Error
+	err := tx.Model(&model.GroupInbound{}).Select("DISTINCT group_inbounds.inbound_id").Joins("JOIN account_groups ag ON ag.group_id = group_inbounds.group_id").Joins("JOIN client_groups cg ON cg.id = group_inbounds.group_id AND cg.disabled = 0").Where("ag.account_id = ?", accountID).Order("group_inbounds.inbound_id").Pluck("group_inbounds.inbound_id", &ids).Error
 	return ids, err
 }
 
@@ -283,7 +300,7 @@ func projectGroups(tx *gorm.DB, accountID int) ([]int, error) {
 	}
 	return accounts.ProjectAccount(tx, accountID)
 }
-func (s *GroupService) Save(user *model.User, id int, name string, inboundIDs []int) (*GroupView, []int, error) {
+func (s *GroupService) Save(user *model.User, id int, name string, inboundIDs []int, disabled ...bool) (*GroupView, []int, error) {
 	if user == nil || user.IsRepresentativeAccount() || !user.Can(model.PermEditInbound) {
 		return nil, nil, errors.New("not allowed")
 	}
@@ -325,12 +342,23 @@ func (s *GroupService) Save(user *model.User, id int, name string, inboundIDs []
 	group := model.ClientGroup{ID: id, Name: name}
 	touched := []int{}
 	err = database.GetDB().Transaction(func(tx *gorm.DB) error {
+		oldDisabled := false
+		if id > 0 {
+			if err := tx.First(&group, id).Error; err != nil {
+				return err
+			}
+			oldDisabled = group.Disabled
+			group.Name = name
+		}
+		if len(disabled) > 0 {
+			group.Disabled = disabled[0]
+		}
 		if id == 0 {
 			if err := tx.Create(&group).Error; err != nil {
 				return err
 			}
 		} else {
-			if err := tx.Model(&group).Update("name", name).Error; err != nil {
+			if err := tx.Model(&group).Updates(map[string]any{"name": name, "disabled": group.Disabled}).Error; err != nil {
 				return err
 			}
 		}
@@ -349,7 +377,7 @@ func (s *GroupService) Save(user *model.User, id int, name string, inboundIDs []
 					same = false
 				}
 			}
-			if same {
+			if same && oldDisabled == group.Disabled {
 				return nil
 			} // Renaming does not rewrite customer settings.
 		}
@@ -417,6 +445,12 @@ func (s *GroupService) Delete(user *model.User, id int) error {
 		}
 		if count > 0 {
 			return errors.New("group has users; reassign them before deleting it")
+		}
+		if err := tx.Model(&model.RepresentativeGroupAccess{}).Where("group_id = ?", id).Count(&count).Error; err != nil {
+			return err
+		}
+		if count > 0 {
+			return errors.New("group is assigned to representatives; reassign them before deleting it")
 		}
 		var roles []model.RepresentativeRole
 		if err := tx.Find(&roles).Error; err != nil {

@@ -1792,12 +1792,12 @@ an overview-management or super-administrator grant alone cannot bypass this che
 | GET | `/panel/groups` | Group management page |
 | GET | `/panel/groups/list` | Scoped groups with inbound IDs and member counts |
 | GET | `/panel/groups/inbounds` | Assignable inbounds for the group editor |
-| POST | `/panel/groups/save` | Create/update using `id`, `name`, repeated `inboundIds` |
+| POST | `/panel/groups/save` | Create/update using `id`, `name`, repeated `inboundIds`, optional `disabled` |
 | POST | `/panel/groups/delete/:id` | Delete an unused group |
 
 Management requires `editInbound` and is denied to representatives. The service
 checks the editor's scope against every old and new inbound. Groups with users or
-referenced by representative roles cannot be deleted without reassignment.
+referenced by representative roles or explicit representative group grants cannot be deleted without reassignment.
 Changing a group's inbound set updates the union for **all** its existing users
 in the same database transaction. Capacity or protocol conflicts roll back the
 definition and every user's projection. Overlapping groups retain shared inbounds;
@@ -1812,3 +1812,23 @@ with all associations and prevents subsequent restarts from auto-grouping newly
 created inbounds. Database restore preserves native groups; the PasarGuard converter
 clears template-schema group rows and the marker so imported memberships receive
 the same compatibility migration on startup.
+
+`representativeGroupsMigrationV2` restores the original PasarGuard groups from
+retained source records, with names, source IDs (`pasarGuardId`), inbound mappings
+and `disabled` state. It runs for panels already migrated by V1 as well as fresh
+imports, without changing existing customer group links or memberships. Original
+customer-to-source-group associations were not retained by older converters and
+are not guessed from overlapping inbound sets.
+
+Representatives select repeated `groupIds` in `/panel/resellers/add` and
+`/panel/resellers/update/:id`. `GET /panel/resellers/groups` returns the manager's
+scoped choices. Omitted `groupIds` preserves grants on edits; one blank value
+explicitly clears all groups. Individual `inboundIds` assignments are rejected
+after migration. Role allowlists constrain new group grants and role changes;
+metadata edits retain historical grants. Effective inbound access is derived
+from assigned, enabled groups for both HTTP checks and traffic broadcasts.
+Legacy administrator inbound grants continue to work. Migration converts old
+representative grants to an equal inbound union, preferring complete imported
+groups and using singleton groups for the remainder. Restarting does not restore
+removed grants or deleted imported groups. A disabled group retains its members
+and grants but stops projecting inbounds and authorizing representative access.

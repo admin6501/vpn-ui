@@ -118,19 +118,17 @@
 
 
 
-    <!-- Which inbounds this reseller may sell on. Unticked means invisible to them, the
-         same mask an admin gets, so a reseller can never create an account on an inbound
-         the person who made them does not hold either. -->
+    <!-- Group grants are authoritative; their inbound union updates dynamically. -->
     <a-form-item>
       <template slot="label">
         <a-tooltip>
-          <template slot="title">{{ i18n "pages.resellers.inboundAccessDesc" }}</template>
-          {{ i18n "pages.resellers.inboundAccess" }}
+          <template slot="title">{{ i18n "pages.groups.representativeHint" }}</template>
+          {{ i18n "pages.groups.title" }}
           <a-icon type="question-circle"></a-icon>
         </a-tooltip>
       </template>
-      <a-alert v-if="!resellerModal.allInbounds.length" type="info" show-icon
-        message='{{ i18n "pages.resellers.noInbounds" }}'></a-alert>
+      <a-alert v-if="!resellerModal.availableGroups.length" type="info" show-icon
+        message='{{ i18n "pages.groups.noGroups" }}'></a-alert>
       <template v-else>
         <a-checkbox :checked="resellerModal.allChecked" :indeterminate="resellerModal.someChecked"
           @change="resellerModal.toggleAll">
@@ -138,13 +136,11 @@
         </a-checkbox>
         <a-divider :style="{ margin: '8px 0' }"></a-divider>
         <div :style="{ maxHeight: '180px', overflowY: 'auto' }">
-          <a-checkbox-group v-model="resellerModal.reseller.inboundIds" :style="{ width: '100%' }">
+          <a-checkbox-group v-model="resellerModal.reseller.groupIds" :style="{ width: '100%' }">
             <a-row>
-              <a-col :span="24" v-for="ib in resellerModal.allInbounds" :key="ib.id">
+              <a-col :span="24" v-for="ib in resellerModal.availableGroups" :key="ib.id">
                 <a-checkbox :value="ib.id">
-                  [[ ib.remark || ('#' + ib.id) ]]
-                  <a-tag :style="{ marginLeft: '4px' }">[[ ib.protocol ]]</a-tag>
-                  <span :style="{ color: '#8c8c8c' }">:[[ ib.port ]]</span>
+                  [[ ib.name ]]
                 </a-checkbox>
               </a-col>
             </a-row>
@@ -166,7 +162,7 @@
     okText: '{{ i18n "sure" }}',
     isEdit: false,
     confirm: null,
-    allInbounds: [],
+    allGroups: [],
     roles: [], rolesLoading: false,
  async loadRoles() {
  this.rolesLoading = true;
@@ -179,21 +175,27 @@
       id: 0, username: '', password: '', nickname: '', enable: true, representativeRoleId: undefined,
       unlimited: false, allowanceGb: 0, daysPerGb: 0, minCreateGb: 0, minAddGb: 0,
       allowOverview: false, allowOverviewManage: false, twoFactorRequired: false,
-      inboundIds: [],
+      groupIds: [],
     },
 
+    get availableGroups() {
+      const role = this.roles.find(r => r.id === this.reseller.representativeRoleId);
+      let access = {}; try { access = role && JSON.parse(role.access || '{}') || {}; } catch (_) {}
+      const allowed = access.allowed_group_ids;
+      return this.allGroups.filter(g => !Array.isArray(allowed) || allowed.includes(g.id) || (this.reseller.groupIds || []).includes(g.id));
+    },
     get allChecked() {
-      const picked = resellerModal.reseller.inboundIds || [];
-      return resellerModal.allInbounds.length > 0 &&
-        picked.length === resellerModal.allInbounds.length;
+      const picked = resellerModal.reseller.groupIds || [];
+      return resellerModal.availableGroups.length > 0 &&
+        resellerModal.availableGroups.every(g => picked.includes(g.id));
     },
     get someChecked() {
-      const n = (resellerModal.reseller.inboundIds || []).length;
-      return n > 0 && n < resellerModal.allInbounds.length;
+      const n = (resellerModal.reseller.groupIds || []).length;
+      return n > 0 && n < resellerModal.availableGroups.length;
     },
     toggleAll(e) {
-      resellerModal.reseller.inboundIds = e.target.checked
-        ? resellerModal.allInbounds.map(ib => ib.id)
+      resellerModal.reseller.groupIds = e.target.checked
+        ? resellerModal.availableGroups.map(ib => ib.id)
         : [];
     },
     // Taking the overview away takes the management grant with it. Leaving a true
@@ -215,13 +217,13 @@
         resellerModal.confirmLoading = false;
       }
     },
-    async show({ title = '', okText = '{{ i18n "sure" }}', reseller = null, allInbounds = [], confirm = () => { }, isEdit = false }) {
+    async show({ title = '', okText = '{{ i18n "sure" }}', reseller = null, allGroups = [], confirm = () => { }, isEdit = false }) {
       this.title = title;
       this.okText = okText;
       this.confirm = confirm;
       this.error = '';
       this.isEdit = isEdit;
-      this.allInbounds = allInbounds || [];
+      this.allGroups = allGroups || [];
       if (isEdit && reseller) {
         this.reseller = {
           id: reseller.id,
@@ -240,18 +242,20 @@
           minAddGb: Number(reseller.minAddGb) || 0,
           allowOverview: !!reseller.allowOverview,
           allowOverviewManage: !!reseller.allowOverviewManage,
-          inboundIds: (reseller.inboundIds || []).slice(),
+          groupIds: (reseller.groupIds || []).slice(),
         };
       } else {
         this.reseller = {
           id: 0, username: '', password: '', nickname: '', enable: true, representativeRoleId: undefined,
           unlimited: false, allowanceGb: 0, daysPerGb: 0, minCreateGb: 0, minAddGb: 0,
           allowOverview: false, allowOverviewManage: false, twoFactorRequired: false,
-          inboundIds: [],
+          groupIds: [],
         };
       }
       this.visible = true;
  await this.loadRoles();
+ const groups = await HttpUtil.get("/panel/resellers/groups");
+ if (groups && groups.success) this.allGroups = groups.obj || [];
     },
     // Bodies are form-urlencoded (a global axios interceptor Qs.stringify's them), and Qs
     // emits an array as repeated keys, which is what Gin binds into []string. Numbers are
@@ -276,7 +280,7 @@
         allowOverviewManage: reseller.allowOverviewManage,
         // A blank entry is how "none" is sent: an omitted key binds as nil server-side and
         // cannot be told apart from "leave the existing grants alone".
-        inboundIds: (reseller.inboundIds || []).length ? reseller.inboundIds : [''],
+        groupIds: (reseller.groupIds || []).length ? reseller.groupIds : [''],
       };
     },
     close() {

@@ -86,10 +86,22 @@ func (s *AccountService) TransferOwnership(actor *model.User, accountID, newOwne
 			if err := tx.Where("account_id = ?", a.Id).Find(&memberships).Error; err != nil {
 				return err
 			}
-			for _, membership := range memberships {
-				grant := model.InboundAccess{UserId: newOwnerID, InboundId: membership.InboundId}
-				if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&grant).Error; err != nil {
+			if target.GroupAccess {
+				ids := []int{}
+				if err := tx.Model(&model.AccountGroup{}).Where("account_id = ?", a.Id).Pluck("group_id", &ids).Error; err != nil {
 					return err
+				}
+				for _, gid := range ids {
+					if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&model.RepresentativeGroupAccess{UserID: newOwnerID, GroupID: gid}).Error; err != nil {
+						return err
+					}
+				}
+			} else {
+				for _, membership := range memberships {
+					grant := model.InboundAccess{UserId: newOwnerID, InboundId: membership.InboundId}
+					if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&grant).Error; err != nil {
+						return err
+					}
 				}
 			}
 			row := model.ResellerClient{Email: a.Email, UserId: newOwnerID, InboundId: home.InboundId, AllTimeBase: ct.AllTime}

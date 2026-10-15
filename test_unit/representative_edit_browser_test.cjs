@@ -10,6 +10,11 @@ const {chromium}=require('playwright');
   await page.waitForFunction(()=>typeof app!=='undefined'&&Array.isArray(app.resellers)&&app.resellers.length===1);
   await page.evaluate(()=>app.openEdit(app.resellers[0]));
   await page.locator('#reseller-modal .ant-modal').waitFor();
+  if(process.env.REPRESENTATIVE_EDIT_KIND==='owner'){
+   await page.waitForFunction(()=>resellerModal.availableGroups.length===2);
+   await page.locator('#reseller-modal .ant-checkbox-wrapper').filter({hasText:'Additional group'}).locator('input[type=checkbox]').check();
+   assert.equal(await page.evaluate(()=>resellerModal.reseller.groupIds.length),2);
+  }
   await page.locator('#reseller-modal input').nth(2).fill('Edited in browser');
   await page.evaluate(()=>resellerModal.reseller.twoFactorRequired=true);
   const initial=await page.evaluate(()=>({...resellerModal.reseller}));
@@ -24,7 +29,10 @@ const {chromium}=require('playwright');
   await page.locator('#reseller-modal input').nth(0).fill(initial.username);
   const response=page.waitForResponse(r=>r.url().includes('/resellers/update/'));
   await page.locator('#reseller-modal .ant-modal-footer button.ant-btn-primary').click();
-  const result=await(await response).json();
+  const savedResponse=await response;
+  const payload=new URLSearchParams(savedResponse.request().postData());
+  assert.equal(payload.has('inboundIds'),false);assert.equal(payload.has('groupIds'),true);
+  const result=await savedResponse.json();
   assert.equal(result.success,true,JSON.stringify({result,errors}));
   await page.waitForFunction(()=>!resellerModal.visible&&app.resellers[0].nickname==='Edited in browser'&&app.resellers[0].twoFactorRequired);
   await page.reload({waitUntil:'networkidle'});

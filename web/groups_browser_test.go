@@ -60,6 +60,14 @@ func TestGroupsBrowserRuntime(t *testing.T) {
 			if err := db.Create(&inbounds).Error; err != nil {
 				t.Fatal(err)
 			}
+			sourceRows := []model.PasarGuardResource{
+				{Kind: "groups", SourceID: 27, Data: `{"id":"27","name":"Original backup group","is_disabled":"f"}`},
+				{Kind: "inbounds", SourceID: 200, Data: `{"id":"200","tag":"group-trojan"}`},
+				{Kind: "inbounds_groups_association", SourceID: 1, Data: `{"group_id":"27","inbound_id":"200"}`},
+			}
+			if err := db.Create(&sourceRows).Error; err != nil {
+				t.Fatal(err)
+			}
 			accounts := &service.AccountService{}
 			accounts.MigrationAccounts()
 			if err := (&service.GroupService{}).Migrate(); err != nil {
@@ -73,7 +81,7 @@ func TestGroupsBrowserRuntime(t *testing.T) {
 			if err := db.Create(&role).Error; err != nil {
 				t.Fatal(err)
 			}
-			representative := model.User{Username: "group-representative", Enable: true, IsReseller: true, RepresentativeRoleID: role.ID, RepresentativeRole: &role}
+			representative := model.User{Username: "group-representative", Enable: true, IsReseller: true, GroupAccess: true, RepresentativeRoleID: role.ID, RepresentativeRole: &role}
 			delegate := model.User{Username: "group-delegate", Enable: true, Permissions: model.PermAccessInbounds | model.PermEditClient}
 			for _, actor := range []*model.User{&representative, &delegate} {
 				if err := db.Create(actor).Error; err != nil {
@@ -83,6 +91,15 @@ func TestGroupsBrowserRuntime(t *testing.T) {
 					if err := db.Create(&model.InboundAccess{UserId: actor.Id, InboundId: ib.Id}).Error; err != nil {
 						t.Fatal(err)
 					}
+				}
+			}
+			var nativeGroups []model.ClientGroup
+			if err := db.Find(&nativeGroups).Error; err != nil {
+				t.Fatal(err)
+			}
+			for _, group := range nativeGroups {
+				if err := db.Create(&model.RepresentativeGroupAccess{UserID: representative.Id, GroupID: group.ID}).Error; err != nil {
+					t.Fatal(err)
 				}
 			}
 			if err := db.Create(&model.ResellerProfile{UserId: representative.Id, ConsumptionBased: true, Unlimited: true, CreatedBy: root.Id}).Error; err != nil {
