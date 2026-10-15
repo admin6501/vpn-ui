@@ -49,9 +49,15 @@ type ClientTraffic struct {
 	InboundDown    int64 `json:"inboundDown" gorm:"-"`
 	InboundAllTime int64 `json:"inboundAllTime" gorm:"-"`
 
-	// Shared says the three fields above are NOT this inbound's own share: they are
-	// the bytes left over after every attributable inbound took its part, pooled
-	// across each Xray-native inbound serving the account.
+	// Shared* is the pooled part INCLUDED in Inbound*, not additional usage.
+	// Keeping it separate lets account views count that pool once and show each
+	// membership's measured share as Inbound* minus Shared*. Display only.
+	SharedUp      int64 `json:"sharedUp" gorm:"-"`
+	SharedDown    int64 `json:"sharedDown" gorm:"-"`
+	SharedAllTime int64 `json:"sharedAllTime" gorm:"-"`
+
+	// Shared says Inbound* includes the pooled Shared* remainder alongside this
+	// inbound's own measured share. The same pool can appear on several inbounds.
 	//
 	// The pooling cannot be undone here. Xray names its counter
 	// "user>>><email>>>>traffic>>>{up,down}" with no inbound component (xray/api.go),

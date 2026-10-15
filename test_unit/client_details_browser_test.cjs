@@ -81,7 +81,7 @@ function template(file) {
     accountClientIn:(row,record)=>record.toInbound().clients,
     getInboundClients:record=>record.toInbound().clients,
     membershipEnabled:()=>true,membershipLampClass:()=>'',membershipOnline:()=>false,
-    isAccountFrozen:()=>false,getInboundSumStats:()=>0,getSumStats:()=>0,loadOnlineState:async()=>{}};
+    isAccountFrozen:()=>false,getInboundSumStats:()=>0,getAttributedInboundSumStats:()=>0,getSharedInboundSumStats:()=>0,getSumStats:()=>0,loadOnlineState:async()=>{}};
    HttpUtil.get=async function(path){
     const record=records.find(record=>record.id===Number(path.split('/')[4]));
     const eps=record.toInbound().settings.externalProxy;
