@@ -69,16 +69,50 @@ func TestGroupsBrowserRuntime(t *testing.T) {
 			if err := db.Create(&third).Error; err != nil {
 				t.Fatal(err)
 			}
+			role := model.RepresentativeRole{Name: "Historic representative", Permissions: `{"users":{"read":{"scope":1},"create":true,"update":{"scope":1}},"system":{"read":true}}`, Limits: `{}`, Features: `{}`, Access: `{"allowed_group_ids":[]}`}
+			if err := db.Create(&role).Error; err != nil {
+				t.Fatal(err)
+			}
+			representative := model.User{Username: "group-representative", Enable: true, IsReseller: true, RepresentativeRoleID: role.ID, RepresentativeRole: &role}
+			delegate := model.User{Username: "group-delegate", Enable: true, Permissions: model.PermAccessInbounds | model.PermEditClient}
+			for _, actor := range []*model.User{&representative, &delegate} {
+				if err := db.Create(actor).Error; err != nil {
+					t.Fatal(err)
+				}
+				for _, ib := range inbounds {
+					if err := db.Create(&model.InboundAccess{UserId: actor.Id, InboundId: ib.Id}).Error; err != nil {
+						t.Fatal(err)
+					}
+				}
+			}
+			if err := db.Create(&model.ResellerProfile{UserId: representative.Id, ConsumptionBased: true, Unlimited: true, CreatedBy: root.Id}).Error; err != nil {
+				t.Fatal(err)
+			}
 			r := gin.New()
 			r.SetHTMLTemplate(tpl)
 			r.Use(func(c *gin.Context) {
-				c.Set("LOGIN_USER_ROW", &root)
+				actor := &root
+				switch c.GetHeader("X-Test-Actor") {
+				case "delegate":
+					actor = &delegate
+				case "representative":
+					actor = &representative
+				}
+				c.Set("LOGIN_USER_ROW", actor)
 				c.Set("base_path", "/test/")
 				c.Set("I18n", func(_ weblocale.I18nType, key string, _ ...string) string {
 					v, _ := localizer.Localize(&i18n.LocalizeConfig{MessageID: key})
 					return v
 				})
 				c.Next()
+			})
+			r.POST("/test/fixtures/representative", func(c *gin.Context) {
+				err := db.Create(&model.ResellerClient{UserId: representative.Id, Email: "new-group-user", InboundId: inbounds[0].Id}).Error
+				if err != nil {
+					c.JSON(500, gin.H{"success": false})
+					return
+				}
+				c.JSON(200, gin.H{"success": true})
 			})
 			controller.NewXUIController(r.Group("/test"))
 			controller.NewClientsController(r.Group("/test/panel/api/clients"))

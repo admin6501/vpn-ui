@@ -1232,6 +1232,7 @@
         const ids = (row.memberships || []).map(m => m.inboundId);
         return await HttpUtil.post('/panel/api/inbounds/saveAccount', {
           settings: JSON.stringify({clients:[client]}),
+          groupIds: (row.groupIds || []).length ? row.groupIds : [''],
           ...(ids.length ? {inboundIds:ids} : {noInbounds:true}),
         });
         {{ else }}
@@ -1248,7 +1249,8 @@
           expiryTime: row.expiryTime, limitIp: row.limitIp, subId: row.subId,
           comment: row.comment, reset: row.reset,
         }, patch);
-        const body = { id: ids[0], inboundIds: ids, settings: JSON.stringify({ clients: [client] }) };
+        // Metadata changes keep group associations, including historic groups outside the current role policy.
+        const body = { id: ids[0], settings: JSON.stringify({ clients: [client] }) };
         // The path parameter is the PROTOCOL's identity, not the email: a uuid for
         // vmess and vless, the password for trojan and the credential VPNs, the
         // auth for hysteria. Sending the email returns "empty client ID" for every
@@ -1269,7 +1271,7 @@
           comment: row.comment, reset: row.reset, tgId: row.tgId || 0,
         }, patch);
         return await HttpUtil.post('/panel/api/inbounds/saveAccount', {
-          noInbounds: true, settings: JSON.stringify({ clients: [client] }),
+          noInbounds: true, groupIds: (row.groupIds || []).length ? row.groupIds : [''], settings: JSON.stringify({ clients: [client] }),
         });
       },
 
