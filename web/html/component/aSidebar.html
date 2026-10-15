@@ -114,6 +114,11 @@
                     },
                     {{ end }}
                     {
+                        key: '{{ .base_path }}panel/security',
+                        icon: 'safety',
+                        title: '{{ i18n "pages.accountSecurity.title" }}'
+                    },
+                    {
                         key: '{{ .base_path }}logout/',
                         icon: 'logout',
                         title: '{{ i18n "menu.logout"}}'

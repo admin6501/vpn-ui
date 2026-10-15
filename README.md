@@ -24,6 +24,22 @@ this includes the existing fork fixes.
 - Full release binary includes portable cores and all six geodata files: base, Iran and Russia
   geoip/geosite. Kernel modules and OS packages cannot all be embedded.
 
+## Representative two-factor authentication
+
+Every signed-in account can open **Account security** to enable two-factor
+authentication using its current password and a code from its authenticator app.
+Disabling it requires a current authenticator code.
+
+In the representative add/edit dialog, managers can enable **Require two-factor
+authentication**. Until enrollment is complete, that representative can only
+access account security and logout; panel APIs and live updates are blocked.
+Required authentication cannot be disabled by the representative. Removing the
+requirement keeps an already enrolled authenticator enabled. Existing accounts
+remain optional after upgrading; the database column is migrated automatically.
+
+The full repository history through October 14, 2026 is listed in
+[the history report](docs/history-fa.md).
+
 ## Client speed and independent accounts
 
 Client download and upload limits accept KB/s, MB/s (1024-based bytes) or Mbps

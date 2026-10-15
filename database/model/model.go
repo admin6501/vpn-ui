@@ -108,11 +108,19 @@ type User struct {
 	// Enable gates login without deleting the account (and its owned inbounds).
 	Enable bool `json:"enable" form:"enable" gorm:"default:1"`
 
-	// Per-admin TOTP. Replaces the panel-global twoFactorEnable/twoFactorToken
+	// Per-account TOTP. Replaces the panel-global twoFactorEnable/twoFactorToken
 	// settings pair, which leaked the shared secret to every logged-in user
 	// through GetAllSetting.
 	TwoFactorEnable bool   `json:"twoFactorEnable" gorm:"default:0"`
 	TwoFactorToken  string `json:"-"`
+	// Set by the representative's manager; enrollment remains personal.
+	TwoFactorRequired bool `json:"twoFactorRequired" gorm:"default:0"`
+}
+
+// NeedsTwoFactorEnrollment restricts a representative to account security until
+// they prove possession of their authenticator. Administrator access is unchanged.
+func (u *User) NeedsTwoFactorEnrollment() bool {
+	return u != nil && u.IsRepresentativeAccount() && u.TwoFactorRequired && !u.TwoFactorEnable
 }
 
 // InboundAccess grants one admin access to one inbound.

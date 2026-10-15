@@ -19,6 +19,11 @@ axios.interceptors.response.use(
     (response) => response,
     (error) => {
         if (error.response) {
+            const obj = error.response.data && error.response.data.obj;
+            if (obj && obj.twoFactorEnrollmentRequired && obj.redirect) {
+                window.location.assign(obj.redirect);
+                return Promise.reject(error);
+            }
             const statusCode = error.response.status;
             // Check the status code
             if (statusCode === 401) { // Unauthorized

@@ -25,8 +25,33 @@ func (a *BaseController) checkLogin(c *gin.Context) {
 		}
 		c.Abort()
 	} else {
+		if enforceTwoFactorEnrollment(c) {
+			return
+		}
 		c.Next()
 	}
+}
+
+// A password-only enrollment session cannot read panel data or perform actions.
+// Keep the two personal security routes available, including with a custom base path.
+func enforceTwoFactorEnrollment(c *gin.Context) bool {
+	user := session.GetLoginUser(c)
+	if !user.NeedsTwoFactorEnrollment() {
+		return false
+	}
+	target := c.GetString("base_path") + "panel/security"
+	if c.Request.Method == http.MethodGet && c.FullPath() == target ||
+		c.Request.Method == http.MethodPost && c.FullPath() == c.GetString("base_path")+"panel/setting/twoFactor" {
+		return false
+	}
+	c.Header("Cache-Control", "no-store")
+	if wantsHTML(c) {
+		c.Redirect(http.StatusTemporaryRedirect, target)
+	} else {
+		c.JSON(http.StatusForbidden, gin.H{"success": false, "msg": I18nWeb(c, "pages.accountSecurity.required"), "obj": gin.H{"twoFactorEnrollmentRequired": true, "redirect": target}})
+	}
+	c.Abort()
+	return true
 }
 
 // I18nWeb retrieves an internationalized message for the web interface based on the current locale.

@@ -121,6 +121,12 @@ func html(c *gin.Context, name string, title string, data gin.H) {
 	// never shipped: the settings blob used to carry it, which handed every
 	// logged-in admin the shared factor.
 	data["two_factor"] = currentTwoFactorEnabled(c)
+	data["two_factor_required"] = false
+	data["account_username"] = ""
+	if user := session.GetLoginUser(c); user != nil {
+		data["two_factor_required"] = isRepresentative(user) && user.TwoFactorRequired
+		data["account_username"] = user.Username
+	}
 	c.HTML(http.StatusOK, name, getContext(data))
 }
 

@@ -51,6 +51,10 @@
                         </a-tooltip>
                       </div>
                       <div class="bo-rs-sub" v-if="reseller.nickname">[[ reseller.nickname ]]</div>
+                      <a-tag v-if="reseller.twoFactorRequired" :color="reseller.twoFactorEnable ? 'green' : 'orange'">
+                        {{ i18n "pages.accountSecurity.requireTwoFactor" }}
+                        <span v-if="!reseller.twoFactorEnable"> — {{ i18n "pages.accountSecurity.pending" }}</span>
+                      </a-tag>
                     </div>
                     <div :style="{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }">
                       <a-tag :color="reseller.enable ? 'green' : 'red'" :style="{ marginInlineEnd: 0 }">

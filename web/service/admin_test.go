@@ -584,3 +584,11 @@ func TestSecurityTOTPWithLocalizedDigits(t *testing.T) {
 		}
 	}
 }
+
+func TestSecurityTOTPRejectsMalformedEnrollmentSecret(t *testing.T) {
+	for _, secret := range []string{"", "not-base32!", "A", "JBSW=Y3DPEHPK3PXP", "========"} {
+		if VerifyTOTPCode(secret, "123456") {
+			t.Fatal("malformed enrollment secret accepted")
+		}
+	}
+}

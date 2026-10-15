@@ -1958,3 +1958,10 @@ other = "Loại bỏ lõi này? Thông tin gửi đến, người dùng và bộ
 
 [pages.nodes.sharedCores]
 other = "Các phần phụ thuộc được chia sẻ có thể phục vụ các lõi khác. Dừng các lõi phụ thuộc trước khi dừng phần phụ thuộc được chia sẻ; loại bỏ các lõi phụ thuộc trước khi loại bỏ Xray. RADIUS và SSH được tích hợp vào tác nhân: việc xóa sẽ vô hiệu hóa tính năng của chúng."
+
+[pages.accountSecurity]
+title = "Bảo mật tài khoản"
+required = "Quản trị viên yêu cầu xác thực hai yếu tố. Hãy thiết lập trước khi dùng bảng điều khiển. Không thể tắt khi yêu cầu này còn hiệu lực."
+requireTwoFactor = "Yêu cầu xác thực hai yếu tố"
+requireDesc = "Đại lý phải thiết lập ứng dụng xác thực của mình trước khi dùng bảng điều khiển. Gỡ yêu cầu này không tắt xác thực đã được bật."
+pending = "Đang chờ thiết lập"

@@ -1,0 +1,59 @@
+{{ template "page/head_start" .}}
+{{ template "page/head_end" .}}
+{{ template "page/body_start" .}}
+{{ template "page/shell_start" .}}
+<a-card title='{{ i18n "pages.accountSecurity.title" }}' :style="{ maxWidth: '720px', margin: '0 auto' }">
+  <a-alert v-if="required && !enabled" type="warning" show-icon :style="{ marginBottom: '24px' }"
+    message='{{ i18n "pages.accountSecurity.required" }}'></a-alert>
+  <a-alert v-else-if="required" type="info" show-icon :style="{ marginBottom: '24px' }"
+    message='{{ i18n "pages.accountSecurity.requireTwoFactor" }}'></a-alert>
+  <p>{{ i18n "pages.settings.security.twoFactorEnableDesc" }}</p>
+  <a-space>
+    <span>{{ i18n "pages.settings.security.twoFactor" }}</span>
+    <a-switch :checked="enabled" :disabled="required && enabled" @click="toggleTwoFactor"></a-switch>
+    <a-tag :color="enabled ? 'green' : 'orange'">[[ enabled ? '{{ i18n "enabled" }}' : '{{ i18n "disabled" }}' ]]</a-tag>
+  </a-space>
+</a-card>
+{{ template "page/shell_end" .}}
+{{ template "page/body_scripts" .}}
+<script src="{{ .base_path }}assets/otpauth/otpauth.umd.min.js"></script>
+<script src="{{ .base_path }}assets/qrcode/qrious2.min.js?{{ .asset_ver }}"></script>
+{{ template "component/aSidebar" .}}
+{{ template "component/aThemeSwitch" .}}
+{{ template "modals/twoFactorModal" .}}
+<script>
+  const app = new Vue({
+    delimiters: ['[[', ']]'],
+    mixins: [MediaQueryMixin],
+    el: '#app',
+    data: {
+      themeSwitcher,
+      pageTitle: '{{ i18n "pages.accountSecurity.title" }}',
+      pageClass: '',
+      enabled: {{ .two_factor }},
+      required: {{ .two_factor_required }},
+    },
+    methods: {
+      toggleTwoFactor(enable) {
+        if (!enable && this.required) return;
+        const token = enable ? RandomUtil.randomBase32String(32) : '';
+        twoFactorModal.show({
+          title: enable ? '{{ i18n "pages.settings.security.twoFactorModalSetTitle" }}' : '{{ i18n "pages.settings.security.twoFactorModalDeleteTitle" }}',
+          description: '{{ i18n "pages.settings.security.twoFactorModalRemoveStep" }}',
+          label: '{{ .account_username }}',
+          token,
+          type: enable ? 'set' : 'confirm',
+          confirm: async (success, code, password) => {
+            if (!success) return false;
+            const msg = await HttpUtil.post('/panel/setting/twoFactor', { enable, token, code, password });
+            if (!msg || !msg.success) return false;
+            this.enabled = enable;
+            if (this.required && enable) window.location.assign(basePath + 'panel/');
+            return true;
+          },
+        });
+      },
+    },
+  });
+</script>
+{{ template "page/body_end" .}}

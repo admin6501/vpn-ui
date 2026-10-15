@@ -1957,3 +1957,10 @@ other = "刪除這個核心？其入站、用户、柜台将被保留；受影�
 
 [pages.nodes.sharedCores]
 other = "共享依赖项可能服务于其他核心。在停止共享依赖之前停止依赖核心；在删除 Xray 之前删除相关核心。 RADIUS 和 SSH 內建於代理程式中：刪除會停用其功能。"
+
+[pages.accountSecurity]
+title = "帳戶安全"
+required = "管理員要求啟用雙重驗證。請在使用面板前完成設定。此要求生效期間無法關閉雙重驗證。"
+requireTwoFactor = "強制啟用雙重驗證"
+requireDesc = "代理必須在使用面板前設定自己的驗證器。取消此要求不會關閉已啟用的雙重驗證。"
+pending = "等待設定"

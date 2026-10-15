@@ -40,6 +40,7 @@ func (a *XUIController) initRouter(g *gin.RouterGroup) {
 	// takes the same claim.
 	g.GET("/clients", requirePerm(model.PermAccessInbounds), a.clients)
 	g.GET("/settings", requirePerm(model.PermPanelSettings), a.settings)
+	g.GET("/security", a.security)
 	g.GET("/xray", requirePerm(model.PermXraySettings), a.xraySettings)
 	g.GET("/core", requirePerm(model.PermCoreSettings), a.coreSettings)
 	g.GET("/admins", requireAdminManagement(), a.admins)
@@ -104,6 +105,10 @@ func (a *XUIController) clients(c *gin.Context) {
 // settings renders the settings management page.
 func (a *XUIController) settings(c *gin.Context) {
 	html(c, "settings.html", "pages.settings.title", nil)
+}
+
+func (a *XUIController) security(c *gin.Context) {
+	html(c, "security.html", "pages.accountSecurity.title", nil)
 }
 
 // xraySettings renders the Xray settings page.

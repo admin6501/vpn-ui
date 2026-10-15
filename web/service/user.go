@@ -2,6 +2,7 @@ package service
 
 import (
 	"crypto/subtle"
+	"encoding/base32"
 	"errors"
 	"strings"
 	"time"
@@ -142,6 +143,12 @@ func verifyTOTP(secret, code string) bool {
 	if secret == "" || code == "" {
 		return false
 	}
+	// gotp panics on malformed Base32. Enrollment accepts an untrusted secret,
+	// so validate the same padded form before passing it to the library.
+	padded := secret + strings.Repeat("=", (8-len(secret)%8)%8)
+	if decoded, err := base32.StdEncoding.DecodeString(padded); err != nil || len(decoded) == 0 {
+		return false
+	}
 	totp := gotp.NewDefaultTOTP(secret)
 	now := time.Now().Unix()
 	ok := false
@@ -225,7 +232,7 @@ func (s *UserService) SetFirstUsername(username string) error {
 	return db.Save(user).Error
 }
 
-// SetTwoFactor enables or disables one admin's TOTP.
+// SetTwoFactor enables or disables one account's TOTP.
 //
 // Per-admin, not panel-wide: the old global secret lived in the settings table,
 // which GetAllSetting handed to every logged-in user, so any admin could read it
@@ -239,5 +246,17 @@ func (s *UserService) SetTwoFactor(userId int, enable bool, token string) error 
 		updates["two_factor_enable"] = true
 		updates["two_factor_token"] = token
 	}
-	return database.GetDB().Model(model.User{}).Where("id = ?", userId).Updates(updates).Error
+	query := database.GetDB().Model(model.User{}).Where("id = ?", userId)
+	if !enable {
+		// Check the current policy atomically, including a manager's concurrent save.
+		query = query.Where("two_factor_required = ?", false)
+	}
+	result := query.Updates(updates)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected != 1 {
+		return errors.New("two-factor authentication is required or the account no longer exists")
+	}
+	return nil
 }

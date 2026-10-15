@@ -32,6 +32,9 @@ func (a *APIController) checkAPIAuth(c *gin.Context) {
 		c.AbortWithStatus(http.StatusNotFound)
 		return
 	}
+	if enforceTwoFactorEnrollment(c) {
+		return
+	}
 	c.Next()
 }
 
