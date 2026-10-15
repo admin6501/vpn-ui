@@ -1965,3 +1965,14 @@ required = "管理员要求启用双重认证。请在使用面板前完成设�
 requireTwoFactor = "强制启用双重认证"
 requireDesc = "代理必须在使用面板前设置自己的身份验证器。取消此要求不会关闭已启用的双重认证。"
 pending = "等待设置"
+
+[pages.groups]
+title = "分组"
+add = "添加分组"
+hint = "分组变更会应用于所有成员。新入站必须先加入分组才能使用。"
+noGroups = "暂无可用分组，请先将入站添加到分组。"
+members = "用户"
+allowed = "允许的分组"
+all = "允许所有分组"
+addMembership = "加入分组"
+removeMembership = "移出分组"

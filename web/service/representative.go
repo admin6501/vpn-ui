@@ -137,6 +137,22 @@ func enforceRoleInboundAccess(role *model.RepresentativeRole, inboundIDs []int) 
 	if access.AllowedGroups == nil {
 		return nil
 	}
+	if GroupsMigrated(database.GetDB()) {
+		var allowed []int
+		if err := database.GetDB().Model(&model.GroupInbound{}).Where("group_id IN ?", *access.AllowedGroups).Distinct().Pluck("inbound_id", &allowed).Error; err != nil {
+			return err
+		}
+		set := map[int]bool{}
+		for _, id := range allowed {
+			set[id] = true
+		}
+		for _, id := range inboundIDs {
+			if !set[id] {
+				return errors.New("inbound is outside the role's allowed groups")
+			}
+		}
+		return nil
+	}
 	allowedGroups := map[int]bool{}
 	for _, id := range *access.AllowedGroups {
 		allowedGroups[id] = true

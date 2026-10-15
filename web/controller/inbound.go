@@ -661,6 +661,10 @@ func (a *InboundController) addInbound(c *gin.Context) {
 		return
 	}
 
+	if err := validateInboundGroupRoster(nil, inbound); err != nil {
+		jsonMsg(c, I18nWeb(c, "somethingWentWrong"), err)
+		return
+	}
 	if err := service.ValidateInboundCertificatePaths(session.GetLoginUser(c), nil, inbound); err != nil {
 		jsonMsg(c, I18nWeb(c, "somethingWentWrong"), err)
 		return
@@ -869,6 +873,10 @@ func (a *InboundController) updateInbound(c *gin.Context) {
 		jsonMsg(c, I18nWeb(c, "somethingWentWrong"), loadErr)
 		return
 	}
+	if err := validateInboundGroupRoster(stored, inbound); err != nil {
+		jsonMsg(c, I18nWeb(c, "somethingWentWrong"), err)
+		return
+	}
 	if err := service.ValidateInboundCertificatePaths(session.GetLoginUser(c), stored, inbound); err != nil {
 		jsonMsg(c, I18nWeb(c, "somethingWentWrong"), err)
 		return
@@ -1012,7 +1020,11 @@ func (a *InboundController) addInboundClient(c *gin.Context) {
 	// in the body too, so each needs the same assertion data.Id just got: checking
 	// only the target would let an admin holding one inbound provision a live
 	// account on someone else's by listing it here.
-	membershipIds, membershipsExplicit := postedMembershipIds(c, data.Id)
+	membershipIds, membershipsExplicit, selectionErr := a.clientMembershipSelection(c, data.Id, true)
+	if selectionErr != nil {
+		jsonMsg(c, I18nWeb(c, "somethingWentWrong"), selectionErr)
+		return
+	}
 	if !a.callerOwnsInbounds(c, membershipIds) {
 		jsonMsg(c, I18nWeb(c, "pages.inbounds.notFound"), errNotOwned)
 		return
@@ -1024,6 +1036,12 @@ func (a *InboundController) addInboundClient(c *gin.Context) {
 	if err := a.validateMembershipSet(membershipIds); err != nil {
 		jsonMsg(c, I18nWeb(c, "somethingWentWrong"), err)
 		return
+	}
+	if _, grouped, _ := postedGroupIDs(c); grouped {
+		if err := (&service.GroupService{}).PreflightCreate(membershipIds, postedClientEmails(data)); err != nil {
+			jsonMsg(c, I18nWeb(c, "somethingWentWrong"), err)
+			return
+		}
 	}
 	// Prices the account against the reseller's balance, clamps the posted client to
 	// their limits, and RESERVES the bytes before the account exists. Inactive for an
@@ -1076,7 +1094,8 @@ func (a *InboundController) addInboundClient(c *gin.Context) {
 			for _, email := range emails {
 				touched, merr := a.applyClientMemberships(c, email, data.Id, membershipIds, membershipsExplicit)
 				if merr != nil {
-					logger.Warning("applying client memberships for ", email, ": ", merr)
+					jsonMsg(c, I18nWeb(c, "somethingWentWrong"), merr)
+					return
 				}
 				projected = unionInboundIds(projected, touched)
 			}
@@ -1084,14 +1103,15 @@ func (a *InboundController) addInboundClient(c *gin.Context) {
 	} else {
 		touched, merr := a.applyClientMemberships(c, postedClientEmail(data), data.Id, membershipIds, membershipsExplicit)
 		if merr != nil {
-			logger.Warning("applying client memberships: ", merr)
+			jsonMsg(c, I18nWeb(c, "somethingWentWrong"), merr)
+			return
 		}
 		projected = unionInboundIds(projected, touched)
 	}
 
 	jsonMsg(c, I18nWeb(c, "pages.inbounds.toasts.inboundClientAddSuccess"), nil)
 
-	a.reconcileForInbounds(unionInboundIds(membershipIds, projected), needRestart)
+	a.reconcileForInbounds(unionInboundIds(membershipIds, projected), needRestart || len(projected) > 0)
 }
 
 // saveAccountClient writes a client that NO inbound addresses, and sets which
@@ -1145,7 +1165,11 @@ func (a *InboundController) saveAccountClient(c *gin.Context) {
 	}
 
 	// Target 0: nothing addressed this write, so the set is exactly what was posted.
-	membershipIds, _ := postedMembershipIds(c, 0)
+	membershipIds, _, selectionErr := a.clientMembershipSelection(c, 0, true)
+	if selectionErr != nil {
+		jsonMsg(c, I18nWeb(c, "somethingWentWrong"), selectionErr)
+		return
+	}
 	if !a.callerOwnsInbounds(c, membershipIds) {
 		jsonMsg(c, I18nWeb(c, "pages.inbounds.notFound"), errNotOwned)
 		return
@@ -1176,7 +1200,7 @@ func (a *InboundController) saveAccountClient(c *gin.Context) {
 	if perr != nil {
 		logger.Warning("reading previous memberships: ", perr)
 	}
-	projected, merr := accountService.ApplyMembershipsFrom(email, 0, membershipIds, previous, true)
+	projected, merr := a.applyClientMemberships(c, email, 0, membershipIds, true)
 	if merr != nil {
 		jsonMsg(c, I18nWeb(c, "somethingWentWrong"), merr)
 		return
@@ -1231,6 +1255,10 @@ func singlePostedClientEntry(settings string) (map[string]any, error) {
 
 // copyInboundClients copies clients from source inbound to target inbound.
 func (a *InboundController) copyInboundClients(c *gin.Context) {
+	if service.GroupsMigrated(database.GetDB()) {
+		jsonMsg(c, I18nWeb(c, "somethingWentWrong"), fmt.Errorf("use group membership operations on the Clients page"))
+		return
+	}
 	// An empty clientEmails copies the SOURCE inbound whole, admins' accounts
 	// included, and a named list is not filtered by owner either. Both inbounds can
 	// legitimately be ones the reseller was assigned, so no ownership check catches it.
@@ -1381,7 +1409,11 @@ func (a *InboundController) updateInboundClient(c *gin.Context) {
 	}
 	// Same assertion over the whole requested membership set: an edit can ADD an
 	// inbound, so the ids in the body are as dangerous here as on the add path.
-	membershipIds, membershipsExplicit := postedMembershipIds(c, inbound.Id)
+	membershipIds, membershipsExplicit, selectionErr := a.clientMembershipSelection(c, inbound.Id, false)
+	if selectionErr != nil {
+		jsonMsg(c, I18nWeb(c, "somethingWentWrong"), selectionErr)
+		return
+	}
 	if !a.callerOwnsInbounds(c, membershipIds) {
 		jsonMsg(c, I18nWeb(c, "pages.inbounds.notFound"), errNotOwned)
 		return
@@ -1467,7 +1499,8 @@ func (a *InboundController) updateInboundClient(c *gin.Context) {
 	}
 	projected, merr := a.applyClientMemberships(c, email, inbound.Id, membershipIds, membershipsExplicit)
 	if merr != nil {
-		logger.Warning("applying client memberships: ", merr)
+		jsonMsg(c, I18nWeb(c, "somethingWentWrong"), merr)
+		return
 	}
 
 	jsonMsg(c, I18nWeb(c, "pages.inbounds.toasts.inboundClientUpdateSuccess"), nil)
@@ -1480,7 +1513,7 @@ func (a *InboundController) updateInboundClient(c *gin.Context) {
 	// a new per-account routing rule on every inbound the old email was written into,
 	// and those inbounds are not otherwise in any of the three lists.
 	reconcile := unionInboundIds(unionInboundIds(membershipIds, previous), projected)
-	a.reconcileForInbounds(unionInboundIds(reconcile, renamed), needRestart)
+	a.reconcileForInbounds(unionInboundIds(reconcile, renamed), needRestart || len(projected) > 0 || len(renamed) > 0)
 }
 
 // unionInboundIds merges two id lists, preserving order and dropping duplicates.
@@ -1740,6 +1773,10 @@ func (a *InboundController) bulkClientMembership(c *gin.Context) {
 		return
 	}
 
+	if req.GroupIDs != nil || service.GroupsMigrated(database.GetDB()) {
+		a.bulkGroupMembership(c, &req, adding)
+		return
+	}
 	// unionInboundIds with nothing to union is just "dedupe, keep order". The id
 	// filter is the same one postedMembershipIds applies: a 0 reaches the ownership
 	// check as a real question, and for a super admin it passes, after which it is
@@ -3022,6 +3059,11 @@ func (a *InboundController) applyClientMemberships(c *gin.Context, email string,
 				removable = append(removable, id)
 			}
 		}
+	}
+	if groups, present, err := postedGroupIDs(c); err != nil {
+		return nil, err
+	} else if present {
+		return (&service.GroupService{}).Apply(session.GetLoginUser(c), email, anchorInboundId, groups)
 	}
 	return accountService.ApplyMembershipsFrom(email, anchorInboundId, inboundIds, removable, explicit)
 }

@@ -1964,3 +1964,14 @@ required = "管理員要求啟用雙重驗證。請在使用面板前完成設�
 requireTwoFactor = "強制啟用雙重驗證"
 requireDesc = "代理必須在使用面板前設定自己的驗證器。取消此要求不會關閉已啟用的雙重驗證。"
 pending = "等待設定"
+
+[pages.groups]
+title = "群組"
+add = "新增群組"
+hint = "群組變更會套用至所有成員。新入站必須先加入群組才能使用。"
+noGroups = "尚無可用群組，請先將入站加入群組。"
+members = "使用者"
+allowed = "允許的群組"
+all = "允許所有群組"
+addMembership = "加入群組"
+removeMembership = "移出群組"

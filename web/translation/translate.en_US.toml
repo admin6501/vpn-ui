@@ -1968,3 +1968,14 @@ required = "Your administrator requires two-factor authentication. Set it up bef
 requireTwoFactor = "Require two-factor authentication"
 requireDesc = "The representative must set up their own authenticator before using the panel. Removing this requirement keeps any existing two-factor authentication enabled."
 pending = "Awaiting setup"
+
+[pages.groups]
+title = "Groups"
+add = "Add group"
+hint = "Changes to a group apply to all its users. New inbounds must be added to a group before use."
+noGroups = "No groups available. Add inbounds to a group first."
+members = "Users"
+allowed = "Allowed groups"
+all = "Allow all groups"
+addMembership = "Add to groups"
+removeMembership = "Remove from groups"

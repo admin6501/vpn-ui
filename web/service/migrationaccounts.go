@@ -2,6 +2,7 @@ package service
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -766,6 +767,9 @@ func (s *AccountService) ensurePreMigrationBackup() (string, error) {
 //
 // Returns the number of accounts and memberships removed.
 func (s *AccountService) RevertAccounts() (int, int, error) {
+	if GroupsMigrated(database.GetDB()) {
+		return 0, 0, errors.New("cannot revert accounts while dynamic groups are active; restore the pre-upgrade database backup to roll back")
+	}
 	db := database.GetDB()
 	if db == nil {
 		return 0, 0, fmt.Errorf("no database")

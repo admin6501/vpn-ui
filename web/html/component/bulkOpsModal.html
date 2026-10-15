@@ -35,8 +35,8 @@
           <!-- Also withheld from a reseller, and for a different reason than the two
                above: which inbounds serve an account is the admin's call, not a lever
                their grant carries. The server refuses these outright for them. -->
-          <a-select-option v-if="bulkOpAllowed('addInbounds')" value="addInbounds">{{ i18n "pages.inbounds.opAddInbounds" }}</a-select-option>
-          <a-select-option v-if="bulkOpAllowed('removeInbounds')" value="removeInbounds">{{ i18n "pages.inbounds.opRemoveInbounds" }}</a-select-option>
+          <a-select-option v-if="bulkOpAllowed('addInbounds')" value="addInbounds">{{ i18n "pages.groups.addMembership" }}</a-select-option>
+          <a-select-option v-if="bulkOpAllowed('removeInbounds')" value="removeInbounds">{{ i18n "pages.groups.removeMembership" }}</a-select-option>
           <a-select-option value="delete">{{ i18n "pages.inbounds.opDelete" }}</a-select-option>
         </a-select>
       </a-form-item>
@@ -55,23 +55,23 @@
            checklist the single-account form uses (modals/clientMembershipModal), off
            the same already-loaded `assignable` list, so the picker here can never
            offer an inbound that form would not. -->
-      <a-form-item v-if="bulkIsMembershipOp()" label='{{ i18n "pages.inbounds.inboundMembership" }}'>
-        <div class="bo-dim" :style="{ marginBottom: '8px' }">{{ i18n "pages.inbounds.bulkMembershipDesc" }}</div>
+      <a-form-item v-if="bulkIsMembershipOp()" label='{{ i18n "pages.groups.title" }}'>
+        <div class="bo-dim" :style="{ marginBottom: '8px' }">{{ i18n "pages.groups.hint" }}</div>
         <div :style="{ marginBottom: '8px' }">
           <a-checkbox
             :checked="bulkAllInboundsChecked()"
             :indeterminate="bulkSomeInboundsChecked()"
             @change="e => bulkToggleAllInbounds(e)">
-            {{ i18n "pages.inbounds.selectAllInbounds" }}
+            {{ i18n "pages.clients.selectAll" }}
           </a-checkbox>
         </div>
         <a-checkbox-group v-model="bulkOps.inboundIds" :style="{ width: '100%' }">
-          <div class="bo-cf-ib" v-for="ib in bulkAssignable()" :key="ib.inboundId"
-            :class="{ on: bulkOps.inboundIds.includes(ib.inboundId) }">
-            <a-checkbox :value="ib.inboundId">
-              [[ ib.remark || ('#' + ib.inboundId) ]]
-              <a-tag>[[ ib.protocol ]]</a-tag>
-              <span class="bo-dim">:[[ ib.port ]]</span>
+          <div class="bo-cf-ib" v-for="ib in bulkAssignable()" :key="ib.id"
+            :class="{ on: bulkOps.inboundIds.includes(ib.id) }">
+            <a-checkbox :value="ib.id">
+              [[ ib.name ]]
+              <a-tag>[[ ib.inboundIds.length ]]</a-tag>
+
             </a-checkbox>
           </div>
         </a-checkbox-group>

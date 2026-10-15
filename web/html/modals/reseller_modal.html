@@ -1,6 +1,7 @@
 {{define "modals/resellerModal"}}
 <a-modal id="reseller-modal" v-model="resellerModal.visible" :title="resellerModal.title" @ok="resellerModal.ok"
-  :confirm-loading="resellerModal.confirmLoading" :closable="true" :mask-closable="false"
+  :confirm-loading="resellerModal.confirmLoading" :closable="!resellerModal.confirmLoading" :mask-closable="false"
+  :cancel-button-props="{ props: { disabled: resellerModal.confirmLoading } }"
   :ok-text="resellerModal.okText" cancel-text='{{ i18n "close" }}' :class="themeSwitcher.currentTheme">
   <!-- label-col is 10, not 8: at 8 the longest labels ("Minimum Account (GB)",
        "Minimum Top-Up (GB)") are wider than the box and lose
@@ -8,6 +9,9 @@
        wrap. 10 covers the widest of them and takes the width from the gap between
        the columns, so the controls keep the size they already had. -->
   <a-form :colon="false" :label-col="{ md: { span: 10 } }" :wrapper-col="{ md: { span: 14 } }">
+
+    <a-alert v-if="resellerModal.error" type="error" show-icon :message="resellerModal.error"
+      :style="{ marginBottom: '16px' }"></a-alert>
 
     <a-form-item label='{{ i18n "pages.resellers.username" }}'>
       <a-input v-model.trim="resellerModal.reseller.username"></a-input>
@@ -31,7 +35,8 @@
     </a-form-item>
 
     <a-form-item label='{{ i18n "pages.resellers.role" }}'>
-      <a-select v-model="resellerModal.reseller.representativeRoleId" :loading="resellerModal.rolesLoading" placeholder='{{ i18n "pages.roles.select" }}'>
+      <a-select v-model="resellerModal.reseller.representativeRoleId" :loading="resellerModal.rolesLoading"
+        :disabled="resellerModal.isEdit && {{not .perms.superAdmin}}" placeholder='{{ i18n "pages.roles.select" }}'>
  <template slot="notFoundContent">{{ i18n "pages.roles.empty" }}</template>
         <a-select-option v-for="role in resellerModal.roles" :key="role.id" :value="role.id">[[ role.name ]]</a-select-option>
       </a-select>
@@ -157,6 +162,7 @@
     title: '',
     visible: false,
     confirmLoading: false,
+    error: '',
     okText: '{{ i18n "sure" }}',
     isEdit: false,
     confirm: null,
@@ -196,13 +202,24 @@
     onAllowOverviewChange(checked) {
       if (!checked) resellerModal.reseller.allowOverviewManage = false;
     },
-    ok() {
-      ObjectUtil.execute(resellerModal.confirm, resellerModal.reseller);
+    async ok() {
+      if (resellerModal.confirmLoading) return;
+      resellerModal.confirmLoading = true;
+      resellerModal.error = '';
+      try {
+        const msg = await resellerModal.confirm(resellerModal.reseller);
+        if (!msg || !msg.success) resellerModal.error = (msg && msg.msg) || '{{ i18n "somethingWentWrong" }}';
+      } catch (error) {
+        resellerModal.error = error.message || '{{ i18n "somethingWentWrong" }}';
+      } finally {
+        resellerModal.confirmLoading = false;
+      }
     },
     async show({ title = '', okText = '{{ i18n "sure" }}', reseller = null, allInbounds = [], confirm = () => { }, isEdit = false }) {
       this.title = title;
       this.okText = okText;
       this.confirm = confirm;
+      this.error = '';
       this.isEdit = isEdit;
       this.allInbounds = allInbounds || [];
       if (isEdit && reseller) {

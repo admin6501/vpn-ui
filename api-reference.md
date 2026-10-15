@@ -1300,28 +1300,33 @@ on.
 
 ### Setting memberships over the API
 
-`/addClient` and `/updateClient/:clientId` accept repeated **`inboundIds`** form keys naming every
-inbound the account should be served on:
+After the one-time groups migration, clients select groups. `/addClient`,
+`/updateClient/:clientId` and the super-administrator `/saveAccount` accept repeated
+**`groupIds`** form keys. The server resolves the union of those groups' inbounds;
+posted `inboundIds` cannot override it. An add's target `id` must belong to that union.
 
 ```sh
 curl -b jar.txt -X POST 'https://HOST:PORT/<basePath>/panel/api/inbounds/addClient' \
   --data-urlencode 'id=3' \
-  --data-urlencode 'settings={"clients":[{"id":"dave","password":"pw","email":"dave@example.com","enable":true}]}' \
-  --data-urlencode 'inboundIds=3' \
-  --data-urlencode 'inboundIds=7'
+  --data-urlencode 'settings={"clients":[{"id":"11111111-1111-4111-8111-111111111111","email":"dave@example.com","enable":true}]}' \
+  --data-urlencode 'groupIds=1' \
+  --data-urlencode 'groupIds=4'
 ```
 
-- `id` is the **target** inbound and arrives in the body, not the path. It is always included in the
-  membership set whether or not you repeat it in `inboundIds`.
-- Omitting `inboundIds` entirely means "just the target", and is the legacy single-inbound path.
-- Sending `inboundIds=` (one empty value) means the group was explicitly cleared.
-- The caller must own **every** inbound named. An admin holding one inbound cannot provision a live
-  account on another admin's by listing it here; the whole request is refused.
-- Membership changes only remove the account from inbounds the caller can actually see, so not
-  ticking an invisible inbound never unprovisions the account there.
-
-The `settings.clients` array on these two endpoints must hold exactly **one** client for the
-membership machinery to resolve the email.
+- `GET /panel/api/clients/groups` lists permitted groups and their `inboundIds`.
+- A group is selectable only when every inbound is accessible to the caller and
+  the representative's role permits that group. Empty `allowed_group_ids` denies
+  every group; `null` allows all groups within the inbound grant.
+- Existing associations outside a delegated editor's scope are retained.
+- `groupIds=` explicitly clears visible group selection. Existing permission checks
+  still apply to unserved accounts.
+- An implicit legacy metadata edit that omits membership fields preserves group
+  associations. Direct inbound assignment and inbound-wide client copying are
+  refused after migration; scripts must send `groupIds` to change provisioning.
+- `/addClient` also accepts a batch of clients; the same groups apply to every
+  account in that batch. Representative pricing and ownership checks still run.
+- Bulk membership uses the existing `addInbounds` / `removeInbounds` operation
+  names on `/panel/api/inbounds/bulkMembership`, with a JSON `groupIds` array.
 
 ### Refused: two same-protocol memberships on l2tp, pptp or ikev2
 
@@ -1664,6 +1669,14 @@ is under `$BASE/panel/resellers`, not `/panel/api/inbounds`. It requires `manage
 writes additionally require the main/super administrator. `User.Can` maps assigned representative
 roles to their policy.
 
+Editing a representative's credentials, labels or personal-security requirement preserves
+existing imported inbound grants, even when those grants predate the role's current group
+or template restrictions. Only newly added inbound grants are checked on an unchanged role;
+changing the assigned role checks the complete requested grant set. Administrators with
+`manageResellers` can edit their own representatives without reassigning their roles;
+role reassignment remains super-admin-only. The representative, profile and inbound grants
+are saved in one transaction. Failed saves keep the form open and display the error inside it.
+
 | Method | Path relative to `$BASE`            | Operation                                                       |
 | ------ | ----------------------------------- | --------------------------------------------------------------- |
 | GET    | `/panel/resellers/roles`            | List assignable non-owner roles                                 |
@@ -1771,3 +1784,31 @@ editable payload field. A non-owner cannot edit or delete the owner account.
 Database replacement/export, panel executable replacement, authentication-setting
 reads/writes and central daemon-config writes additionally require the panel owner;
 an overview-management or super-administrator grant alone cannot bypass this check.
+
+## 16. Dynamic client groups
+
+| Method | Path | Behavior |
+| --- | --- | --- |
+| GET | `/panel/groups` | Group management page |
+| GET | `/panel/groups/list` | Scoped groups with inbound IDs and member counts |
+| GET | `/panel/groups/inbounds` | Assignable inbounds for the group editor |
+| POST | `/panel/groups/save` | Create/update using `id`, `name`, repeated `inboundIds` |
+| POST | `/panel/groups/delete/:id` | Delete an unused group |
+
+Management requires `editInbound` and is denied to representatives. The service
+checks the editor's scope against every old and new inbound. Groups with users or
+referenced by representative roles cannot be deleted without reassignment.
+Changing a group's inbound set updates the union for **all** its existing users
+in the same database transaction. Capacity or protocol conflicts roll back the
+definition and every user's projection. Overlapping groups retain shared inbounds;
+empty groups retain their accounts and associations for later reactivation.
+
+At first startup, `clientGroupsMigrationV1` creates **one group per existing
+inbound**, and one `account_groups` link for each existing `account_inbounds` row.
+It does not project, recreate, enable, or alter existing customer memberships,
+credentials, traffic, balances, expiry or subscription tokens. Imported role group
+IDs are translated via the retained PasarGuard inbound tags. The marker commits
+with all associations and prevents subsequent restarts from auto-grouping newly
+created inbounds. Database restore preserves native groups; the PasarGuard converter
+clears template-schema group rows and the marker so imported memberships receive
+the same compatibility migration on startup.

@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"strings"
 	"time"
 
@@ -875,6 +876,9 @@ func (s *AccountService) pruneOrphanAccounts(tx *gorm.DB, candidates []int) erro
 	if len(orphans) == 0 {
 		return nil
 	}
+	if err := tx.Session(&gorm.Session{NewDB: true}).Where("account_id IN ?", orphans).Delete(&model.AccountGroup{}).Error; err != nil {
+		return err
+	}
 	return tx.Session(&gorm.Session{NewDB: true}).
 		Where("id IN ?", orphans).Delete(&model.Account{}).Error
 }
@@ -1300,6 +1304,9 @@ func (s *AccountService) DeleteAccountWithoutInbound(email string) error {
 		if err := tx.Where("LOWER(TRIM(email)) = ?", key).Delete(&xray.ClientTraffic{}).Error; err != nil {
 			return err
 		}
+		if err := tx.Where("account_id = ?", account.Id).Delete(&model.AccountGroup{}).Error; err != nil {
+			return err
+		}
 		return tx.Where("id = ?", account.Id).Delete(&model.Account{}).Error
 	})
 }
@@ -1399,6 +1406,28 @@ func mergeKeepSet(wanted, current, removable []int) []int {
 // the credential its protocol keys on, and a blank one produces an account that
 // is listed but cannot authenticate.
 func (s *AccountService) SetMemberships(tx *gorm.DB, accountId int, inboundIds []int) error {
+	if GroupsMigrated(tx) {
+		expected, err := groupUnion(tx, accountId)
+		if err != nil {
+			return err
+		}
+		a, b := map[int]bool{}, map[int]bool{}
+		for _, id := range expected {
+			a[id] = true
+		}
+		for _, id := range inboundIds {
+			b[id] = true
+		}
+		if len(a) != len(b) {
+			return errors.New("select groups to change account memberships")
+		}
+		for id := range a {
+			if !b[id] {
+				return errors.New("account memberships must match its groups")
+			}
+		}
+	}
+
 	wanted := map[int]bool{}
 	for _, id := range inboundIds {
 		wanted[id] = true
@@ -1802,6 +1831,9 @@ func (s *AccountService) DropMembership(tx *gorm.DB, inboundId int, email string
 	}
 	if left > 0 {
 		return nil
+	}
+	if err := tx.Where("account_id = ?", account.Id).Delete(&model.AccountGroup{}).Error; err != nil {
+		return err
 	}
 	return tx.Where("id = ?", account.Id).Delete(&model.Account{}).Error
 }

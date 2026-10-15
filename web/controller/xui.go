@@ -55,6 +55,7 @@ func (a *XUIController) initRouter(g *gin.RouterGroup) {
 	NewNodeController(g)
 	a.adminController = NewAdminController(g)
 	a.resellerController = NewResellerController(g)
+	registerGroups(g)
 }
 
 // index renders the main panel index page.

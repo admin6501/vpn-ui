@@ -10,6 +10,12 @@
  <a-select-option :value="1">{{ i18n "pages.roles.ownUsers" }}</a-select-option><a-select-option :value="2">{{ i18n "pages.roles.allUsers" }}</a-select-option>
  </a-select></div>
     </a-form-item>
+    <a-form-item label='{{ i18n "pages.groups.allowed" }}'>
+      <a-checkbox v-model="pgRole.allGroups">{{ i18n "pages.groups.all" }}</a-checkbox>
+      <a-select mode="multiple" v-model="pgRole.groupIDs" :disabled="pgRole.allGroups" style="width:100%">
+        <a-select-option v-for="g in pgRole.groups" :key="g.id" :value="g.id">[[ g.name ]]</a-select-option>
+      </a-select>
+    </a-form-item>
     <a-form-item label='{{ i18n "pages.roles.maxUsers" }}'><a-input-number v-model="pgRole.maxUsers" :min="0"></a-input-number></a-form-item>
     <a-form-item label='{{ i18n "pages.roles.minGB" }}'><a-input-number v-model="pgRole.minGB" :min="0"></a-input-number></a-form-item>
     <a-form-item label='{{ i18n "pages.roles.maxGB" }}'><a-input-number v-model="pgRole.maxGB" :min="0"></a-input-number></a-form-item>
@@ -21,16 +27,22 @@
 <script>
 const pgRole = {
   visible: false, loading: false, id: 0, name: '', permissions: {}, limits: {}, features: {}, access: {}, allowed: {}, scopes: {},
+  groups: [], groupIDs: [], allGroups: true,
   maxUsers: null, minGB: null, maxGB: null, disconnectLimited: true, disconnectDisabled: true, disabledLimited: false,
   actions: [{key:'read',label:'{{ i18n "pages.roles.read" }}'}, {key:'create',label:'{{ i18n "pages.roles.create" }}'}, {key:'update',label:'{{ i18n "pages.roles.update" }}'},
     {key:'delete',label:'{{ i18n "pages.roles.delete" }}'}, {key:'reset_usage',label:'{{ i18n "pages.roles.resetUsage" }}'}, {key:'revoke_sub',label:'{{ i18n "pages.roles.revokeSub" }}'}],
   parse(value) { try { return JSON.parse(value) || {}; } catch (_) { return {}; } },
- show(role) {
+ async show(role) {
+    const response = await HttpUtil.get('/panel/groups/list');
+    if (!response || !response.success) return;
+    this.groups = response.obj || [];
     this.id = role ? role.id : 0; this.name = role ? role.name : '';
     this.permissions = role ? this.parse(role.permissions) : {users:{read:{scope:1},create:true,update:{scope:1}}, system:{read:true}};
     this.limits = role ? this.parse(role.limits) : {};
     this.features = role ? this.parse(role.features) : {can_use_reset_strategy:true, can_use_next_plan:false};
     this.access = role ? this.parse(role.access) : {require_template:false, allowed_group_ids:null, allowed_template_ids:null};
+    this.allGroups = this.access.allowed_group_ids == null;
+    this.groupIDs = this.access.allowed_group_ids || [];
     const allowed = {}, scopes = {};
     for (const action of this.actions) {
       const value = (this.permissions.users || {})[action.key];
@@ -58,6 +70,7 @@ const pgRole = {
     this.limits.max_users = this.maxUsers == null ? null : this.maxUsers;
     this.limits.data_limit_min = this.minGB == null ? null : Math.round(this.minGB * ONE_GB_BYTES);
     this.limits.data_limit_max = this.maxGB == null ? null : Math.round(this.maxGB * ONE_GB_BYTES);
+    this.access.allowed_group_ids = this.allGroups ? null : this.groupIDs;
     this.loading = true;
     try {
       const msg = await HttpUtil.post('/panel/resellers/roles/' + (this.id ? 'update/' + this.id : 'add'), {

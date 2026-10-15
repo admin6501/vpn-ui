@@ -1964,3 +1964,14 @@ required = "Administrator mewajibkan autentikasi dua faktor. Siapkan sebelum men
 requireTwoFactor = "Wajibkan autentikasi dua faktor"
 requireDesc = "Perwakilan harus menyiapkan aplikasi autentikator sendiri sebelum menggunakan panel. Menghapus kewajiban ini tidak menonaktifkan autentikasi yang sudah aktif."
 pending = "Menunggu penyiapan"
+
+[pages.groups]
+title = "Grup"
+add = "Tambah grup"
+hint = "Perubahan grup berlaku untuk semua anggotanya. Tambahkan inbound baru ke grup sebelum digunakan."
+noGroups = "Belum ada grup. Tambahkan inbound ke grup terlebih dahulu."
+members = "Pengguna"
+allowed = "Grup yang diizinkan"
+all = "Izinkan semua grup"
+addMembership = "Tambah ke grup"
+removeMembership = "Hapus dari grup"

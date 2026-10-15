@@ -275,13 +275,12 @@
           allInbounds: this.allInbounds,
           isEdit: false,
           confirm: async (reseller) => {
-            resellerModal.loading();
             const msg = await HttpUtil.post('/panel/resellers/add', resellerModal.toPayload(reseller));
-            resellerModal.loading(false);
             if (msg && msg.success) {
               resellerModal.close();
               await this.loadResellers();
             }
+            return msg;
           },
         });
       },
@@ -292,13 +291,12 @@
           reseller,
           isEdit: true,
           confirm: async (edited) => {
-            resellerModal.loading();
             const msg = await HttpUtil.post('/panel/resellers/update/' + reseller.id, resellerModal.toPayload(edited));
-            resellerModal.loading(false);
             if (msg && msg.success) {
               resellerModal.close();
               await this.loadResellers();
             }
+            return msg;
           },
         });
       },
