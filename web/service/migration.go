@@ -76,6 +76,8 @@ type ImportReport struct {
 // if any step through InitDB fails, so a failed import never leaves the panel with
 // no database. Mirrors ImportDB, which this shares its swap shape with.
 func (s *ServerService) ImportForeignDB(src dbFile, activate bool) (*ImportReport, error) {
+	databaseImportMu.Lock()
+	defer databaseImportMu.Unlock()
 	// Validate the upload is actually a SQLite file before touching anything.
 	isValidDb, err := database.IsSQLiteDB(src)
 	if err != nil {

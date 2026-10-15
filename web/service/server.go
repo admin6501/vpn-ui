@@ -1301,6 +1301,8 @@ func sanitizeBackupNamePart(part string) string {
 }
 
 func (s *ServerService) ImportDB(file multipart.File) error {
+	databaseImportMu.Lock()
+	defer databaseImportMu.Unlock()
 	// Check if the file is a SQLite database
 	isValidDb, err := database.IsSQLiteDB(file)
 	if err != nil {
@@ -1327,7 +1329,7 @@ func (s *ServerService) ImportDB(file multipart.File) error {
 	}
 
 	// Create the temporary file
-	tempFile, err := os.Create(tempPath)
+	tempFile, err := os.OpenFile(tempPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
 	if err != nil {
 		return common.NewErrorf("Error creating temporary db file: %v", err)
 	}
@@ -1361,6 +1363,10 @@ func (s *ServerService) ImportDB(file multipart.File) error {
 	if err = database.ValidateSQLiteDB(tempPath); err != nil {
 		return common.NewErrorf("Invalid or corrupt db file: %v", err)
 	}
+	fallbackPath := fmt.Sprintf("%s.backup", config.GetDBPath())
+	if err = os.Remove(fallbackPath); err != nil && !os.IsNotExist(err) {
+		return common.NewErrorf("Error removing existing fallback db file: %v", err)
+	}
 
 	// Stop Xray (ignore error but log)
 	if errStop := s.StopXrayService(); errStop != nil {
@@ -1369,31 +1375,30 @@ func (s *ServerService) ImportDB(file multipart.File) error {
 
 	// Close existing DB to release file locks (especially on Windows)
 	if errClose := database.CloseDB(); errClose != nil {
-		logger.Warningf("Failed to close existing DB before replacement: %v", errClose)
-	}
-
-	// Backup the current database for fallback
-	fallbackPath := fmt.Sprintf("%s.backup", config.GetDBPath())
-
-	// Remove the existing fallback file (if any)
-	if _, err := os.Stat(fallbackPath); err == nil {
-		if errRemove := os.Remove(fallbackPath); errRemove != nil {
-			return common.NewErrorf("Error removing existing fallback db file: %v", errRemove)
-		}
+		_ = s.RestartXrayService()
+		return common.NewErrorf("Failed to close existing DB before replacement: %v", errClose)
 	}
 
 	// Move the current database to the fallback location
 	if err = os.Rename(config.GetDBPath(), fallbackPath); err != nil {
+		if reopenErr := database.InitDB(config.GetDBPath()); reopenErr != nil {
+			return fmt.Errorf("backing up database: %v; reopening current database: %w", err, reopenErr)
+		}
+		_ = s.RestartXrayService()
 		return common.NewErrorf("Error backing up current db file: %v", err)
 	}
 	// The -wal/-shm sidecars are named after the PATH, so they do not travel with
 	// the rename above and would end up paired with the IMPORTED database. A WAL
 	// from a different database is a corruption path. CloseDB normally removes
-	// them, but its error is only logged, so this is the belt to that braces.
+	// them; remove any stale sidecars before opening the imported database.
 	database.RemoveSidecars(config.GetDBPath())
 
 	// Defer fallback cleanup ONLY if everything goes well
+	committed := false
 	defer func() {
+		if !committed {
+			return
+		}
 		if _, err := os.Stat(fallbackPath); err == nil {
 			if rerr := os.Remove(fallbackPath); rerr != nil {
 				logger.Warningf("Warning: failed to remove fallback file: %v", rerr)
@@ -1403,22 +1408,23 @@ func (s *ServerService) ImportDB(file multipart.File) error {
 
 	// Move temp to DB path
 	if err = os.Rename(tempPath, config.GetDBPath()); err != nil {
-		// Restore from fallback
-		if errRename := os.Rename(fallbackPath, config.GetDBPath()); errRename != nil {
-			return common.NewErrorf("Error moving db file and restoring fallback: %v", errRename)
-		}
-		return common.NewErrorf("Error moving db file: %v", err)
+		return s.rollbackDBRestore(fallbackPath, fmt.Errorf("moving uploaded database: %w", err))
 	}
 
 	// Open & migrate new DB
 	if err = database.InitDB(config.GetDBPath()); err != nil {
-		if errRename := os.Rename(fallbackPath, config.GetDBPath()); errRename != nil {
-			return common.NewErrorf("Error migrating db and restoring fallback: %v", errRename)
-		}
-		return common.NewErrorf("Error migrating db: %v", err)
+		return s.rollbackDBRestore(fallbackPath, fmt.Errorf("migrating uploaded database: %w", err))
 	}
 
 	s.inboundService.MigrateDB()
+	// SIGHUP only restarts the HTTP/subscription servers. The account/group
+	// migrations in main.runWebServer will not run again, so finish them here
+	// before reporting success or starting services against the restored data.
+	(&AccountService{}).MigrationAccounts()
+	if err = (&GroupService{}).Migrate(); err != nil {
+		return s.rollbackDBRestore(fallbackPath, fmt.Errorf("preparing restored accounts and groups: %w", err))
+	}
+	ReconcileAllWireguardXrayKeys()
 
 	// Regenerate L2TP/PPTP on-disk configs from the imported DB and restart services
 	s.l2tpService.InitL2tp()
@@ -1426,9 +1432,10 @@ func (s *ServerService) ImportDB(file multipart.File) error {
 
 	// Start Xray
 	if err = s.RestartXrayService(); err != nil {
-		return common.NewErrorf("Imported DB but failed to start Xray: %v", err)
+		return s.rollbackDBRestore(fallbackPath, fmt.Errorf("starting restored Xray: %w", err))
 	}
 
+	committed = true
 	return nil
 }
 

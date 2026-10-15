@@ -3390,22 +3390,17 @@
             formData.append('db', dbFile);
             backupModal.hide();
             this.loading(true);
-            const uploadMsg = await HttpUtil.post('/panel/api/server/importDB', formData, {
-              headers: {
-                'Content-Type': 'multipart/form-data',
-              }
-            });
-            this.loading(false);
-            if (!uploadMsg.success) {
-              return;
-            }
-            this.loading(true);
-            const restartMsg = await HttpUtil.post("/panel/setting/restartPanel");
-            this.loading(false);
-            if (restartMsg.success) {
-              this.loading(true);
+            try {
+              const uploadMsg = await HttpUtil.post('/panel/api/server/importDB', formData, {
+                headers: { 'Content-Type': 'multipart/form-data' },
+              });
+              if (!uploadMsg || !uploadMsg.success) return;
+              // Restart is scheduled by the restore request itself. Credentials
+              // from the backup may already have invalidated this login.
               await PromiseUtil.sleep(5000);
               location.reload();
+            } finally {
+              this.loading(false);
             }
           }
         });
