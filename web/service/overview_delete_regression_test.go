@@ -74,9 +74,9 @@ func TestOverviewIdleTickClearsOnlineAccount(t *testing.T) {
 	}
 }
 
-func TestOverviewTimeExpiryIsNotQuotaDepletion(t *testing.T) {
+func TestOverviewExpirationIncludesExhaustedQuota(t *testing.T) {
 	accounts := newAccountsDB(t)
-	const email = "quota-is-not-expiry@example.com"
+	const email = "quota-expired@example.com"
 	first, second := seedTwoInboundAccount(t, accounts, email)
 	db := database.GetDB()
 	if err := db.Model(&xray.ClientTraffic{}).Where("email = ?", email).Updates(map[string]any{"total": 10, "down": 10, "expiry_time": time.Now().Add(time.Hour).UnixMilli()}).Error; err != nil {
@@ -84,8 +84,8 @@ func TestOverviewTimeExpiryIsNotQuotaDepletion(t *testing.T) {
 	}
 	svc := &InboundService{}
 	stats, err := svc.GetClientStatsFor(&model.User{IsSuperAdmin: true})
-	if err != nil || stats.Depleted != 1 || stats.Expired != 0 {
-		t.Fatalf("quota exhaustion mislabeled as expiry: %+v %v", stats, err)
+	if err != nil || stats.Depleted != 1 || stats.Expired != 1 || len(stats.ExpiredEmails) != 1 || stats.ExpiredEmails[0] != email {
+		t.Fatalf("quota-exhausted account missing from expired summary: %+v %v", stats, err)
 	}
 	if err := db.Model(&xray.ClientTraffic{}).Where("email = ?", email).Update("expiry_time", time.Now().Add(-time.Hour).UnixMilli()).Error; err != nil {
 		t.Fatal(err)
@@ -96,6 +96,48 @@ func TestOverviewTimeExpiryIsNotQuotaDepletion(t *testing.T) {
 	stats, err = svc.GetClientStatsFor(&model.User{IsSuperAdmin: true})
 	if err != nil || stats.Expired != 1 {
 		t.Fatalf("disabled inbounds hid account expiry: %+v %v", stats, err)
+	}
+}
+
+func TestOverviewExpirationUsesEffectiveTrafficLimits(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		total   int64
+		up      int64
+		down    int64
+		expiry  int64
+		enabled bool
+		want    int
+	}{
+		{name: "quota_without_deadline", total: 10, up: 4, down: 6, enabled: false, want: 1},
+		{name: "quota_with_future_deadline", total: 10, down: 10, expiry: time.Now().Add(time.Hour).UnixMilli(), enabled: false, want: 1},
+		{name: "quota_exceeded_before_disable", total: 10, down: 11, enabled: true, want: 1},
+		{name: "manually_disabled_with_remaining_quota", total: 10, down: 9, expiry: time.Now().Add(time.Hour).UnixMilli()},
+		{name: "unlimited_quota", down: 100, enabled: true},
+		{name: "delayed_start", total: 10, expiry: -86400000, enabled: true},
+		{name: "frozen_with_remaining_quota", total: 10, down: 1, expiry: -86400000},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			accounts := newAccountsDB(t)
+			const email = "effective-limits@example.com"
+			seedTwoInboundAccount(t, accounts, email)
+			if err := database.GetDB().Model(&xray.ClientTraffic{}).Where("email = ?", email).Updates(map[string]any{
+				"total": tc.total, "up": tc.up, "down": tc.down,
+				"expiry_time": tc.expiry, "enable": tc.enabled,
+			}).Error; err != nil {
+				t.Fatal(err)
+			}
+			stats, err := (&InboundService{}).GetClientStatsFor(&model.User{IsSuperAdmin: true})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if stats.Total != 1 || stats.Expired != tc.want || stats.Depleted != tc.want || len(stats.ExpiredEmails) != tc.want || stats.Online != 0 {
+				t.Fatalf("expiration summary = %+v, want %d expired account", stats, tc.want)
+			}
+			if tc.want == 1 && stats.ExpiredEmails[0] != email {
+				t.Fatalf("expired email = %q, want %q", stats.ExpiredEmails[0], email)
+			}
+		})
 	}
 }
 
