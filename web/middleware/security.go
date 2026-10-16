@@ -76,18 +76,21 @@ func SameOrigin(r *http.Request) bool {
 	return err == nil && target.Hostname() != "" && target.User == nil && u.Scheme == scheme && strings.EqualFold(u.Hostname(), target.Hostname()) && originPort(u) == originPort(target)
 }
 
-// intentionalPanelNavigation permits only a user-initiated top-level GET to a
-// registered HTML page. APIs, logout, WebSocket, iframes and background fetches
+// panelDocumentNavigation permits only a top-level GET to a registered HTML
+// page. App-opened tabs and script redirects may omit Sec-Fetch-User even for
+// legitimate navigation; that optional activation hint is not an access grant.
+// APIs, logout, WebSocket, iframes and background fetches
 // remain protected. FullPath is the matched route pattern, not a user-controlled
 // suffix that could disguise an API request as a page.
-func intentionalPanelNavigation(c *gin.Context, basePath string) bool {
+func panelDocumentNavigation(c *gin.Context, basePath string) bool {
 	r := c.Request
 	if r.Method != http.MethodGet || r.Header.Get("Sec-Fetch-Mode") != "navigate" ||
-		r.Header.Get("Sec-Fetch-Dest") != "document" || r.Header.Get("Sec-Fetch-User") != "?1" {
+		r.Header.Get("Sec-Fetch-Dest") != "document" {
 		return false
 	}
 	for _, page := range []string{
-		"/panel/", "/panel/inbounds", "/panel/clients", "/panel/settings",
+		"/", "/panel/", "/panel/inbounds", "/panel/clients", "/panel/settings",
+		"/panel/security", "/panel/groups",
 		"/panel/xray", "/panel/core", "/panel/admins", "/panel/resellers",
 		"/panel/nodes/", "/panel/nodes/:id/xray",
 	} {
@@ -111,7 +114,7 @@ func BrowserOriginProtection(basePaths ...string) gin.HandlerFunc {
 		protected := c.Request.Method != http.MethodGet && c.Request.Method != http.MethodHead ||
 			strings.Contains(c.Request.URL.Path, "/panel/") ||
 			strings.HasSuffix(c.Request.URL.Path, "/ws") || strings.HasSuffix(c.Request.URL.Path, "/logout")
-		if !SameOrigin(c.Request) || (crossSite && protected && !intentionalPanelNavigation(c, basePath)) {
+		if !SameOrigin(c.Request) || (crossSite && protected && !panelDocumentNavigation(c, basePath)) {
 			c.Header("Cache-Control", "no-store")
 			c.Header("X-VPN-UI-Error", "origin-rejected")
 			c.AbortWithStatus(http.StatusForbidden)

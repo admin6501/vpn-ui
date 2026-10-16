@@ -968,7 +968,7 @@
           const inbound = dbInbound.toInbound();
           let links = [];
           try {
-            links = inbound.genAllLinks('', this.remarkModel || '-ieo', client) || [];
+            links = inbound.genAllLinks(dbInbound.remark || '', this.remarkModel || '-ieo', client) || [];
           } catch (e) {
             // A half-configured inbound (no certificate yet, a reality key not
             // generated) can throw in a generator. One block failing to offer a link

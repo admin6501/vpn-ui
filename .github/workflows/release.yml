@@ -44,6 +44,7 @@ jobs:
           go test ./web/service -run 'TestClientStatsForSeparatesSharedPool|TestAttachClientStats|TestAddClientTraffic|TestMigrationMembershipUsage|TestRepairMembershipUsage' -count=1
           node test_unit/client_online_info_test.cjs
           node test_unit/client_details_2fa_test.cjs
+          python3 test_unit/unlisted_xray_users_test.py
           node test_unit/export_test/export.test.js
           node test_unit/inbound_speed_units_test.cjs
           go test ./web -run 'TestRepresentativeOverview|TestAdministratorSidebar' -count=1
@@ -119,7 +120,7 @@ jobs:
       - name: Verify ownership transfer and online counts
         run: go test -tags netgo,osusergo ./web/service ./web/controller -run 'TestSaveAccount|TestLeavingAnAccount|TestIndependentAccount|TestMembershipEnable|TestDisabledMembership|TestRemovingTheLastMembership|TestToggleClientEnableByEmail|TestRenameAccount|TestSortAccountRows|TestAccountSort|TestClientLimit|TestResolveUserLimitOverride|TestAllocateBlockIP|TestOldestBlockSession|TestAdmit|TestSpeedLimit|TestAdminRoles|TestAdminOwner|TestAccountOwnershipTransfer|TestPasarGuard|TestOverview|TestVerifiedProvisioned|TestOffline|TestMigrationAccountsVerifiesExistingImported'
       - name: Verify imported subscription quotas and legacy credentials
-        run: go test ./sub ./compat/pasarguard -run 'TestPasarGuard|TestGetSubs|TestExistingSubscriptionFormats|TestInvalidTokens|TestDisplayToken|TestHysteria' -count=1
+        run: go test ./sub ./compat/pasarguard -run 'TestConfigNamesMatchInfoCopyQRAndSubscription|TestPasarGuard|TestGetSubs|TestExistingSubscriptionFormats|TestInvalidTokens|TestDisplayToken|TestHysteria' -count=1
       - name: Verify offline refresh guard
         run: |
           go test ./web/job -run 'TestOffline' -count=1

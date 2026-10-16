@@ -71,7 +71,7 @@ function template(file) {
   await page.setViewportSize({width:390,height:844});
   await page.evaluate(()=>{
    const client={id:'ssh-login',email:'tracking',password:'ssh-password',enable:true};
-   const endpoints=[{dest:'edge.one.example',port:2223},{dest:'edge.two.example',port:2224}];
+   const endpoints=[{dest:'edge.one.example',port:2223,remark:'EDGE-A'},{dest:'edge.two.example',port:2224,remark:'EDGE-B'}];
    const records=[0,1,2].map((count,index)=>new DBInbound({id:index+1,protocol:'ssh',remark:'SSH-'+count,
     listen:'panel.example',port:2222,clientStats:[],settings:JSON.stringify({clients:[client],externalProxy:endpoints.slice(0,count)})}));
    records.push(new DBInbound({id:4,protocol:'vless',remark:'VLESS',listen:'panel.example',port:443,clientStats:[],
@@ -80,8 +80,8 @@ function template(file) {
    accountInfoModalApp.app={dbInbounds:records,accountInbounds:()=>records,
     accountClientIn:(row,record)=>record.toInbound().clients,
     getInboundClients:record=>record.toInbound().clients,
-    membershipEnabled:()=>true,membershipLampClass:()=>'',membershipOnline:()=>false,
-    isAccountFrozen:()=>false,getInboundSumStats:()=>0,getAttributedInboundSumStats:()=>0,getSharedInboundSumStats:()=>0,getSumStats:()=>0,loadOnlineState:async()=>{}};
+    membershipEnabled:()=>true,membershipLampClass:()=>'',membershipOnline:()=>false,membershipOnlineText:()=> 'offline',
+    copyText:value=>{window.lastCopied=value},isAccountFrozen:()=>false,getInboundSumStats:()=>0,getAttributedInboundSumStats:()=>0,getSharedInboundSumStats:()=>0,getSumStats:()=>0,loadOnlineState:async()=>{}};
    HttpUtil.get=async function(path){
     const record=records.find(record=>record.id===Number(path.split('/')[4]));
     const eps=record.toInbound().settings.externalProxy;
@@ -97,6 +97,20 @@ function template(file) {
    const text=await body.innerText();
    for(const host of hostnames)assert.ok(text.includes(host),'missing advertised endpoint '+host+' on inbound '+id+'; '+text);
    if(id!==1)assert.doesNotMatch(text,/panel.example/,'Account Info must not advertise the panel over external proxies');
+   if(id===4) {
+    await body.locator('.ai-art .ai-btns button').first().click();
+    const copied=await page.evaluate(()=>window.lastCopied);
+    assert.equal(decodeURIComponent(new URL(copied).hash.slice(1)),'VLESS-tracking-EDGE-A','INFO copy dropped the inbound name');
+    await page.evaluate(()=>{
+     const app=accountInfoModalApp.app;membershipInfoModalApp.app=app;
+     const record=app.dbInbounds.find(r=>r.id===4);
+     accountInfoModal.close();membershipInfoModal.show(record,record.toInbound().clients[0]);
+    });
+    await page.waitForFunction(()=>membershipInfoModal.cards.length===2&&!membershipInfoModal.loading);
+    await detail.locator('.ai-art .ai-btns button').nth(1).click();
+    assert.equal(await page.evaluate(()=>decodeURIComponent(new URL(lastCopied).hash.slice(1))),'VLESS-tracking-EDGE-B','Membership INFO copy dropped inbound or endpoint name');
+    await page.evaluate(()=>membershipInfoModal.close());
+   }
    if(id<=3){assert.match(text,/ssh-login/);assert.match(text,/ssh-password/);assert.ok(await body.locator('canvas').count()>0,'SSH must retain its QR');}
   }
   await page.evaluate(()=>accountInfoModal.close());
