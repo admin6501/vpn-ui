@@ -3439,8 +3439,12 @@ func (s *InboundService) addClientTrafficFor(tx *gorm.DB, traffics []*xray.Clien
 	onlineClients := make([]string, 0)
 
 	emails := make([]string, 0, len(traffics))
+	recordsByEmail := make(map[string][]*xray.ClientTraffic, len(traffics))
 	for _, traffic := range traffics {
-		emails = append(emails, traffic.Email)
+		if _, exists := recordsByEmail[traffic.Email]; !exists {
+			emails = append(emails, traffic.Email)
+		}
+		recordsByEmail[traffic.Email] = append(recordsByEmail[traffic.Email], traffic)
 	}
 	dbClientTraffics := make([]*xray.ClientTraffic, 0, len(traffics))
 	err = tx.Model(xray.ClientTraffic{}).Where("email IN (?)", emails).Find(&dbClientTraffics).Error
@@ -3547,57 +3551,55 @@ func (s *InboundService) addClientTrafficFor(tx *gorm.DB, traffics []*xray.Clien
 	// (see the relay handling in web/job/xray_traffic_job.go).
 	for dbTraffic_index := range dbClientTraffics {
 		connected := false
-		for traffic_index := range traffics {
-			if dbClientTraffics[dbTraffic_index].Email == traffics[traffic_index].Email {
-				rawUp := traffics[traffic_index].Up
-				rawDown := traffics[traffic_index].Down
-				// Bill at the multiplier of the inbound the bytes CAME FROM, which
-				// the collector stamps on the record when it can be known (the nine
-				// pool VPN protocols count per tunnel address, the two relays count
-				// per account inside one daemon). When it cannot be known, the max
-				// across the account's memberships is used, so the ambiguity can only
-				// over-bill and never hand out free traffic.
-				//
-				// Exact per-membership core records name their source. Older cores
-				// can still leave it unknown and retain the existing fallback policy.
-				source := billingInbound(
-					multiplierInbounds,
-					traffics[traffic_index].InboundId,
-					memberIdsByEmail[accountKey(dbClientTraffics[dbTraffic_index].Email)],
-				)
-				// Weight the delta against the client's quota. Computed rather than
-				// mutated in place: the same slice is broadcast over the websocket and
-				// posted to the external traffic API, which must report measured bytes.
-				billedUp, billedDown := multiplyDelta(
-					source,
-					dbClientTraffics[dbTraffic_index].Up+dbClientTraffics[dbTraffic_index].Down,
-					rawUp, rawDown,
-				)
-				dbClientTraffics[dbTraffic_index].Up += billedUp
-				dbClientTraffics[dbTraffic_index].Down += billedDown
-				// AllTime stays raw: it's the lifetime record of bytes actually moved,
-				// and survives the resets that up/down don't.
-				dbClientTraffics[dbTraffic_index].AllTime += (rawUp + rawDown)
-				// The same delta, filed under the inbound it came from. The values are
-				// the billed ones (and the raw one for all_time) rather than a second
-				// calculation, so summing the breakdown reproduces the account row
-				// exactly, minus whatever named no source.
-				addTo(membershipDeltas,
-					traffics[traffic_index].InboundId,
-					dbClientTraffics[dbTraffic_index].Email,
-					billedUp, billedDown, rawUp+rawDown)
-				// New cores report live connection references independently of billing.
-				// Older cores and tunnel collectors retain measured-byte detection.
-				// Buffered bytes must not resurrect a connection absent from a live snapshot.
-				if (!traffics[traffic_index].OnlineSnapshot && rawUp+rawDown > 0) || traffics[traffic_index].Online {
-					connected = true
-					key := onlineMembershipKey(
-						traffics[traffic_index].InboundId,
-						dbClientTraffics[dbTraffic_index].Email)
-					if !onlineMembershipSet[key] {
-						onlineMembershipSet[key] = true
-						onlineMemberships = append(onlineMemberships, key)
-					}
+		for _, traffic := range recordsByEmail[dbClientTraffics[dbTraffic_index].Email] {
+			rawUp := traffic.Up
+			rawDown := traffic.Down
+			// Bill at the multiplier of the inbound the bytes CAME FROM, which
+			// the collector stamps on the record when it can be known (the nine
+			// pool VPN protocols count per tunnel address, the two relays count
+			// per account inside one daemon). When it cannot be known, the max
+			// across the account's memberships is used, so the ambiguity can only
+			// over-bill and never hand out free traffic.
+			//
+			// Exact per-membership core records name their source. Older cores
+			// can still leave it unknown and retain the existing fallback policy.
+			source := billingInbound(
+				multiplierInbounds,
+				traffic.InboundId,
+				memberIdsByEmail[accountKey(dbClientTraffics[dbTraffic_index].Email)],
+			)
+			// Weight the delta against the client's quota. Computed rather than
+			// mutated in place: the same slice is broadcast over the websocket and
+			// posted to the external traffic API, which must report measured bytes.
+			billedUp, billedDown := multiplyDelta(
+				source,
+				dbClientTraffics[dbTraffic_index].Up+dbClientTraffics[dbTraffic_index].Down,
+				rawUp, rawDown,
+			)
+			dbClientTraffics[dbTraffic_index].Up += billedUp
+			dbClientTraffics[dbTraffic_index].Down += billedDown
+			// AllTime stays raw: it's the lifetime record of bytes actually moved,
+			// and survives the resets that up/down don't.
+			dbClientTraffics[dbTraffic_index].AllTime += (rawUp + rawDown)
+			// The same delta, filed under the inbound it came from. The values are
+			// the billed ones (and the raw one for all_time) rather than a second
+			// calculation, so summing the breakdown reproduces the account row
+			// exactly, minus whatever named no source.
+			addTo(membershipDeltas,
+				traffic.InboundId,
+				dbClientTraffics[dbTraffic_index].Email,
+				billedUp, billedDown, rawUp+rawDown)
+			// New cores report live connection references independently of billing.
+			// Older cores and tunnel collectors retain measured-byte detection.
+			// Buffered bytes must not resurrect a connection absent from a live snapshot.
+			if (!traffic.OnlineSnapshot && rawUp+rawDown > 0) || traffic.Online {
+				connected = true
+				key := onlineMembershipKey(
+					traffic.InboundId,
+					dbClientTraffics[dbTraffic_index].Email)
+				if !onlineMembershipSet[key] {
+					onlineMembershipSet[key] = true
+					onlineMemberships = append(onlineMemberships, key)
 				}
 			}
 		}

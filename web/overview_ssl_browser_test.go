@@ -90,6 +90,14 @@ func TestOverviewSSLBrowserRuntime(t *testing.T) {
 			} else {
 				t.Log(string(out))
 			}
+			refreshScript, _ := filepath.Abs("../test_unit/panel_refresh_browser_test.cjs")
+			refreshCmd := exec.CommandContext(ctx, "node", refreshScript)
+			refreshCmd.Env = cmd.Env
+			if out, err := refreshCmd.CombinedOutput(); err != nil {
+				t.Fatalf("panel refresh browser failed: %v\n%s", err, out)
+			} else {
+				t.Log(string(out))
+			}
 			restoreScript, _ := filepath.Abs("../test_unit/restore_browser_test.cjs")
 			restoreCtx, restoreCancel := context.WithTimeout(context.Background(), 45*time.Second)
 			defer restoreCancel()

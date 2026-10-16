@@ -65,6 +65,18 @@ func initModels() error {
 			return err
 		}
 	}
+	// Plain email indexes cannot serve LOWER(TRIM(email)) lookups. Traffic
+	// attribution and account edits use this identity expression on every tick;
+	// without these indexes each membership update scans every account again.
+	// Non-unique indexes preserve legacy rows and existing identity constraints.
+	for _, statement := range []string{
+		"CREATE INDEX IF NOT EXISTS idx_accounts_email_key ON accounts(LOWER(TRIM(email)))",
+		"CREATE INDEX IF NOT EXISTS idx_client_traffics_email_key ON client_traffics(LOWER(TRIM(email)))",
+	} {
+		if err := db.Exec(statement).Error; err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
