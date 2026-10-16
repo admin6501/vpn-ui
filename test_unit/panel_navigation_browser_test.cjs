@@ -15,7 +15,19 @@ const assert=require('node:assert/strict');
    assert.equal(response.headers()['x-test-fetch-site'],'cross-site','exercise real cross-site browser navigation metadata');
    assert.equal(await page.locator('body').innerText(),'Authenticated panel');
   }
-  for(const path of ['/private','/private/','/private/panel','/private/panel/clients']){
+  // App-opened tabs and script redirects may carry cross-site metadata without
+  // Sec-Fetch-User. They must open on the first attempt, without a manual reload.
+  for(const target of ['root','clients','security','groups']) {
+   const loaded=page.waitForResponse(r=>r.url()===panel+'/private/panel/'+(target==='root'?'':target));
+   await page.goto(source+'?auto='+target);
+   const response=await loaded;
+   assert.equal(response.status(),200,'first navigation without user-activation metadata returned 403');
+   assert.equal(response.headers()['x-test-fetch-site'],'cross-site');
+   assert.equal(response.headers()['x-test-fetch-user'] || '','','exercise a navigation without Sec-Fetch-User');
+   await page.waitForURL(panel+'/private/panel/'+(target==='root'?'':target));
+   assert.equal(await page.locator('body').innerText(),'Authenticated panel');
+  }
+  for(const path of ['/private','/private/','/private/panel','/private/panel/clients','/private/panel/security','/private/panel/groups']){
    const response=await page.goto(panel+path);assert.equal(response.status(),200);
    assert.equal(await page.locator('body').innerText(),'Authenticated panel','pasted link stays usable with an existing session');
   }
@@ -24,6 +36,6 @@ const assert=require('node:assert/strict');
   await page.evaluate(url=>{const f=document.createElement('iframe');f.src=url;document.body.appendChild(f);},panel+'/private/panel/clients');
   const response=await rejected;assert.equal(response.status(),403,'cross-site iframes stay blocked');
   assert.equal(response.headers()['x-vpn-ui-error'],'origin-rejected');
-  console.log('Chromium: external links, pasted links, existing-session redirects, anonymous login and iframe protection passed');
+  console.log('Chromium: external links, pasted links, app/script redirects without activation, existing-session redirects, anonymous login and iframe protection passed');
  }finally{await browser.close()}
 })().catch(e=>{console.error(e);process.exit(1)});

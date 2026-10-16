@@ -48,7 +48,7 @@ const AccountExport = {
         let link = '';
         let generatedLinks = [];
         try {
-          const all = inbound.genAllLinks('', app.remarkModel || '-ieo', client);
+          const all = inbound.genAllLinks(dbInbound.remark || '', app.remarkModel || '-ieo', client);
           generatedLinks = Array.isArray(all) ? all : [];
           link = (all && all[0] && all[0].link) ? all[0].link : '';
         } catch (e) { link = ''; }

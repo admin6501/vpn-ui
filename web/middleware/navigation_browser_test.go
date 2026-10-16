@@ -21,7 +21,11 @@ func TestSecurityBrowserPanelNavigationRuntime(t *testing.T) {
 	}
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
-	r.Use(func(c *gin.Context) { c.Header("X-Test-Fetch-Site", c.GetHeader("Sec-Fetch-Site")); c.Next() })
+	r.Use(func(c *gin.Context) {
+		c.Header("X-Test-Fetch-Site", c.GetHeader("Sec-Fetch-Site"))
+		c.Header("X-Test-Fetch-User", c.GetHeader("Sec-Fetch-User"))
+		c.Next()
+	})
 	r.Use(BrowserOriginProtection("/private/"), DomainValidatorMiddleware("127.0.0.1"))
 	loggedIn := func(c *gin.Context) bool {
 		value, _ := c.Cookie("navigation-session")
@@ -38,7 +42,7 @@ func TestSecurityBrowserPanelNavigationRuntime(t *testing.T) {
 		http.SetCookie(c.Writer, &http.Cookie{Name: "navigation-session", Value: "test-only-session", Path: "/private/", HttpOnly: true, SameSite: http.SameSiteLaxMode})
 		c.String(200, "Test session")
 	})
-	for _, path := range []string{"/private/panel/", "/private/panel/clients"} {
+	for _, path := range []string{"/private/panel/", "/private/panel/clients", "/private/panel/security", "/private/panel/groups"} {
 		r.GET(path, func(c *gin.Context) {
 			if !loggedIn(c) {
 				c.Redirect(307, "/private/")
@@ -51,6 +55,14 @@ func TestSecurityBrowserPanelNavigationRuntime(t *testing.T) {
 	defer panel.Close()
 	source := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
+		if target := r.URL.Query().Get("auto"); target == "root" || target == "clients" || target == "security" || target == "groups" {
+			path := "/private/"
+			if target != "root" {
+				path = "/private/panel/" + target
+			}
+			fmt.Fprintf(w, `<script>setTimeout(() => location.assign(%q), 50)</script>`, panel.URL+path)
+			return
+		}
 		fmt.Fprintf(w, `<a id="root" href="%s/private/">Panel link</a><a id="clients" href="%s/private/panel/clients">Clients link</a>`, panel.URL, panel.URL)
 	}))
 	defer source.Close()
