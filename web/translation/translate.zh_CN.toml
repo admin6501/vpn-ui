@@ -721,7 +721,7 @@ frozen = "冻结"
 "unattributedUsage" = "入站来源未知的用量"
 "unattributedUsageHint" = "此用量已包含在账户总用量中。入站来源未知；与已归属的入站用量相加时只计算一次。"
 "sharedUsage" = "共享"
-"sharedUsageHint" = "Xray 按账号而非按入站统计流量，因此该数值是该账号的剩余用量，由服务该账号的所有 Xray 入站共享。"
+"sharedUsageHint" = "此数值包含未记录入站来源的用量。这部分共享用量已包含在账户总用量中。"
 "onlineShared" = "在线，位于该账号的某个 Xray 入站上。Xray 不会报告具体是哪一个。"
 
 [pages.inbounds.periodicTrafficReset]

@@ -62,6 +62,13 @@ Account Info expanders and Membership Info display External Proxy endpoints and 
 the QR. Two-factor enrollment validates codes on the server, accepts Persian/Arabic digits,
 and keeps the form open after a rejected request so it can be retried.
 
+The bundled core records new account usage separately for each source inbound,
+including concurrent Xray protocols. Account Info shows measured shares and any
+unattributed historical remainder separately. Upgrading preserves existing usage;
+old account-only counters cannot reconstruct a historical split. Older cores keep
+working with their account-level fallback. For a dedicated node, update its agent
+and reinstall Xray from that node's core page to activate the new core counters.
+
 ## Protocols and dependencies
 
 The panel includes Xray VLESS, VMess, Trojan, Shadowsocks and native AnyTLS/TUIC/NaiveProxy, plus

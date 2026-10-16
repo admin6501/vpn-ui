@@ -720,7 +720,7 @@ frozen = "冷凍"
 "unattributedUsage" = "インバウンド不明の使用量"
 "unattributedUsageHint" = "この使用量はアカウントの合計に含まれています。インバウンドが不明なため、確定したインバウンド別使用量に一度だけ加算します。"
 "sharedUsage" = "共有"
-"sharedUsageHint" = "Xray はインバウンド単位ではなくアカウント単位でトラフィックを計測するため、この数値はアカウントの残り使用量であり、そのアカウントを提供するすべての Xray インバウンドで共有されます。"
+"sharedUsageHint" = "この値には入バウンドの記録がない使用量が含まれています。その共有部分はアカウントの合計に含まれています。"
 "onlineShared" = "オンライン。このアカウントのいずれかの Xray インバウンドですが、Xray はどれかを報告しません。"
 
 [pages.inbounds.periodicTrafficReset]

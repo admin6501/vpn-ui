@@ -137,10 +137,9 @@ func resetMembershipUsage(tx *gorm.DB, emails []string) {
 // address belongs to exactly one inbound's pool) and for the two relays (telemt and
 // the in-binary SSH gateway tally per account inside one inbound's daemon).
 //
-// False for everything Xray counts, and that is a property of the core rather than a
-// gap here: the stat is named "user>>><email>>>>traffic>>>{up,down}" (xray/api.go)
-// with no inbound component, so an account on vless AND trojan gets ONE number
-// covering both and there is nothing to split it by.
+// False for protocols whose legacy history was only counted account-wide by
+// Xray. This distinction is used by the historical backfill; current patched-core
+// counters can name their source for those protocols too.
 func countedByPanel(p model.Protocol) bool { return isVpnProtocol(p) || isRelayProtocol(p) }
 
 // mayHoldCoreTraffic reports whether an inbound can be the source of bytes that Xray

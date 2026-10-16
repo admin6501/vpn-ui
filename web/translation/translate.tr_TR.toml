@@ -720,7 +720,7 @@ frozen = "Dondurulmuş"
 "unattributedUsage" = "Gelen bağlantısı bilinmeyen kullanım"
 "unattributedUsageHint" = "Bu kullanım hesap toplamına zaten dahildir. Gelen bağlantısı bilinmiyor; atanan bağlantı kullanımına yalnızca bir kez ekleyin."
 "sharedUsage" = "paylaşılan"
-"sharedUsageHint" = "Xray trafiği gelen bağlantı başına değil hesap başına sayar; bu nedenle bu değer hesabın kalan kullanımıdır ve ona hizmet eden tüm Xray gelen bağlantıları arasında paylaşılır."
+"sharedUsageHint" = "Bu değer, kaynak gelen bağlantısı kaydedilmemiş kullanımı içerir. Bu ortak bölüm hesap toplamına zaten dahildir."
 "onlineShared" = "Çevrimiçi, bu hesabın Xray gelen bağlantılarından birinde. Xray hangisi olduğunu bildirmez."
 
 [pages.inbounds.periodicTrafficReset]

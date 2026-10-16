@@ -66,7 +66,6 @@ func NewXrayTrafficJob(rs *service.RadiusService) *XrayTrafficJob {
 	return j
 }
 
-// appendUnrecorded appends each fallback record whose email has no record in `existing`
 // stampSourceInbound names the inbound each relay record's bytes came from, so
 // the traffic multiplier bills them at that inbound's rate rather than at
 // whichever inbound the account's single client_traffics row happens to name.
@@ -86,28 +85,40 @@ func stampSourceInbound(records []*xray.ClientTraffic, idByEmail map[string]int)
 	return records
 }
 
-// yet, and returns the extended slice. It is the de-duplication guard for the relay
-// protocols: see the call site in Run for why presence, not byte count, is the predicate.
+// appendUnrecorded suppresses a relay measurement already represented by its
+// exact source, even at zero bytes. Account-only legacy core records retain the
+// account-wide guard. Another known inbound of the same account can contribute
+// independently; its traffic is not covered by an unrelated source.
 func appendUnrecorded(existing, fallback []*xray.ClientTraffic) []*xray.ClientTraffic {
-	recorded := make(map[string]bool, len(existing))
+	type sourceKey struct {
+		email     string
+		inboundId int
+	}
+	recordedAccounts := map[string]bool{}
+	recordedSources := map[sourceKey]bool{}
+	mark := func(t *xray.ClientTraffic) {
+		email := service.AccountKeyOf(t.Email)
+		if t.InboundId == 0 || (t.CoreCounted && !t.SourceTagged) {
+			recordedAccounts[email] = true
+		} else {
+			recordedSources[sourceKey{email, t.InboundId}] = true
+		}
+	}
 	for _, t := range existing {
 		if t.Online && t.Up == 0 && t.Down == 0 {
 			continue
 		}
-		recorded[t.Email] = true
+		mark(t)
 	}
 	for _, t := range fallback {
-		// Keep the relay's exact session evidence even when its bytes are billed by Xray.
-		// A zero-byte liveness record never creates a second charge.
 		if t.Online {
 			existing = append(existing, &xray.ClientTraffic{Email: t.Email, InboundId: t.InboundId, Online: true})
 		}
-		if recorded[t.Email] {
+		email := service.AccountKeyOf(t.Email)
+		if recordedAccounts[email] || recordedSources[sourceKey{email, t.InboundId}] {
 			continue
 		}
-		// Mark as we go so two relays reporting the same account in one tick contribute
-		// once, not twice.
-		recorded[t.Email] = true
+		mark(t)
 		existing = append(existing, t)
 	}
 	return existing
@@ -126,6 +137,9 @@ func (j *XrayTrafficJob) Run() {
 			clientTraffics = nil
 		}
 	}
+
+	// Resolve exact core tags before comparing a relay fallback with its source.
+	j.inboundService.ResolveCoreTrafficSources(traffics, clientTraffics)
 
 	// Collect L2TP, PPTP, and OpenVPN per-client traffic from nftables counters (atomic read+reset)
 	// Session maps (IP→email) come from the embedded RADIUS server
@@ -235,13 +249,11 @@ func (j *XrayTrafficJob) Run() {
 	// de-duplication has to be explicit and it belongs here, at the point where the two
 	// sources meet.
 	//
-	// The predicate is "does this account already have a record this tick", NOT "did it
-	// move bytes this tick". The two sources flush on different boundaries: Xray can
-	// report zero for an account whose bytes the relay has already tallied, and report
-	// those same bytes a tick or two later. Gating on a positive byte count therefore
-	// admits the relay copy now and the Xray copy afterwards, billing the transfer twice
-	// (measured: 1.67x on a 100MiB SSH pull). Presence alone is stable, and it is what
-	// the old first-record-wins behaviour effectively tested.
+	// Detailed core counters deduplicate by account AND source inbound. Legacy
+	// account-only counters retain account-wide deduplication. Presence, including
+	// zero deltas, matters because the relay and core flush on different boundaries:
+	// admitting a relay copy now and the core copy later would bill the same bytes
+	// twice. A directly metered relay on a different inbound must still contribute.
 	//
 	// The relay counters remain a real fallback for an account Xray does not track at all
 	// (no socks user, so no record in any tick), which is what those tallies exist for.

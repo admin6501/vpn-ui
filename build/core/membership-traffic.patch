@@ -1,0 +1,416 @@
+diff --git a/app/dispatcher/default.go b/app/dispatcher/default.go
+--- a/app/dispatcher/default.go
++++ b/app/dispatcher/default.go
+@@ -169,7 +169,7 @@
+ 			name := "user>>>" + user.Email + ">>>traffic>>>uplink"
+ 			if c, _ := stats.GetOrRegisterCounter(d.stats, name); c != nil {
+ 				inboundLink.Writer = &SizeStatWriter{
+-					Counter: c,
++					Counter: withMembershipTrafficCounter(d.stats, c, sessionInbound.Tag, user.Email, "uplink"),
+ 					Writer:  inboundLink.Writer,
+ 				}
+ 			}
+@@ -178,7 +178,7 @@
+ 			name := "user>>>" + user.Email + ">>>traffic>>>downlink"
+ 			if c, _ := stats.GetOrRegisterCounter(d.stats, name); c != nil {
+ 				outboundLink.Writer = &SizeStatWriter{
+-					Counter: c,
++					Counter: withMembershipTrafficCounter(d.stats, c, sessionInbound.Tag, user.Email, "downlink"),
+ 					Writer:  outboundLink.Writer,
+ 				}
+ 			}
+@@ -229,14 +229,14 @@
+ 		if p.Stats.UserUplink {
+ 			name := "user>>>" + user.Email + ">>>traffic>>>uplink"
+ 			if c, _ := stats.GetOrRegisterCounter(statsManager, name); c != nil {
+-				link.Reader.(*buf.TimeoutWrapperReader).Counter = c
++				link.Reader.(*buf.TimeoutWrapperReader).Counter = withMembershipTrafficCounter(statsManager, c, sessionInbound.Tag, user.Email, "uplink")
+ 			}
+ 		}
+ 		if p.Stats.UserDownlink {
+ 			name := "user>>>" + user.Email + ">>>traffic>>>downlink"
+ 			if c, _ := stats.GetOrRegisterCounter(statsManager, name); c != nil {
+ 				link.Writer = &SizeStatWriter{
+-					Counter: c,
++					Counter: withMembershipTrafficCounter(statsManager, c, sessionInbound.Tag, user.Email, "downlink"),
+ 					Writer:  link.Writer,
+ 				}
+ 			}
+diff --git a/app/stats/command/command.go b/app/stats/command/command.go
+--- a/app/stats/command/command.go
++++ b/app/stats/command/command.go
+@@ -120,6 +120,9 @@
+ 			suffixDownlink = ">>>traffic>>>downlink"
+ 		)
+ 		s.stats.VisitCounters(func(name string, c feature_stats.Counter) bool {
++			if !strings.HasPrefix(name, prefixUser) {
++				return true
++			}
+ 			var email string
+ 			var isUplink bool
+
+diff --git a/features/stats/stats.go b/features/stats/stats.go
+--- a/features/stats/stats.go
++++ b/features/stats/stats.go
+@@ -117,7 +117,14 @@
+ 		return counter, nil
+ 	}
+
+-	return m.RegisterCounter(name)
++	counter, err := m.RegisterCounter(name)
++	if err != nil {
++		// Another connection may have registered it after our first lookup.
++		if existing := m.GetCounter(name); existing != nil {
++			return existing, nil
++		}
++	}
++	return counter, err
+ }
+
+ // GetOrRegisterOnlineMap tries to get the OnlineMap first. If not exist, it then tries to create a new OnlineMap.
+@@ -127,7 +134,13 @@
+ 		return onlineMap, nil
+ 	}
+
+-	return m.RegisterOnlineMap(name)
++	onlineMap, err := m.RegisterOnlineMap(name)
++	if err != nil {
++		if existing := m.GetOnlineMap(name); existing != nil {
++			return existing, nil
++		}
++	}
++	return onlineMap, err
+ }
+
+ // GetOrRegisterChannel tries to get the StatChannel first. If not exist, it then tries to create a new channel.
+diff --git a/app/dispatcher/membership_traffic.go b/app/dispatcher/membership_traffic.go
+new file mode 100644
+--- /dev/null
++++ b/app/dispatcher/membership_traffic.go
+@@ -0,0 +1,34 @@
++package dispatcher
++
++import (
++	"encoding/base64"
++
++	"github.com/xtls/xray-core/features/stats"
++)
++
++// Keep the standard account counter for external API consumers, and meter the
++// same payload by source inbound. The panel uses the detailed counters alone
++// when present: adding the account counter again would charge every byte twice.
++// Register both before returning the link, so a QueryStats snapshot cannot see
++// a used account counter without its detailed counterpart.
++func withMembershipTrafficCounter(sm stats.Manager, account stats.Counter, tag, email, direction string) stats.Counter {
++	key := base64.RawURLEncoding.EncodeToString([]byte(tag)) + "." + base64.RawURLEncoding.EncodeToString([]byte(email))
++	member, _ := stats.GetOrRegisterCounter(sm, "membership>>>"+key+">>>traffic>>>"+direction)
++	if member == nil {
++		return account
++	}
++	if account == nil {
++		return member
++	}
++	return &membershipCounter{Counter: account, member: member}
++}
++
++type membershipCounter struct {
++	stats.Counter
++	member stats.Counter
++}
++
++func (c *membershipCounter) Add(value int64) int64 {
++	c.member.Add(value)
++	return c.Counter.Add(value)
++}
+diff --git a/app/dispatcher/membership_traffic_test.go b/app/dispatcher/membership_traffic_test.go
+new file mode 100644
+--- /dev/null
++++ b/app/dispatcher/membership_traffic_test.go
+@@ -0,0 +1,128 @@
++package dispatcher
++
++import (
++	"bytes"
++	"context"
++	"encoding/base64"
++	"sync"
++	"testing"
++
++	corestats "github.com/xtls/xray-core/app/stats"
++	"github.com/xtls/xray-core/common/buf"
++	"github.com/xtls/xray-core/common/protocol"
++	"github.com/xtls/xray-core/common/session"
++	"github.com/xtls/xray-core/features/policy"
++	"github.com/xtls/xray-core/features/stats"
++	"github.com/xtls/xray-core/transport"
++)
++
++type membershipTestPolicy struct{ policy.DefaultManager }
++
++func (membershipTestPolicy) ForLevel(uint32) policy.Session {
++	p := policy.SessionDefault()
++	p.Stats.UserUplink = true
++	p.Stats.UserDownlink = true
++	return p
++}
++func detailName(tag, email, direction string) string {
++	enc := base64.RawURLEncoding.EncodeToString
++	return "membership>>>" + enc([]byte(tag)) + "." + enc([]byte(email)) + ">>>traffic>>>" + direction
++}
++func assertTrafficCounter(t *testing.T, sm stats.Manager, name string, want int64) {
++	t.Helper()
++	c := sm.GetCounter(name)
++	if c == nil || c.Value() != want {
++		t.Fatalf("counter %s = %v, want %d", name, c, want)
++	}
++}
++
++// Cover both dispatcher seams, including concurrent memberships of one account,
++// several streams on one membership, delimiter-containing and absent tags.
++func TestMembershipTrafficBothDispatcherLinks(t *testing.T) {
++	for _, wrapped := range []bool{false, true} {
++		t.Run(map[bool]string{false: "dispatch", true: "wrapped"}[wrapped], func(t *testing.T) {
++			sm, err := corestats.NewManager(context.Background(), &corestats.Config{})
++			if err != nil {
++				t.Fatal(err)
++			}
++			const email = "same+user@example.com"
++			for _, tag := range []string{"vmess.1", "ss>>>2", "vmess.1", ""} {
++				ctx, cancel := context.WithCancel(context.Background())
++				t.Cleanup(cancel)
++				ctx = session.ContextWithInbound(ctx, &session.Inbound{Tag: tag, User: &protocol.MemoryUser{Email: email}})
++				if wrapped {
++					link := WrapLink(ctx, membershipTestPolicy{}, sm, &transport.Link{Reader: buf.NewReader(bytes.NewReader([]byte("upload"))), Writer: buf.Discard})
++					mb, err := link.Reader.ReadMultiBuffer()
++					if err != nil {
++						t.Fatal(err)
++					}
++					buf.ReleaseMulti(mb)
++					if err := link.Writer.WriteMultiBuffer(buf.MergeBytes(nil, []byte("reply"))); err != nil {
++						t.Fatal(err)
++					}
++				} else {
++					d := DefaultDispatcher{stats: sm, policy: membershipTestPolicy{}}
++					in, out := d.getLink(ctx)
++					if err := in.Writer.WriteMultiBuffer(buf.MergeBytes(nil, []byte("upload"))); err != nil {
++						t.Fatal(err)
++					}
++					mb, err := out.Reader.ReadMultiBuffer()
++					if err != nil {
++						t.Fatal(err)
++					}
++					buf.ReleaseMulti(mb)
++					if err := out.Writer.WriteMultiBuffer(buf.MergeBytes(nil, []byte("reply"))); err != nil {
++						t.Fatal(err)
++					}
++					mb, err = in.Reader.ReadMultiBuffer()
++					if err != nil {
++						t.Fatal(err)
++					}
++					buf.ReleaseMulti(mb)
++				}
++				cancel()
++			}
++			assertTrafficCounter(t, sm, "user>>>"+email+">>>traffic>>>uplink", 24)
++			assertTrafficCounter(t, sm, "user>>>"+email+">>>traffic>>>downlink", 20)
++			for tag, count := range map[string]int64{"vmess.1": 2, "ss>>>2": 1, "": 1} {
++				assertTrafficCounter(t, sm, detailName(tag, email, "uplink"), count*6)
++				assertTrafficCounter(t, sm, detailName(tag, email, "downlink"), count*5)
++			}
++		})
++	}
++}
++
++func TestMembershipTrafficConcurrentResetKeepsEveryByte(t *testing.T) {
++	sm, err := corestats.NewManager(context.Background(), &corestats.Config{})
++	if err != nil {
++		t.Fatal(err)
++	}
++	const email = "same"
++	const loops = 10000
++	account, _ := stats.GetOrRegisterCounter(sm, "user>>>"+email+">>>traffic>>>uplink")
++	counter := withMembershipTrafficCounter(sm, account, "vmess", email, "uplink")
++	done := make(chan struct{})
++	var wg sync.WaitGroup
++	wg.Add(1)
++	go func() {
++		defer wg.Done()
++		for i := 0; i < loops; i++ {
++			counter.Add(7)
++		}
++		close(done)
++	}()
++	var total int64
++	for {
++		total += sm.GetCounter(detailName("vmess", email, "uplink")).Set(0)
++		select {
++		case <-done:
++			wg.Wait()
++			total += sm.GetCounter(detailName("vmess", email, "uplink")).Set(0)
++			if total != loops*7 {
++				t.Fatalf("lost/duplicated bytes during resets: %d", total)
++			}
++			return
++		default:
++		}
++	}
++}
+diff --git a/app/stats/command/membership_traffic_test.go b/app/stats/command/membership_traffic_test.go
+new file mode 100644
+--- /dev/null
++++ b/app/stats/command/membership_traffic_test.go
+@@ -0,0 +1,46 @@
++package command_test
++
++import (
++	"context"
++	"testing"
++
++	"github.com/xtls/xray-core/app/stats"
++	. "github.com/xtls/xray-core/app/stats/command"
++)
++
++func TestUserTrafficIgnoresOtherCounterNamespaces(t *testing.T) {
++	sm, err := stats.NewManager(context.Background(), &stats.Config{})
++	if err != nil {
++		t.Fatal(err)
++	}
++	online, err := sm.RegisterOnlineMap("user>>>alice>>>online")
++	if err != nil {
++		t.Fatal(err)
++	}
++	online.AddIP("192.0.2.1")
++	account, err := sm.RegisterCounter("user>>>alice>>>traffic>>>uplink")
++	if err != nil {
++		t.Fatal(err)
++	}
++	account.Add(7)
++	other, err := sm.RegisterCounter("xxxxxxxalice>>>traffic>>>uplink")
++	if err != nil {
++		t.Fatal(err)
++	}
++	other.Add(99)
++	detail, err := sm.RegisterCounter("membership>>>dGFn.YWxpY2U>>>traffic>>>uplink")
++	if err != nil {
++		t.Fatal(err)
++	}
++	detail.Add(7)
++	response, err := NewStatsServer(sm).GetUsersStats(context.Background(), &GetUsersStatsRequest{IncludeTraffic: true, Reset_: true})
++	if err != nil {
++		t.Fatal(err)
++	}
++	if len(response.Users) != 1 || response.Users[0].Traffic.Uplink != 7 {
++		t.Fatalf("wrong account stats: %+v", response)
++	}
++	if other.Value() != 99 || detail.Value() != 7 || account.Value() != 0 {
++		t.Fatal("account-only query consumed non-account counters")
++	}
++}
+diff --git a/features/stats/registration_test.go b/features/stats/registration_test.go
+new file mode 100644
+--- /dev/null
++++ b/features/stats/registration_test.go
+@@ -0,0 +1,103 @@
++package stats_test
++
++import (
++	"context"
++	"sync"
++	"testing"
++
++	corestats "github.com/xtls/xray-core/app/stats"
++	"github.com/xtls/xray-core/features/stats"
++)
++
++type simultaneousRegistration struct {
++	stats.Manager
++	ready   *sync.WaitGroup
++	release <-chan struct{}
++}
++
++func (m *simultaneousRegistration) GetCounter(name string) stats.Counter {
++	c := m.Manager.GetCounter(name)
++	if c == nil {
++		m.ready.Done()
++		<-m.release
++	}
++	return c
++}
++func (m *simultaneousRegistration) GetOnlineMap(name string) stats.OnlineMap {
++	c := m.Manager.GetOnlineMap(name)
++	if c == nil {
++		m.ready.Done()
++		<-m.release
++	}
++	return c
++}
++
++// Force every first lookup to see an absent counter. Only one registration can
++// win; the other connections must reuse it, rather than losing their meter.
++func TestConcurrentCounterRegistrationRetainsEveryConnection(t *testing.T) {
++	base, err := corestats.NewManager(context.Background(), &corestats.Config{})
++	if err != nil {
++		t.Fatal(err)
++	}
++	const connections = 32
++	var ready, done sync.WaitGroup
++	ready.Add(connections)
++	done.Add(connections)
++	release := make(chan struct{})
++	m := &simultaneousRegistration{Manager: base, ready: &ready, release: release}
++	for i := 0; i < connections; i++ {
++		go func() {
++			defer done.Done()
++			c, err := stats.GetOrRegisterCounter(m, "same")
++			if err != nil || c == nil {
++				t.Errorf("connection lost its counter: %v", err)
++				return
++			}
++			c.Add(7)
++		}()
++	}
++	ready.Wait()
++	close(release)
++	done.Wait()
++	if c := base.GetCounter("same"); c == nil || c.Value() != connections*7 {
++		t.Fatalf("missing concurrent usage: %v", c)
++	}
++}
++
++func TestConcurrentOnlineMapRegistrationRetainsEveryConnection(t *testing.T) {
++	base, err := corestats.NewManager(context.Background(), &corestats.Config{})
++	if err != nil {
++		t.Fatal(err)
++	}
++	const connections = 32
++	var ready, done sync.WaitGroup
++	ready.Add(connections)
++	done.Add(connections)
++	release := make(chan struct{})
++	m := &simultaneousRegistration{Manager: base, ready: &ready, release: release}
++	for i := 0; i < connections; i++ {
++		go func() {
++			defer done.Done()
++			c, err := stats.GetOrRegisterOnlineMap(m, "same")
++			if err != nil || c == nil {
++				t.Errorf("connection lost its online reference: %v", err)
++				return
++			}
++			c.AddIP("192.0.2.1")
++		}()
++	}
++	ready.Wait()
++	close(release)
++	done.Wait()
++	online := base.GetOnlineMap("same")
++	for i := 0; i < connections-1; i++ {
++		online.RemoveIP("192.0.2.1")
++	}
++	if online.Count() != 1 {
++		t.Fatal("live connection lost due to a registration race")
++	}
++	online.RemoveIP("192.0.2.1")
++	if online.Count() != 0 {
++		t.Fatal("stale online reference")
++	}
++}

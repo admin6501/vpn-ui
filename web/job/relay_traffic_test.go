@@ -90,3 +90,28 @@ func TestAppendUnrecordedKeepsExactRelayLivenessWithoutDoubleBilling(t *testing.
 		t.Fatalf("lost session or double-billed: %+v", got)
 	}
 }
+
+func TestAppendUnrecordedUsesExactSourceForSharedAccount(t *testing.T) {
+	core := []*xray.ClientTraffic{
+		{Email: "shared", InboundId: 1, CoreCounted: true, SourceTagged: true, Up: 10, Down: 20},
+		{Email: "shared", InboundId: 2, CoreCounted: true, SourceTagged: true},
+	}
+	fallback := []*xray.ClientTraffic{
+		// Same SSH source: suppress even while the core's current delta is zero.
+		{Email: "shared", InboundId: 2, Up: 100, Down: 200, Online: true},
+		// A direct MTProto source is not covered by another inbound of this account.
+		{Email: "shared", InboundId: 3, Up: 40, Down: 60, Online: true},
+	}
+	got := appendUnrecorded(core, fallback)
+	if totals(got)["shared"] != 130 {
+		t.Fatalf("billed %d, want 130: exclude SSH duplicate, retain direct relay", totals(got)["shared"])
+	}
+}
+
+func TestAppendUnrecordedLegacyCoreRetainsAccountWideDeduplication(t *testing.T) {
+	core := []*xray.ClientTraffic{{Email: "shared", InboundId: 1, CoreCounted: true, Up: 10}}
+	got := appendUnrecorded(core, []*xray.ClientTraffic{{Email: "shared", InboundId: 2, Up: 100}})
+	if totals(got)["shared"] != 10 {
+		t.Fatal("legacy counters must not be combined with relay measurements of the same bytes")
+	}
+}

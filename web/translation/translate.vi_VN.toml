@@ -721,7 +721,7 @@ frozen = "Đông lạnh"
 "unattributedUsage" = "Lưu lượng không rõ đầu vào"
 "unattributedUsageHint" = "Lưu lượng này đã được tính trong tổng tài khoản. Không rõ đầu vào; chỉ cộng một lần vào lưu lượng đã xác định theo đầu vào."
 "sharedUsage" = "dùng chung"
-"sharedUsageHint" = "Xray tính lưu lượng theo tài khoản chứ không theo inbound, nên con số này là phần dùng còn lại của tài khoản, dùng chung cho mọi inbound Xray phục vụ nó."
+"sharedUsageHint" = "Giá trị này bao gồm lưu lượng không được ghi nhận đầu vào nguồn. Phần dùng chung đó đã được tính trong tổng tài khoản."
 "onlineShared" = "Trực tuyến, trên một trong các inbound Xray của tài khoản này. Xray không cho biết là inbound nào."
 
 [pages.inbounds.periodicTrafficReset]
