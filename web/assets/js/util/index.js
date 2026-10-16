@@ -80,6 +80,55 @@ class PromiseUtil {
     }
 }
 
+// Share overlapping refreshes, but run once more after an invalidation received
+// during a request. A post-save refresh must not reuse a pre-save response.
+class RefreshQueue {
+    request(task) {
+        this.task = task;
+        this.dirty = true;
+        if (!this.pending) {
+            this.pending = Promise.resolve().then(async () => {
+                try {
+                    do {
+                        this.dirty = false;
+                        try { await this.task(); }
+                        catch (error) { if (!this.dirty) throw error; }
+                    } while (this.dirty);
+                } finally { this.pending = null; }
+            });
+        }
+        return this.pending;
+    }
+}
+
+// One cancellable polling chain per page, including after reconnects/toggles.
+class RefreshLoop {
+    constructor(task, interval) {
+        this.task = task;
+        this.interval = interval;
+    }
+    start(immediate = false) {
+        if (this.active) return;
+        this.active = true;
+        const generation = this.generation = (this.generation || 0) + 1;
+        const tick = async () => {
+            if (!this.active || generation !== this.generation) return;
+            try {
+                if (!document.hidden) await this.task();
+            } catch (error) { console.warn('Page refresh failed', error); }
+            if (this.active && generation === this.generation) {
+                this.timer = setTimeout(tick, Math.max(1000, Number(this.interval()) || 5000));
+            }
+        };
+        this.timer = setTimeout(tick, immediate ? 0 : Math.max(1000, Number(this.interval()) || 5000));
+    }
+    stop() {
+        this.active = false;
+        this.generation = (this.generation || 0) + 1;
+        clearTimeout(this.timer);
+    }
+}
+
 class RandomUtil {
     static getSeq({ type = "default", hasNumbers = true, hasLowercase = true, hasUppercase = true } = {}) {
         let seq = '';

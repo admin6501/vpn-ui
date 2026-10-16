@@ -764,15 +764,29 @@
       // Named for the mixin's contract. On this page "refresh after a write" means
       // both halves: the inbounds every action reads through, and the account rows
       // the table lists.
-      async getDBInbounds() {
-        const msg = await HttpUtil.get('/panel/api/clients/inbounds');
-        if (msg.success) this.setInbounds(msg.obj || []);
-        await Promise.all([this.loadClients(), this.loadOnlineState()]);
+      getDBInbounds() {
+        if (!this._inboundRefreshQueue) this._inboundRefreshQueue = new RefreshQueue();
+        return this._inboundRefreshQueue.request(async () => {
+          // Table rows need not wait for the full settings payload or online APIs.
+          this.loadOnlineState().catch(error => console.warn('Online refresh failed', error));
+          await Promise.all([
+            HttpUtil.get('/panel/api/clients/inbounds').then(msg => {
+              if (msg.success) this.setInbounds(msg.obj || []);
+            }),
+            this.loadClients(),
+          ]);
+        });
       },
       // Not called getLastOnline: that name is the mixin's per-email LOOKUP, and
       // shadowing it made every rendered row fire two requests and then format a
       // Promise as a date.
-      async loadOnlineState() {
+      loadOnlineState() {
+        if (!this._onlineStatePending) {
+          this._onlineStatePending = this.fetchOnlineState().finally(() => { this._onlineStatePending = null; });
+        }
+        return this._onlineStatePending;
+      },
+      async fetchOnlineState() {
         const generation = this._onlineStateGeneration = (this._onlineStateGeneration || 0) + 1;
         const [onlines, memberships, last] = await Promise.all([
           HttpUtil.post('/panel/api/inbounds/onlines'),
@@ -788,7 +802,7 @@
       async refreshLiveState() {
         if (this._liveStatePending) return;
         this._liveStatePending = true;
-        try { await Promise.all([this.loadOnlineState(), this.loadClients(true)]); }
+        try { await Promise.all([this.loadOnlineState(), this.isRefreshEnabled ? Promise.resolve() : this.loadClients(true)]); }
         catch (error) { console.warn('Client live status refresh failed', error); }
         finally { this._liveStatePending = false; }
       },
@@ -881,22 +895,21 @@
       },
       // Shares localStorage with the Inbounds page on purpose: an operator who
       // turned auto-refresh on there means it here too.
-      async startDataRefreshLoop() {
-        while (this.isRefreshEnabled) {
-          try {
-            await this.getDBInbounds();
-          } catch (e) {
-            console.error(e);
-          }
-          await PromiseUtil.sleep(this.refreshInterval);
+      startDataRefreshLoop(immediate = false) {
+        if (!this._dataRefreshLoop) {
+          this._dataRefreshLoop = new RefreshLoop(() => this.getDBInbounds(), () => this.refreshInterval);
         }
+        this._dataRefreshLoop.start(immediate);
       },
       toggleRefresh() {
         localStorage.setItem("isRefreshEnabled", this.isRefreshEnabled);
-        if (this.isRefreshEnabled) this.startDataRefreshLoop();
+        if (this.isRefreshEnabled) this.startDataRefreshLoop(true);
+        else if (this._dataRefreshLoop) this._dataRefreshLoop.stop();
       },
       changeRefreshInterval() {
         localStorage.setItem("refreshInterval", this.refreshInterval);
+        if (this._dataRefreshLoop) this._dataRefreshLoop.stop();
+        if (this.isRefreshEnabled) this.startDataRefreshLoop();
       },
       async manualRefresh() {
         if (this.refreshing) return;
@@ -1327,13 +1340,15 @@
     async mounted() {
       this.liveStateTimer = setInterval(() => this.refreshLiveState(), 10000);
       try {
-        await this.getDefaultSettings();
-        await this.reload(true);
+        await Promise.all([this.getDefaultSettings(), this.reload(true)]);
       } catch (error) { console.warn('Client initial refresh failed', error); }
       finally { this.spinning = false; }
       if (this.isRefreshEnabled) this.startDataRefreshLoop();
     },
-    beforeDestroy() { clearInterval(this.liveStateTimer); },
+    beforeDestroy() {
+      clearInterval(this.liveStateTimer);
+      if (this._dataRefreshLoop) this._dataRefreshLoop.stop();
+    },
   });
 </script>
 {{ template "page/body_end" .}}

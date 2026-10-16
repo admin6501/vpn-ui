@@ -834,17 +834,21 @@
           this.accountSummaryLoading = false;
         }
       },
-      async getDBInbounds() {
+      getDBInbounds() {
+        if (!this._inboundRefreshQueue) this._inboundRefreshQueue = new RefreshQueue();
+        // Invalidate an older response immediately, including when a write finishes
+        // while another refresh is in flight.
         const generation = this._inboundLoadGeneration = (this._inboundLoadGeneration || 0) + 1;
         this.refreshing = true;
-        try {
+        return this._inboundRefreshQueue.request(async () => {
+          const current = this._inboundLoadGeneration;
           const msg = await HttpUtil.get('/panel/api/inbounds/list');
-          if (!msg || !msg.success || !Array.isArray(msg.obj) || generation !== this._inboundLoadGeneration) return;
-          await this.refreshOnlineState();
-          if (generation === this._inboundLoadGeneration) this.setInbounds(msg.obj);
-        } finally {
+          if (msg && msg.success && Array.isArray(msg.obj) && current === this._inboundLoadGeneration) this.setInbounds(msg.obj);
+          // Render the table without waiting for these independent status calls.
+          this.refreshOnlineState().catch(error => console.warn('Online refresh failed', error));
+        }).finally(() => {
           if (generation === this._inboundLoadGeneration) this.refreshing = false;
-        }
+        });
       },
       // Re-reads the caller's own reseller balance after anything that can move it.
       // Deliberately failure-tolerant: the chip is informational, the server is what
@@ -1801,24 +1805,21 @@
         dbInbound = this.dbInbounds.find(row => row.id === dbInboundId);
         txtModal.show('{{ i18n "pages.inbounds.inboundData" }}', JSON.stringify(dbInbound, null, 2));
       },
-      async startDataRefreshLoop() {
-        while (this.isRefreshEnabled) {
-          try {
-            await this.getDBInbounds();
-          } catch (e) {
-            console.error(e);
-          }
-          await PromiseUtil.sleep(this.refreshInterval);
+      startDataRefreshLoop(immediate = false) {
+        if (!this._dataRefreshLoop) {
+          this._dataRefreshLoop = new RefreshLoop(() => this.getDBInbounds(), () => this.refreshInterval);
         }
+        this._dataRefreshLoop.start(immediate);
       },
       toggleRefresh() {
         localStorage.setItem("isRefreshEnabled", this.isRefreshEnabled);
-        if (this.isRefreshEnabled) {
-          this.startDataRefreshLoop();
-        }
+        if (this.isRefreshEnabled) this.startDataRefreshLoop(true);
+        else if (this._dataRefreshLoop) this._dataRefreshLoop.stop();
       },
       changeRefreshInterval() {
         localStorage.setItem("refreshInterval", this.refreshInterval);
+        if (this._dataRefreshLoop) this._dataRefreshLoop.stop();
+        if (this.isRefreshEnabled) this.startDataRefreshLoop();
       },
       // Switch the whole panel between the old inbound dialog and the current one.
       //
@@ -1847,8 +1848,7 @@
       async manualRefresh() {
         if (!this.refreshing) {
           this.loadingStates.spinning = true;
-          await this.getDBInbounds();
-          this.loadingStates.spinning = false;
+          try { await this.getDBInbounds(); } finally { this.loadingStates.spinning = false; }
         }
       },
       pagination(obj) {
@@ -1911,7 +1911,7 @@
         
         // Listen for inbounds updates
         window.wsClient.on('inbounds', (payload) => {
-          if (payload && Array.isArray(payload)) {
+          if (this.isRefreshEnabled && payload && Array.isArray(payload)) {
             // Use setInbounds to properly convert to DBInbound objects with methods
             this._inboundLoadGeneration = (this._inboundLoadGeneration || 0) + 1;
             this.refreshing = false;
@@ -1919,19 +1919,8 @@
           }
         });
 
-        // Listen for invalidate signals (sent when payload is too large for WebSocket)
-        // The server sends a lightweight notification and we re-fetch via REST API
-        let invalidateTimer = null;
-        window.wsClient.on('invalidate', (payload) => {
-          if (payload && (payload.type === 'inbounds' || payload.type === 'traffic')) {
-            // Debounce to avoid flooding the REST API with multiple invalidate signals
-            if (invalidateTimer) clearTimeout(invalidateTimer);
-            invalidateTimer = setTimeout(() => {
-              invalidateTimer = null;
-              this.getDBInbounds();
-            }, 1000);
-          }
-        });
+        // Full data refresh uses one polling chain below. This also covers lost
+        // invalidations, proxy outages and browsers that cannot use WebSockets.
 
         // Listen for traffic updates
         window.wsClient.on('traffic', (payload) => {
@@ -1997,31 +1986,12 @@
           }
         });
 
-        // Fallback to polling if WebSocket fails
-        window.wsClient.on('error', () => {
-          console.warn('WebSocket connection failed, falling back to polling');
-          if (this.isRefreshEnabled) {
-            this.startDataRefreshLoop();
-          }
-        });
-
-        window.wsClient.on('disconnected', () => {
-          if (window.wsClient.reconnectAttempts >= window.wsClient.maxReconnectAttempts) {
-            console.warn('WebSocket reconnection failed, falling back to polling');
-            if (this.isRefreshEnabled) {
-              this.startDataRefreshLoop();
-            }
-          }
-        });
-      } else {
-        // Fallback to polling if WebSocket is not available
-        if (this.isRefreshEnabled) {
-          this.startDataRefreshLoop();
-        }
       }
+      if (this.isRefreshEnabled) this.startDataRefreshLoop();
     },
     beforeDestroy() {
       clearInterval(this.accountSummaryTimer);
+      if (this._dataRefreshLoop) this._dataRefreshLoop.stop();
     },
     computed: {
       // Whether to offer reordering at all. The order is the PANEL's and shared by
