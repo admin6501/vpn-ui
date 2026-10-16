@@ -5715,13 +5715,11 @@ func (s *InboundService) GetClientStatsFor(user *model.User) (*ClientStatsSummar
 		}
 		expired := stat.ExpiryTime > 0 && stat.ExpiryTime <= now
 		exhausted := stat.Total > 0 && stat.Up+stat.Down >= stat.Total
-		if expired {
+		// Overview and Inbounds use one expired category for accounts that have
+		// run out of either time or traffic. Keep Depleted as the legacy alias.
+		if expired || exhausted {
 			summary.Expired++
 			summary.ExpiredEmails = append(summary.ExpiredEmails, account.Email)
-		}
-		// Depleted retains the historical combined unavailable counter. Expired is
-		// strictly time-based, and must never include quota-only exhaustion.
-		if expired || exhausted {
 			summary.Depleted++
 			continue
 		}
