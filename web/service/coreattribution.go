@@ -1,6 +1,7 @@
 package service
 
 import (
+	"github.com/mhsanaei/3x-ui/v2/database"
 	"github.com/mhsanaei/3x-ui/v2/database/model"
 	"github.com/mhsanaei/3x-ui/v2/logger"
 	"github.com/mhsanaei/3x-ui/v2/xray"
@@ -8,37 +9,10 @@ import (
 	"gorm.io/gorm"
 )
 
-// Finishing the attribution Xray leaves unfinished.
-//
-// Xray's per-account counter is named "user>>><email>>>>traffic>>>{up,down}" with no
-// inbound in it, so a record collected from the core says how much an account moved
-// and nothing about where. Everything downstream of that - the per-inbound usage
-// figure on the Clients page, which membership's lamp lights up, which inbound's
-// traffic multiplier bills the bytes - then has nothing to work with, and an account
-// on ten inbounds was reported as using, and being online on, all ten of them.
-//
-// The core cannot be made to say it (the stat name is the core's, not the panel's),
-// but it does not have to: the answer is usually forced by what else is true in the
-// same tick.
-//
-//  1. Only an inbound Xray TERMINATES can produce a user stat at all. The nine pool
-//     VPN protocols reach the core through a dokodemo-door with no user identity on
-//     it, so bytes on that record cannot be theirs, however busy those inbounds are.
-//     That leaves the account's Xray-native inbounds plus the two relays, whose
-//     paired socks inbound authenticates by email.
-//
-//  2. When exactly ONE of those is left, the record belongs to it. That is not a
-//     guess: no other inbound of that account is capable of having produced it.
-//
-//  3. When several are left, the SAME tick's per-inbound totals decide. An inbound
-//     that moved no bytes at all this tick moved none of this account's, so a
-//     candidate whose tag is quiet is out. One candidate still standing is the
-//     answer; two or more stays unattributed, and the page goes on saying "shared"
-//     rather than picking one.
-//
-// What stays unattributed still reaches the account total, exactly as before: this
-// only decides whether the bytes ALSO land in the per-inbound breakdown. The failure
-// mode is a figure that reads "shared", never a lost byte.
+// Resolve the patched core's per-membership counters by account and exact tag.
+// Legacy cores expose only account totals: keep the previous unambiguous-source
+// fallback for those records. An unresolved exact tag is never replaced with a
+// guess, and its bytes still reach the account total as unattributed usage.
 
 // coreCandidate is one inbound an account's core-counted bytes could have come
 // through.
@@ -49,16 +23,9 @@ type coreCandidate struct {
 	Email    string
 }
 
-// attributeCoreRecords resolves exact live-connection tags and stamps the source
-// inbound onto core-counted byte records where attribution is unambiguous.
-//
-// inboundTraffics is the same tick's per-inbound totals (the other half of the one
-// QueryStats call these records came from), and is what makes rule 3 above possible.
-// A nil one is fine: the caller may have collected client traffic without it, and
-// then only the unambiguous rules 1-2 apply.
-//
-// Best-effort by design. Every failure path leaves the records exactly as they
-// arrived, which is the behaviour that shipped before any of this existed.
+// attributeCoreRecords maps exact traffic/liveness tags to current memberships.
+// inboundTraffics provides the active-inbound fallback for legacy account stats.
+// Lookup failures preserve collected bytes without assigning them to a guess.
 func attributeCoreRecords(tx *gorm.DB, inboundTraffics []*xray.Traffic, records []*xray.ClientTraffic) {
 	if tx == nil {
 		return
@@ -69,11 +36,14 @@ func attributeCoreRecords(tx *gorm.DB, inboundTraffics []*xray.Traffic, records 
 	// that already knows its source is never second-guessed.
 	pending := map[string][]*xray.ClientTraffic{}
 	for _, record := range records {
-		if record != nil && record.Online && record.InboundTag != "" {
+		if record == nil || record.InboundId != 0 {
+			continue
+		}
+		if record.SourceTagged || (record.Online && record.InboundTag != "") {
 			pending[accountKey(record.Email)] = append(pending[accountKey(record.Email)], record)
 			continue
 		}
-		if record == nil || !record.CoreCounted || record.InboundId != 0 {
+		if !record.CoreCounted {
 			continue
 		}
 		if record.Up+record.Down <= 0 {
@@ -105,6 +75,7 @@ func attributeCoreRecords(tx *gorm.DB, inboundTraffics []*xray.Traffic, records 
 			"LOWER(TRIM(accounts.email)) AS email").
 		Joins("JOIN accounts ON accounts.id = account_inbounds.account_id").
 		Joins("JOIN inbounds ON inbounds.id = account_inbounds.inbound_id").
+		Where("inbounds.node_id = ?", 0).
 		Where("LOWER(TRIM(accounts.email)) IN (?)", keys).
 		Scan(&rows).Error
 	if err != nil {
@@ -133,10 +104,10 @@ func attributeCoreRecords(tx *gorm.DB, inboundTraffics []*xray.Traffic, records 
 	for key, pendingRecords := range pending {
 		inboundId := attributableInbound(candidates[key], active)
 		for _, record := range pendingRecords {
-			if record.Online && record.InboundTag != "" {
+			if record.SourceTagged || (record.Online && record.InboundTag != "") {
 				// Validate both account membership and tag; never infer other memberships.
 				for _, candidate := range candidates[key] {
-					if candidate.Tag == record.InboundTag {
+					if record.InboundTag != "" && candidate.Tag == record.InboundTag {
 						record.InboundId = candidate.Id
 						break
 					}
@@ -149,6 +120,14 @@ func attributeCoreRecords(tx *gorm.DB, inboundTraffics []*xray.Traffic, records 
 			}
 		}
 	}
+}
+
+// ResolveCoreTrafficSources runs before merging relay fallbacks, so their exact
+// source can be compared with the core's records without suppressing a different
+// inbound of the same account. AddTraffic also resolves callers that collect
+// traffic independently; records already carrying a source are left intact.
+func (s *InboundService) ResolveCoreTrafficSources(inboundTraffics []*xray.Traffic, records []*xray.ClientTraffic) {
+	attributeCoreRecords(database.GetDB(), inboundTraffics, records)
 }
 
 // attributableInbound applies rules 2 and 3 to one account's candidates, returning 0

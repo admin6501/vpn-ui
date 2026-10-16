@@ -417,8 +417,6 @@ func (x *XrayAPI) GetTraffic(reset bool) ([]*Traffic, []*ClientTraffic, error) {
 		return nil, nil, common.NewError("xray api is not initialized")
 	}
 
-	clientTrafficRegex := regexp.MustCompile(`user>>>([^>]+)>>>traffic>>>(downlink|uplink)`)
-
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
 	defer cancel()
 
@@ -432,17 +430,7 @@ func (x *XrayAPI) GetTraffic(reset bool) ([]*Traffic, []*ClientTraffic, error) {
 		return nil, nil, err
 	}
 
-	tagTrafficMap := make(map[string]*Traffic)
-	emailTrafficMap := make(map[string]*ClientTraffic)
-
-	for _, stat := range resp.GetStat() {
-		if matches := trafficStatRegex.FindStringSubmatch(stat.Name); len(matches) == 4 {
-			processTraffic(matches, stat.Value, tagTrafficMap)
-		} else if matches := clientTrafficRegex.FindStringSubmatch(stat.Name); len(matches) == 3 {
-			processClientTraffic(matches, stat.Value, emailTrafficMap)
-		}
-	}
-	records := mapToSlice(emailTrafficMap)
+	tagTrafficMap, records := parseTrafficStats(resp.GetStat())
 	// Older cores may not expose this map yet; byte-based detection remains a fallback.
 	live, liveErr := (*x.StatsServiceClient).GetStatsOnlineIpList(ctx, &statsService.GetStatsRequest{Name: "membership>>>online"})
 	if liveErr == nil {
@@ -456,7 +444,7 @@ func (x *XrayAPI) GetTraffic(reset bool) ([]*Traffic, []*ClientTraffic, error) {
 
 // trafficStatRegex splits an Xray traffic stat name into direction, tag and link.
 // Package level so the parser and its tests cannot drift apart.
-var trafficStatRegex = regexp.MustCompile(`(inbound|outbound)>>>([^>]+)>>>traffic>>>(downlink|uplink)`)
+var trafficStatRegex = regexp.MustCompile(`^(inbound|outbound)>>>([^>]+)>>>traffic>>>(downlink|uplink)$`)
 
 // processTraffic aggregates a traffic stat into trafficMap using regex matches and value.
 func processTraffic(matches []string, value int64, trafficMap map[string]*Traffic) {

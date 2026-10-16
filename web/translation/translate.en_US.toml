@@ -720,7 +720,7 @@ kernelRuntime = "OS kernel"
 "unattributedUsage" = "Usage with unknown inbound"
 "unattributedUsageHint" = "This usage is already included in the account total. Its inbound is unknown; add it only once to the attributed inbound usage."
 "sharedUsage" = "shared"
-"sharedUsageHint" = "Xray counts traffic per account, not per inbound, so this figure is the account's remaining usage shared across every Xray inbound serving it."
+"sharedUsageHint" = "This figure includes usage whose source inbound was not recorded. That shared portion is already included in the account total."
 "onlineShared" = "Online, on one of this account's Xray inbounds. Xray does not report which one."
 
 [pages.inbounds.periodicTrafficReset]

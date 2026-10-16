@@ -98,12 +98,9 @@ var multiplierColumns = []string{"id", "traffic_multiplier_enable", "traffic_mul
 // daemon, and both resolve to one inbound. The collectors stamp InboundId on the
 // record they emit.
 //
-// It is NOT knowable for the Xray-native protocols, and that is a property of the
-// core rather than something this code can plumb. Xray's per-account counter is
-// named "user>>><email>>>>traffic>>>uplink" with NO inbound component (xray/api.go),
-// so an account on vless AND trojan gets ONE number covering both. There is
-// nothing to attribute. Rather than pretend, those records arrive with InboundId
-// 0 and take the max.
+// The patched core names the source in per-membership counters. Older cores
+// report only an account total; when its source is still ambiguous, billing uses
+// the existing maximum-multiplier fallback across that account's memberships.
 
 // anyMultiplierEnabled reports whether ANY inbound on the panel weights traffic.
 //

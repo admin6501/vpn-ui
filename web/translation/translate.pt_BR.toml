@@ -720,7 +720,7 @@ frozen = "Congelado"
 "unattributedUsage" = "Uso com entrada desconhecida"
 "unattributedUsageHint" = "Este uso já está incluído no total da conta. A entrada é desconhecida; some-o apenas uma vez ao uso atribuído às entradas."
 "sharedUsage" = "compartilhado"
-"sharedUsageHint" = "O Xray conta o tráfego por conta e não por entrada, portanto este valor é o uso restante da conta, compartilhado entre todas as entradas Xray que a atendem."
+"sharedUsageHint" = "Este valor inclui uso cuja entrada de origem não foi registrada. Essa parte compartilhada já está incluída no total da conta."
 "onlineShared" = "Online, em uma das entradas Xray desta conta. O Xray não informa qual delas."
 
 [pages.inbounds.periodicTrafficReset]

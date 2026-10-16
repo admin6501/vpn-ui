@@ -36,10 +36,11 @@ jobs:
         run: go test -race ./transport/internet/hysteria ./proxy/hysteria/account -run "TestManagedEmpty|TestRevokedHysteria|TestDuplicateHysteria|TestHysteriaAuth" -count=1
       - name: Verify exact membership liveness and disconnect cleanup
         working-directory: third_party/Xray-core
-        run: go test -race ./app/dispatcher ./app/stats ./app/stats/command -count=1
+        run: go test -race ./features/stats ./app/dispatcher ./app/stats ./app/stats/command -count=1
       - name: Verify client online identity, expiry tooltips and quota ordering
         run: |
           go test ./web/service ./web/job ./xray -run 'TestMembershipOnline|TestMtprotoMetrics|TestAppendUnrecorded|TestWireguardHandshake|TestCoreTraffic|TestAccountSort|TestOverview' -count=1
+          go test -race ./xray ./web/job ./web/service -run 'TestMembershipTraffic|TestCoreTrafficExactSources|TestAppendUnrecorded' -count=1
           go test ./web/service -run 'TestClientStatsForSeparatesSharedPool|TestAttachClientStats|TestAddClientTraffic|TestMigrationMembershipUsage|TestRepairMembershipUsage' -count=1
           node test_unit/client_online_info_test.cjs
           node test_unit/client_details_2fa_test.cjs
@@ -68,6 +69,8 @@ jobs:
           go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./main/...
       - name: Build patched Xray and complete geodata
         run: GEO_LEAN=0 bash build/core/build.sh ${{ matrix.arch }}
+      - name: Verify exact account usage over concurrent VMess and Shadowsocks TCP and UDP
+        run: RUN_CORE_TRAFFIC_INTEGRATION=1 XRAY_TRAFFIC_BINARY="$PWD/corebundle/core/${{ matrix.arch }}/xray" go test -race ./web/service -run '^TestCoreTrafficRealConcurrentProtocols$' -count=1 -timeout 90s
       - name: Verify all six bundled geodata files
         run: |
           for file in geoip.dat geosite.dat geoip_IR.dat geosite_IR.dat geoip_RU.dat geosite_RU.dat; do

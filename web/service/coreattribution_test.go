@@ -524,3 +524,111 @@ func TestMembershipOnlineExactTagsSurviveAmbiguousTrafficWithoutBilling(t *testi
 		t.Fatal("traffic resurrected a closed connection")
 	}
 }
+
+func TestCoreTrafficExactSourcesPreserveUnattributedHistory(t *testing.T) {
+	svc := newAccountsDB(t)
+	const email = "exact@example.com"
+	vmess := seedTaggedInbound(t, model.VMESS, 48801, []map[string]any{{"id": "3fa85f64-5717-4562-b3fc-2c963f66afa6", "email": email, "enable": true, "totalGB": float64(0)}})
+	ss := seedTaggedInbound(t, model.Shadowsocks, 48802, nil)
+	seedAccountOn(t, svc, email, vmess, ss)
+	if err := database.GetDB().Create(&xray.ClientTraffic{Email: email, InboundId: vmess.Id, Enable: true, Down: 7 * mb, AllTime: 7 * mb}).Error; err != nil {
+		t.Fatal(err)
+	}
+	records := []*xray.ClientTraffic{
+		{Email: email, InboundTag: vmess.Tag, CoreCounted: true, SourceTagged: true, Up: mb, Down: 2 * mb},
+		{Email: email, InboundTag: ss.Tag, CoreCounted: true, SourceTagged: true, Up: 3 * mb, Down: 4 * mb},
+		{Email: email, InboundTag: "removed-inbound", CoreCounted: true, SourceTagged: true, Down: mb},
+	}
+	inbounds := &InboundService{}
+	err, _, _, _, _ := inbounds.AddTraffic([]*xray.Traffic{inboundTotal(vmess.Tag, mb, mb)}, records)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if records[0].InboundId != vmess.Id || records[1].InboundId != ss.Id || records[2].InboundId != 0 {
+		t.Fatalf("exact sources were replaced by an active-inbound guess: %+v", records)
+	}
+	total := accountTrafficOf(t, email)
+	if total.Up+total.Down != 18*mb || total.AllTime != 18*mb {
+		t.Fatalf("account total=%+v, want 18 MiB", total)
+	}
+	for id, want := range map[int]int64{vmess.Id: 3 * mb, ss.Id: 7 * mb} {
+		share := membershipUsageOf(t, email, id)
+		if share.Up+share.Down != want {
+			t.Fatalf("inbound %d got %d, want %d", id, share.Up+share.Down, want)
+		}
+		row := renderedStats(t, id, email)
+		if row.SharedUp+row.SharedDown != 8*mb {
+			t.Fatalf("historical/unknown source bytes were lost: %+v", row)
+		}
+	}
+	if err := inbounds.ResetClientTrafficByEmail(email); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []int{vmess.Id, ss.Id} {
+		row := renderedStats(t, id, email)
+		if row.InboundUp+row.InboundDown+row.SharedUp+row.SharedDown != 0 {
+			t.Fatal("reset left charged or shared current usage")
+		}
+	}
+}
+
+func TestCoreTrafficExactSourcesBillTheirOwnMultiplier(t *testing.T) {
+	svc := newAccountsDB(t)
+	const email = "exact-weight@example.com"
+	vmess := seedTaggedInbound(t, model.VMESS, 48811, []map[string]any{{"id": "3fa85f64-5717-4562-b3fc-2c963f66afa6", "email": email, "enable": true, "totalGB": float64(0)}})
+	ss := seedTaggedInbound(t, model.Shadowsocks, 48812, nil)
+	seedAccountOn(t, svc, email, vmess, ss)
+	seedAccountTraffic(t, email, vmess.Id)
+	for id, weight := range map[int]float64{vmess.Id: 2, ss.Id: 4} {
+		if err := database.GetDB().Model(&model.Inbound{}).Where("id = ?", id).Updates(map[string]any{"traffic_multiplier_enable": true, "traffic_multiplier": weight}).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	records := []*xray.ClientTraffic{
+		{Email: email, InboundTag: vmess.Tag, SourceTagged: true, CoreCounted: true, Down: 10 * mb},
+		{Email: email, InboundTag: ss.Tag, SourceTagged: true, CoreCounted: true, Down: 10 * mb},
+	}
+	err, _, _, _, _ := (&InboundService{}).AddTraffic(nil, records)
+	if err != nil {
+		t.Fatal(err)
+	}
+	total := accountTrafficOf(t, email)
+	if total.Down != 60*mb || total.AllTime != 20*mb {
+		t.Fatalf("wrong billed/raw totals: %+v", total)
+	}
+	if got := membershipUsageOf(t, email, vmess.Id).Down; got != 20*mb {
+		t.Fatalf("VMess charged %d, want 20 MiB", got)
+	}
+	if got := membershipUsageOf(t, email, ss.Id).Down; got != 40*mb {
+		t.Fatalf("SS charged %d, want 40 MiB", got)
+	}
+}
+
+func TestCoreTrafficSourcesAreScopedToTheLocalRuntime(t *testing.T) {
+	svc := newAccountsDB(t)
+	const email = "local-scope@example.com"
+	local := seedTaggedInbound(t, model.VMESS, 48821, []map[string]any{{"id": "3fa85f64-5717-4562-b3fc-2c963f66afa6", "email": email, "enable": true, "totalGB": float64(0)}})
+	remote := seedTaggedInbound(t, model.Shadowsocks, 48822, nil)
+	seedAccountOn(t, svc, email, local, remote)
+	seedAccountTraffic(t, email, local.Id)
+	if err := database.GetDB().Model(remote).Update("node_id", 42).Error; err != nil {
+		t.Fatal(err)
+	}
+	records := []*xray.ClientTraffic{coreRecord(email, 0, 2*mb), {Email: email, InboundTag: remote.Tag, SourceTagged: true, CoreCounted: true, Down: 3 * mb}}
+	err, _, _, _, _ := (&InboundService{}).AddTraffic(nil, records)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if records[0].InboundId != local.Id || records[1].InboundId != 0 {
+		t.Fatal("local collector attributed bytes to a remote assignment")
+	}
+	if got := membershipUsageOf(t, email, remote.Id).Down; got != 0 {
+		t.Fatal("remote membership gained local core traffic")
+	}
+	if got := membershipUsageOf(t, email, local.Id).Down; got != 2*mb {
+		t.Fatalf("local legacy traffic lost its unique local source: %d", got)
+	}
+	if total := accountTrafficOf(t, email); total.Down != 5*mb {
+		t.Fatal("source scope validation dropped account usage")
+	}
+}

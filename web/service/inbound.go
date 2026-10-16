@@ -3531,8 +3531,7 @@ func (s *InboundService) addClientTrafficFor(tx *gorm.DB, traffics []*xray.Clien
 	// customer was actually using.
 	//
 	// The evidence is already here. A record that names its source inbound places the
-	// session exactly; one that does not (everything Xray counts, whose stat is
-	// "user>>><email>>>>traffic" with no inbound in it) is filed under inbound 0,
+	// session exactly; one that does not (an unresolved legacy core counter) is filed under inbound 0,
 	// which the page renders as "on one of this account's Xray inbounds, and the core
 	// cannot say which". That is the same distinction the usage figures already draw,
 	// deliberately: one guess would otherwise be marking a customer live on an
@@ -3559,11 +3558,8 @@ func (s *InboundService) addClientTrafficFor(tx *gorm.DB, traffics []*xray.Clien
 				// across the account's memberships is used, so the ambiguity can only
 				// over-bill and never hand out free traffic.
 				//
-				// It genuinely cannot be known for the Xray-native protocols, and
-				// that is a property of the core rather than something this code can
-				// plumb: Xray's counter is named "user>>><email>>>>traffic" with NO
-				// inbound component, so an account on vless AND trojan gets one number
-				// covering both, with nothing to attribute it by.
+				// Exact per-membership core records name their source. Older cores
+				// can still leave it unknown and retain the existing fallback policy.
 				source := billingInbound(
 					multiplierInbounds,
 					traffics[traffic_index].InboundId,

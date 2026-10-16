@@ -720,7 +720,7 @@ frozen = "凍結"
 "unattributedUsage" = "入站來源未知的用量"
 "unattributedUsageHint" = "此用量已包含在帳戶總用量中。入站來源未知；與已歸屬的入站用量相加時只計算一次。"
 "sharedUsage" = "共享"
-"sharedUsageHint" = "Xray 按帳號而非按入站統計流量，因此該數值是該帳號的剩餘用量，由服務該帳號的所有 Xray 入站共享。"
+"sharedUsageHint" = "此數值包含未記錄入站來源的用量。這部分共享用量已包含在帳戶總用量中。"
 "onlineShared" = "線上，位於該帳號的某個 Xray 入站上。Xray 不會回報具體是哪一個。"
 
 [pages.inbounds.periodicTrafficReset]

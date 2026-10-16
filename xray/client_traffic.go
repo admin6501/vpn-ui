@@ -7,7 +7,10 @@ type ClientTraffic struct {
 	OnlineSnapshot bool   `json:"-" gorm:"-"`
 	Online         bool   `json:"online,omitempty" gorm:"-"`
 	InboundTag     string `json:"inboundTag,omitempty" gorm:"-"`
-	Id             int    `json:"id" form:"id" gorm:"primaryKey;autoIncrement"`
+	// SourceTagged is a per-inbound byte counter from the patched core. An empty
+	// or unrecognised tag stays unattributed, rather than using a guessed source.
+	SourceTagged bool `json:"-" gorm:"-"`
+	Id           int  `json:"id" form:"id" gorm:"primaryKey;autoIncrement"`
 	// InboundId is the account's HOME inbound: whichever one it was created on.
 	//
 	// It is not "the inbound this account is served on", and must not be used as
@@ -59,25 +62,13 @@ type ClientTraffic struct {
 	// Shared says Inbound* includes the pooled Shared* remainder alongside this
 	// inbound's own measured share. The same pool can appear on several inbounds.
 	//
-	// The pooling cannot be undone here. Xray names its counter
-	// "user>>><email>>>>traffic>>>{up,down}" with no inbound component (xray/api.go),
-	// so an account on vless AND trojan gets ONE number covering both and there is
-	// nothing to split it by. Showing those inbounds a zero instead would read as
-	// "this customer never used it", which is simply false, so the page states the
-	// caveat rather than inventing a number or hiding one.
+	// Historical or legacy-core bytes without a source cannot be reconstructed
+	// from account totals. Keep that pool separate from new measured shares.
 	Shared bool `json:"shared" gorm:"-"`
 
-	// CoreCounted marks a COLLECTED record (never a stored row) as Xray's own user
-	// stat, which is the one measurement that arrives without knowing which inbound
-	// it came through.
-	//
-	// It is what lets the panel finish the attribution the core cannot: an account's
-	// bytes with no inbound on them can only have entered through one of the inbounds
-	// that produce a user stat at all, so when exactly one of those is in play the
-	// answer follows (see attributeCoreRecords). The flag has to be carried rather
-	// than guessed, because a record naming no inbound may equally be a VPN session
-	// the collector could not place, and those bytes did NOT come through an Xray
-	// inbound - attributing them to one would be a fiction.
+	// CoreCounted marks a collected record counted by Xray. New cores include
+	// SourceTagged/InboundTag; account-only records from old cores can still use
+	// unambiguous membership attribution. Never persisted or used as quota itself.
 	CoreCounted bool `json:"-" gorm:"-"`
 
 	ExpiryTime int64 `json:"expiryTime" form:"expiryTime"`

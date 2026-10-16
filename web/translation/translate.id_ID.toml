@@ -720,7 +720,7 @@ frozen = "Beku"
 "unattributedUsage" = "Penggunaan dengan inbound tidak diketahui"
 "unattributedUsageHint" = "Penggunaan ini sudah termasuk dalam total akun. Inbound tidak diketahui; tambahkan hanya sekali ke penggunaan inbound teratribusi."
 "sharedUsage" = "bersama"
-"sharedUsageHint" = "Xray menghitung trafik per akun, bukan per inbound, sehingga angka ini adalah sisa pemakaian akun yang dibagi di antara semua inbound Xray yang melayaninya."
+"sharedUsageHint" = "Angka ini mencakup penggunaan yang inbound asalnya tidak tercatat. Bagian bersama tersebut sudah termasuk dalam total akun."
 "onlineShared" = "Online, pada salah satu inbound Xray akun ini. Xray tidak melaporkan yang mana."
 
 [pages.inbounds.periodicTrafficReset]
