@@ -45,6 +45,7 @@ type SubConfigLink struct {
 // what the renderers fall back to when no external proxy is configured (the same rule
 // the panel's own buttons follow, where it is the admin's browser host).
 func (s *SubService) ConfigFiles(subId string, host string) []SubConfigFile {
+	s = s.forResponse()
 	s.address = host
 	inbounds, err := s.getInboundsBySubId(subId)
 	if err != nil {
@@ -64,7 +65,7 @@ func (s *SubService) ConfigFiles(subId string, host string) []SubConfigFile {
 			continue
 		}
 		for _, client := range clients {
-			if !client.Enable || client.SubID != subId {
+			if client.SubID != subId || !s.scope.pageConfigVisible(client) {
 				continue
 			}
 			for _, cfg := range s.inboundConfigFiles(inbound, client.Email, host) {

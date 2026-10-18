@@ -290,6 +290,38 @@ func TestGetSubsReportsAccountWithNoTrafficRowYet(t *testing.T) {
 	}
 }
 
+func TestGetSubsRepresentativeBlockedPageWithoutTrafficRow(t *testing.T) {
+	newSubTestDB(t)
+	markAccountsMigrated(t)
+	const email, subID = "blocked-new@example.com", "blocked-new-subscription"
+	client := subClient(email, subID)
+	client["enable"] = false
+	inbound := seedSubInbound(t, model.VLESS, 40502, "Blocked server", client)
+	expiry := time.Now().Add(24 * time.Hour).UnixMilli()
+	account := seedAccount(t, email, 5*gb, expiry, inbound.Id)
+	if err := database.GetDB().Model(account).Update("representative_blocked", true).Error; err != nil {
+		t.Fatal(err)
+	}
+	svc := subSvc()
+	links, _, traffic, err := svc.GetPageSubs(subID, "vpn.example.com")
+	if err != nil || len(links) != 1 {
+		t.Fatal("blocked customer must retain their browser connection details", err)
+	}
+	if traffic.Enable || traffic.Total != 5*gb || traffic.ExpiryTime != expiry || traffic.Up != 0 || traffic.Down != 0 {
+		t.Fatal("blocked customer with no traffic row lost its quota, expiry or disabled status")
+	}
+	links, _, traffic, err = svc.GetSubs(subID, "vpn.example.com")
+	if err != nil || len(links) != 0 || traffic.Enable || traffic.Total != 5*gb {
+		t.Fatal("raw export must retain accounting without exporting disabled memberships", err)
+	}
+	if err := database.GetDB().First(account, account.Id).Error; err != nil {
+		t.Fatal(err)
+	}
+	if !account.Enable || !account.RepresentativeBlocked {
+		t.Fatal("reading subscription changed the independent representative block")
+	}
+}
+
 // THE GATE. The accounts tables can be fully populated while the backfill has not
 // been verified, and until it is, settings.clients is the only truth. An account
 // row must not be read then, however tempting it looks, so the legacy per-inbound

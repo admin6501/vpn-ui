@@ -106,7 +106,13 @@ func (a *SUBController) initRouter(g *gin.RouterGroup) {
 func (a *SUBController) subs(c *gin.Context) {
 	subId := c.Param("subid")
 	scheme, host, hostWithPort, hostHeader := a.subService.ResolveRequest(c)
-	subs, lastOnline, traffic, err := a.subService.GetSubs(subId, host)
+	accept := c.GetHeader("Accept")
+	pageRequest := strings.Contains(strings.ToLower(accept), "text/html") || c.Query("html") == "1" || strings.EqualFold(c.Query("view"), "html")
+	getSubs := a.subService.GetSubs
+	if pageRequest {
+		getSubs = a.subService.GetPageSubs
+	}
+	subs, lastOnline, traffic, err := getSubs(subId, host)
 	// An empty link list is NOT an error: an account whose only inbounds are wg-c/awg
 	// has real usage and a real expiry to report, but no single-line raw form (its
 	// config comes from the Clash sub). Erroring here would hide the traffic/days page
@@ -120,8 +126,7 @@ func (a *SUBController) subs(c *gin.Context) {
 		}
 
 		// If the request expects HTML (e.g., browser) or explicitly asked (?html=1 or ?view=html), render the info page here
-		accept := c.GetHeader("Accept")
-		if strings.Contains(strings.ToLower(accept), "text/html") || c.Query("html") == "1" || strings.EqualFold(c.Query("view"), "html") {
+		if pageRequest {
 			// Build page data in service
 			subURL, subJsonURL, subClashURL := a.subService.BuildURLs(scheme, hostWithPort, a.subPath, a.subJsonPath, a.subClashPath, subId)
 			if !a.jsonEnabled {
@@ -166,6 +171,7 @@ func (a *SUBController) subs(c *gin.Context) {
 				"downloadByte": page.DownloadByte,
 				"uploadByte":   page.UploadByte,
 				"totalByte":    page.TotalByte,
+				"enabled":      page.Enabled,
 				"subUrl":       page.SubUrl,
 				"subJsonUrl":   page.SubJsonUrl,
 				"subClashUrl":  page.SubClashUrl,
