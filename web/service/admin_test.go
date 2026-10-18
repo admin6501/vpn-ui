@@ -124,15 +124,14 @@ func TestAddAdminHashesPasswordAndRejectsDuplicates(t *testing.T) {
 	if !crypto.CheckPasswordHash(user.Password, "hunter2") {
 		t.Error("stored password does not verify")
 	}
-	if user.Username != "reza" {
-		t.Errorf("username = %q; want it normalized to %q", user.Username, "reza")
+	if user.Username != "Reza" {
+		t.Errorf("username = %q; want original case %q", user.Username, "Reza")
 	}
 	if user.IsSuperAdmin {
 		t.Error("AddAdmin must never mint a super admin")
 	}
 
-	// Case-folded duplicates must be refused: login matches exactly, and First()
-	// would silently resolve to the lower id, making the second account dead.
+	// Case-only duplicates must be refused without rewriting the stored name.
 	if _, err := s.AddAdmin(AdminSpec{Username: "REZA", Password: "other", Nickname: "", Permissions: 0, Enable: true}); !errors.Is(err, ErrAdminUsernameTaken) {
 		t.Errorf("duplicate username error = %v; want ErrAdminUsernameTaken", err)
 	}

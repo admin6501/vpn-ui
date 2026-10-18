@@ -1340,13 +1340,6 @@ func (s *ResellerService) AddReseller(caller *model.User, spec ResellerSpec) (*m
 
 	db := database.GetDB()
 	var adminService AdminService
-	taken, err := adminService.usernameTaken(db, spec.Username, 0)
-	if err != nil {
-		return nil, err
-	}
-	if taken {
-		return nil, ErrResellerNameTaken
-	}
 	hash, err := crypto.HashPasswordAsBcrypt(spec.Password)
 	if err != nil {
 		return nil, err
@@ -1369,6 +1362,13 @@ func (s *ResellerService) AddReseller(caller *model.User, spec ResellerSpec) (*m
 		user.TwoFactorRequired = *spec.TwoFactorRequired
 	}
 	err = db.Transaction(func(tx *gorm.DB) error {
+		taken, err := adminService.usernameTaken(tx, spec.Username, 0)
+		if err != nil {
+			return err
+		}
+		if taken {
+			return ErrResellerNameTaken
+		}
 		if err := tx.Create(user).Error; err != nil {
 			return err
 		}
@@ -1506,13 +1506,6 @@ func (s *ResellerService) UpdateReseller(caller *model.User, id int, spec Resell
 
 	db := database.GetDB()
 	var adminService AdminService
-	taken, err := adminService.usernameTaken(db, spec.Username, id)
-	if err != nil {
-		return err
-	}
-	if taken {
-		return ErrResellerNameTaken
-	}
 
 	updates := map[string]any{
 		"username": spec.Username,
@@ -1541,6 +1534,13 @@ func (s *ResellerService) UpdateReseller(caller *model.User, id int, spec Resell
 		updates["password"] = hash
 	}
 	err = db.Transaction(func(tx *gorm.DB) error {
+		taken, err := adminService.usernameTaken(tx, spec.Username, id)
+		if err != nil {
+			return err
+		}
+		if taken {
+			return ErrResellerNameTaken
+		}
 		if err := tx.Model(model.User{}).Where("id = ?", user.Id).Updates(updates).Error; err != nil {
 			return err
 		}

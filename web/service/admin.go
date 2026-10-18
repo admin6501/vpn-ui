@@ -150,23 +150,31 @@ func (s *AdminService) GetAdmins() ([]AdminView, error) {
 	return out, nil
 }
 
-// normalizeUsername trims and lowercases. Usernames are matched exactly at login
-// against a unique index, so folding case here stops "Admin" and "admin" from
-// being two accounts that look identical in the list.
+// normalizeUsername removes surrounding whitespace without changing the login's
+// spelling. Duplicate detection folds case separately from the stored name.
 func normalizeUsername(name string) string {
-	return strings.ToLower(strings.TrimSpace(name))
+	return strings.TrimSpace(name)
 }
 
+// Call inside the writing transaction so concurrent case variants cannot both
+// pass the check and create separate accounts. Compare in Go because SQLite's
+// LOWER only folds ASCII, while imported usernames can contain Unicode letters.
 func (s *AdminService) usernameTaken(db *gorm.DB, username string, exceptId int) (bool, error) {
-	var n int64
-	q := db.Model(model.User{}).Where("username = ?", username)
+	var names []string
+	q := db.Model(model.User{})
 	if exceptId > 0 {
 		q = q.Where("id != ?", exceptId)
 	}
-	if err := q.Count(&n).Error; err != nil {
+	if err := q.Pluck("username", &names).Error; err != nil {
 		return false, err
 	}
-	return n > 0, nil
+	key := strings.ToLower(normalizeUsername(username))
+	for _, name := range names {
+		if strings.ToLower(normalizeUsername(name)) == key {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // AdminSpec is the mutable shape of an admin as the Admins UI submits it. A struct
@@ -209,13 +217,6 @@ func (s *AdminService) AddAdmin(spec AdminSpec) (*model.User, error) {
 	}
 	username := spec.Username
 	db := database.GetDB()
-	taken, err := s.usernameTaken(db, username, 0)
-	if err != nil {
-		return nil, err
-	}
-	if taken {
-		return nil, ErrAdminUsernameTaken
-	}
 	hash, err := crypto.HashPasswordAsBcrypt(spec.Password)
 	if err != nil {
 		return nil, err
@@ -234,6 +235,13 @@ func (s *AdminService) AddAdmin(spec AdminSpec) (*model.User, error) {
 	// stored enable=1 and could log in. Force the intended value, in one transaction
 	// so no window exists where the account is live.
 	err = db.Transaction(func(tx *gorm.DB) error {
+		taken, err := s.usernameTaken(tx, username, 0)
+		if err != nil {
+			return err
+		}
+		if taken {
+			return ErrAdminUsernameTaken
+		}
 		roleID, err := resolveAdminRole(tx, spec, 0)
 		if err != nil {
 			return err
@@ -284,13 +292,6 @@ func (s *AdminService) UpdateAdmin(id int, spec AdminSpec) error {
 		return err
 	}
 	username := spec.Username
-	taken, err := s.usernameTaken(db, username, id)
-	if err != nil {
-		return err
-	}
-	if taken {
-		return ErrAdminUsernameTaken
-	}
 
 	if existing.IsPanelOwner && !spec.Enable {
 		return ErrProtectedAdmin
@@ -325,6 +326,13 @@ func (s *AdminService) UpdateAdmin(id int, spec AdminSpec) error {
 		updates["password"] = hash
 	}
 	return db.Transaction(func(tx *gorm.DB) error {
+		taken, err := s.usernameTaken(tx, username, id)
+		if err != nil {
+			return err
+		}
+		if taken {
+			return ErrAdminUsernameTaken
+		}
 		roleID, err := resolveAdminRole(tx, spec, existing.AdminRoleID)
 		if err != nil {
 			return err
