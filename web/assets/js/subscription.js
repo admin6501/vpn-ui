@@ -20,6 +20,7 @@
     downloadByte: parseInt(el.getAttribute('data-downloadbyte') || '0', 10) || 0,
     uploadByte: parseInt(el.getAttribute('data-uploadbyte') || '0', 10) || 0,
     totalByte: parseInt(el.getAttribute('data-totalbyte') || '0', 10) || 0,
+    enabled: el.getAttribute('data-enabled') !== 'false',
     datepicker: el.getAttribute('data-datepicker') || 'gregorian',
   };
 
@@ -144,14 +145,11 @@
       isMobile() {
         return this.viewportWidth < 576;
       },
-      isUnlimited() {
-        return !this.app.totalByte;
-      },
       isActive() {
         const now = Date.now();
-        const expiryOk = !this.app.expireMs || this.app.expireMs >= now;
-        const trafficOk = !this.app.totalByte || (this.app.uploadByte + this.app.downloadByte) <= this.app.totalByte;
-        return expiryOk && trafficOk;
+        const expiryOk = !this.app.expireMs || this.app.expireMs > now;
+        const trafficOk = !this.app.totalByte || (this.app.uploadByte + this.app.downloadByte) < this.app.totalByte;
+        return this.app.enabled && expiryOk && trafficOk;
       },
       shadowrocketUrl() {
         const rawUrl = this.app.subUrl + '?flag=shadowrocket';

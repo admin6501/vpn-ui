@@ -138,19 +138,30 @@ func (sc *subScope) traffic(email string) (xray.ClientTraffic, bool) {
 		// Never counted: no traffic row exists yet. Usage is zero and the enable
 		// flag is the account's own, so a brand-new but disabled account still shows
 		// its ⛔️N/A marker instead of looking like a working node.
-		row = xray.ClientTraffic{Enable: account.Enable}
+		row = xray.ClientTraffic{Enable: account.Enable && !account.RepresentativeBlocked}
 	} else {
-		// Both flags matter and they legitimately disagree for a while: the account
-		// carries the operator's intent while the traffic row is what the
-		// enforcement job flipped when the quota ran out. Either being false means
-		// the account cannot be used right now.
-		row.Enable = row.Enable && account.Enable
+		// The account carries the operator's intent, the traffic row carries quota
+		// enforcement, and the representative block is independent of both. Any
+		// one can stop the account without changing its quota or counters.
+		row.Enable = row.Enable && account.Enable && !account.RepresentativeBlocked
 	}
 	row.Total = account.TotalGB
 	row.ExpiryTime = account.ExpiryTime
 
 	sc.traffics[key] = identityTraffic{traffic: row, ok: true}
 	return row, true
+}
+
+// A representative's exhausted allowance suspends the data plane, not the
+// customer's access to their existing connection details. Only the browser and
+// its config-file downloads use this; raw/JSON/Clash exports keep their enabled
+// membership filter. This is a read and never clears the representative block.
+func (sc *subScope) pageConfigVisible(client model.Client) bool {
+	if client.Enable {
+		return true
+	}
+	account := sc.account(client.Email)
+	return account != nil && account.RepresentativeBlocked
 }
 
 // accountTrafficRow reads the ONE client_traffics row an identity has.
@@ -279,6 +290,7 @@ func (f *quotaFold) add(t xray.ClientTraffic) {
 type subUsage struct {
 	order   []string
 	entries map[string]*usageEntry
+	enabled bool
 
 	// lastOnline is the most recent one seen, which the subscriber page shows.
 	lastOnline int64
@@ -299,6 +311,7 @@ func newSubUsage() *subUsage {
 // add records one membership's contribution. accountBacked says the row came from
 // the accounts layer rather than from this inbound's own preload.
 func (u *subUsage) add(email string, traffic xray.ClientTraffic, accountBacked bool) {
+	u.enabled = u.enabled || traffic.Enable
 	if traffic.LastOnline > u.lastOnline {
 		u.lastOnline = traffic.LastOnline
 	}
@@ -325,5 +338,6 @@ func (u *subUsage) result() xray.ClientTraffic {
 	for _, key := range u.order {
 		out.add(u.entries[key].fold.traffic)
 	}
+	out.traffic.Enable = u.enabled
 	return out.traffic
 }

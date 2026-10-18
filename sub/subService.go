@@ -121,6 +121,17 @@ func (s *SubService) resolveTraffic(inbound *model.Inbound, email string) (traff
 
 // GetSubs retrieves subscription links for a given subscription ID and host.
 func (s *SubService) GetSubs(subId string, host string) ([]string, int64, xray.ClientTraffic, error) {
+	return s.getSubs(subId, host, false)
+}
+
+// GetPageSubs retains the customer's connection details when their representative
+// has run out of allowance. This only changes the browser view, not core admission
+// or the enabled-only exports consumed by subscription clients.
+func (s *SubService) GetPageSubs(subId string, host string) ([]string, int64, xray.ClientTraffic, error) {
+	return s.getSubs(subId, host, true)
+}
+
+func (s *SubService) getSubs(subId string, host string, page bool) ([]string, int64, xray.ClientTraffic, error) {
 	s = s.forResponse()
 	s.address = host
 	var result []string
@@ -153,16 +164,21 @@ func (s *SubService) GetSubs(subId string, host string) ([]string, int64, xray.C
 			}
 		}
 		for _, client := range clients {
-			if client.Enable && client.SubID == subId {
+			if client.SubID == subId {
 				// Count every matching client's usage so the subscriber page shows the
 				// account's remaining traffic/days for ALL protocols, including ones with
 				// no raw link (wg-c/awg deliver via the Clash sub and gre via the page's
 				// config downloads; the credential VPNs add a connection-info line via
 				// getLink).
-				ct, accountBacked, _ := s.resolveTraffic(inbound, client.Email)
+				ct, accountBacked, exists := s.resolveTraffic(inbound, client.Email)
+				ct.Enable = client.Enable && (!exists || ct.Enable)
 				usage.add(client.Email, ct, accountBacked)
-				if link := s.getLink(inbound, client.Email); link != "" {
-					result = append(result, link)
+				// Disabled memberships still have usage, quota and an expiry. Omitting
+				// those figures made every suspended subscription look unlimited.
+				if client.Enable || (page && s.scope.pageConfigVisible(client)) {
+					if link := s.getLink(inbound, client.Email); link != "" {
+						result = append(result, link)
+					}
 				}
 			}
 		}
@@ -2248,6 +2264,7 @@ type PageData struct {
 	DownloadByte int64
 	UploadByte   int64
 	TotalByte    int64
+	Enabled      bool
 	SubUrl       string
 	SubJsonUrl   string
 	SubClashUrl  string
@@ -2393,6 +2410,7 @@ func (s *SubService) BuildPageData(subId string, hostHeader string, traffic xray
 		DownloadByte: traffic.Down,
 		UploadByte:   traffic.Up,
 		TotalByte:    traffic.Total,
+		Enabled:      traffic.Enable,
 		SubUrl:       subURL,
 		SubJsonUrl:   subJsonURL,
 		SubClashUrl:  subClashURL,
