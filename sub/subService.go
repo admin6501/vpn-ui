@@ -175,7 +175,11 @@ func (s *SubService) getSubs(subId string, host string, page bool) ([]string, in
 				usage.add(client.Email, ct, accountBacked)
 				// Disabled memberships still have usage, quota and an expiry. Omitting
 				// those figures made every suspended subscription look unlimited.
-				if client.Enable || (page && s.scope.pageConfigVisible(client)) {
+				visible := client.Enable
+				if page {
+					visible = s.scope.pageConfigVisible(inbound.Id, client)
+				}
+				if visible {
 					if link := s.getLink(inbound, client.Email); link != "" {
 						result = append(result, link)
 					}

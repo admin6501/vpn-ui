@@ -322,6 +322,33 @@ func TestGetSubsRepresentativeBlockedPageWithoutTrafficRow(t *testing.T) {
 	}
 }
 
+func TestGetSubsPageRespectsManualDisableUnderRepresentativeBlock(t *testing.T) {
+	for _, disableAccount := range []bool{false, true} {
+		t.Run(fmt.Sprintf("account=%t", disableAccount), func(t *testing.T) {
+			newSubTestDB(t)
+			markAccountsMigrated(t)
+			const email, subID = "blocked-manual@example.com", "blocked-manual-subscription"
+			// Even stale enabled client JSON must not override canonical intent.
+			inbound := seedSubInbound(t, model.VLESS, 40503, "Blocked server", subClient(email, subID))
+			account := seedAccount(t, email, 5*gb, 0, inbound.Id)
+			db := database.GetDB()
+			if err := db.Model(account).Updates(map[string]any{"representative_blocked": true, "enable": !disableAccount}).Error; err != nil {
+				t.Fatal(err)
+			}
+			if !disableAccount {
+				if err := db.Model(&model.AccountInbound{}).Where("account_id = ? AND inbound_id = ?", account.Id, inbound.Id).Update("enable", false).Error; err != nil {
+					t.Fatal(err)
+				}
+			}
+			seedTraffic(t, inbound.Id, email, gb, 2*gb, 5*gb, 0)
+			links, _, traffic, err := subSvc().GetPageSubs(subID, "vpn.example.com")
+			if err != nil || len(links) != 0 || traffic.Enable || traffic.Up != gb || traffic.Down != 2*gb || traffic.Total != 5*gb {
+				t.Fatal("manual disable must hide connection details without losing real usage", err)
+			}
+		})
+	}
+}
+
 // THE GATE. The accounts tables can be fully populated while the backfill has not
 // been verified, and until it is, settings.clients is the only truth. An account
 // row must not be read then, however tempting it looks, so the legacy per-inbound

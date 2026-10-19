@@ -65,7 +65,7 @@ func (s *SubService) ConfigFiles(subId string, host string) []SubConfigFile {
 			continue
 		}
 		for _, client := range clients {
-			if client.SubID != subId || !s.scope.pageConfigVisible(client) {
+			if client.SubID != subId || !s.scope.pageConfigVisible(inbound.Id, client) {
 				continue
 			}
 			for _, cfg := range s.inboundConfigFiles(inbound, client.Email, host) {

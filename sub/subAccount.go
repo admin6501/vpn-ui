@@ -155,13 +155,21 @@ func (sc *subScope) traffic(email string) (xray.ClientTraffic, bool) {
 // A representative's exhausted allowance suspends the data plane, not the
 // customer's access to their existing connection details. Only the browser and
 // its config-file downloads use this; raw/JSON/Clash exports keep their enabled
-// membership filter. This is a read and never clears the representative block.
-func (sc *subScope) pageConfigVisible(client model.Client) bool {
-	if client.Enable {
-		return true
-	}
+// membership filter. Explicitly disabled accounts or memberships stay hidden.
+// This is a read and never clears the representative block.
+func (sc *subScope) pageConfigVisible(inboundID int, client model.Client) bool {
 	account := sc.account(client.Email)
-	return account != nil && account.RepresentativeBlocked
+	if account == nil {
+		return client.Enable
+	}
+	if !account.Enable {
+		return false
+	}
+	var membership model.AccountInbound
+	if err := database.GetDB().Where("account_id = ? AND inbound_id = ?", account.Id, inboundID).First(&membership).Error; err != nil {
+		return false
+	}
+	return service.MembershipEnabled(&membership) && (client.Enable || account.RepresentativeBlocked)
 }
 
 // accountTrafficRow reads the ONE client_traffics row an identity has.

@@ -132,9 +132,9 @@ func TestSubscriptionPageBrowserRuntime(t *testing.T) {
 				router.ServeHTTP(w, r)
 			}))
 			defer server.Close()
-			runBrowser := func(active bool) {
+			runBrowser := func(active, links bool) {
 				t.Helper()
-				expected := map[string]any{"lang": tc.lang, "active": active, "links": !tc.memberDisabled, "total": tc.total}
+				expected := map[string]any{"lang": tc.lang, "active": active, "links": links, "total": tc.total}
 				raw, _ := json.Marshal(expected)
 				ctx, cancel := context.WithTimeout(context.Background(), 35*time.Second)
 				defer cancel()
@@ -146,7 +146,7 @@ func TestSubscriptionPageBrowserRuntime(t *testing.T) {
 					t.Log(string(out))
 				}
 			}
-			runBrowser(!tc.expired && !tc.disabled && !tc.blocked && (tc.total == 0 || tc.total > 3*gb))
+			runBrowser(!tc.expired && !tc.disabled && !tc.blocked && (tc.total == 0 || tc.total > 3*gb), !tc.memberDisabled && !tc.disabled)
 			if tc.blocked {
 				// Browser views and config downloads must never reactivate the account,
 				// reset counters, or spend/replenish the representative's balance.
@@ -193,13 +193,32 @@ func TestSubscriptionPageBrowserRuntime(t *testing.T) {
 				if profile.AllowanceBytes != 3*gb {
 					t.Fatal("viewing the subscription changed representative allowance")
 				}
+				// The Clients page's explicit disable is independent of the parent
+				// block. It removes profiles but preserves the real subscription stats.
+				saveEnable := func(enabled bool) {
+					t.Helper()
+					svc := &service.AccountService{}
+					if _, err := svc.SaveAccountWithoutInbound(map[string]any{"email": account.Email, "enable": enabled, "subId": sid, "totalGB": float64(tc.total), "expiryTime": float64(expiry)}); err != nil {
+						t.Fatal(err)
+					}
+					if _, err := svc.ApplyMembershipsFrom(account.Email, 0, ids, ids, true); err != nil {
+						t.Fatal(err)
+					}
+				}
+				saveEnable(false)
+				runBrowser(false, false)
 				if err := db.Model(&profile).Update("allowance_bytes", 100*gb).Error; err != nil {
 					t.Fatal(err)
 				}
 				if err, _, _, _, _ := (&service.InboundService{}).AddTraffic(nil, nil); err != nil {
 					t.Fatal(err)
 				}
-				runBrowser(true)
+				runBrowser(false, false)
+				if err := db.First(account, account.Id).Error; err != nil || account.Enable || account.RepresentativeBlocked {
+					t.Fatal("replenishment must keep the manual disable", err)
+				}
+				saveEnable(true)
+				runBrowser(true, true)
 				links, _, restored, err := subSvc().GetSubs(sid, "vpn.example.com")
 				if err != nil || len(links) != 3 || !restored.Enable || restored.Up != gb || restored.Down != 2*gb {
 					t.Fatal("replenishing representative did not restore normal exports with unchanged usage", err)

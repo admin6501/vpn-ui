@@ -60,6 +60,21 @@ func reconcileRepresentatives(tx *gorm.DB) (bool, error) {
 			changed = true
 		}
 	}
+	if len(profiles) > 0 {
+		// Older direct account saves could leave enable=true in traffic even
+		// though the independent representative block was already set. Repair
+		// those rows without waiting for the block to change, and never enable a
+		// customer here. One set-based update avoids a write per customer/tick.
+		consumptionProfiles := tx.Model(&model.ResellerProfile{}).Select("user_id").Where("consumption_based = ?", true)
+		representativeEmails := tx.Model(&model.ResellerClient{}).Select("LOWER(TRIM(email))").Where("user_id IN (?)", consumptionProfiles)
+		blockedEmails := tx.Model(&model.Account{}).Select("LOWER(TRIM(email))").
+			Where("(representative_blocked = ? OR enable = ?) AND LOWER(TRIM(email)) IN (?)", true, false, representativeEmails)
+		repaired := tx.Model(&xray.ClientTraffic{}).Where("enable = ? AND LOWER(TRIM(email)) IN (?)", true, blockedEmails).Update("enable", false)
+		if repaired.Error != nil {
+			return false, repaired.Error
+		}
+		changed = changed || repaired.RowsAffected > 0
+	}
 	return changed, nil
 }
 
