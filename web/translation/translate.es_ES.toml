@@ -1372,6 +1372,8 @@ vpnOutImportKept = "No está en el archivo, por lo que se conserva el valor alma
 "resetOutboundTrafficError" = "Error al reiniciar el tráfico saliente"
 
 [pages.inboundForm]
+greRouterPublicIP = "IPv4 pública del router"
+greRouterPublicIPHint = "Introduce la IPv4 pública del router de este cliente. Déjalo vacío para una dirección dinámica. Guarda para regenerar las configuraciones."
 "hysteriaObfsHint" = "Contraseña opcional de Salamander. Déjela vacía para desactivar la ofuscación."
 "statusCode" = "Código de estado HTTP"
 "insecure" = "Permitir TLS inseguro"

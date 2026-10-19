@@ -1371,6 +1371,8 @@ vpnOutImportKept = "Tidak ada di file, jadi nilai yang disimpan disimpan:"
 "resetOutboundTrafficError" = "Gagal mereset lalu lintas keluar"
 
 [pages.inboundForm]
+greRouterPublicIP = "IPv4 publik router"
+greRouterPublicIPHint = "Masukkan IPv4 publik router pelanggan ini. Kosongkan untuk alamat dinamis. Simpan untuk membuat ulang konfigurasi."
 "hysteriaObfsHint" = "Kata sandi Salamander opsional. Kosongkan untuk menonaktifkan penyamaran."
 "statusCode" = "Kode status HTTP"
 "insecure" = "Izinkan TLS tidak aman"

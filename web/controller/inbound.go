@@ -144,6 +144,7 @@ func (a *InboundController) initRouter(g *gin.RouterGroup) {
 	// AmneziaWG: render a client's per-device .conf(s) with obfuscation (server-minted keys).
 	g.GET("/:id/awg-configs", read, owns, a.getAwgConfigs)
 	g.GET("/:id/gre-configs", read, owns, a.getGreConfigs)
+	g.POST("/:id/gre-peer-ip/:email", requirePerm(model.PermEditClient), owns, ownsClient, a.setGrePeerIP)
 	g.GET("/:id/ssh-configs", read, owns, a.getSshConfigs)
 	// IKEv2 "Remote ID" (the cert SAN / IKE identity the server presents). Inbound-wide,
 	// not per-account, so this is gated like getInbound (read+owns) rather than the
@@ -2724,6 +2725,30 @@ func (a *InboundController) getAwgConfigs(c *gin.Context) {
 		return
 	}
 	jsonObj(c, configs, nil)
+}
+
+// setGrePeerIP edits one router address without changing the account or quota.
+func (a *InboundController) setGrePeerIP(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil || id <= 0 {
+		jsonMsg(c, "Invalid inbound ID", fmt.Errorf("invalid inbound ID"))
+		return
+	}
+	var body struct {
+		PeerIndex  *int    `form:"peerIndex" json:"peerIndex" binding:"required"`
+		PeerIP     *string `form:"peerIp" json:"peerIp" binding:"required"`
+		ExpectedIP *string `form:"expectedIp" json:"expectedIp" binding:"required"`
+	}
+	if err := c.ShouldBind(&body); err != nil {
+		jsonMsg(c, "Invalid peer address", err)
+		return
+	}
+	if err := a.greService.SetPeerIP(id, c.Param("email"), *body.PeerIndex, *body.PeerIP, *body.ExpectedIP); err != nil {
+		jsonMsg(c, "Unable to save router IP", err)
+		return
+	}
+	a.reconcileForInbounds([]int{id}, true)
+	jsonMsg(c, I18nWeb(c, "pages.inbounds.toasts.inboundClientUpdateSuccess"), nil)
 }
 
 // getGreConfigs renders the router-side setup for one account (?email=) of a GRE inbound.

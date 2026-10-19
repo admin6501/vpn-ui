@@ -1646,6 +1646,8 @@ brandNameDesc = "Shown on the login page, panel pages and browser titles. Leave 
 "bulkPartial" = "Accounts that will be processed"
 
 [pages.inboundForm]
+greRouterPublicIP = "Router public IPv4"
+greRouterPublicIPHint = "Enter this customer router’s public IPv4 address. Leave blank for a dynamic address. Save to regenerate the configs."
 "hysteriaObfsHint" = "Optional Salamander password. Leave empty to disable obfuscation."
 "statusCode" = "HTTP status code"
 "insecure" = "Allow insecure TLS"

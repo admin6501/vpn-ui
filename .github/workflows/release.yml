@@ -113,6 +113,7 @@ jobs:
           export NODE_PATH=/tmp/vpn-ui-browser-tests/node_modules
           export NODE_UI_CHROME=$(node -e 'console.log(require("playwright").chromium.executablePath())')
           node test_unit/client_details_browser_test.cjs
+          node test_unit/gre_peer_browser_test.cjs
           node test_unit/account_usage_breakdown_browser_test.cjs
           node test_unit/refresh_queue_test.cjs
           RUN_NODE_UI_BROWSER=1 go test ./web/middleware -run '^TestSecurityBrowserPanelNavigationRuntime$' -count=1 -timeout 60s
@@ -133,6 +134,7 @@ jobs:
       - name: Verify GRE and L2TP coexistence and branding settings
         run: |
           go test -race ./web/service -run 'TestGre|TestL2tp|TestBranding' -count=1 -timeout 120s
+          go test -race ./web/controller -run '^TestGrePeerIP' -count=1 -timeout 120s
       - name: Verify complete translation catalogs, component locales and Telegram language reload
         run: |
           go test ./web -run 'TestPersianInboundFormsRender|TestAllTemplatesParse|TestEditedTemplatesParse|TestTranslationsAreValidToml|TestTranslationKeyParity|TestAllLocaleMessagesRenderAndPreserveVariables|TestComponentLocaleCoverage'

@@ -1657,6 +1657,8 @@ brandNameDesc = "در صفحهٔ ورود، بخش‌های پنل و عنوان
 "apply" = "اعمال"
 
 [pages.inboundForm]
+greRouterPublicIP = "IPv4 عمومی روتر مشتری"
+greRouterPublicIPHint = "IP عمومی روتر همین مشتری را وارد کنید. برای IP پویا خالی بگذارید. با ذخیره، کانفیگ‌ها دوباره ساخته می‌شوند."
 "hysteriaObfsHint" = "رمز اختیاری Salamander؛ برای غیرفعال کردن مبهم‌سازی، خالی بگذارید."
 "statusCode" = "کد وضعیت HTTP"
 "insecure" = "اجازهٔ TLS ناامن"

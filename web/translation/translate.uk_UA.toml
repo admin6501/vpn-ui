@@ -1371,6 +1371,8 @@ vpnOutImportKept = "немає у файлі, тому збережене зна
 "resetOutboundTrafficError" = "Помилка скидання вихідного трафіку"
 
 [pages.inboundForm]
+greRouterPublicIP = "Публічний IPv4 маршрутизатора"
+greRouterPublicIPHint = "Введіть публічний IPv4 маршрутизатора цього клієнта. Для динамічної адреси залиште поле порожнім. Збережіть для оновлення конфігурацій."
 "hysteriaObfsHint" = "Необов’язковий пароль Salamander. Залиште порожнім, щоб вимкнути обфускацію."
 "statusCode" = "Код стану HTTP"
 "insecure" = "Дозволити небезпечний TLS"

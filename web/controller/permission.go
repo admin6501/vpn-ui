@@ -542,6 +542,7 @@ func requireRepresentativeClientRoute(prefix string) gin.HandlerFunc {
 		"/updateClientTraffic/:email": true, "/:id/delClientByEmail/:email": true,
 		"/:id/ovpn/:proto": true, "/:id/wgc-configs": true, "/:id/wgxray-configs": true,
 		"/:id/awg-configs": true, "/:id/gre-configs": true, "/:id/ssh-configs": true,
+		"/:id/gre-peer-ip/:email": true,
 		"/:id/ikev2-remote-id": true,
 	}
 	return func(c *gin.Context) {
