@@ -281,7 +281,7 @@
 <a-modal v-model="ssl.logOpen" :title="sslLogTitleText()" :footer="null" :width="900"
     :class="themeSwitcher.currentTheme" wrap-class-name="ssl-log-modal">
     <div class="ssl-rawlog-bar">
-        <span class="ssl-rawlog-meta">vpn-ui &middot; [[ sslConsoleLabel() ]]</span>
+        <span class="ssl-rawlog-meta"><span v-pre>{{ or .brand_name "VPN-UI" }}</span> &middot; [[ sslConsoleLabel() ]]</span>
         <a-button size="small" @click="sslCopyLog">
             <a-icon type="copy"></a-icon>{{ i18n "pages.settings.ssl.copyLog" }}
         </a-button>

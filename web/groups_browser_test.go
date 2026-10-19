@@ -10,6 +10,7 @@ import (
 	"github.com/mhsanaei/3x-ui/v2/web/controller"
 	weblocale "github.com/mhsanaei/3x-ui/v2/web/locale"
 	"github.com/mhsanaei/3x-ui/v2/web/service"
+	"github.com/mhsanaei/3x-ui/v2/xray"
 	"github.com/nicksnyder/go-i18n/v2/i18n"
 	"github.com/op/go-logging"
 	"github.com/pelletier/go-toml/v2"
@@ -52,6 +53,9 @@ func TestGroupsBrowserRuntime(t *testing.T) {
 				t.Fatal(err)
 			}
 			db := database.GetDB()
+			if err := db.Create(&model.Setting{Key: "brandName", Value: "برند Nava & Friends"}).Error; err != nil {
+				t.Fatal(err)
+			}
 			var root model.User
 			if err := db.Where("is_super_admin = ?", true).First(&root).Error; err != nil {
 				t.Fatal(err)
@@ -110,12 +114,21 @@ func TestGroupsBrowserRuntime(t *testing.T) {
 			r.Use(func(c *gin.Context) {
 				actor := &root
 				switch c.GetHeader("X-Test-Actor") {
+				case "anonymous":
+					actor = nil
 				case "delegate":
 					actor = &delegate
 				case "representative":
 					actor = &representative
 				}
-				c.Set("LOGIN_USER_ROW", actor)
+				// Production sessions load a fresh user per request. Keep that same
+				// isolation when permission middleware enriches the cached test user.
+				var requestActor *model.User
+				if actor != nil {
+					copy := *actor
+					requestActor = &copy
+				}
+				c.Set("LOGIN_USER_ROW", requestActor)
 				c.Set("base_path", "/test/")
 				c.Set("I18n", func(_ weblocale.I18nType, key string, _ ...string) string {
 					v, _ := localizer.Localize(&i18n.LocalizeConfig{MessageID: key})
@@ -131,6 +144,19 @@ func TestGroupsBrowserRuntime(t *testing.T) {
 				}
 				c.JSON(200, gin.H{"success": true})
 			})
+			r.POST("/test/fixtures/traffic", func(c *gin.Context) {
+				if err := db.Model(&xray.ClientTraffic{}).Where("email = ?", "new-group-user").Updates(map[string]any{"up": 1024, "down": 2048, "all_time": 4096}).Error; err != nil {
+					t.Error(err)
+				}
+				c.JSON(200, gin.H{"success": true})
+			})
+			r.POST("/test/fixtures/brand", func(c *gin.Context) {
+				if err := db.Model(&model.Setting{}).Where("key = ?", "brandName").Update("value", c.PostForm("brandName")).Error; err != nil {
+					t.Error(err)
+				}
+				c.JSON(200, gin.H{"success": true})
+			})
+			controller.NewIndexController(r.Group("/test"))
 			controller.NewXUIController(r.Group("/test"))
 			controller.NewClientsController(r.Group("/test/panel/api/clients"))
 			controller.NewInboundController(r.Group("/test/panel/api/inbounds"))
@@ -162,6 +188,10 @@ func TestGroupsBrowserRuntime(t *testing.T) {
 			var created model.Account
 			if err := db.Where("email = ?", "new-group-user").First(&created).Error; err != nil {
 				t.Fatal(err)
+			}
+			var traffic xray.ClientTraffic
+			if err := db.Where("email = ?", "new-group-user").First(&traffic).Error; err != nil || traffic.Up != 0 || traffic.Down != 0 || traffic.AllTime != 4096 {
+				t.Fatal("edit-form reset must preserve lifetime usage", err)
 			}
 			ids, err := accounts.GetMembershipInboundIds(created.Id)
 			if err != nil || len(ids) != 2 {

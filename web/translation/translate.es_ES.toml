@@ -794,6 +794,8 @@ setupRequiredOk = "Abrir configuración principal"
 "serverMaxHeaderBytesNegative" = "Este valor no puede ser negativo. Deja 0 para que decida el núcleo."
 
 [pages.settings]
+brandName = "Nombre de marca"
+brandNameDesc = "Se muestra en el inicio de sesión, el panel y el título del navegador. Déjelo vacío para usar el nombre predeterminado."
 "title" = "Configuraciones"
 "save" = "Guardar"
 "infoDesc" = "Cada cambio realizado aquí debe ser guardado. Por favor, reinicie el panel para aplicar los cambios."

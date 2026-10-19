@@ -86,7 +86,7 @@
             // empty one.
             this.totpObject = token
                 ? new OTPAuth.TOTP({
-                    issuer: "VPN-UI",
+                    issuer: typeof PANEL_BRAND === 'undefined' ? 'VPN-UI' : PANEL_BRAND,
                     label,
                     algorithm: "SHA1",
                     digits: 6,

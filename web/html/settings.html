@@ -1196,11 +1196,13 @@
       },
       async updateAllSetting() {
         this.loading(true);
+        const brandChanged = (this.allSetting.brandName.trim() || 'VPN-UI') !== PANEL_BRAND;
         // Post the fields returned by the settings API, preserving its contract.
         const payload = Object.fromEntries(this.settingKeys.map(key => [key, this.allSetting[key]]));
         const msg = await HttpUtil.post("/panel/setting/update", payload);
         this.loading(false);
         if (msg.success) {
+          if (brandChanged) { window.location.reload(); return; }
           await this.getAllSetting();
         }
       },

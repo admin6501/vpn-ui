@@ -39,6 +39,7 @@ var defaultValueMap = map[string]string{
 	"trafficDiff":                 "0",
 	"remarkModel":                 "-ieo",
 	"serverName":                  "",
+	"brandName":                   "",
 	"timeLocation":                "Local",
 	"tgBotEnable":                 "false",
 	"tgBotToken":                  "",
@@ -146,6 +147,19 @@ var defaultValueMap = map[string]string{
 // SettingService provides business logic for application settings management.
 // It handles configuration storage, retrieval, and validation for all system settings.
 type SettingService struct{}
+
+// GetBrandName is presentation only. Protocol identities, paths and service names
+// retain their stable technical values when an operator changes their brand.
+func (s *SettingService) GetBrandName() string {
+	if database.GetDB() == nil {
+		return "VPN-UI"
+	}
+	name, err := s.getString("brandName")
+	if err != nil || strings.TrimSpace(name) == "" {
+		return "VPN-UI"
+	}
+	return strings.TrimSpace(name)
+}
 
 func (s *SettingService) GetDefaultJSONConfig() (any, error) {
 	var jsonData any

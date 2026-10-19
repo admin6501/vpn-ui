@@ -438,9 +438,9 @@
     </article>
     {{ else }}
     <!-- ===== VPN-UI panel + updater ===== -->
-    <article class="bo-tile bo-t-vpnui" aria-label="VPN-UI">
+    <article class="bo-tile bo-t-vpnui" aria-label="{{ or .brand_name "VPN-UI" }}">
       <div class="bo-tile-head">
-        <h3 class="bo-tile-title">VPN-UI</h3>
+        <h3 class="bo-tile-title" v-pre>{{ or .brand_name "VPN-UI" }}</h3>
         <button type="button" class="bo-icon-btn bo-icon-btn--accent"
           :disabled="panelUpdate.checking" @click="checkForUpdate(true)">
           <svg class="bo-icon bo-icon-14" aria-hidden="true"><use href="#bo-i-refresh"></use></svg>
@@ -1052,7 +1052,7 @@
     </template>
     <div style="padding:4px 2px">
       <p style="margin-bottom:10px">
-        <b>[[ distroModal.pretty ]]</b> is not on vpn-ui's officially tested distro list.
+        <b>[[ distroModal.pretty ]]</b> is not on <span v-pre>{{ or .brand_name "VPN-UI" }}</span>'s officially tested distro list.
         The panel may still run, but <b style="color:#cf1322">expect errors</b>.
       </p>
       <p style="margin-bottom:0;opacity:0.7;font-size:12px;line-height:1.5">
@@ -2319,7 +2319,7 @@
         const panel = await HttpUtil.post('/panel/api/server/logs/' + logModal.rows,
           { level: logModal.level, syslog: logModal.syslog });
         if (panel && panel.success) {
-          sections.push({ name: 'VPN-UI', text: (panel.obj || []).join('\n') });
+          sections.push({ name: PANEL_BRAND, text: (panel.obj || []).join('\n') });
         }
 
         // Core logs sit behind PermCoreSettings, which someone looking at

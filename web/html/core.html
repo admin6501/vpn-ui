@@ -365,7 +365,7 @@
     <div class="term term--setup">
       <div class="term-bar">
         <a-icon type="code" class="term-bar-icon"></a-icon>
-        <span class="term-bar-title">vpn-ui · [[ consoleLabel() ]]</span>
+        <span class="term-bar-title"><span v-pre>{{ or .brand_name "VPN-UI" }}</span> · [[ consoleLabel() ]]</span>
         <span class="term-count" v-if="provisionResult.length">[[ okCount() ]]/[[ provisionResult.length ]]</span>
       </div>
       <div class="term-progress">
@@ -1224,7 +1224,7 @@
         return ({ xray: 'Xray', l2tp: 'L2TP', ipsec: 'IPsec', pptp: 'PPTP', openvpn: 'OpenVPN', openconnect: 'OpenConnect (cisco)', sstp: 'SSTP', ikev2: 'IKEv2', wgc: 'WireGuard (C)', awg: 'AmneziaWG', gre: 'GRE', mtproto: 'MTProto Proxy', ssh: 'SSH', radius: 'RADIUS' })[name] || name;
       },
       backendName(value) {
-        if (value === 'Built-in (vpn-ui)') return '{{ i18n "pages.core.builtinRuntime" }}';
+        if (value === 'Built-in (vpn-ui)') return '{{ i18n "pages.core.builtinRuntime" }}'.replace(/VPN-UI/gi, () => PANEL_BRAND);
         return (value || '-').replace('(kernel)', '({{ i18n "pages.core.kernelRuntime" }})');
       },
       coreBackend(name) {

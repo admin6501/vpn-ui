@@ -7,6 +7,7 @@ import (
 	"net"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/mhsanaei/3x-ui/v2/util/common"
 )
@@ -30,6 +31,7 @@ type AllSetting struct {
 	SessionMaxAge int    `json:"sessionMaxAge" form:"sessionMaxAge"` // Session maximum age in minutes
 
 	// UI settings
+	BrandName   string `json:"brandName" form:"brandName"`
 	PageSize    int    `json:"pageSize" form:"pageSize"`       // Number of items per page in lists
 	ExpireDiff  int    `json:"expireDiff" form:"expireDiff"`   // Expiration warning threshold in days
 	TrafficDiff int    `json:"trafficDiff" form:"trafficDiff"` // Traffic warning threshold percentage
@@ -111,6 +113,10 @@ type AllSetting struct {
 
 // CheckValid validates all settings in the AllSetting struct, checking IP addresses, ports, SSL certificates, and other configuration values.
 func (s *AllSetting) CheckValid() error {
+	s.BrandName = strings.TrimSpace(s.BrandName)
+	if len([]rune(s.BrandName)) > 80 || strings.IndexFunc(s.BrandName, unicode.IsControl) >= 0 {
+		return common.NewError("brand name must be a single line of at most 80 characters")
+	}
 	if s.WebListen != "" {
 		ip := net.ParseIP(s.WebListen)
 		if ip == nil {
