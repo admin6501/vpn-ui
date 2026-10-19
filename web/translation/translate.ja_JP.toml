@@ -1371,6 +1371,8 @@ vpnOutImportKept = "ファイルにないため、保存された値が保持さ
 "resetOutboundTrafficError" = "送信トラフィックのリセットエラー"
 
 [pages.inboundForm]
+greRouterPublicIP = "ルーターのパブリックIPv4"
+greRouterPublicIPHint = "この顧客のルーターのパブリックIPv4を入力してください。動的アドレスの場合は空欄にし、保存して設定を再生成します。"
 "hysteriaObfsHint" = "Salamander のパスワード（任意）。空欄にすると難読化を無効にします。"
 "statusCode" = "HTTPステータスコード"
 "insecure" = "安全でないTLSを許可"

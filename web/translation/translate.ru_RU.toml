@@ -1372,6 +1372,8 @@ vpnOutImportKept = "нет в файле, поэтому сохраненное 
 "resetOutboundTrafficError" = "Ошибка сброса трафика исходящего подключения"
 
 [pages.inboundForm]
+greRouterPublicIP = "Публичный IPv4 роутера"
+greRouterPublicIPHint = "Введите публичный IPv4 роутера этого клиента. Для динамического адреса оставьте поле пустым. Сохраните для обновления конфигураций."
 "hysteriaObfsHint" = "Необязательный пароль Salamander. Оставьте пустым, чтобы отключить обфускацию."
 "statusCode" = "Код состояния HTTP"
 "insecure" = "Разрешить небезопасный TLS"

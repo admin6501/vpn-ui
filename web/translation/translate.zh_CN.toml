@@ -1372,6 +1372,8 @@ vpnOutImportKept = "不在文件中，因此保留存储的值："
 "resetOutboundTrafficError" = "重置出站流量错误"
 
 [pages.inboundForm]
+greRouterPublicIP = "路由器公网 IPv4"
+greRouterPublicIPHint = "输入此客户路由器的公网 IPv4 地址。动态地址请留空。保存后重新生成配置。"
 "hysteriaObfsHint" = "可选的 Salamander 密码。留空可禁用流量混淆。"
 "statusCode" = "HTTP状态码"
 "insecure" = "允许不安全的TLS"

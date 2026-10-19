@@ -9,7 +9,7 @@
   plane built.
 -->
 <a-modal id="gre-config-modal" v-model="greConfigModal.visible" :title="greConfigModal.title"
-         :closable="true" :mask-closable="false" :footer="null" width="720px" class="gre-cfg-modal">
+         :closable="!greConfigModal.saving" :keyboard="!greConfigModal.saving" :mask-closable="false" :footer="null" width="720px" class="gre-cfg-modal">
   <a-spin :spinning="greConfigModal.loading">
     <div v-if="!greConfigModal.loading && greConfigModal.peers.length === 0"
          :style="{ padding: '24px 0', textAlign: 'center', color: '#888' }">
@@ -34,11 +34,21 @@
           <a-input :value="peer.gatewayIp" read-only @click="copy(peer.gatewayIp)"></a-input>
         </a-col>
         <a-col :xs="24" :md="12" :style="{ marginBottom: '8px' }">
-          <div :style="{ marginBottom: '4px', color: '#888' }">Their public IP</div>
+          <div :style="{ marginBottom: '4px', color: '#888' }">{{ i18n "pages.inboundForm.greRouterPublicIP" }}</div>
           <a-input
-            :value="peer.dynamic ? 'dynamic (learned)' : peer.peerIp"
-            read-only
+            v-model.trim="peer.draftIp"
+            :disabled="!greConfigModal.canEdit || greConfigModal.saving"
+            placeholder="YOUR-PUBLIC-IP"
+            :data-testid="'gre-peer-ip-' + peer.peerIndex"
+            dir="ltr"
           ></a-input>
+          <div class="bo-dim" :style="{ marginTop: '4px' }">{{ i18n "pages.inboundForm.greRouterPublicIPHint" }}</div>
+          <a-button v-if="greConfigModal.canEdit" type="primary" size="small"
+            :style="{ marginTop: '8px' }"
+            :loading="greConfigModal.savingIndex === peer.peerIndex"
+            :disabled="greConfigModal.saving || peer.draftIp === peer.peerIp"
+            :data-testid="'gre-peer-save-' + peer.peerIndex"
+            @click="savePeerIP(peer)">{{ i18n "save" }}</a-button>
         </a-col>
       </a-row>
       <a-alert
@@ -143,12 +153,18 @@
   const greConfigModal = {
     visible: false,
     loading: false,
+    saving: false,
+    savingIndex: -1,
     title: "",
     dbInboundId: 0,
     email: "",
     subId: "",
     peers: [],
+    get canEdit() {
+      return typeof PERMS !== 'undefined' && !!PERMS.editClient;
+    },
     show(dbInboundId, client) {
+      if (greConfigModal.saving) return;
       greConfigModal.dbInboundId = dbInboundId;
       greConfigModal.email = client ? client.email : "";
       greConfigModal.subId = client ? client.subId : "";
@@ -158,6 +174,7 @@
       greConfigModalApp.fetchConfigs();
     },
     close() {
+      if (greConfigModal.saving) return;
       greConfigModal.visible = false;
     },
 
@@ -214,8 +231,8 @@
           note: ipsec ? 'the identity THIS panel presents' : '' },
         { label: 'IPsec Local ID', value: '', blank: 'leave blank',
           note: 'this inbound accepts any identity from the peer' },
-        { label: 'IKE Version', value: '', blank: 'Automatic',
-          note: 'this inbound answers IKEv1 or IKEv2' },
+        { label: 'IKE Version', value: '2',
+          note: 'this inbound requires IKEv2' },
       ];
       // A row whose value AND explanation are both empty says nothing.
       return rows.filter(r => r.value || r.blank);
@@ -248,21 +265,50 @@
       },
     },
     methods: {
-      async fetchConfigs() {
+      async fetchConfigs(savedPeerIndex = null) {
+        const inboundId = greConfigModal.dbInboundId;
+        const email = greConfigModal.email;
+        const drafts = new Map();
+        if (savedPeerIndex !== null) {
+          for (const peer of greConfigModal.peers) {
+            if (peer.peerIndex !== savedPeerIndex && peer.draftIp !== peer.peerIp) drafts.set(peer.peerIndex, peer.draftIp);
+          }
+        }
         greConfigModal.loading = true;
         try {
           // GET, matching the route. And no {{ .base_path }} prefix: axios' baseURL is
           // already global, so prefixing here would double it and 404.
           const msg = await HttpUtil.get(
-            '/panel/api/inbounds/' + greConfigModal.dbInboundId + '/gre-configs',
-            { email: greConfigModal.email }
+            '/panel/api/inbounds/' + inboundId + '/gre-configs',
+            { email }
           );
-          greConfigModal.peers = (msg && msg.success && Array.isArray(msg.obj)) ? msg.obj : [];
+          if (inboundId !== greConfigModal.dbInboundId || email !== greConfigModal.email) return;
+          greConfigModal.peers = (msg && msg.success && Array.isArray(msg.obj))
+            ? msg.obj.map(peer => Object.assign({}, peer, { draftIp: drafts.has(peer.peerIndex) ? drafts.get(peer.peerIndex) : (peer.peerIp || '') })) : [];
         } catch (e) {
           console.error('Failed to load GRE configs:', e);
-          greConfigModal.peers = [];
+          if (inboundId === greConfigModal.dbInboundId && email === greConfigModal.email) greConfigModal.peers = [];
         } finally {
-          greConfigModal.loading = false;
+          if (inboundId === greConfigModal.dbInboundId && email === greConfigModal.email) greConfigModal.loading = false;
+        }
+      },
+      async savePeerIP(peer) {
+        if (!greConfigModal.canEdit || greConfigModal.saving) return;
+        greConfigModal.saving = true;
+        greConfigModal.savingIndex = peer.peerIndex;
+        try {
+          const msg = await HttpUtil.post(
+            '/panel/api/inbounds/' + greConfigModal.dbInboundId + '/gre-peer-ip/' + encodeURIComponent(greConfigModal.email),
+            { peerIndex: peer.peerIndex, peerIp: peer.draftIp.trim(), expectedIp: peer.peerIp || '' }
+          );
+          if (!msg || !msg.success) return;
+          await this.fetchConfigs(peer.peerIndex);
+          if (typeof app.getDBInbounds === 'function') await app.getDBInbounds();
+        } catch (e) {
+          console.error('Failed to save GRE router IP:', e);
+        } finally {
+          greConfigModal.saving = false;
+          greConfigModal.savingIndex = -1;
         }
       },
       copy(text) {

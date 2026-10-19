@@ -1371,6 +1371,8 @@ vpnOutImportKept = "Dosyada olmadığından saklanan değer korunur:"
 "resetOutboundTrafficError" = "Giden trafik sıfırlanırken hata"
 
 [pages.inboundForm]
+greRouterPublicIP = "Yönlendiricinin genel IPv4 adresi"
+greRouterPublicIPHint = "Bu müşterinin yönlendiricisinin genel IPv4 adresini girin. Dinamik adres için boş bırakın. Yapılandırmaları yeniden oluşturmak için kaydedin."
 "hysteriaObfsHint" = "İsteğe bağlı Salamander parolası. Gizlemeyi devre dışı bırakmak için boş bırakın."
 "statusCode" = "HTTP durum kodu"
 "insecure" = "Güvensiz TLS bağlantısına izin ver"

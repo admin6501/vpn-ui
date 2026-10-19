@@ -1372,6 +1372,8 @@ vpnOutImportKept = "Không có trong tệp nên giá trị được lưu trữ �
 "resetOutboundTrafficError" = "Lỗi khi đặt lại lưu lượng truy cập đi"
 
 [pages.inboundForm]
+greRouterPublicIP = "IPv4 công cộng của bộ định tuyến"
+greRouterPublicIPHint = "Nhập IPv4 công cộng của bộ định tuyến khách hàng này. Để trống cho địa chỉ động. Lưu để tạo lại cấu hình."
 "hysteriaObfsHint" = "Mật khẩu Salamander tùy chọn. Để trống để tắt làm rối lưu lượng."
 "statusCode" = "Mã trạng thái HTTP"
 "insecure" = "Cho phép TLS không an toàn"
