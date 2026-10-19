@@ -117,7 +117,8 @@ jobs:
           node test_unit/refresh_queue_test.cjs
           RUN_NODE_UI_BROWSER=1 go test ./web/middleware -run '^TestSecurityBrowserPanelNavigationRuntime$' -count=1 -timeout 60s
           RUN_NODE_UI_BROWSER=1 go test ./sub -run '^TestSubscriptionPageBrowserRuntime$' -count=1 -timeout 180s
-          RUN_NODE_UI_BROWSER=1 go test ./web -run '^Test(NodePageBrowserRuntime|OverviewSSLBrowserRuntime|RepresentativeOverviewHidesInboundManagementAndUpdates|AdminRolesBrowserRuntime|DelegatedSettingsBrowserRuntime|RepresentativeEditBrowserRuntime|GroupsBrowserRuntime)$' -count=1 -timeout 600s
+          RUN_NODE_UI_BROWSER=1 go test ./web -run '^Test(NodePageBrowserRuntime|OverviewSSLBrowserRuntime|RepresentativeOverviewHidesInboundManagementAndUpdates|AdminRolesBrowserRuntime|DelegatedSettingsBrowserRuntime|RepresentativeEditBrowserRuntime)$' -count=1 -timeout 600s
+          RUN_NODE_UI_BROWSER=1 go test -race ./web -run '^TestGroupsBrowserRuntime$' -count=1 -timeout 180s
       - name: Verify ownership transfer and online counts
         run: go test -tags netgo,osusergo ./web/service ./web/controller -run 'TestSaveAccount|TestLeavingAnAccount|TestIndependentAccount|TestMembershipEnable|TestDisabledMembership|TestRemovingTheLastMembership|TestToggleClientEnableByEmail|TestRenameAccount|TestSortAccountRows|TestAccountSort|TestClientLimit|TestResolveUserLimitOverride|TestAllocateBlockIP|TestOldestBlockSession|TestAdmit|TestSpeedLimit|TestAdminRoles|TestAdminOwner|TestAccountOwnershipTransfer|TestPasarGuard|TestOverview|TestVerifiedProvisioned|TestOffline|TestMigrationAccountsVerifiesExistingImported'
       - name: Verify imported subscription quotas and legacy credentials
@@ -129,10 +130,9 @@ jobs:
           go test ./web/service -run 'TestSSL|TestOverviewRequiredCores|TestOverviewCentralXrayTags' -count=1
       - name: Verify representative role management
         run: go test ./web/service ./web/controller ./web -run 'TestRepresentativeRole|TestRepresentativeEdit|TestGroups' -count=1
-      - name: Verify GRE and L2TP coexistence, branding and edit-form traffic reset
+      - name: Verify GRE and L2TP coexistence and branding settings
         run: |
           go test -race ./web/service -run 'TestGre|TestL2tp|TestBranding' -count=1 -timeout 120s
-          RUN_NODE_UI_BROWSER=1 go test -race ./web -run '^TestGroupsBrowserRuntime$' -count=1 -timeout 180s
       - name: Verify complete translation catalogs, component locales and Telegram language reload
         run: |
           go test ./web -run 'TestPersianInboundFormsRender|TestAllTemplatesParse|TestEditedTemplatesParse|TestTranslationsAreValidToml|TestTranslationKeyParity|TestAllLocaleMessagesRenderAndPreserveVariables|TestComponentLocaleCoverage'
