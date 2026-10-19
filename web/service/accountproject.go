@@ -517,8 +517,8 @@ func (s *AccountService) SyncInboundAccounts(tx *gorm.DB, inboundId int) error {
 // native protocols, leaves a client the core cannot authenticate. It silently
 // corrupts the entry the request was not even about.
 //
-// inbound may be nil, and that is the account with NO inbound: an entry posted by
-// the Clients form for an account nothing serves yet. The protocol is then empty,
+// inbound may be nil for a canonical account save from the Clients form, whether
+// or not memberships already exist. The protocol is then empty,
 // which every credential helper below already handles as "no protocol owns a
 // column here" - extractAccountCredential and overwriteAccountCredential fall
 // through to their default, and liftCarriedCredentials takes every carried field
@@ -581,13 +581,14 @@ func (s *AccountService) upsertAccountFromEntry(tx *gorm.DB, entry map[string]an
 	// the exact bug the per-membership column exists to end. So a disabled
 	// membership explains the false, and the account keeps what it had.
 	//
-	// An account with no inbound has no membership to explain anything, and
-	// membershipEnabledFor answers "enabled" for a row that is not there, so the
-	// posted entry decides - which is right: nothing else can.
-	if account.RepresentativeBlocked || !s.membershipEnabledFor(tx, account.Id, inboundId) {
+	_, enableMentioned := entry["enable"]
+	// An inbound entry contains the projected state; a direct account save
+	// contains the operator's intent. The representative block must not discard
+	// an explicit manual disable from the Clients page.
+	if !enableMentioned || (inbound != nil && (account.RepresentativeBlocked || !s.membershipEnabledFor(tx, account.Id, inboundId))) {
 		updated.Enable = account.Enable
 	}
-	if _, mentioned := entry["enable"]; mentioned && !account.RepresentativeBlocked && updated.Enable != account.Enable {
+	if enableMentioned && updated.Enable != account.Enable {
 		updated.ImportedResetDisabled = !updated.Enable
 	}
 	// Credentials are per FIELD and are filled from whichever protocol supplies
@@ -1256,7 +1257,7 @@ func (s *AccountService) SaveAccountWithoutInbound(entry map[string]any) (*model
 		// customer's usage history, and the whole reason an account may sit on no
 		// inbound rather than being deleted is that this row survives.
 		traffic.Email = account.Email
-		traffic.Enable = account.Enable
+		traffic.Enable = account.Enable && !account.RepresentativeBlocked
 		traffic.Total = account.TotalGB
 		traffic.ExpiryTime = account.ExpiryTime
 		traffic.Reset = account.Reset

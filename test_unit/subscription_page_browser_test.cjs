@@ -40,6 +40,7 @@ const assert = require('node:assert/strict');
       assert.match(response.headers()['content-disposition'], /attachment/);
     } else {
       for (const scheme of ['vmess://', 'ss://', 'wireguard://']) assert.ok(!text.includes(scheme), 'disabled membership stays out of config exports');
+      assert.equal(await page.locator('a.sub-config-btn').count(), 0, 'manually disabled profiles cannot be downloaded');
     }
     console.log('Subscription page: visible account-wide traffic, quota, status, three protocols, config downloads, locale and mobile rendering passed.');
   } finally {
