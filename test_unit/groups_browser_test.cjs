@@ -21,6 +21,8 @@ const {chromium}=require('playwright');
   assert.equal((await(await saved).json()).success,true);
   await page.waitForFunction(()=>!app.form.visible&&app.groups[0].name==='Shared group'&&app.groups[0].inboundIds.length===2);
   const base=process.env.GROUPS_URL.replace(/panel\/groups$/,'');
+  assert.ok((await page.title()).startsWith('برند Nava & Friends'));
+  assert.match(await page.locator('.bo-rail-brand').innerText(), /برند Nava & Friends/);
   const list=await page.evaluate(async base=>(await(await fetch(base+'panel/api/clients/list')).json()).obj,base);
   const original=list.rows.find(x=>x.email==='existing-user');assert.equal(original.memberships.length,2);assert.equal(original.groupIds.length,1);
   await page.goto(base+'panel/clients',{waitUntil:'networkidle'});
@@ -45,6 +47,30 @@ const {chromium}=require('playwright');
    const response=await(await saved).json();assert.equal(response.success,true,JSON.stringify(response));
    await page.waitForFunction(enable=>app.clients.some(x=>x.email==='new-group-user'&&x.enable===enable&&x.memberships.length===2&&x.groupIds.length===1),enable);
   }
+  await page.request.post(base+'fixtures/traffic');
+  await page.reload({waitUntil:'networkidle'});
+  await page.waitForFunction(()=>app.clients.some(x=>x.email==='new-group-user'&&x.up===1024&&x.down===2048));
+  await page.setViewportSize({width:390,height:844});
+  await page.evaluate(()=>app.openEdit(app.clients.find(x=>x.email==='new-group-user')));
+  const edit=page.locator('#client-membership-modal .ant-modal');await edit.waitFor();
+  const bounds=await edit.boundingBox(), button=await edit.getByTestId('client-edit-reset-traffic').boundingBox();
+  assert.ok(button&&button.x>=bounds.x&&button.x+button.width<=bounds.x+bounds.width,'reset button fits the mobile edit form');
+  await page.evaluate(()=>{clientMembershipModal.totalGb=17;clientMembershipModal.client.email='unsaved-name';});
+  let resets=0;page.on('request',r=>{if(r.url().includes('/resetClientTraffic/'))resets++;});
+  await edit.getByTestId('client-edit-reset-traffic').click();
+  const confirm=page.locator('.ant-modal-confirm .ant-modal-content');await confirm.waitFor();
+  await confirm.locator('.ant-modal-confirm-btns button').first().click();
+  assert.equal(resets,0,'cancelling the confirmation must not reset anything');
+  await edit.getByTestId('client-edit-reset-traffic').click();await confirm.waitFor();
+  const reset=page.waitForResponse(r=>r.url().endsWith('/resetClientTraffic/new-group-user'));
+  await confirm.locator('.ant-modal-confirm-btns .ant-btn-primary').click();
+  assert.equal((await(await reset).json()).success,true);
+  await page.waitForFunction(()=>!clientMembershipModal.resettingTraffic&&app.clients.some(x=>x.email==='new-group-user'&&x.up===0&&x.down===0));
+  assert.equal(resets,1,'one account reset across all memberships');
+  assert.equal(await edit.isVisible(),true,'reset keeps the edit form open');
+  assert.deepEqual(await page.evaluate(()=>[clientMembershipModal.totalGb,clientMembershipModal.client.email]),[17,'unsaved-name'],'reset preserves unsaved edits');
+  await page.evaluate(()=>clientMembershipModal.close());
+  await page.setViewportSize({width:1280,height:900});
   const ownership=await page.request.post(base+'fixtures/representative');assert.equal(ownership.ok(),true);
   for (const actor of ['delegate','representative']) {
    await page.setExtraHTTPHeaders({'X-Test-Actor':actor});
@@ -57,7 +83,14 @@ const {chromium}=require('playwright');
     await page.waitForFunction(enable=>app.clients.some(x=>x.email==='new-group-user'&&x.enable===enable&&x.memberships.length===2&&x.groupIds.length===1),enable);
    }
   }
+  const hostile="<b>[[constructor.constructor('window.brandExecuted=1')()]]</b>";
+  await page.request.post(base+'fixtures/brand',{form:{brandName:hostile}});
+  await page.setExtraHTTPHeaders({'X-Test-Actor':'anonymous'});
+  await page.goto(base,{waitUntil:'networkidle'});
+  assert.equal(await page.locator('.lgt-brand').innerText(),'['+hostile+']');
+  assert.equal(await page.evaluate(()=>window.brandExecuted),undefined,'brand text cannot execute HTML or Vue expressions');
+  assert.ok((await page.title()).startsWith(hostile));
   assert.deepEqual(errors,[]);
-  console.log('Group editing dynamically updated an existing user; new user selected a group; ungrouped inbound excluded; account enable/disable preserved its group.');
+  console.log('Group membership and account controls passed; mobile edit-form reset preserves drafts and lifetime usage; custom branding renders safely in English and Persian.');
  } finally {await browser.close()}
 })().catch(e=>{console.error(e);process.exit(1)});

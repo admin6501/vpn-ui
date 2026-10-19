@@ -104,8 +104,18 @@
           <a-col :span="12">
             <div class="bo-cf-field">
               <label>{{ i18n "pages.inbounds.totalFlow" }}</label>
-              <a-input-number v-model="clientMembershipModal.totalGb" :min="0"
-                :style="{ width: '100%' }"></a-input-number>
+              <div class="bo-cf-withicon">
+                <a-input-number v-model="clientMembershipModal.totalGb" :min="0"
+                  :style="{ width: '100%' }"></a-input-number>
+                <a-tooltip v-if="clientMembershipModal.canResetTraffic">
+                  <template slot="title">{{ i18n "pages.inbounds.resetTraffic" }}</template>
+                  <a-button icon="retweet" data-testid="client-edit-reset-traffic"
+                    :aria-label="'{{ i18n "pages.inbounds.resetTraffic" }}'"
+                    :loading="clientMembershipModal.resettingTraffic"
+                    :disabled="clientMembershipModal.confirmLoading"
+                    @click="clientMembershipModal.resetTraffic()"></a-button>
+                </a-tooltip>
+              </div>
               <a-select :value="clientMembershipModal.quotaUnit" @change="v => clientMembershipModal.setQuotaUnit(v)"><a-select-option value="GB">GB</a-select-option><a-select-option value="MB">MB</a-select-option></a-select>
               <div class="bo-cf-hint">{{ i18n "pages.clients.zeroUnlimited" }}</div>
             </div>
@@ -398,6 +408,34 @@
     assignable: [],
     selected: [],
     totalGb: 0,
+    resettingTraffic: false,
+    get canResetTraffic() {
+      return this.isEdit && typeof PERMS !== 'undefined' && PERMS.editClient
+        && this.row && (this.row.memberships || []).length > 0;
+    },
+    resetTraffic() {
+      if (!this.canResetTraffic || this.resettingTraffic) return;
+      // Reset the saved identity, even while its name or membership draft is edited.
+      const row = this.row;
+      const inboundId = row.memberships[0].inboundId;
+      clientMembershipModalApp.$confirm({
+        title: '{{ i18n "pages.inbounds.resetTraffic" }} ' + row.email,
+        content: '{{ i18n "pages.inbounds.resetTrafficContent" }}',
+        okText: '{{ i18n "sure" }}', cancelText: '{{ i18n "cancel" }}',
+        class: themeSwitcher.currentTheme,
+        onOk: async () => {
+          if (this.resettingTraffic) return;
+          this.resettingTraffic = true;
+          try {
+            const msg = await HttpUtil.post(`/panel/api/inbounds/${inboundId}/resetClientTraffic/${encodeURIComponent(row.email)}`);
+            if (msg && msg.success) {
+              row.up = row.down = 0;
+              if (this.onDone) await this.onDone();
+            }
+          } finally { this.resettingTraffic = false; }
+        },
+      });
+    },
     quotaUnit: 'GB',
     days: 0,
     client: {},
@@ -982,6 +1020,7 @@
     },
 
     async ok() {
+      if (this.resettingTraffic) return;
       const email = (this.client.email || '').trim();
       if (!email) return;
       // NOT a check on the inbound count. An account is allowed to be on none: it

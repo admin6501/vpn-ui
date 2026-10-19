@@ -794,6 +794,8 @@ setupRequiredOk = "打开核心设置"
 "serverMaxHeaderBytesNegative" = "该值不能为负数。填 0 表示交由内核决定。"
 
 [pages.settings]
+brandName = "品牌名称"
+brandNameDesc = "显示在登录页、面板和浏览器标题中。留空以使用默认名称。"
 "title" = "面板设置"
 "save" = "保存"
 "infoDesc" = "此处的所有更改都需要保存并重启面板才能生效"

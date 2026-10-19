@@ -793,6 +793,8 @@ setupRequiredOk = "オープンコア設定"
 "serverMaxHeaderBytesNegative" = "この値に負数は指定できません。0 にするとコアの既定値になります。"
 
 [pages.settings]
+brandName = "ブランド名"
+brandNameDesc = "ログイン画面、パネル、ブラウザーのタイトルに表示します。空欄の場合は既定の名前を使用します。"
 "title" = "パネル設定"
 "save" = "保存"
 "infoDesc" = "ここでのすべての変更は、保存してパネルを再起動する必要があります"

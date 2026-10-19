@@ -793,6 +793,8 @@ setupRequiredOk = "Buka Pengaturan Inti"
 "serverMaxHeaderBytesNegative" = "Nilai ini tidak boleh negatif. Isi 0 agar core yang menentukan."
 
 [pages.settings]
+brandName = "Nama merek"
+brandNameDesc = "Ditampilkan di halaman masuk, panel dan judul peramban. Kosongkan untuk nama bawaan."
 "title" = "Pengaturan Panel"
 "save" = "Simpan"
 "infoDesc" = "Setiap perubahan yang dibuat di sini perlu disimpan. Harap restart panel untuk menerapkan perubahan."

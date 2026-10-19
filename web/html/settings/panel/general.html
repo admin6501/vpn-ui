@@ -2,6 +2,13 @@
 <a-collapse default-active-key="1">
     <a-collapse-panel key="1" header='{{ i18n "pages.xray.generalConfigs"}}'>
         <a-setting-list-item paddings="small">
+            <template #title>{{ i18n "pages.settings.brandName" }}</template>
+            <template #description>{{ i18n "pages.settings.brandNameDesc" }}</template>
+            <template #control>
+                <a-input v-model="allSetting.brandName" :max-length="80" placeholder="VPN-UI"></a-input>
+            </template>
+        </a-setting-list-item>
+        <a-setting-list-item paddings="small">
             <template #title>
                 {{ i18n "pages.settings.remarkModel"}}
             </template>

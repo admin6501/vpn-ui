@@ -239,9 +239,11 @@ func templateReseller(c *gin.Context) map[string]any {
 // `assets/...?` query strings carry: a separate value because it has to change on
 // every build whose assets differ, which the release version does not.
 func getContext(h gin.H) gin.H {
+	brand := (&service.SettingService{}).GetBrandName()
 	a := gin.H{
-		"cur_ver":   config.GetVersion(),
-		"asset_ver": config.GetAssetVersion(),
+		"brand_name": brand,
+		"cur_ver":    config.GetVersion(),
+		"asset_ver":  config.GetAssetVersion(),
 	}
 	for key, value := range h {
 		a[key] = value

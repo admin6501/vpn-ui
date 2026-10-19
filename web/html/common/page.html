@@ -63,7 +63,7 @@
       }
     }
   </style>
-  <title>{{ .host }} – {{ i18n .title}}</title>
+  <title>{{ or .brand_name "VPN-UI" }} – {{ .host }} – {{ i18n .title}}</title>
 {{ end }}
 
 {{ define "page/head_end" }}
@@ -74,6 +74,7 @@
 <body>
   <div id="message"></div>
   <script>
+	const PANEL_BRAND = {{ or .brand_name "VPN-UI" }};
     // The caller's own reseller limits, if they are one. Injected with the page
     // rather than fetched, because the client form has to know BEFORE first
     // paint whether to render an expiry field at all: an XHR would flash a

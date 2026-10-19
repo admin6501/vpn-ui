@@ -793,6 +793,8 @@ kernelRuntime = "OS kernel"
 "serverMaxHeaderBytesNegative" = "This cannot be negative. Use 0 to let the core decide."
 
 [pages.settings]
+brandName = "Brand name"
+brandNameDesc = "Shown on the login page, panel pages and browser titles. Leave empty to use the default name."
 "title" = "Panel Settings"
 "save" = "Save"
 "infoDesc" = "Every change made here needs to be saved. Please restart the panel to apply changes."

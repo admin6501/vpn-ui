@@ -793,6 +793,8 @@ setupRequiredOk = "Abrir configurações principais"
 "serverMaxHeaderBytesNegative" = "Este valor não pode ser negativo. Deixe 0 para o núcleo decidir."
 
 [pages.settings]
+brandName = "Nome da marca"
+brandNameDesc = "Exibido no login, no painel e no título do navegador. Deixe vazio para usar o nome padrão."
 "title" = "Configurações do Painel"
 "save" = "Salvar"
 "infoDesc" = "Toda alteração feita aqui precisa ser salva. Reinicie o painel para aplicar as alterações."

@@ -3,8 +3,10 @@
     <nav class="bo-rail" :class="{ 'bo-rail--collapsed': collapsed }"
         aria-label='{{ i18n "menu.navigation"}}'>
         <div class="bo-rail-brand">
-            <a href="{{ .base_path }}panel/" aria-label="VPN-UI">
-                <img src="{{ .base_path }}assets/img/logo.png" alt="VPN-UI" />
+            <a href="{{ .base_path }}panel/" aria-label="{{ or .brand_name "VPN-UI" }}" title="{{ or .brand_name "VPN-UI" }}" v-pre>
+                {{ if and .brand_name (ne .brand_name "VPN-UI") }}
+                <span style="display:block;max-width:100%;overflow:hidden;text-overflow:ellipsis;color:var(--accent);font-weight:700">{{ .brand_name }}</span>
+                {{ else }}<img src="{{ .base_path }}assets/img/logo.png" alt="VPN-UI" />{{ end }}
             </a>
         </div>
 
