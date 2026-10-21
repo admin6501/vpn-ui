@@ -1126,6 +1126,11 @@
         // A NEGATIVE expiry is not a date. It is "this many days from first use",
         // and the server starts the clock on the first connection.
         expiryTime: this.postedExpiry(),
+        // Store the full package period, never the remaining days displayed on
+        // an untouched edit. It survives first use, freezing and expiry.
+        ...((!this.isEdit || this.daysTouched)
+          ? { renewalDuration: Math.round((Number(this.days) || 0) * 86400000) }
+          : {}),
         // Read by the accounts layer, ignored by every daemon. `id` cannot carry
         // the VPN login name here because this entry may be a vmess one, where it
         // already means the uuid.

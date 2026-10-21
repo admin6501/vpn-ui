@@ -611,6 +611,12 @@ kernelRuntime = "OS kernel"
 "renewDesc" = "Auto-renewal after expiration. (0 = disable)(unit: day)"
 
 [pages.clients]
+"renew" = "Renew"
+"renewHint" = "Reset upload and download, restart the package duration from now, and enable the client. Keep the quota, connection details and inbound access unchanged. Lifetime accounting is retained."
+"renewUnknown" = "The original duration is not recorded. Enter the package duration in days once; future renewals will reuse it."
+"renewDays" = "Package duration (days)"
+"renewSuccess" = "Client renewed."
+"renewBalanceHint" = "Representative permissions and balance rules apply. For a days-per-GB package, renewal purchases the full package."
 "protocolCount" = "Protocol count"
 "limitSupportHint" = "Limits apply only to supported selected protocols. IP limits count simultaneous source addresses, not physical devices behind the same NAT."
 "sortTraffic" = "Remaining traffic % (lowest first)"

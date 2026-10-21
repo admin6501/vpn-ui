@@ -611,6 +611,12 @@ unfreeze = "解凍"
 frozen = "凍結"
 
 [pages.clients]
+"renew" = "續期"
+"renewHint" = "清零上傳和下載，從現在重新計算方案期限並啟用使用者。保留流量上限、連線資訊、入站權限及累計記錄。"
+"renewUnknown" = "未記錄原方案期限。請首次輸入方案天數，後續續期將沿用此期限。"
+"renewDays" = "方案期限（天）"
+"renewSuccess" = "使用者已續期。"
+"renewBalanceHint" = "遵循代理權限和餘額規則。按每GB天數計費的方案，續期需購買完整方案。"
 "protocolCount" = "協定數量"
 "limitSupportHint" = "限制僅適用於支援該功能的已選協定。IP限制統計同時連線的來源位址，而不是同一NAT後的實體裝置數量。"
 "sortTraffic" = "剩餘流量百分比（由低至高）"

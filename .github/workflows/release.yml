@@ -51,6 +51,8 @@ jobs:
           go test ./web -run 'TestRepresentativeOverview|TestAdministratorSidebar' -count=1
       - name: Verify authentication, sessions, origins and private backups
         run: go test -race ./database ./web/session ./web/middleware ./web/controller ./web/service -run '^TestSecurity' -count=1
+      - name: Verify client renewal, preserved access and representative billing
+        run: go test -race ./web/service ./web/controller -run '^TestAccountRenew|^TestClientRenew' -count=1
       - name: Verify repeated native restores, migrated accounts and rollback
         run: go test -race ./web/service ./web/controller -run '^TestRestore' -count=1
       - name: Verify six audit fixes and allowed certificate, SSH, overview and backup access
@@ -118,6 +120,7 @@ jobs:
           export NODE_UI_CHROME=$(node -e 'console.log(require("playwright").chromium.executablePath())')
           node test_unit/client_details_browser_test.cjs
           node test_unit/gre_peer_browser_test.cjs
+          node test_unit/client_renew_browser_test.cjs
           node test_unit/account_usage_breakdown_browser_test.cjs
           node test_unit/refresh_queue_test.cjs
           RUN_NODE_UI_BROWSER=1 go test ./web/middleware -run '^TestSecurityBrowserPanelNavigationRuntime$' -count=1 -timeout 60s

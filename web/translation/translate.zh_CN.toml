@@ -612,6 +612,12 @@ unfreeze = "解冻"
 frozen = "冻结"
 
 [pages.clients]
+"renew" = "续期"
+"renewHint" = "清零上传和下载，从现在重新计算套餐期限并启用用户。保留流量上限、连接信息、入站权限及累计记录。"
+"renewUnknown" = "未记录原套餐期限。请首次输入套餐天数，后续续期将沿用此期限。"
+"renewDays" = "套餐期限（天）"
+"renewSuccess" = "用户已续期。"
+"renewBalanceHint" = "遵循代理权限和余额规则。按每GB天数计费的套餐，续期需购买完整套餐。"
 "protocolCount" = "协议数量"
 "limitSupportHint" = "限制仅适用于支持该功能的已选协议。IP限制统计同时连接的来源地址，不是同一NAT后的物理设备数量。"
 "sortTraffic" = "剩余流量百分比（从低到高）"

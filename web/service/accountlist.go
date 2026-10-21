@@ -83,19 +83,20 @@ type AccountCredentials struct {
 
 // AccountRow is one line of the Clients table.
 type AccountRow struct {
-	GroupIDs      []int  `json:"groupIds"`
-	OwnerID       int    `json:"ownerId"`
-	OwnerUsername string `json:"ownerUsername"`
-	Id            int    `json:"id"`
-	Email         string `json:"email"`
-	Enable        bool   `json:"enable"`
-	SubID         string `json:"subId"`
-	LegacySubID   string `json:"legacySubId,omitempty"`
-	Comment       string `json:"comment"`
-	TotalGB       int64  `json:"totalGB"`    // bytes, despite the name
-	ExpiryTime    int64  `json:"expiryTime"` // ms; negative = delayed start
-	Reset         int    `json:"reset"`
-	LimitIP       int    `json:"limitIp"`
+	GroupIDs        []int  `json:"groupIds"`
+	OwnerID         int    `json:"ownerId"`
+	OwnerUsername   string `json:"ownerUsername"`
+	Id              int    `json:"id"`
+	Email           string `json:"email"`
+	Enable          bool   `json:"enable"`
+	SubID           string `json:"subId"`
+	LegacySubID     string `json:"legacySubId,omitempty"`
+	Comment         string `json:"comment"`
+	TotalGB         int64  `json:"totalGB"`    // bytes, despite the name
+	ExpiryTime      int64  `json:"expiryTime"` // ms; negative = delayed start
+	RenewalDuration int64  `json:"renewalDuration"`
+	Reset           int    `json:"reset"`
+	LimitIP         int    `json:"limitIp"`
 	// TgID is the Telegram chat the bot notifies. Reported so the Clients form can
 	// edit it without a second read; 0 means the account is not linked.
 	TgID int64 `json:"tgId"`
@@ -261,7 +262,8 @@ func (s *AccountService) ListAccounts(user *model.User, page, size int, search, 
 			Id: account.Id, Email: account.Email, Enable: account.Enable,
 			SubID: account.SubID, Comment: account.Comment,
 			TotalGB: account.TotalGB, ExpiryTime: account.ExpiryTime,
-			Reset: account.Reset, LimitIP: account.LimitIP, TgID: account.TgID,
+			RenewalDuration: account.RenewalDuration,
+			Reset:           account.Reset, LimitIP: account.LimitIP, TgID: account.TgID,
 			SpeedLimitDown: account.SpeedLimitDown, SpeedLimitUp: account.SpeedLimitUp,
 			UserLimitOverride: account.UserLimitOverride,
 			Memberships:       mine, OwnedByReseller: owner[key],

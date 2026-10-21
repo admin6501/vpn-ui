@@ -118,6 +118,8 @@ func (a *InboundController) initRouter(g *gin.RouterGroup) {
 	// ownsClient as well as owns: the service resolves this one by :email and ignores
 	// :id, so guarding only :id checks the wrong object.
 	g.POST("/:id/resetClientTraffic/:email", requirePerm(model.PermEditClient), owns, ownsClient, a.resetClientTraffic)
+	// Account-addressed so an unassigned client can be renewed too.
+	g.POST("/renewClient/:email", requirePerm(model.PermEditClient), requireRenewResetPermission(), ownsClient, a.renewClient)
 	g.POST("/resetAllTraffics", requirePerm(model.PermBulkOperation), a.resetAllTraffics)
 	g.POST("/resetAllClientTraffics/:id", requirePerm(model.PermBulkOperation), owns, a.resetAllClientTraffics)
 	g.POST("/delDepletedClients/:id", requirePerm(model.PermDeleteClient), owns, a.delDepletedClients)

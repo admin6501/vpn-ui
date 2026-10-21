@@ -241,6 +241,9 @@ func ValidateShadowsocksKeys(inbound *model.Inbound, clients []model.Client, sto
 func validateClientLimits(clients []model.Client) error {
 	for i := range clients {
 		c := &clients[i]
+		if c.RenewalDuration < 0 || c.RenewalDuration > maxRenewalDuration {
+			return common.NewError("invalid renewal period")
+		}
 		if c.SpeedLimitDown != nil && *c.SpeedLimitDown < 0 {
 			return common.NewErrorf("the download speed limit for %q cannot be negative.", c.Email)
 		}

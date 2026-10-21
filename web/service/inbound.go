@@ -3719,6 +3719,14 @@ func (s *InboundService) adjustTraffics(tx *gorm.DB, dbClientTraffics []*xray.Cl
 				continue
 			}
 			// The stored value is negative and means "this many ms from first use".
+			// Capture that full period before first use destroys the only legacy
+			// record of it. A frozen (manually disabled) account is excluded.
+			if err := tx.Model(&model.Account{}).
+				Where("LOWER(TRIM(email)) = ? AND COALESCE(renewal_duration, 0) = 0 AND expiry_time < 0 AND enable = ?",
+					accountKey(dbClientTraffics[traffic_index].Email), true).
+				Update("renewal_duration", gorm.Expr("-expiry_time")).Error; err != nil {
+				return nil, err
+			}
 			newExpiry := now - dbClientTraffics[traffic_index].ExpiryTime
 			newExpiryByEmail[accountKey(dbClientTraffics[traffic_index].Email)] = newExpiry
 			dbClientTraffics[traffic_index].ExpiryTime = newExpiry

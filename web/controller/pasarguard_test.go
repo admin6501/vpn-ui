@@ -26,6 +26,7 @@ func TestPasarGuardReadAllDoesNotWidenOwnWrite(t *testing.T) {
 }
 
 func TestPasarGuardMissingResetPermissionCannotUseEditPermission(t *testing.T) {
+	newBulkMembershipEnv(t)
 	user := &model.User{Id: 2, Enable: true, IsReseller: true, RepresentativeRoleID: 3,
 		RepresentativeRole: &model.RepresentativeRole{Permissions: `{"users":{"read":{"scope":1},"update":{"scope":1}}}`}}
 	reached := false
