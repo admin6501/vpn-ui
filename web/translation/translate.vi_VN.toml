@@ -612,6 +612,12 @@ unfreeze = "Giải phóng"
 frozen = "Đông lạnh"
 
 [pages.clients]
+"renew" = "Gia hạn"
+"renewHint" = "Đặt lại tải lên và tải xuống, bắt đầu thời hạn từ bây giờ và bật khách. Giữ hạn mức, kết nối, quyền truy cập và lịch sử tổng."
+"renewUnknown" = "Chưa lưu thời hạn gốc. Nhập số ngày một lần để dùng cho các lần gia hạn sau."
+"renewDays" = "Thời hạn gói (ngày)"
+"renewSuccess" = "Đã gia hạn khách."
+"renewBalanceHint" = "Áp dụng quyền và số dư đại lý. Gói tính ngày trên GB được mua lại toàn bộ khi gia hạn."
 "protocolCount" = "Số giao thức"
 "limitSupportHint" = "Giới hạn chỉ áp dụng cho giao thức đã chọn có hỗ trợ. Giới hạn IP đếm địa chỉ nguồn đồng thời, không đếm thiết bị vật lý sau cùng một NAT."
 "sortTraffic" = "Phần trăm lưu lượng còn lại (ít nhất trước)"

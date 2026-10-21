@@ -43,3 +43,20 @@ speed.limitDown='0.0001'; assert.equal(speed.postedSpeed('limitDown'),1);
 speed.limitDown='-0.0001'; assert.equal(speed.postedSpeed('limitDown'),-1);
 speed.limitDown='invalid'; assert.equal(speed.postedSpeed('limitDown'),'invalid');
 console.log('Speed units preserve limits, inheritance and unlimited state');
+
+// Saving a 30-day package must carry its full period; displaying seven days
+// remaining on an ordinary edit must not overwrite it with seven.
+const entryFor = method('entryFor(protocol, email, inboundId)').entryFor;
+const renewalForm = {
+  client:{id:'keep-uuid',password:'keep-password',enable:true}, storedBy:{},
+  isEdit:false,daysTouched:false,days:30,quotaBytes:10737418240,
+  postedExpiry:()=>Date.now()+30*86400000,postedSpeed:()=>null,postedLimit:()=>null,
+};
+assert.equal(entryFor.call(renewalForm,'vless','customer',1).renewalDuration,30*86400000);
+renewalForm.isEdit=true;renewalForm.days=7;
+assert.equal(entryFor.call(renewalForm,'vless','customer',1).renewalDuration,undefined);
+renewalForm.daysTouched=true;
+assert.equal(entryFor.call(renewalForm,'vless','customer',1).renewalDuration,7*86400000);
+renewalForm.days=0;
+assert.equal(entryFor.call(renewalForm,'vless','customer',1).renewalDuration,0);
+console.log('Package duration is stored on create and explicit edits, never replaced by remaining days');

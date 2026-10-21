@@ -276,6 +276,9 @@
                           <a-menu-item key="edit">
                             <a-icon type="edit"></a-icon>{{ i18n "edit" }}
                           </a-menu-item>
+                          <a-menu-item key="renew">
+                            <a-icon type="reload"></a-icon>{{ i18n "pages.clients.renew" }}
+                          </a-menu-item>
                           <!-- The account's subscription, which already covers every
                                inbound serving it: one subId is projected onto all of
                                them. Absent rather than disabled when there is none. -->
@@ -434,6 +437,22 @@
         </transition>
       </a-spin>
       {{template "component/bulkOpsModal" .}}
+      <a-modal v-model="renewal.visible" title="{{ i18n "pages.clients.renew" }}"
+        @ok="renewAccount" :confirm-loading="renewal.loading"
+        :ok-text="'{{ i18n "pages.clients.renew" }}'" :class="themeSwitcher.currentTheme">
+        <p><b>[[ renewal.row && renewal.row.email ]]</b></p>
+        <p>{{ i18n "pages.clients.renewHint" }}</p>
+        <p v-if="renewal.row">{{ i18n "pages.clients.quota" }}:
+          [[ renewal.row.totalGB > 0 ? sizeFormat(renewal.row.totalGB) : '{{ i18n "unlimited" }}' ]]</p>
+        <template v-if="renewal.needsDays">
+          <p>{{ i18n "pages.clients.renewUnknown" }}</p>
+          <a-input-number v-model="renewal.days" :min="1" :max="36500" :precision="0"
+            :placeholder="'{{ i18n "pages.clients.renewDays" }}'" :style="{width: '100%'}"></a-input-number>
+        </template>
+        <p v-else>{{ i18n "pages.clients.renewDays" }}:
+          [[ renewal.duration > 0 ? renewal.duration / 86400000 : '{{ i18n "unlimited" }}' ]]</p>
+        <p>{{ i18n "pages.clients.renewBalanceHint" }}</p>
+      </a-modal>
 <a-modal v-model="ownerTransfer.visible" title="{{ i18n "pages.client.ownerTitle" }}" @ok="saveOwnerTransfer" :confirm-loading="ownerTransfer.loading" :class="themeSwitcher.currentTheme">
  <p>{{ i18n "pages.client.ownerDescription" }}</p>
  <a-select v-model="ownerTransfer.ownerId" :style="{width: '100%'}">
@@ -490,6 +509,7 @@
       pageClass: 'clients-page',
       persianDatepicker,
       spinning: false,
+      renewal: { visible: false, loading: false, row: null, duration: 0, needsDays: false, days: null },
       // The account rows this page lists, and the raw inbounds behind them. Both
       // are needed: the rows carry the account-level totals the server computed,
       // the inbounds carry the per-protocol client objects every action works on.
@@ -733,6 +753,7 @@
       rowAction(key, row) {
         switch (key) {
           case 'edit': return this.openEdit(row);
+          case 'renew': return this.openRenew(row);
           case 'sub': return this.showAccountSub(row);
           case 'freeze': return this.toggleAccountFreeze(row);
           case 'exportTxt': return this.exportTxt(this.accountTargets(row), row.email);
@@ -751,6 +772,32 @@
       },
 
       // --- the hooks ClientActionsMixin expects ---------------------------
+      openRenew(row) {
+        const duration = row.expiryTime === 0 ? 0 : (Number(row.renewalDuration) ||
+          (row.expiryTime < 0 && row.enable ? -row.expiryTime : 0));
+        this.renewal = { visible: true, loading: false, row, duration,
+          needsDays: row.expiryTime !== 0 && duration <= 0, days: null };
+      },
+      async renewAccount() {
+        const state = this.renewal;
+        if (state.loading || !state.row) return;
+        if (state.needsDays && (!Number.isInteger(state.days) || state.days < 1 || state.days > 36500)) {
+          this.$message.warning('{{ i18n "pages.clients.renewUnknown" }}');
+          return;
+        }
+        state.loading = true;
+        try {
+          const msg = await HttpUtil.post('/panel/api/inbounds/renewClient/' + encodeURIComponent(state.row.email), {
+            renewalDuration: state.needsDays ? state.days * 86400000 : state.duration,
+          });
+          if (msg && msg.success) {
+            state.visible = false;
+            await this.getDBInbounds();
+            await this.refreshResellerBalance();
+          }
+        } finally { state.loading = false; }
+      },
+
       loading(spinning = true) { this.spinning = spinning; },
       // The mixin's write funnel. Unlike the Inbounds page there is no inbound
       // CREATE to gate here, so this is the plain form.

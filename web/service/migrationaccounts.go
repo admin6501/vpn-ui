@@ -607,6 +607,7 @@ func newAccountFromEntry(entry map[string]any) *model.Account {
 		SubID:             str("subId"),
 		TotalGB:           num("totalGB"),
 		ExpiryTime:        num("expiryTime"),
+		RenewalDuration:   num("renewalDuration"),
 		Enable:            boolean("enable"),
 		Reset:             int(num("reset")),
 		LimitIP:           int(num("limitIp")),

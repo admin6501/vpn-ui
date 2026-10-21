@@ -611,6 +611,12 @@ unfreeze = "Çözme"
 frozen = "Dondurulmuş"
 
 [pages.clients]
+"renew" = "Yenile"
+"renewHint" = "Yükleme ve indirmeyi sıfırlar, süreyi şimdi yeniden başlatır ve istemciyi etkinleştirir. Kota, bağlantılar, erişim ve toplam geçmiş korunur."
+"renewUnknown" = "İlk süre kaydedilmemiş. Sonraki yenilemelerde kullanılacak gün sayısını bir kez girin."
+"renewDays" = "Paket süresi (gün)"
+"renewSuccess" = "İstemci yenilendi."
+"renewBalanceHint" = "Temsilci izinleri ve bakiye kuralları geçerlidir. GB başına gün paketlerinde yenileme tam paketi satın alır."
 "protocolCount" = "Protokol sayısı"
 "limitSupportHint" = "Sınırlar yalnızca bunları destekleyen seçili protokollere uygulanır. IP sınırı aynı NAT arkasındaki cihazları değil, eşzamanlı kaynak adreslerini sayar."
 "sortTraffic" = "Kalan trafik yüzdesi (en düşük önce)"

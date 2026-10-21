@@ -612,6 +612,12 @@ unfreeze = "Descongelar"
 frozen = "Congelado"
 
 [pages.clients]
+"renew" = "Renovar"
+"renewHint" = "Reinicia el consumo y la duración desde ahora y activa el cliente. Conserva la cuota, las conexiones, los accesos y el historial total."
+"renewUnknown" = "No se registró la duración original. Indica los días una vez para futuras renovaciones."
+"renewDays" = "Duración del paquete (días)"
+"renewSuccess" = "Cliente renovado."
+"renewBalanceHint" = "Se aplican permisos y saldo del representante. Los paquetes con días por GB se compran completos al renovar."
 "protocolCount" = "Número de protocolos"
 "limitSupportHint" = "Los límites solo se aplican a los protocolos seleccionados compatibles. El límite de IP cuenta direcciones de origen simultáneas, no dispositivos detrás del mismo NAT."
 "sortTraffic" = "Tráfico restante % (menor primero)"

@@ -48,7 +48,7 @@ import (
 // Credential keys are deliberately NOT in this list: which of them an account
 // owns depends on the protocol, so they are applied by applyAccountCredential.
 var accountOwnedKeys = []string{
-	"email", "subId", "totalGB", "expiryTime", "enable",
+	"email", "subId", "totalGB", "expiryTime", "enable", "renewalDuration",
 	"reset", "limitIp", "tgId", "comment",
 }
 
@@ -220,6 +220,12 @@ func renderClientEntry(account *model.Account, membership *model.AccountInbound,
 	entry["subId"] = account.SubID
 	entry["totalGB"] = account.TotalGB
 	entry["expiryTime"] = account.ExpiryTime
+	// Do not add a key to legacy entries during migration's round-trip check.
+	if account.RenewalDuration > 0 {
+		entry["renewalDuration"] = account.RenewalDuration
+	} else {
+		delete(entry, "renewalDuration")
+	}
 	// The AND of the two questions the two flags answer: is this account live at
 	// all, and is it served on THIS inbound. Both have to say yes, and either one
 	// saying no has to reach the entry, because every enforcement path downstream
@@ -546,6 +552,9 @@ func (s *AccountService) upsertAccountFromEntry(tx *gorm.DB, entry map[string]an
 	switch {
 	case err == gorm.ErrRecordNotFound:
 		fresh := newAccountFromEntry(entry)
+		if err := captureRenewalDuration(fresh, nil, entry); err != nil {
+			return nil, err
+		}
 		extractAccountCredential(fresh, entry, protocol, 0, &scratch, scratchConflicts)
 		// The columns the entry carries for OTHER protocols. extractAccountCredential
 		// reads only the addressed protocol's own fields - it is the migration's
@@ -567,6 +576,9 @@ func (s *AccountService) upsertAccountFromEntry(tx *gorm.DB, entry map[string]an
 	}
 
 	updated := newAccountFromEntry(entry)
+	if err := captureRenewalDuration(updated, &account, entry); err != nil {
+		return nil, err
+	}
 	updated.Id = account.Id
 	updated.ProtocolCredentials = account.ProtocolCredentials
 	updated.RepresentativeBlocked = account.RepresentativeBlocked

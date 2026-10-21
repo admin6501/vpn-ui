@@ -323,8 +323,14 @@ func forcedExpiry(p model.ResellerProfile, in QuoteInput, deltaSpent int64) (boo
 // ProfileFor loads a reseller's profile. Returns ErrNotAReseller for an account
 // that is not one, so a caller cannot accidentally price an admin's action.
 func (s *ResellerService) ProfileFor(userId int) (*model.ResellerProfile, error) {
+	return s.profileForDB(database.GetDB(), userId)
+}
+
+// Also used inside renewal's transaction: limits and measured balance must be
+// read from the same snapshot as the counters being reset.
+func (s *ResellerService) profileForDB(db *gorm.DB, userId int) (*model.ResellerProfile, error) {
 	p := &model.ResellerProfile{}
-	err := database.GetDB().Model(&model.ResellerProfile{}).
+	err := db.Model(&model.ResellerProfile{}).
 		Where("user_id = ?", userId).First(p).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, ErrNotAReseller
@@ -334,18 +340,18 @@ func (s *ResellerService) ProfileFor(userId int) (*model.ResellerProfile, error)
 	}
 	if p.ConsumptionBased {
 		var usage int64
-		if err := database.GetDB().Raw(`SELECT COALESCE(SUM(MAX(0,ct.all_time-rc.all_time_base)),0)
+		if err := db.Raw(`SELECT COALESCE(SUM(MAX(0,ct.all_time-rc.all_time_base)),0)
 		FROM reseller_clients rc LEFT JOIN client_traffics ct ON LOWER(TRIM(ct.email))=LOWER(TRIM(rc.email)) WHERE rc.user_id=?`, userId).Scan(&usage).Error; err != nil {
 			return nil, err
 		}
 		p.SpentBytes = p.UsageBase + usage
 		var user model.User
-		if err := database.GetDB().First(&user, userId).Error; err != nil {
+		if err := db.First(&user, userId).Error; err != nil {
 			return nil, err
 		}
 		if user.RepresentativeRoleID > 0 {
 			var role model.RepresentativeRole
-			if err := database.GetDB().First(&role, user.RepresentativeRoleID).Error; err != nil {
+			if err := db.First(&role, user.RepresentativeRoleID).Error; err != nil {
 				return nil, err
 			}
 			p.RoleLimits = role.Limits
@@ -626,15 +632,19 @@ func (s *ResellerService) PrepareClientCreate(user *model.User, data *model.Inbo
 	}
 
 	expiry := jsonInt64(cm["expiryTime"])
+	createdNow := time.Now().UnixMilli()
 	q, err := Quote(QuoteInput{
 		Profile:         *profile,
 		Create:          true,
 		RequestedExpiry: &expiry,
 		NewTotal:        jsonInt64(cm["totalGB"]),
-		NowMillis:       time.Now().UnixMilli(),
+		NowMillis:       createdNow,
 	})
 	if err != nil {
 		return ChargeTicket{}, err
+	}
+	if q.ForceExpiry {
+		cm["renewalDuration"] = q.ExpiryTime - createdNow
 	}
 	if err := applyToSettings(data, q, cm, settings, clients); err != nil {
 		return ChargeTicket{}, err

@@ -420,6 +420,25 @@ func requireInboundAccess() gin.HandlerFunc {
 // how they see them at all), so CanAccessClientEmail answers true for every account
 // on those inbounds, including the admin's, and supplementing would wave them
 // straight through to exactly the accounts this role exists to keep them out of.
+// Renewal changes expiry AND clears billed usage: both grants must allow it,
+// and the narrower ownership scope wins. An update-all grant cannot widen an
+// own-only reset grant (or vice versa).
+func requireRenewResetPermission() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		user := session.GetLoginUser(c)
+		if user != nil && !user.IsSuperAdmin && user.RepresentativeRoleID > 0 && isRepresentative(user) {
+			if user.RepresentativeRole == nil || !user.RepresentativeRole.Policy().Allows("users", "reset_usage", user.RepresentativeLimited, user.Id, user.Id) {
+				deny(c, http.StatusForbidden, "pages.admins.forbidden", landingPath(c))
+				return
+			}
+			if user.RepresentativeRole.Policy().Scope("users", "reset_usage") != 2 {
+				user.IsReseller = true
+			}
+		}
+		c.Next()
+	}
+}
+
 func requireClientAccess() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		user := session.GetLoginUser(c)
@@ -537,13 +556,13 @@ func requireRepresentativeClientRoute(prefix string) gin.HandlerFunc {
 		"/:id/delClient/:clientId": true, "/updateClient/:clientId": true,
 		"/renameUnservedAccount": true, "/saveAccount": true, "/delAccount/:email": true,
 		"/:id/setMembershipEnable/:email": true, "/bulkUpdateClients": true, "/bulkPreview": true,
-		"/bulkMembership": true, "/:id/resetClientTraffic/:email": true,
+		"/bulkMembership": true, "/:id/resetClientTraffic/:email": true, "/renewClient/:email": true,
 		"/onlines": true, "/onlineMemberships": true, "/lastOnline": true,
 		"/updateClientTraffic/:email": true, "/:id/delClientByEmail/:email": true,
 		"/:id/ovpn/:proto": true, "/:id/wgc-configs": true, "/:id/wgxray-configs": true,
 		"/:id/awg-configs": true, "/:id/gre-configs": true, "/:id/ssh-configs": true,
 		"/:id/gre-peer-ip/:email": true,
-		"/:id/ikev2-remote-id": true,
+		"/:id/ikev2-remote-id":    true,
 	}
 	return func(c *gin.Context) {
 		if isRepresentative(session.GetLoginUser(c)) && !allowed[strings.TrimPrefix(c.FullPath(), prefix)] {

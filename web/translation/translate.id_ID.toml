@@ -611,6 +611,12 @@ unfreeze = "Mencairkan"
 frozen = "Beku"
 
 [pages.clients]
+"renew" = "Perpanjang"
+"renewHint" = "Nolkan unggahan dan unduhan, mulai ulang masa paket sekarang, dan aktifkan klien. Kuota, koneksi, akses dan riwayat total tetap."
+"renewUnknown" = "Durasi awal belum tersimpan. Masukkan jumlah hari sekali untuk perpanjangan berikutnya."
+"renewDays" = "Durasi paket (hari)"
+"renewSuccess" = "Klien diperpanjang."
+"renewBalanceHint" = "Izin dan saldo perwakilan tetap berlaku. Paket hari per GB dibeli penuh saat perpanjangan."
 "protocolCount" = "Jumlah protokol"
 "limitSupportHint" = "Batas hanya berlaku pada protokol terpilih yang mendukungnya. Batas IP menghitung alamat sumber bersamaan, bukan perangkat di balik NAT yang sama."
 "sortTraffic" = "Persentase trafik tersisa (terendah dahulu)"

@@ -429,20 +429,21 @@ type CustomGeoResource struct {
 
 // Client represents a client configuration for Xray inbounds with traffic limits and settings.
 type Client struct {
-	ID         string `json:"id,omitempty"`                 // Unique client identifier
-	Security   string `json:"security"`                     // Security method (e.g., "auto", "aes-128-gcm")
-	Password   string `json:"password,omitempty"`           // Client password
-	Flow       string `json:"flow,omitempty"`               // Flow control (XTLS)
-	Auth       string `json:"auth,omitempty"`               // Auth password (Hysteria)
-	Email      string `json:"email"`                        // Client email identifier
-	LimitIP    int    `json:"limitIp"`                      // IP limit for this client
-	TotalGB    int64  `json:"totalGB" form:"totalGB"`       // Total traffic limit in GB
-	ExpiryTime int64  `json:"expiryTime" form:"expiryTime"` // Expiration timestamp
-	Enable     bool   `json:"enable" form:"enable"`         // Whether the client is enabled
-	TgID       int64  `json:"tgId" form:"tgId"`             // Telegram user ID for notifications
-	SubID      string `json:"subId" form:"subId"`           // Subscription identifier
-	Comment    string `json:"comment" form:"comment"`       // Client comment
-	Reset      int    `json:"reset" form:"reset"`           // Reset period in days
+	ID              string `json:"id,omitempty"`                 // Unique client identifier
+	Security        string `json:"security"`                     // Security method (e.g., "auto", "aes-128-gcm")
+	Password        string `json:"password,omitempty"`           // Client password
+	Flow            string `json:"flow,omitempty"`               // Flow control (XTLS)
+	Auth            string `json:"auth,omitempty"`               // Auth password (Hysteria)
+	Email           string `json:"email"`                        // Client email identifier
+	LimitIP         int    `json:"limitIp"`                      // IP limit for this client
+	TotalGB         int64  `json:"totalGB" form:"totalGB"`       // Total traffic limit in GB
+	ExpiryTime      int64  `json:"expiryTime" form:"expiryTime"` // Expiration timestamp
+	RenewalDuration int64  `json:"renewalDuration,omitempty"`    // Original manual-renewal period, milliseconds; not automatic renewal.
+	Enable          bool   `json:"enable" form:"enable"`         // Whether the client is enabled
+	TgID            int64  `json:"tgId" form:"tgId"`             // Telegram user ID for notifications
+	SubID           string `json:"subId" form:"subId"`           // Subscription identifier
+	Comment         string `json:"comment" form:"comment"`       // Client comment
+	Reset           int    `json:"reset" form:"reset"`           // Reset period in days
 
 	// Per-client OVERRIDES of the inbound's speed limit and User Limit. nil means
 	// "inherit the inbound", which is what every client written before these existed
@@ -678,6 +679,9 @@ type Account struct {
 	// account, however many inbounds it is on.
 	TotalGB    int64 `json:"totalGB" gorm:"column:total_gb"`
 	ExpiryTime int64 `json:"expiryTime" gorm:"column:expiry_time"`
+	// Kept independently of the moving deadline and remaining frozen time.
+	// Zero with a nonzero expiry means a legacy period has not been recorded yet.
+	RenewalDuration int64 `json:"renewalDuration" gorm:"not null;default:0"`
 	// NO gorm default, deliberately. `default:1` makes GORM treat Go's false as
 	// "unset" and write 1 instead, so a DISABLED client migrated to an ENABLED
 	// account. The projection then rendered enable:true over the stored false, the

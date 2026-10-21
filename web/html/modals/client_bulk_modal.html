@@ -536,6 +536,7 @@
         tgId: Number(this.tgId) || 0,
         totalGB: this.quotaBytes,
         expiryTime,
+        renewalDuration: Math.round((Number(this.days) || 0) * 86400000),
         vpnUsername: acc.vpnUsername,
         auth: acc.auth,
         secret: acc.secret,
