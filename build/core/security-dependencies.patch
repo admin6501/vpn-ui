@@ -6,7 +6,7 @@ index c7480054..9ccb6d52 100644
  module github.com/xtls/xray-core
  
 -go 1.26
-+go 1.27.2
++go 1.27.3
  
  require (
  	github.com/anytls/sing-anytls v0.0.13
