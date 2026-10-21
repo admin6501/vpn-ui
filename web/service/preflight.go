@@ -147,7 +147,7 @@ func hostConflictsFor(core string) []coreHostConflict {
 	case "sstp":
 		add(preflightDir("/etc/accel-ppp"))
 		add(preflightUnit("accel-ppp.service"))
-	case "ikev2":
+	case "ikev2", "ipsec":
 		add(preflightFile("/etc/strongswan.conf"))
 		add(preflightFile("/etc/swanctl/swanctl.conf"))
 		add(preflightDir("/etc/swanctl/conf.d"))

@@ -29,7 +29,7 @@ func TestCatalogNamesAreUniqueAndTitled(t *testing.T) {
 	// gets forced to "not installed" by GetCoresStatus with nothing to install.
 	for _, name := range []string{
 		"xray", "l2tp", "pptp", "openvpn", "openconnect",
-		"sstp", "ikev2", "wgc", "awg", "mtproto", "ssh", "radius",
+		"sstp", "ikev2", "ipsec", "wgc", "awg", "mtproto", "ssh", "radius",
 	} {
 		if coreSpecFor(name) == nil {
 			t.Errorf("core %q is shown by the panel but missing from the catalog", name)
@@ -65,6 +65,15 @@ func TestWireguardOnlySelectionSkipsPppAndIpsec(t *testing.T) {
 }
 
 func TestIpsecIsSharedByL2tpAndIkev2(t *testing.T) {
+	if c := coreSpecFor("ipsec"); c == nil || c.builtin || !needsFeature([]string{"ipsec"}, featStrongswan) {
+		t.Fatal("IPsec must be independently selectable and provision strongSwan")
+	}
+	if keeper := sharedDaemonKeeper("ikev2", []string{"ipsec"}); keeper != "ipsec" {
+		t.Fatal("explicitly installed IPsec must retain charon", keeper)
+	}
+	if keeper := sharedDaemonKeeper("ipsec", []string{"l2tp"}); keeper != "l2tp" {
+		t.Fatal("removing explicit IPsec must retain L2TP's dependency", keeper)
+	}
 	if !needsFeature([]string{"l2tp"}, featStrongswan) {
 		t.Error("l2tp must claim the shared strongSwan/IPsec feature")
 	}
@@ -354,6 +363,7 @@ func TestDerivedCoresFollowTheirConsumers(t *testing.T) {
 		radius    bool
 	}{
 		{"fresh box, nothing installed", nil, false, false},
+		{"explicit IPsec needs no RADIUS", []string{"ipsec"}, true, false},
 		{"l2tp brings both", []string{"l2tp"}, true, true},
 		{"ikev2 brings both", []string{"ikev2"}, true, true},
 		{"pptp needs radius but not ipsec", []string{"pptp"}, false, true},

@@ -44,6 +44,10 @@ FEAT_PATHS = {
 }
 
 CORES = {
+    "ipsec": {
+        "bins": [], "feats": ["strongswan"], "mods": [],
+        "optmods": ["af_key", "esp4", "xfrm_user"],
+    },
     "l2tp": {
         "bins": ["xl2tpd", "xl2tpd-control"],
         "feats": ["pppd", "strongswan"],

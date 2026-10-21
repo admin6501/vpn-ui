@@ -28,6 +28,9 @@ func SetNodeSetting(tx *gorm.DB, key, value string) error {
 	if e != nil {
 		return e
 	}
+	if row.Value == value {
+		return nil
+	}
 	return tx.Model(&row).Update("value", value).Error
 }
 func GetNodeSetting(key string) string {
@@ -69,40 +72,7 @@ func ApplyNodeSnapshot(snap *nodewire.Snapshot, installed map[string]bool) (stri
 		}
 		replacements["nodefile:"+name] = dest
 	}
-	// Changes to quota balances are consumed directly from SQLite; they must not
-	// restart every daemon whenever a user downloads another byte.
-	identity := *snap
-	identity.Files = nil
-	// Management commands and acknowledgments do not change the data plane.
-	identity.ControlGeneration = 0
-	identity.CoreGeneration = 0
-	identity.RequestedCores = nil
-	identity.ConfigGeneration = 0
-	identity.ConfigCommand = nil
-	identity.CoreActionGeneration = 0
-	identity.CoreActionCommand = nil
-	identity.Inbounds = append([]model.Inbound(nil), snap.Inbounds...)
-	identity.Memberships = append([]model.AccountInbound(nil), snap.Memberships...)
-	for i := range identity.Memberships {
-		identity.Memberships[i].Up = 0
-		identity.Memberships[i].Down = 0
-		identity.Memberships[i].AllTime = 0
-	}
-	// Clone the slice before normalizing the hash so the actual snapshot is intact.
-	identity.Accounts = append([]nodewire.Account(nil), snap.Accounts...)
-	for i := range identity.Accounts {
-		identity.Accounts[i].Remaining = 0
-		identity.Accounts[i].ReportedUsage = 0
-		identity.Accounts[i].Usage = nil
-	}
-	for i := range identity.Inbounds {
-		identity.Inbounds[i].Up = 0
-		identity.Inbounds[i].Down = 0
-		identity.Inbounds[i].AllTime = 0
-	}
-	raw, _ := json.Marshal(identity)
-	digest := sha256.Sum256(raw)
-	revision := hex.EncodeToString(digest[:])
+	revision := NodeSnapshotRevision(snap)
 	e := database.GetDB().Transaction(func(tx *gorm.DB) error {
 		if err := reserveNodeInboundTags(tx, snap.Inbounds); err != nil {
 			return err
@@ -234,16 +204,7 @@ func ApplyNodeSnapshot(snap *nodewire.Snapshot, installed map[string]bool) (stri
 		}
 		// Central period usage controls speed thresholds; local meters are cumulative
 		// report cursors and deliberately survive resets. Never zero those meters.
-		speedUsage := make(map[string]int64)
-		for _, a := range snap.Accounts {
-			if a.Usage != nil {
-				if *a.Usage < 0 {
-					return errors.New("Negative node speed usage")
-				}
-				speedUsage[a.Account.Email] = *a.Usage
-			}
-		}
-		speedUsageJSON, err := json.Marshal(speedUsage)
+		speedUsageJSON, err := nodeSpeedUsageJSON(snap.Accounts)
 		if err != nil {
 			return err
 		}
@@ -252,10 +213,8 @@ func ApplyNodeSnapshot(snap *nodewire.Snapshot, installed map[string]bool) (stri
 		}
 		// Projection synchronizes protocol-specific credentials, membership state and
 		// quota into every daemon's existing clients shape.
-		for _, a := range snap.Accounts {
-			if _, e := (&AccountService{}).ProjectAccount(tx, a.Account.Id); e != nil {
-				return fmt.Errorf("node account projection: %w", e)
-			}
+		if e := projectNodeAccounts(tx, snap.Accounts); e != nil {
+			return fmt.Errorf("node account projection: %w", e)
 		}
 		for key, value := range map[string]string{"accountsMigratedAt": "node-v1", "membershipUsageMigratedAt": "node-v1", "xrayTemplateConfig": snap.Template, "subEnable": "false", "tgbotEnabled": "false"} {
 			if e := SetNodeSetting(tx, key, value); e != nil {
@@ -268,6 +227,131 @@ func ApplyNodeSnapshot(snap *nodewire.Snapshot, installed map[string]bool) (stri
 		WriteSpeedLimits()
 	}
 	return revision, e
+}
+
+func nodeSpeedUsageJSON(accounts []nodewire.Account) ([]byte, error) {
+	speedUsage := make(map[string]int64)
+	for _, a := range accounts {
+		if a.Usage != nil {
+			if *a.Usage < 0 {
+				return nil, errors.New("Negative node speed usage")
+			}
+			speedUsage[a.Account.Email] = *a.Usage
+		}
+	}
+	return json.Marshal(speedUsage)
+}
+
+// Quota-only heartbeats still update period usage for speed thresholds even
+// when their materialized credentials and admission budget have not changed.
+func UpdateNodeSpeedUsage(accounts []nodewire.Account) error {
+	raw, err := nodeSpeedUsageJSON(accounts)
+	if err != nil {
+		return err
+	}
+	if GetNodeSetting("nodeSpeedUsage") == string(raw) {
+		return nil
+	}
+	if err := SetNodeSetting(database.GetDB(), "nodeSpeedUsage", string(raw)); err != nil {
+		return err
+	}
+	WriteSpeedLimits()
+	return nil
+}
+
+// NodeSnapshotRevision excludes meter-only changes that never need a daemon reload.
+func NodeSnapshotRevision(snap *nodewire.Snapshot) string {
+	// Changes to quota balances are consumed directly from SQLite; they must not
+	// restart every daemon whenever a user downloads another byte.
+	identity := *snap
+	identity.Files = nil
+	// Management commands and acknowledgments do not change the data plane.
+	identity.ControlGeneration = 0
+	identity.CoreGeneration = 0
+	identity.RequestedCores = nil
+	identity.ConfigGeneration = 0
+	identity.ConfigCommand = nil
+	identity.CoreActionGeneration = 0
+	identity.CoreActionCommand = nil
+	identity.Inbounds = append([]model.Inbound(nil), snap.Inbounds...)
+	identity.Memberships = append([]model.AccountInbound(nil), snap.Memberships...)
+	for i := range identity.Memberships {
+		identity.Memberships[i].Up = 0
+		identity.Memberships[i].Down = 0
+		identity.Memberships[i].AllTime = 0
+	}
+	// Clone the slice before normalizing the hash so the actual snapshot is intact.
+	identity.Accounts = append([]nodewire.Account(nil), snap.Accounts...)
+	for i := range identity.Accounts {
+		identity.Accounts[i].Remaining = 0
+		identity.Accounts[i].ReportedUsage = 0
+		identity.Accounts[i].Usage = nil
+	}
+	for i := range identity.Inbounds {
+		identity.Inbounds[i].Up = 0
+		identity.Inbounds[i].Down = 0
+		identity.Inbounds[i].AllTime = 0
+	}
+	raw, _ := json.Marshal(identity)
+	digest := sha256.Sum256(raw)
+	return hex.EncodeToString(digest[:])
+}
+
+// Project a whole authenticated snapshot in memory. ProjectAccount scans and
+// writes inbounds separately for each account; doing that on every heartbeat
+// turns a node with hundreds of clients into hundreds of repeated DB scans and
+// rewrites of the same inbound. Preserve the same projection/removal semantics
+// while loading each table once and writing each inbound at most once.
+func projectNodeAccounts(tx *gorm.DB, requested []nodewire.Account) error {
+	var accounts []model.Account
+	if err := tx.Find(&accounts).Error; err != nil {
+		return err
+	}
+	byID := make(map[int]*model.Account, len(accounts))
+	for i := range accounts {
+		byID[accounts[i].Id] = &accounts[i]
+	}
+	var memberships []model.AccountInbound
+	if err := tx.Find(&memberships).Error; err != nil {
+		return err
+	}
+	member := make(map[int]map[int]*model.AccountInbound)
+	for i := range memberships {
+		m := &memberships[i]
+		if member[m.AccountId] == nil {
+			member[m.AccountId] = make(map[int]*model.AccountInbound)
+		}
+		member[m.AccountId][m.InboundId] = m
+	}
+	var inbounds []model.Inbound
+	if err := tx.Order("id ASC").Find(&inbounds).Error; err != nil {
+		return err
+	}
+	for i := range inbounds {
+		inbound := &inbounds[i]
+		before := inbound.Settings
+		for _, source := range requested {
+			a := byID[source.Account.Id]
+			if a == nil {
+				return errors.New("Missing node account")
+			}
+			var err error
+			if m := member[a.Id][inbound.Id]; m != nil {
+				inbound.Settings, err = projectAccountOntoInbound(inbound, a, m)
+			} else if strings.Contains(strings.ToLower(inbound.Settings), accountKey(a.Email)) {
+				inbound.Settings, _, err = removeAccountFromInbound(inbound, a.Email)
+			}
+			if err != nil {
+				return err
+			}
+		}
+		if inbound.Settings != before {
+			if err := tx.Model(inbound).Update("settings", inbound.Settings).Error; err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 // A node can remain connected to the control plane while its data plane is

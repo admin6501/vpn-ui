@@ -54,6 +54,7 @@ install_node() {
     local panel='' pair='' ca='' binary='' base=/opt/vpn-ui-node unit=vpn-ui-node
     while (($#)); do
         case "$1" in
+            --install) shift ;;
             --panel-url) panel=${2:?}; shift 2 ;;
             --pair-token) pair=${2:?}; shift 2 ;;
             --ca-file) ca=${2:?}; shift 2 ;;
@@ -249,10 +250,59 @@ uninstall_node() {
     say 'Its central-panel record remains offline; remove its inbounds and node record in the central panel if no longer needed.'
 }
 
+# Start a fresh shell so a menu's error handler cannot disable the installer's
+# errexit checks. Export functions instead of reopening $0: copied commands use
+# process substitution, whose /dev/fd script has already been consumed.
+node_menu_run() (
+    export -f say die require_node_root offer_apt_prerequisites install_node \
+        uninstall_node node_uninstall_path_exists node_uninstall_path_safe \
+        node_cleanup_supported run_node_cleanup
+    case "$1" in
+        --install) bash -Eeuo pipefail -c 'install_node "$@"' _ "$@" ;;
+        --uninstall) bash -Eeuo pipefail -c 'uninstall_node "$@"' _ "$@" ;;
+        *) return 1 ;;
+    esac
+)
+
+node_menu() {
+    require_node_root
+    local choice
+    while true; do
+        say ''
+        say 'VPN-UI node manager'
+        say '1) Install / update node'
+        say '2) Service status'
+        say '3) Start node'
+        say '4) Stop node'
+        say '5) Restart node'
+        say '6) Show recent logs'
+        say '7) Uninstall node'
+        say '0) Exit'
+        printf 'Select an option: '
+        if ! IFS= read -r choice; then return 0; fi
+        case "$choice" in
+            1) node_menu_run --install || say 'Installation failed. See the error above.' ;;
+            2) systemctl --no-pager --full status vpn-ui-node.service || true ;;
+            3) systemctl start vpn-ui-node.service || say 'Could not start the node.' ;;
+            4) systemctl stop vpn-ui-node.service || say 'Could not stop the node.' ;;
+            5) systemctl restart vpn-ui-node.service || say 'Could not restart the node.' ;;
+            6) journalctl --no-pager -u vpn-ui-node.service -n 100 || true ;;
+            7) node_menu_run --uninstall || say 'Uninstall failed; see the error above.' ;;
+            0) return 0 ;;
+            *) say 'Invalid option.' ;;
+        esac
+    done
+}
+
 node_main() {
+    if (($# == 0)) || [[ ${1:-} == --menu ]]; then
+        node_menu
+        return
+    fi
     if [[ ${1:-} == --help || ${1:-} == -h ]]; then
         say 'Install/update: bash install-node.sh [--binary FILE] [--panel-url URL] [--pair-token TOKEN] [--ca-file FILE]'
         say 'Uninstall: bash install-node.sh --uninstall [--yes] [--binary CURRENT_NODE_BINARY]'
+        say 'Interactive menu: bash install-node.sh (or --menu)'
         return 0
     fi
     for arg in "$@"; do

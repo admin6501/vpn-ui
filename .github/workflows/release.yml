@@ -26,6 +26,7 @@ jobs:
         run: |
           bash test_unit/offline_prerequisites_test.sh
           PREREQUISITE_SCRIPT=install-node.sh bash test_unit/offline_prerequisites_test.sh
+          bash test_unit/node_menu_test.sh
       - name: Apply pinned Xray security dependency patch
         run: bash build/core/apply-security.sh
       - name: Verify optional TCP timeout does not abort TPROXY
@@ -103,7 +104,7 @@ jobs:
           go test ./corebundle -run TestExtractXray -count=1
       - name: Verify dedicated node authentication, billing, subscriptions and real data plane
         run: |
-          go test -race ./nodeagent ./web/service -run 'TestNodeProvision|TestNodeTag|TestNodeDuplicateIncoming|TestNodeSnapshotHistory|TestNodeLegacyZero|TestNodeReportConflict' -count=1
+          go test -race ./nodeagent ./web/service -run 'TestNodeProvision|TestNodeTag|TestNodeDuplicateIncoming|TestNodeSnapshotHistory|TestNodeLegacyZero|TestNodeReportConflict|TestNodeSnapshotRefresh|TestNodeReportAvoids|TestNodeUnchanged|TestNodeBatch|TestNodeIPsec|TestIpsecIsShared|TestDerivedCores' -count=1
           go test ./nodeagent ./web/service ./web/controller ./sub -run 'TestNode' -count=1
           RUN_NODE_INTEGRATION=1 go test ./nodeagent -run '^TestNodeRealDataPlane$' -count=1 -timeout 420s
       - name: Verify node page creation, runtime controls and shared graphical/file editors in Chromium (all thirteen languages)

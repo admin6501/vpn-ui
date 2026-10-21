@@ -96,7 +96,7 @@
 <script>
 const app = new Vue({
   el:'#app',delimiters:['[[',']]'],mixins:[MediaQueryMixin],
-  data:{themeSwitcher, pageTitle:'{{ i18n "pages.nodes.title" }}',pageClass:'',nodes:[], formVisible:false, commandVisible:false, coresVisible:false, configVisible:false, configCore:"xray",configTargets:[],configIndex:0,configText:"",configSeen:-1, busy:false, form:{}, pairing:'', command:'', current:null, selected:[], timer:null, https:location.protocol==='https:'},
+  data:{themeSwitcher, pageTitle:'{{ i18n "pages.nodes.title" }}',pageClass:'',nodes:[], formVisible:false, commandVisible:false, coresVisible:false, configVisible:false, configCore:"xray",configTargets:[],configIndex:0,configText:"",configSeen:-1, busy:false, form:{}, pairing:'', command:'', current:null, selected:[], timer:null, listRequest:null, https:location.protocol==='https:'},
   computed:{
     installPending(){return !!(this.queued || (this.current && this.current.report && this.current.report.provision && this.current.report.provision.running))},
     coreActionPending(){return this.current && this.current.report && (Number(this.current.report.coreActionGeneration || 0)<Number(this.current.node.coreActionGeneration) || !!(this.current.report.uninstall && this.current.report.uninstall.running))},
@@ -114,7 +114,8 @@ const app = new Vue({
     async inspectConfig(){if(this.configCore==='xray'){location.href=basePath+'panel/nodes/'+this.current.node.id+'/xray';return}this.disposeConfigEditor();this.configTargets=[];this.configSeen=-1;const msg=await this.post('/panel/nodes/'+this.current.node.id+'/config',{core:this.configCore,inspect:true});if(msg && msg.success)await this.load()},
     selectConfig(index){if(typeof index==='number')this.configIndex=index;this.configText=this.configTargets[this.configIndex] ? this.configTargets[this.configIndex].current : '';this.$nextTick(()=>this.mountConfigEditor())},
     async saveConfig(reset){const target=this.configTargets[this.configIndex];if(!target)return;const msg=await this.post('/panel/nodes/'+this.current.node.id+'/config',{core:this.configCore,inbound:target.inbound,file:target.file,text:this.configText,inspect:false,reset:!!reset});if(msg && msg.success)await this.load()},
-    async load(){const msg=await HttpUtil.get('/panel/nodes/list');if(msg && msg.success){this.nodes=msg.obj || [];if(this.current)this.current=this.nodes.find(item=>item.node.id===this.current.node.id)||null;if(this.configVisible && this.current && this.current.report && !this.configPending && this.configSeen!==Number(this.current.report.configGeneration || 0)){this.configSeen=Number(this.current.report.configGeneration || 0);const previousText=this.configText,hadTargets=this.configTargets.length;this.configTargets=this.current.report.configTargets || [];this.configIndex=0;if(hadTargets && this.current.report.configError){this.configText=previousText;this.$nextTick(()=>this.mountConfigEditor())}else this.selectConfig()}}},
+    load(){if(this.listRequest)return this.listRequest;this.listRequest=this.loadNodes().finally(()=>{this.listRequest=null});return this.listRequest},
+    async loadNodes(){const msg=await HttpUtil.get('/panel/nodes/list');if(msg && msg.success){this.nodes=msg.obj || [];if(this.current)this.current=this.nodes.find(item=>item.node.id===this.current.node.id)||null;if(this.configVisible && this.current && this.current.report && !this.configPending && this.configSeen!==Number(this.current.report.configGeneration || 0)){this.configSeen=Number(this.current.report.configGeneration || 0);const previousText=this.configText,hadTargets=this.configTargets.length;this.configTargets=this.current.report.configTargets || [];this.configIndex=0;if(hadTargets && this.current.report.configError){this.configText=previousText;this.$nextTick(()=>this.mountConfigEditor())}else this.selectConfig()}}},
     edit(node){this.form=node ? {id:node.id,name:node.name,address:node.address,enable:node.enable} : {name:'',address:'',enable:true};this.formVisible=true},
     async post(url,body){return HttpUtil.post(url,body)},
     async save(){if(!this.form.name || !this.form.address)return;this.busy=true;try{const msg=await this.post(this.form.id ? '/panel/nodes/'+this.form.id+'/update' : '/panel/nodes/add',this.form);if(msg && msg.success){this.formVisible=false;if(!this.form.id)this.showCommand(msg.obj.pairToken);await this.load()}}finally{this.busy=false}},
@@ -127,7 +128,7 @@ const app = new Vue({
     async installCores(){if(!this.current || !this.selected.length || this.installPending)return;this.busy=true;try{const msg=await this.post('/panel/nodes/'+this.current.node.id+'/install',{cores:this.selected});if(msg && msg.success){this.selected=[];await this.load()}}finally{this.busy=false}},
     state(value){const states={running:'{{ i18n "pages.nodes.running" }}',stopped:'{{ i18n "pages.nodes.stopped" }}',idle:'{{ i18n "pages.nodes.idle" }}',not_installed:'{{ i18n "pages.nodes.notInstalled" }}',error:'{{ i18n "pages.nodes.error" }}'};return states[value] || value}
   },
-  mounted(){this.load();this.timer=setInterval(()=>this.load(),5000)},
+  mounted(){this.load();this.timer=setInterval(()=>{if(!document.hidden)this.load()},1000)},
   beforeDestroy(){clearInterval(this.timer);this.disposeConfigEditor()}
 });
 </script>

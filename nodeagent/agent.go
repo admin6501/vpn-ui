@@ -24,6 +24,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/mhsanaei/3x-ui/v2/backend"
@@ -186,6 +187,11 @@ type Agent struct {
 	coreRestart      string
 	coreRestartForce bool
 	provisionRefresh bool
+	coreRevisions    map[string]string
+	appliedKey       string
+	diagnosticsMu    sync.RWMutex
+	diagnostics      nodeDiagnostics
+	diagnosticsWake  chan struct{}
 }
 
 func New(path string) (*Agent, error) {
@@ -235,9 +241,9 @@ func installedCores() map[string]bool {
 	if _, e := os.Stat(filepath.Join(config.GetBinFolderPath(), corebundle.XrayBinaryName())); e == nil {
 		set["xray"] = true
 	}
-	for _, c := range (&service.CoreService{}).CoreCatalog() {
-		if c.Installed && !c.Builtin {
-			set[c.Name] = true
+	for name, installed := range (&service.CoreService{}).InstalledNodeCores() {
+		if installed {
+			set[name] = true
 		}
 	}
 	if service.GetNodeSetting("nodeSSHInstalled") == "true" {
@@ -268,15 +274,52 @@ func boundedProvisionLogs(steps []service.ProvisionStep) []service.ProvisionStep
 	return result
 }
 
-func coreReport() json.RawMessage {
+type nodeDiagnostics struct {
+	Catalog []service.CoreOption `json:"catalog"`
+	Cores   []service.CoreStatus `json:"cores"`
+	System  service.SystemStatus `json:"system"`
+}
+
+func (a *Agent) wakeDiagnostics() {
+	select {
+	case a.diagnosticsWake <- struct{}{}:
+	default:
+	}
+}
+
+// Host probes can invoke systemctl/modinfo. Keep them off both the command
+// exchange and the SQLite writer transaction; one slow probe cannot hold up an
+// authenticated heartbeat or a queued stop/configuration request.
+func (a *Agent) collectDiagnostics(ctx context.Context) {
+	ticker := time.NewTicker(5 * time.Second)
+	defer ticker.Stop()
+	for {
+		cs := &service.CoreService{}
+		d := nodeDiagnostics{Catalog: cs.CoreCatalog(), Cores: cs.GetCoresStatus(), System: cs.GetSystemStatus()}
+		a.diagnosticsMu.Lock()
+		a.diagnostics = d
+		a.diagnosticsMu.Unlock()
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		case <-a.diagnosticsWake:
+		}
+	}
+}
+
+func (a *Agent) coreReport() json.RawMessage {
 	cs := &service.CoreService{}
+	a.diagnosticsMu.RLock()
+	diagnostics := a.diagnostics
+	a.diagnosticsMu.RUnlock()
 	installed := []string{}
-	for name := range installedCores() {
+	actual := installedCores()
+	for name := range actual {
 		installed = append(installed, name)
 	}
 	sort.Strings(installed)
-	statuses := cs.GetCoresStatus()
-	actual := installedCores()
+	statuses := append([]service.CoreStatus(nil), diagnostics.Cores...)
 	for i := range statuses {
 		if !actual[statuses[i].Name] {
 			statuses[i].State = service.CoreNotInstalled
@@ -286,14 +329,14 @@ func coreReport() json.RawMessage {
 	}
 	provision := cs.ProvisionState()
 	provision.Steps = boundedProvisionLogs(provision.Steps)
-	report := map[string]any{"installed": installed, "catalog": cs.CoreCatalog(), "cores": statuses, "system": cs.GetSystemStatus(), "provision": provision, "generation": service.GetNodeSetting("nodeCoreGeneration")}
+	report := map[string]any{"installed": installed, "catalog": diagnostics.Catalog, "cores": statuses, "system": diagnostics.System, "provision": provision, "generation": service.GetNodeSetting("nodeCoreGeneration")}
 	report["controlGeneration"] = service.GetNodeSetting("nodeControlGeneration")
 	report["configGeneration"] = service.GetNodeSetting("nodeConfigGeneration")
 	report["configError"] = service.GetNodeSetting("nodeConfigError")
 	paused := []string{}
-	for _, c := range cs.CoreCatalog() {
-		if service.NodeCorePaused(c.Name) {
-			paused = append(paused, c.Name)
+	for name := range actual {
+		if service.NodeCorePaused(name) {
+			paused = append(paused, name)
 		}
 	}
 	report["pausedCores"] = paused
@@ -311,6 +354,9 @@ func coreReport() json.RawMessage {
 }
 func (a *Agent) pendingReport() (nodewire.Report, error) {
 	var result nodewire.Report
+	// Capture host metadata before taking the writer lock. A durable retry below
+	// still returns the exact original report, including its original metadata.
+	metadata := a.coreReport()
 	e := database.GetDB().Transaction(func(tx *gorm.DB) error {
 		var row model.Setting
 		if tx.Where("key = ?", "nodePendingReport").First(&row).Error == nil && row.Value != "" {
@@ -323,7 +369,7 @@ func (a *Agent) pendingReport() (nodewire.Report, error) {
 		if e != nil {
 			return e
 		}
-		result = nodewire.Report{Version: nodewire.Version, Sequence: number + 1, Counters: counters, Online: service.ReadNodeOnline(), CoreReport: coreReport(), LastError: a.lastError}
+		result = nodewire.Report{Version: nodewire.Version, Sequence: number + 1, Counters: counters, Online: service.ReadNodeOnline(), CoreReport: metadata, LastError: a.lastError}
 		raw, e := json.Marshal(result)
 		if e != nil {
 			return e
@@ -416,13 +462,13 @@ func (a *Agent) syncWhileProvisioning(snap *nodewire.Snapshot) error {
 			snap.Inbounds[i].Enable = false
 		}
 	}
-	revision, err := service.ApplyNodeSnapshot(snap, installed)
+	revision, err := a.applySnapshot(snap, installed)
 	if err != nil {
 		a.stopRuntime()
 		return atSyncStage("snapshot", err)
 	}
 	if revision != a.revision {
-		if err := a.runtime.RefreshNodeRuntime(); err != nil {
+		if err := a.refreshSnapshot(snap); err != nil {
 			a.stopRuntime()
 			return atSyncStage("runtime", err)
 		}
@@ -459,6 +505,12 @@ func (a *Agent) Tick(ctx context.Context) error {
 	if e = ackReport(report.Sequence); e != nil {
 		return e
 	}
+	if snap.CoreGeneration != nodeSettingInt("nodeCoreGeneration") ||
+		snap.CoreActionGeneration != nodeSettingInt("nodeCoreActionGeneration") ||
+		snap.ControlGeneration != nodeSettingInt("nodeControlGeneration") ||
+		snap.ConfigGeneration != nodeSettingInt("nodeConfigGeneration") {
+		defer a.wakeDiagnostics()
+	}
 	if e = a.requestCores(&snap); e != nil {
 		return atSyncStage("installation", e)
 	}
@@ -488,7 +540,7 @@ func (a *Agent) Tick(ctx context.Context) error {
 	installed := installedCores()
 	inventoryRaw, _ := json.Marshal(installed)
 	inventory := string(inventoryRaw)
-	revision, e := service.ApplyNodeSnapshot(&snap, installed)
+	revision, e := a.applySnapshot(&snap, installed)
 	if e != nil {
 		return atSyncStage("snapshot", e)
 	}
@@ -520,8 +572,12 @@ func (a *Agent) Tick(ctx context.Context) error {
 			return atSyncStage("runtime", e)
 		}
 		a.coreRestart = ""
+		a.coreRevisions = snapshotCoreRevisions(&snap)
 	} else if revision != a.revision || inventory != a.inventory || a.provisionRefresh {
-		if e = a.runtime.RefreshNodeRuntime(); e != nil {
+		if inventory != a.inventory {
+			a.coreRevisions = nil
+		}
+		if e = a.refreshSnapshot(&snap); e != nil {
 			return atSyncStage("runtime", e)
 		}
 	}
@@ -546,6 +602,8 @@ func (a *Agent) Tick(ctx context.Context) error {
 	return nil
 }
 func (a *Agent) stopRuntime() {
+	a.appliedKey = ""
+	a.coreRevisions = nil
 	_ = service.SetNodeSetting(database.GetDB(), "nodeRuntimeRunning", "false")
 	if e := service.DisableNodeAdmission(); e != nil {
 		log.Printf("disable node admission: %v", e)
@@ -562,7 +620,11 @@ func (a *Agent) Run(ctx context.Context) error {
 		return e
 	}
 	defer a.stopRuntime()
-	ticker := time.NewTicker(5 * time.Second)
+	diagnosticsCtx, cancelDiagnostics := context.WithCancel(ctx)
+	defer cancelDiagnostics()
+	a.diagnosticsWake = make(chan struct{}, 1)
+	go a.collectDiagnostics(diagnosticsCtx)
+	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
 	for {
 		if e := a.Tick(ctx); e != nil {
