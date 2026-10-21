@@ -1,0 +1,114 @@
+diff --git a/transport/internet/tls/config.go b/transport/internet/tls/config.go
+--- a/transport/internet/tls/config.go
++++ b/transport/internet/tls/config.go
+@@ -331,6 +331,9 @@
+ 	}
+ 
+ 	if verifyResult == foundCA { // if found CA, we need to verify here
++		if len(r.Config.ServerName) == 0 {
++			return errors.New("Pinning CA needs a valid ServerName")
++		}
+ 		opts := x509.VerifyOptions{
+ 			Roots:         CAs,
+ 			CurrentTime:   time.Now(),
+diff --git a/transport/internet/grpc/dial.go b/transport/internet/grpc/dial.go
+--- a/transport/internet/grpc/dial.go
++++ b/transport/internet/grpc/dial.go
+@@ -10,8 +10,8 @@
+ 	c "github.com/xtls/xray-core/common/ctx"
+ 	"github.com/xtls/xray-core/common/errors"
+ 	"github.com/xtls/xray-core/common/net"
++	"github.com/xtls/xray-core/common/session"
+ 	"github.com/xtls/xray-core/common/utils"
+-	"github.com/xtls/xray-core/common/session"
+ 	"github.com/xtls/xray-core/transport/internet"
+ 	"github.com/xtls/xray-core/transport/internet/grpc/encoding"
+ 	"github.com/xtls/xray-core/transport/internet/reality"
+@@ -136,10 +136,7 @@
+ 				}
+ 
+ 				if tlsConfig != nil {
+-					config := tlsConfig.GetTLSConfig()
+-					if config.ServerName == "" && address.Family().IsDomain() {
+-						config.ServerName = address.Domain()
+-					}
++					config := tlsConfig.GetTLSConfig(tls.WithDestination(dest))
+ 					if fingerprint := tls.GetFingerprint(tlsConfig.Fingerprint); fingerprint != nil {
+ 						return tls.UClient(c, config, fingerprint), nil
+ 					} else { // Fallback to normal gRPC TLS
+diff --git a/transport/internet/tls/ca_pin_regression_test.go b/transport/internet/tls/ca_pin_regression_test.go
+new file mode 100644
+--- /dev/null
++++ b/transport/internet/tls/ca_pin_regression_test.go
+@@ -0,0 +1,49 @@
++package tls
++
++import (
++	"crypto/tls"
++	"crypto/x509"
++	"testing"
++
++	"github.com/xtls/xray-core/common"
++	"github.com/xtls/xray-core/common/net"
++	"github.com/xtls/xray-core/common/protocol/tls/cert"
++)
++
++func TestPinnedCARequiresVerifiedPeerName(t *testing.T) {
++	caCert, caHash := cert.MustGenerate(nil, cert.Authority(true), cert.KeyUsage(x509.KeyUsageCertSign))
++	ca := common.Must2(x509.ParseCertificate(caCert.Certificate))
++	leafCert, _ := cert.MustGenerate(caCert, cert.DNSNames("expected.example"))
++	leaf := common.Must2(x509.ParseCertificate(leafCert.Certificate))
++	raw := [][]byte{leaf.Raw, ca.Raw}
++	for _, test := range []struct {
++		name, serverName string
++		byName           []string
++		allowed          bool
++	}{
++		{name: "no name"},
++		{name: "wrong name", serverName: "attacker.example"},
++		{name: "matching name", serverName: "expected.example", allowed: true},
++		{name: "explicit name override", serverName: "attacker.example", byName: []string{"expected.example"}, allowed: true},
++		{name: "wrong explicit override", serverName: "expected.example", byName: []string{"attacker.example"}},
++	} {
++		t.Run(test.name, func(t *testing.T) {
++			r := &RandCarrier{Config: &tls.Config{ServerName: test.serverName}, PinnedPeerCertSha256: [][]byte{caHash[:]}, VerifyPeerCertByName: test.byName}
++			if err := r.verifyPeerCert(raw, nil); (err == nil) != test.allowed {
++				t.Fatalf("allowed=%v, error=%v", test.allowed, err)
++			}
++		})
++	}
++	config := (&Config{PinnedPeerCertSha256: [][]byte{caHash[:]}}).GetTLSConfig(WithDestination(net.TCPDestination(net.DomainAddress("expected.example"), 443)))
++	if config.ServerName != "expected.example" {
++		t.Fatal("destination did not provide peer name", config.ServerName)
++	}
++	if err := config.VerifyPeerCertificate(raw, nil); err != nil {
++		t.Fatal("valid destination-pinned CA rejected", err)
++	}
++	foreignCA, _ := cert.MustGenerate(nil, cert.Authority(true), cert.KeyUsage(x509.KeyUsageCertSign))
++	foreignLeaf, _ := cert.MustGenerate(foreignCA, cert.DNSNames("expected.example"))
++	if err := config.VerifyPeerCertificate([][]byte{foreignLeaf.Certificate, ca.Raw}, nil); err == nil {
++		t.Fatal("pinned CA appended to an unrelated certificate chain was accepted")
++	}
++}
+diff --git a/transport/internet/hysteria/ca_pin_regression_test.go b/transport/internet/hysteria/ca_pin_regression_test.go
+new file mode 100644
+--- /dev/null
++++ b/transport/internet/hysteria/ca_pin_regression_test.go
+@@ -0,0 +1,17 @@
++package hysteria
++
++import (
++	"github.com/xtls/xray-core/common/net"
++	"github.com/xtls/xray-core/transport/internet/tls"
++	"testing"
++)
++
++func TestHysteriaTLSDestinationPreservesHTTP3(t *testing.T) {
++	config := hysteriaTLSConfig(&tls.Config{}, tls.WithDestination(net.TCPDestination(net.DomainAddress("expected.example"), 443)))
++	if config.ServerName != "expected.example" {
++		t.Fatal("Hysteria omitted destination peer name", config.ServerName)
++	}
++	if len(config.NextProtos) != 1 || config.NextProtos[0] != "h3" {
++		t.Fatal("Hysteria lost HTTP/3 ALPN", config.NextProtos)
++	}
++}

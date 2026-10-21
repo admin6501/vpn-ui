@@ -36,7 +36,7 @@ index 1b2b5876..7d9f4b30 100644
  			dest:           dest,
  			config:         config,
 -			tlsConfig:      tlsConfig.GetTLSConfig(),
-+			tlsConfig:      hysteriaTLSConfig(tlsConfig),
++			tlsConfig:      hysteriaTLSConfig(tlsConfig, tls.WithDestination(dest)),
  			socketConfig:   streamSettings.SocketSettings,
  			udpmaskManager: streamSettings.UdpmaskManager,
  			quicParams:     streamSettings.QuicParams,
@@ -46,8 +46,8 @@ index 1b2b5876..7d9f4b30 100644
  }
 +
 +// HTTP/3 is required even when a generic TLS configuration supplies HTTP/2 defaults.
-+func hysteriaTLSConfig(config *tls.Config) *go_tls.Config {
-+	result := config.GetTLSConfig()
++func hysteriaTLSConfig(config *tls.Config, opts ...tls.Option) *go_tls.Config {
++	result := config.GetTLSConfig(opts...)
 +	result.NextProtos = []string{http3.NextProtoH3}
 +	return result
 +}
