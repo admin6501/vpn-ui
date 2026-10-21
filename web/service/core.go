@@ -391,8 +391,7 @@ func localEnabledCoreInbounds() map[string]int {
 // three shapes of core the status cards show.
 //
 //   - A catalog core the operator picks: the recorded set is the only answer.
-//   - A DERIVED core (ipsec, radius): nobody installs it directly, it exists only
-//     to serve other cores, so it is installed exactly when an installed core
+//   - A shared core (ipsec, radius): it also exists when an installed core
 //     needs it. That is reference counting against what IS installed, the same
 //     arithmetic uninstall runs against what REMAINS.
 //   - A built-in core nothing else depends on (xray, ssh): part of the panel, so
@@ -406,9 +405,7 @@ func localEnabledCoreInbounds() map[string]int {
 func coreInstalled(name string, installed map[string]bool, installedNames []string) bool {
 	switch name {
 	case "ipsec":
-		// The shared IPsec layer: one charon serving L2TP/IPsec and IKEv2, or host
-		// libreswan on an arch with no bundle. Only those two claim featStrongswan,
-		// so a host with neither has no IPsec to report on.
+		// IPsec can be selected explicitly or supplied by L2TP/IKEv2.
 		return needsFeature(installedNames, featStrongswan)
 	case "radius":
 		return anyCoreUsesRadius(installedNames)

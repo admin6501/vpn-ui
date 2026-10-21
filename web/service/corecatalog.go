@@ -98,6 +98,12 @@ type coreSpec struct {
 // be counted by the shared-requirement logic, and be uninstallable.
 var coreCatalog = []coreSpec{
 	{
+		name: "ipsec", title: "IPsec", backend: "strongSwan",
+		desc:       "Shared IPsec engine for L2TP, IKEv2 and encrypted GRE",
+		optModules: []string{"af_key", "esp4", "xfrm_user"},
+		feats:      []string{featStrongswan},
+	},
+	{
 		name: "l2tp", title: "L2TP", backend: "xl2tpd",
 		desc:       "L2TP/IPsec dial-in, native on Windows, macOS, iOS and Android",
 		usesRadius: true,
@@ -493,6 +499,16 @@ func (s *CoreService) inboundCountsByCore() map[string]int {
 // catalog order.
 func (s *CoreService) installedCoreNames() []string {
 	return coreNamesFromSet(s.provisionedProtocolSet())
+}
+
+// InstalledNodeCores reads only persisted installation state. The sync path must
+// not run CoreCatalog's systemd/preflight probes for every heartbeat.
+func (s *CoreService) InstalledNodeCores() map[string]bool {
+	set := s.provisionedProtocolSet()
+	if needsFeature(coreNamesFromSet(set), featStrongswan) {
+		set["ipsec"] = true
+	}
+	return set
 }
 
 // coreNamesFromSet is installedCoreNames over an already-read set, so a caller

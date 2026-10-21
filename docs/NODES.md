@@ -44,6 +44,11 @@ geodata are also extracted when another VPN core needs routing/accounting. This
 never selects every unrelated core. The agent binary carries bundled assets, so
 its download size does not describe which cores are installed on disk.
 
+IPsec is also selectable on both the central and node core-installation dialogs.
+It installs the shared strongSwan engine; L2TP and IKEv2 still bring this dependency
+automatically. Removing an explicit IPsec selection retains the engine while
+another installed core needs it.
+
 Kernel support depends on the node's OS/kernel. An implementation being available
 in the panel does not guarantee that its kernel modules are available on every VPS.
 
@@ -99,7 +104,13 @@ A fresh installation needs a new pairing record as described above.
 
 ## Connection and accounting
 
-The node polls the central panel every five seconds over verified TLS. No inbound
+The node polls the central panel every second over verified TLS. Host diagnostics
+refresh separately, normally every five seconds, so slow system probes cannot
+delay command receipt. Meter-only heartbeats keep their cumulative reporting and
+speed-threshold updates without rewriting unchanged client tables. The visible
+Nodes page refreshes every second and avoids
+overlapping list requests. Changes reconcile the affected VPN cores and Xray
+routing, rather than restarting every unrelated protocol. No inbound
 node management port, SSH password or remote admin login is needed. Allow the
 panel's HTTPS port outbound and each configured VPN port inbound on the node.
 Pairing codes expire after 15 minutes and can connect only one agent. Ordinary
@@ -145,7 +156,7 @@ live-tested on every supported distribution.
 
 Update both the central panel (`deploy.sh`) and each existing node (`install-node.sh`, run again without pairing options). Existing node credentials, users and counters are retained. Older agents show an update notice and the new buttons stay disabled.
 
-The Nodes page provides **Start**, **Stop** and **Restart** for the node's VPN services. The management agent stays connected, so a stopped location can be started remotely. Requests are persistent and remain pending until acknowledged by the agent. Start and Reconnect also enable the node. Reconnect queues a start request; it cannot bypass an unavailable network path. The agent keeps retrying every five seconds after the 90-second lease expires and resumes automatically when a valid snapshot arrives.
+The Nodes page provides **Start**, **Stop** and **Restart** for the node's VPN services. The management agent stays connected, so a stopped location can be started remotely. Requests are persistent and remain pending until acknowledged by the agent. Start and Reconnect also enable the node. Reconnect queues a start request; it cannot bypass an unavailable network path. The agent keeps retrying after the 90-second lease expires and resumes automatically when a valid snapshot arrives.
 
 **Core configuration** reuses the main panel editors. Xray opens the same graphical settings page (basics, routing, outbounds, DNS, reverse, balancers and advanced JSON), scoped to the selected node. Other cores open the same CodeMirror file editor: select the file, edit and choose **Save and apply**. Provider accounts, panel-managed outbound tunnels and outbound tests/traffic controls remain local-panel features and are not offered in the node editor. Changes are stored on that node and survive configuration regeneration and restart. **Reset** restores generated defaults. Xray edits are checked using the node's own binary and geo files; other cores use the same validation and rollback mechanisms as local core settings. Errors are returned in the configuration dialog.
 
@@ -156,6 +167,12 @@ Each installed core has its own Start, Stop, Restart, Configuration and Remove c
 Xray templates must preserve the reserved API inbound, API routing and traffic counters used for central accounting. The node validates a generated candidate before replacing the active template. Editing an `inbound-N.json` target changes only that inbound's listener, protocol and transport settings; clients stay under central account management. Reset applies to daemon-file overrides, not direct inbound edits.
 
 The node installer uses English for all prompts, status messages and errors.
+
+Run `bash install-node.sh` without arguments (or with `--menu`) for the interactive
+node menu: install/update, status, start, stop, restart, recent logs and uninstall.
+Uninstall still asks for confirmation. Copied pairing commands and commands with
+`--binary` keep running directly without opening the menu. For a direct download
+update without the menu, use `bash install-node.sh --install`.
 
 In the node Xray editor, Advanced → Final node configuration displays the actual generated runtime file with enabled node inbounds. This view is read-only; edit managed inbounds using their forms and core settings using the template. It requires an updated node agent and an existing runtime file.
 

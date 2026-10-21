@@ -51,10 +51,12 @@ const {chromium}=require('playwright');
   });
   await page.route('**/panel/nodes/list',async route=>{
    const response=await route.fetch();const body=await response.json();
-   for(const item of body.obj||[]){item.paired=true;item.online=true;item.report={catalog:[{name:'xray',title:'Xray'},{name:'awg',title:'AmneziaWG'}],coreActionSupported:true,coreActionGeneration:String(item.node.coreActionGeneration),coreActionError:'',cores:[{name:'xray',state:'running',detail:''}],controlSupported:true,runtimeRunning:!item.node.paused,controlGeneration:String(item.node.controlGeneration),configGeneration:String(item.node.configGeneration),installed:['xray','openvpn'],configError:'',configTargets:[currentCore==='xray' ? {core:'xray',inbound:0,file:'config.json',label:'Xray template',generated:JSON.stringify({...defaults,inbounds:[...(defaults.inbounds || []),{tag:'turkey-node-vless',protocol:'vless',port:24443,settings:{clients:[]}}]}),current:submitted || JSON.stringify(defaults)} : {core:'openvpn',inbound:0,file:'server.conf',label:'server.conf',format:'conf',current:'# fixture\nport 1194'}]};}
+   for(const item of body.obj||[]){item.paired=true;item.online=true;item.report={catalog:[{name:'xray',title:'Xray'},{name:'awg',title:'AmneziaWG'},{name:'ipsec',title:'IPsec'}],coreActionSupported:true,coreActionGeneration:String(item.node.coreActionGeneration),coreActionError:'',cores:[{name:'xray',state:'running',detail:''}],controlSupported:true,runtimeRunning:!item.node.paused,controlGeneration:String(item.node.controlGeneration),configGeneration:String(item.node.configGeneration),installed:['xray','openvpn'],configError:'',configTargets:[currentCore==='xray' ? {core:'xray',inbound:0,file:'config.json',label:'Xray template',generated:JSON.stringify({...defaults,inbounds:[...(defaults.inbounds || []),{tag:'turkey-node-vless',protocol:'vless',port:24443,settings:{clients:[]}}]}),current:submitted || JSON.stringify(defaults)} : {core:'openvpn',inbound:0,file:'server.conf',label:'server.conf',format:'conf',current:'# fixture\nport 1194'}]};}
    await route.fulfill({response,json:body});
   });
   await page.evaluate(()=>app.load());
+  const oneRequest=await page.evaluate(async()=>{await app.load();let calls=0;const original=app.loadNodes;app.loadNodes=async function(){calls++;await new Promise(resolve=>setTimeout(resolve,100));return original.call(this)};try{await Promise.all([app.load(),app.load(),app.load()]);return calls}finally{app.loadNodes=original}});
+  if(oneRequest!==1)throw Error('Node list requests overlap');
   const card=page.locator('.ant-card').filter({has:page.locator('.ant-card-head-title',{hasText:'Germany'})}).last();
   const buttons=card.locator('.ant-card-body button.ant-btn');
   await card.locator('button[data-node-action="cores"]').click(); // Core installer
@@ -65,6 +67,7 @@ const {chromium}=require('playwright');
   const xrayCount=await xrayChoice.count();
   if(xrayCount!==1)throw Error('Expected one Xray option in the node installer; found '+xrayCount);
   if(!(await xrayChoice.innerText()).includes('VLESS'))throw Error('Xray protocol description disappeared');
+  if(await corePicker.locator('.ant-checkbox-wrapper').filter({hasText:/^IPsec$/}).count()!==1)throw Error('IPsec install checkbox missing');
   await xrayChoice.click();
   if(await page.evaluate(()=>app.selected.filter(name=>name==='xray').length)!==1)throw Error('Xray checkbox did not select exactly one core');
   await corePicker.locator('.ant-modal-close').click();
