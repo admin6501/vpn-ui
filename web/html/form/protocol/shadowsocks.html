@@ -35,6 +35,7 @@
   <a-form-item label='{{ i18n "encryption" }}'>
     <a-select
       v-model="inbound.settings.method"
+      data-testid="inbound-shadowsocks-cipher"
       @change="SSMethodChange"
       :dropdown-class-name="themeSwitcher.currentTheme"
     >

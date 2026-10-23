@@ -28,6 +28,10 @@ records describe upstream development, not previous stable releases of this fork
   credentials and subscription. Groups provide reusable assignments while preserving ownership
   and each membership's access switch. Shared Sub IDs may publish distinct accounts together;
   they do not merge those accounts or their separate quotas.
+- Creating a listener does not require an existing group and does not create an account. Cipher
+  changes, cloning and reused Add forms keep empty account rosters. Deleting and recreating the
+  same listener name/port works; explicitly reattach the replacement to its group to restore users.
+  Existing account credentials, subscription identity and current/lifetime usage are retained.
 - Overview counts unique accounts. Quota exhaustion and finite time expiry both affect depleted
   status. Subscription pages show effective state, actual quota, upload/download and available
   configurations, including representative-blocked accounts without mutating their records.
@@ -167,6 +171,10 @@ Documentation: [all guides](https://github.com/admin6501/vpn-ui/blob/main/docs/I
 و ابزار مهاجرت همراه راهنماهای هماهنگ منتشر می‌شوند. پنل، ساب و ربات ۱۳ زبان دارند؛ شش README
 جاافتاده اضافه و هر ۱۳ راهنما هم‌ساختار شده‌اند. تداخل زبان درخواست‌های هم‌زمان، تشخیص زبان منطقه‌ای
 و متن‌های ثابت فرم‌ها، هشدارها و راهنمای GRE اصلاح شده‌اند. اسکریپت ترمینال انگلیسی و مهاجرت فارسی/انگلیسی است.
+
+ساخت اینباند به وجود گروه نیاز ندارد. تغییر رمزنگاری Shadowsocks، کلون یا فرمِ دوباره‌استفاده‌شده
+کاربر تصادفی اضافه نمی‌کند. پس از حذف، ساخت دوباره با همان نام و پورت ممکن است؛ اینباند جدید را
+دوباره به گروه قبلی اضافه کنید. حساب، ساب، رمز و مصرف کاربر حفظ می‌شوند.
 
 کاربران و گروه‌ها سهمیه و دسترسی مرکزی دارند. مصرف جدید بر اساس اینباند ثبت می‌شود و باقیماندهٔ
 تاریخیِ بدون اطلاعات مبدأ جدا نشان داده می‌شود. تیک فعال به‌تنهایی محدودیت حجم، زمان، نماینده یا

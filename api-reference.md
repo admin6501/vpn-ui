@@ -1,5 +1,19 @@
 # VPN-UI v1.0.0 API reference
 
+## Stable group-aware creation flow
+
+After the group migration, `POST /panel/api/inbounds/add` creates listener infrastructure only:
+send `settings.clients` as `[]`. No group must exist yet. Create/assign a group through
+`POST /panel/groups/save`, then create or assign served accounts through the group-aware Clients
+routes using `groupIds`. Inline-account create examples retained below describe the older/legacy
+payload shape; posting those rosters to the stable listener-create route is rejected. Do not remove
+the roster check to bypass group permissions. See [groups](docs/groups-fa.md) and the
+[operating guide](docs/PANEL-GUIDE.md).
+
+Deleting a listener removes its group links, not its account identities or traffic. Recreating the
+same name/port yields a new ID; explicitly update the group to include that new ID. New listeners
+and cipher changes must not invent a default account.
+
 Request and response shapes for Xray-native protocols, VPN/relay protocols, the accounts/membership
 layer, representative roles and ownership transfer. Protocol constants also include internal and
 auxiliary configurations; this guide is not a live compatibility certification for every

@@ -1253,6 +1253,9 @@
         });
       },
       async cloneInbound(baseInbound, dbInbound) {
+        const freshInbound = new Inbound();
+        freshInbound.startEmpty = true;
+        freshInbound.protocol = baseInbound.protocol;
         const data = {
           nodeId: dbInbound.nodeId,
           up: dbInbound.up,
@@ -1279,7 +1282,7 @@
           listen: '',
           port: RandomUtil.randomInteger(10000, 60000),
           protocol: baseInbound.protocol,
-          settings: Inbound.Settings.getSettings(baseInbound.protocol).toString(),
+          settings: freshInbound.settings.toString(),
           streamSettings: baseInbound.stream.toString(),
           sniffing: baseInbound.sniffing.toString(),
         };
@@ -1327,6 +1330,9 @@
         return true;
       },
       async addInbound(inbound, dbInbound) {
+        // A listener may be created before any group exists. Stale defaults or
+        // protocol helpers must not turn this into an account-creation request.
+        inbound.clearClients();
         if (!this.validateInboundForm(inbound)) return;
         const data = {
           nodeId: dbInbound.nodeId,

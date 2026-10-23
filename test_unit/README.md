@@ -4,6 +4,12 @@
 
 The [release workflow](../.github/workflows/release.yml) builds amd64 and arm64 natively and runs accounting, renewal/permission, node data-path, TLS, offline installer/update and browser regressions. Translation checks render every catalog message, preserve variables/configuration literals, resolve regional dialects and exercise concurrent panel/subscription languages. Mocked Telegram commands run locally; they do not send real chat messages. Browser checks cover all thirteen supported locales.
 
+`node test_unit/inbound_create_roster_test.cjs` checks the real model/form handlers for empty
+new listeners across protocols and Shadowsocks ciphers. `TestGroupsFreshInboundAndDeleteRecreatePreserveAccount`
+uses real controller/database operations for group-free creation and replacement without credential/usage loss.
+`TestInboundCreateGroupsBrowserRuntime` runs the same lifecycle with actual cipher selection in modern/legacy
+forms, in English and Persian; enable it with `RUN_NODE_UI_BROWSER=1`.
+
 Documentation/link coverage is checked by `python3 test_unit/documentation_test.py`; browser language selection by `node test_unit/language_selection_test.cjs`. The Incus matrix below is a separate privileged live-protocol harness, not evidence that all entries ran in CI. Do not substitute dated results for a current deployment test.
 
 Automated end-to-end test harness for the vpn-ui panel across a matrix of Linux distros, driven over
