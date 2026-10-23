@@ -25,7 +25,7 @@
           </td>
         </tr>
         <tr v-if="infoModal.inbound && infoModal.inbound.settings && Array.isArray(infoModal.inbound.settings.externalProxy) && infoModal.inbound.settings.externalProxy.length">
-          <td>External Proxy</td>
+          <td>{{ i18n "pages.inboundForm.externalProxy" }}</td>
           <td>
             <a-tag v-for="(ep, i) in infoModal.inbound.settings.externalProxy" :key="i" color="blue" :style="{ marginBottom: '4px' }">
               [[ ep.dest ]]:[[ ep.port || dbInbound.port ]][[ ep.remark ? ' (' + ep.remark + ')' : '' ]]
@@ -69,7 +69,7 @@
           </template>
           <template v-if="inbound.isXHTTP">
             <tr>
-              <td>Mode</td>
+              <td>{{ i18n "pages.interface.mode" }}</td>
               <td>
                 <a-tag>[[ inbound.stream.xhttp.mode ]]</a-tag>
               </td>
@@ -98,7 +98,7 @@
       <a-tag :color="inbound.stream.security == 'none' ? 'red' : 'green'">[[
         inbound.stream.security ]]</a-tag>
       <br />
-      <td>Authentication</td>
+      <td>{{ i18n "pages.xray.outbound.sshOutAuth" }}</td>
       <a-tag v-if="inbound.settings.selectedAuth" color="green">[[
         inbound.settings.selectedAuth ? inbound.settings.selectedAuth : ''
         ]]</a-tag>
@@ -168,7 +168,7 @@
           </td>
         </tr>
         <tr v-if="infoModal.inbound.canEnableTlsFlow()">
-          <td>Flow</td>
+          <td>{{ i18n "pages.inboundForm.flow" }}</td>
           <td v-if="infoModal.clientSettings.flow">
             <a-tag>[[ infoModal.clientSettings.flow ]]</a-tag>
           </td>
@@ -329,10 +329,10 @@
         </tr>
       </table>
       <template v-if="app.subSettings.enable && infoModal.clientSettings.subId">
-        <a-divider>Subscription URL</a-divider>
+        <a-divider>{{ i18n "pages.interface.subscriptionURL" }}</a-divider>
         <tr-info-row class="tr-info-row">
           <tr-info-title class="tr-info-title">
-            <a-tag color="purple">Subscription Link</a-tag>
+            <a-tag color="purple">{{ i18n "pages.interface.subscriptionLink" }}</a-tag>
             <a-tooltip title='{{ i18n "copy" }}'>
               <a-button size="small" icon="snippets" @click="copy(infoModal.subLink)"></a-button>
             </a-tooltip>
@@ -342,7 +342,7 @@
         </tr-info-row>
         <tr-info-row class="tr-info-row" v-if="app.subSettings.subJsonEnable">
           <tr-info-title class="tr-info-title">
-            <a-tag color="purple">Json Link</a-tag>
+            <a-tag color="purple">{{ i18n "pages.interface.jsonLink" }}</a-tag>
             <a-tooltip title='{{ i18n "copy" }}'>
               <a-button size="small" icon="snippets" @click="copy(infoModal.subJsonLink)"></a-button>
             </a-tooltip>
@@ -352,7 +352,7 @@
         </tr-info-row>
       </template>
       <template v-if="app.tgBotEnable && infoModal.clientSettings.tgId">
-        <a-divider>Telegram ChatID</a-divider>
+        <a-divider>{{ i18n "pages.interface.telegramChatID" }}</a-divider>
         <tr-info-row class="tr-info-row">
           <tr-info-title class="tr-info-title">
             <a-tag color="blue">[[ infoModal.clientSettings.tgId ]]</a-tag>
@@ -363,7 +363,7 @@
         </tr-info-row>
       </template>
       <template v-if="dbInbound.hasLink()">
-        <a-divider>URL</a-divider>
+        <a-divider>{{ i18n "pages.index.customGeoUrl" }}</a-divider>
         <tr-info-row v-for="(link,index) in infoModal.links" class="tr-info-row">
           <tr-info-title class="tr-info-title">
             <a-tag class="tr-info-tag" color="green">[[ link.remark
@@ -378,7 +378,7 @@
     </template>
     <template v-else>
       <template v-if="dbInbound.isSS && !inbound.isSSMultiUser">
-        <a-divider>URL</a-divider>
+        <a-divider>{{ i18n "pages.index.customGeoUrl" }}</a-divider>
         <tr-info-row v-for="(link,index) in infoModal.links" class="tr-info-row">
           <tr-info-title class="tr-info-title">
             <a-tag class="tr-info-tag" color="green">[[ link.remark
@@ -477,7 +477,7 @@
           <td>[[ inbound.settings.mtu ]]</td>
         </tr>
         <tr>
-          <td>No Kernel Tun</td>
+          <td>{{ i18n "pages.interface.noKernelTun" }}</td>
           <td>[[ inbound.settings.noKernelTun ]]</td>
         </tr>
         <template v-for="(peer, index) in inbound.settings.peers">
@@ -503,14 +503,14 @@
             <td>[[ peer.allowedIPs.join(",") ]]</td>
           </tr>
           <tr class="client-table-odd-row">
-            <td>Keep Alive</td>
+            <td>{{ i18n "pages.interface.keepAlive" }}</td>
             <td>[[ peer.keepAlive ]]</td>
           </tr>
           <tr>
             <td colspan="2">
               <tr-info-row class="tr-info-row">
                 <tr-info-title class="tr-info-title">
-                  <a-tag color="blue">Config</a-tag>
+                  <a-tag color="blue">{{ i18n "pages.index.config" }}</a-tag>
                   <a-tooltip title='{{ i18n "copy" }}'>
                     <a-button :style="{ minWidth: '24px' }" size="small" icon="snippets"
                       @click="copy(infoModal.links[index])"></a-button>
@@ -523,9 +523,9 @@
                 <div v-text="infoModal.links[index]"
                   :style="{ borderRadius: '1rem', padding: '0.5rem', whiteSpace: 'pre-wrap' }" class="client-table-odd-row">
                 </div>
-                <a-divider orientation="center">Link</a-divider>
+                <a-divider orientation="center">{{ i18n "pages.xray.outbound.link" }}</a-divider>
                 <tr-info-title class="tr-info-title">
-                  <a-tag color="green">Link</a-tag>
+                  <a-tag color="green">{{ i18n "pages.xray.outbound.link" }}</a-tag>
                   <a-tooltip title='{{ i18n "copy" }}'>
                     <a-button :style="{ minWidth: '24px' }" size="small" icon="snippets"
                       @click="copy(infoModal.wireguardLinks[index])"></a-button>
@@ -609,7 +609,7 @@
         return { text: String(ips), array: [String(ips)] };
 
       } catch (e) {
-        return { text: 'Error loading IPs', array: [] };
+        return { text: '{{ i18n "pages.interfaceExtra.errorLoadingIPs" }}', array: [] };
       }
     });
   }

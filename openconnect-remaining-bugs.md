@@ -1,25 +1,18 @@
-# OpenConnect (ocserv) — remaining bugs & handoff
+# OpenConnect diagnosis reference
 
-> **Document status:** the current-source summary below applies to `admin6501/vpn-ui`. The
-> historical record preserves earlier upstream proposals and dated findings. Its “today”, “not
-> built”, “verified live” and version references describe that recorded stage, not the current
-> release or newly performed tests.
+## v1.0.0: current behavior
 
-## Current source summary
+The diagnosis below records an earlier development state. It is not an outstanding-bugs checklist for v1.0.0. For a current failure, record the current commit, host/kernel, core status, sanitized ocserv/RADIUS logs and a reproducible client attempt. Current installation and node behavior are documented in the linked operational guides.
 
-This is a dated upstream diagnosis/handoff, not a current bug tracker. Current ocserv
-authentication/accounting lives in the linked services. Reproduce a reported issue with the current
-binary, logs and protocol configuration before treating an old failure here as still open.
+Use the [panel guide](docs/PANEL-GUIDE.md), [README](README.md), [node guide](docs/NODES.md) and [renewal reference](docs/CLIENT-RENEWAL.md) for current operation.
 
 **Implementation references:** [web/service/openconnect.go](web/service/openconnect.go) ·
 [web/service/radius.go](web/service/radius.go) · [test_unit/README.md](test_unit/README.md)
 
-For installation and prerequisites, use [the README](README.md) and
-[offline guide](docs/OFFLINE-INSTALL.md). See [the documentation index](docs/INDEX.md) for
-operational guides. Release automation checks focused cases; complete protocol/VM E2E validation
-requires a separately configured [test host](test_unit/README.md).
+<details>
+<summary>Historical design and development record</summary>
 
-## Historical design record
+The material below preserves upstream proposals, earlier defaults and dated test results. It is not current installation guidance or evidence that its live tests were rerun for this release.
 
 Branch: `feat/openconnect-ocserv`. Written 2026-07-12 after the auth+data-plane debugging marathon.
 OpenConnect went from **0/9 E2E (every login 401)** to **core + most edge cases green**. This is the
@@ -247,3 +240,5 @@ broken. Either speed up / shrink the test threshold, or verify manually on the l
   VMs get no IPv4). Fix: `systemctl restart incus`.
 - `keep_failed_vms` only survives if run.sh's exit-sweep is gated (fixed in 753213c6); a SIGKILL of
   the harness still triggers its cleanup trap and sweeps.
+
+</details>

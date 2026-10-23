@@ -9,8 +9,7 @@
         <template slot="label">
             <a-tooltip>
                 <template slot="title">
-                    Leave empty to auto-assign; a new range is added automatically when a
-                    range fills up.
+                    {{ i18n "pages.interface.leaveEmptyToAutoAssignANewRange" }}
                 </template>{{ i18n "pages.inboundForm.ipRange" }}<a-icon type="question-circle"></a-icon>
             </a-tooltip>
         </template>
@@ -66,7 +65,7 @@
         <template slot="label">
             <a-tooltip>
                 <template slot="title">
-                    Simultaneous devices per account (each gets its own IP). 10 = ten consecutive IPs per account (default). Lower it to fit more accounts in the pool, raise it for accounts that run more devices; 0 reserves a 16-IP block, which is still a cap and not unlimited. Max 64.
+                    {{ i18n "pages.interface.simultaneousDevicesPerAccountEachGetsItsOwn" }}
                 </template>{{ i18n "pages.inboundForm.userLimit" }}<a-icon type="question-circle"></a-icon>
             </a-tooltip>
         </template>

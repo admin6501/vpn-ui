@@ -58,7 +58,7 @@
       </a-input>
     </a-input-group>
   </a-form-item>
-  <a-form-item label="Mode">
+  <a-form-item label="{{ i18n "pages.interface.mode" }}">
     <a-select
       v-model="inbound.stream.xhttp.mode"
       :style="{ width: '50%' }"
@@ -70,7 +70,7 @@
     </a-select>
   </a-form-item>
   <a-form-item
-    label="Max Buffered Upload"
+    label="{{ i18n "pages.interface.maxBufferedUpload" }}"
     v-if="inbound.stream.xhttp.mode === 'packet-up'"
   >
     <a-input-number
@@ -78,13 +78,13 @@
     ></a-input-number>
   </a-form-item>
   <a-form-item
-    label="Max Upload Size (Byte)"
+    label="{{ i18n "pages.interface.maxUploadSizeByte" }}"
     v-if="inbound.stream.xhttp.mode === 'packet-up'"
   >
     <a-input v-model.trim="inbound.stream.xhttp.scMaxEachPostBytes"></a-input>
   </a-form-item>
   <a-form-item
-    label="Stream-Up Server"
+    label="{{ i18n "pages.interface.streamUpServer" }}"
     v-if="inbound.stream.xhttp.mode === 'stream-up'"
   >
     <a-input v-model.trim="inbound.stream.xhttp.scStreamUpServerSecs"></a-input>
@@ -96,7 +96,7 @@
     untouched case and stays legal.
   -->
   <a-form-item
-    label="Padding Bytes"
+    label="{{ i18n "pages.interface.paddingBytes" }}"
     :validate-status="inbound.stream.xhttp.hasPaddingBytesProblem() ? 'error' : ''"
   >
     <template slot="help">
@@ -106,40 +106,40 @@
     </template>
     <a-input v-model.trim="inbound.stream.xhttp.xPaddingBytes"></a-input>
   </a-form-item>
-  <a-form-item label="Padding Obfs Mode">
+  <a-form-item label="{{ i18n "pages.interface.paddingObfsMode" }}">
     <a-switch v-model="inbound.stream.xhttp.xPaddingObfsMode"></a-switch>
   </a-form-item>
   <template v-if="inbound.stream.xhttp.xPaddingObfsMode">
-    <a-form-item label="Padding Key">
+    <a-form-item label="{{ i18n "pages.interface.paddingKey" }}">
       <a-input
         v-model.trim="inbound.stream.xhttp.xPaddingKey"
         placeholder="x_padding"
       ></a-input>
     </a-form-item>
-    <a-form-item label="Padding Header">
+    <a-form-item label="{{ i18n "pages.interface.paddingHeader" }}">
       <a-input
         v-model.trim="inbound.stream.xhttp.xPaddingHeader"
         placeholder="X-Padding"
       ></a-input>
     </a-form-item>
-    <a-form-item label="Padding Placement">
+    <a-form-item label="{{ i18n "pages.interface.paddingPlacement" }}">
       <a-select
         v-model="inbound.stream.xhttp.xPaddingPlacement"
         :dropdown-class-name="themeSwitcher.currentTheme"
       >
-        <a-select-option value>Default (queryInHeader)</a-select-option>
+        <a-select-option value>{{ i18n "pages.interface.defaultQueryInHeader" }}</a-select-option>
         <a-select-option value="queryInHeader">queryInHeader</a-select-option>
         <a-select-option value="header">header</a-select-option>
         <a-select-option value="cookie">cookie</a-select-option>
         <a-select-option value="query">query</a-select-option>
       </a-select>
     </a-form-item>
-    <a-form-item label="Padding Method">
+    <a-form-item label="{{ i18n "pages.interface.paddingMethod" }}">
       <a-select
         v-model="inbound.stream.xhttp.xPaddingMethod"
         :dropdown-class-name="themeSwitcher.currentTheme"
       >
-        <a-select-option value>Default (repeat-x)</a-select-option>
+        <a-select-option value>{{ i18n "pages.interface.defaultRepeatX" }}</a-select-option>
         <a-select-option value="repeat-x">repeat-x</a-select-option>
         <a-select-option value="tokenish">tokenish</a-select-option>
       </a-select>
@@ -151,7 +151,7 @@
     it. This select is visible in every mode, so it carries its own error.
   -->
   <a-form-item
-    label="Uplink HTTP Method"
+    label="{{ i18n "pages.interface.uplinkHTTPMethod" }}"
     :validate-status="inbound.stream.xhttp.hasUplinkMethodProblem() ? 'error' : ''"
   >
     <template slot="help">
@@ -163,47 +163,47 @@
       v-model="inbound.stream.xhttp.uplinkHTTPMethod"
       :dropdown-class-name="themeSwitcher.currentTheme"
     >
-      <a-select-option value>Default (POST)</a-select-option>
+      <a-select-option value>{{ i18n "pages.interface.defaultPOST" }}</a-select-option>
       <a-select-option value="POST">POST</a-select-option>
       <a-select-option value="PUT">PUT</a-select-option>
-      <a-select-option value="GET">GET (packet-up only)</a-select-option>
+      <a-select-option value="GET">{{ i18n "pages.interface.getPacketUpOnly" }}</a-select-option>
     </a-select>
   </a-form-item>
-  <a-form-item label="Session Placement">
+  <a-form-item label="{{ i18n "pages.interface.sessionPlacement" }}">
     <a-select
       v-model="inbound.stream.xhttp.sessionPlacement"
       :dropdown-class-name="themeSwitcher.currentTheme"
     >
-      <a-select-option value>Default (path)</a-select-option>
-      <a-select-option value="path">path</a-select-option>
+      <a-select-option value>{{ i18n "pages.interface.defaultPath" }}</a-select-option>
+      <a-select-option value="path">{{ i18n "path" }}</a-select-option>
       <a-select-option value="header">header</a-select-option>
       <a-select-option value="cookie">cookie</a-select-option>
       <a-select-option value="query">query</a-select-option>
     </a-select>
   </a-form-item>
   <a-form-item
-    label="Session Key"
+    label="{{ i18n "pages.interface.sessionKey" }}"
     v-if="inbound.stream.xhttp.sessionPlacement && inbound.stream.xhttp.sessionPlacement !== 'path'"
   >
     <a-input
       v-model.trim="inbound.stream.xhttp.sessionKey"
-      placeholder="x_session"
+      placeholder="{{ i18n "pages.interface.xSession" }}"
     ></a-input>
   </a-form-item>
-  <a-form-item label="Sequence Placement">
+  <a-form-item label="{{ i18n "pages.interface.sequencePlacement" }}">
     <a-select
       v-model="inbound.stream.xhttp.seqPlacement"
       :dropdown-class-name="themeSwitcher.currentTheme"
     >
-      <a-select-option value>Default (path)</a-select-option>
-      <a-select-option value="path">path</a-select-option>
+      <a-select-option value>{{ i18n "pages.interface.defaultPath" }}</a-select-option>
+      <a-select-option value="path">{{ i18n "path" }}</a-select-option>
       <a-select-option value="header">header</a-select-option>
       <a-select-option value="cookie">cookie</a-select-option>
       <a-select-option value="query">query</a-select-option>
     </a-select>
   </a-form-item>
   <a-form-item
-    label="Sequence Key"
+    label="{{ i18n "pages.interface.sequenceKey" }}"
     v-if="inbound.stream.xhttp.seqPlacement && inbound.stream.xhttp.seqPlacement !== 'path'"
   >
     <a-input
@@ -219,7 +219,7 @@
     for it, because an inbound saved back then is still carrying it.
   -->
   <a-form-item
-    label="Uplink Data Placement"
+    label="{{ i18n "pages.interface.uplinkDataPlacement" }}"
     v-if="inbound.stream.xhttp.mode === 'packet-up'"
     :validate-status="inbound.stream.xhttp.uplinkDataPlacementProblem() ? 'error' : ''"
   >
@@ -232,8 +232,8 @@
       v-model="inbound.stream.xhttp.uplinkDataPlacement"
       :dropdown-class-name="themeSwitcher.currentTheme"
     >
-      <a-select-option value>Default (body)</a-select-option>
-      <a-select-option value="body">body</a-select-option>
+      <a-select-option value>{{ i18n "pages.interface.defaultBody" }}</a-select-option>
+      <a-select-option value="body">{{ i18n "pages.interface.body" }}</a-select-option>
       <a-select-option value="header">header</a-select-option>
       <a-select-option value="cookie">cookie</a-select-option>
     </a-select>
@@ -246,7 +246,7 @@
   -->
   <a-form-item
     v-else-if="inbound.stream.xhttp.hasHiddenUplinkProblem()"
-    label="Uplink Data Placement"
+    label="{{ i18n "pages.interface.uplinkDataPlacement" }}"
     validate-status="error"
   >
     <template slot="help"
@@ -260,25 +260,25 @@
     >
   </a-form-item>
   <a-form-item
-    label="Uplink Data Key"
+    label="{{ i18n "pages.interface.uplinkDataKey" }}"
     v-if="inbound.stream.xhttp.mode === 'packet-up' && inbound.stream.xhttp.uplinkDataPlacement && inbound.stream.xhttp.uplinkDataPlacement !== 'body'"
   >
     <a-input
       v-model.trim="inbound.stream.xhttp.uplinkDataKey"
-      placeholder="x_data"
+      placeholder="{{ i18n "pages.interface.xData" }}"
     ></a-input>
   </a-form-item>
   <a-form-item
-    label="Uplink Chunk Size"
+    label="{{ i18n "pages.interface.uplinkChunkSize" }}"
     v-if="inbound.stream.xhttp.mode === 'packet-up' && inbound.stream.xhttp.uplinkDataPlacement && inbound.stream.xhttp.uplinkDataPlacement !== 'body'"
   >
     <a-input-number
       v-model.number="inbound.stream.xhttp.uplinkChunkSize"
       :min="0"
-      placeholder="0 (unlimited)"
+      placeholder="{{ i18n "pages.interface.value0Unlimited" }}"
     ></a-input-number>
   </a-form-item>
-  <a-form-item label="No SSE Header">
+  <a-form-item label="{{ i18n "pages.interface.noSSEHeader" }}">
     <a-switch v-model="inbound.stream.xhttp.noSSEHeader"></a-switch>
   </a-form-item>
   <a-form-item label='{{ i18n "pages.inbounds.stream.xhttp.noGRPCHeader" }}'>
@@ -293,7 +293,7 @@
   <!--
     :min="0" keeps the control itself out of trouble; the error state is for a
     negative value that arrived from an imported or hand-edited blob, which the
-    core rejects with "invalid negative value of maxHeaderBytes".
+    core rejects with "{{ i18n "pages.interfaceExtra.invalidNegativeValueOfMaxHeaderBytes" }}".
   -->
   <a-form-item
     label='{{ i18n "pages.inbounds.stream.xhttp.serverMaxHeaderBytes" }}'

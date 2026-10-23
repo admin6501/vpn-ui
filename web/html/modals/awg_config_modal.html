@@ -4,11 +4,11 @@
   <a-spin :spinning="awgConfigModal.loading">
     <div v-if="!awgConfigModal.loading && awgConfigModal.devices.length === 0"
       :style="{ color: '#888', textAlign: 'center', padding: '24px' }">
-      No AmneziaWG configuration is available for this account yet.
+      {{ i18n "pages.interface.noAmneziaWGConfigurationIsAvailableForThisAccount" }}
     </div>
     <div v-for="(dev, index) in awgConfigModal.devices" :key="index" class="wg-cfg-device">
       <div class="wg-cfg-head">
-        <b>AmneziaWG Config</b>
+        <b>{{ i18n "pages.interface.amneziawgConfig" }}</b>
         <a-tag color="green" :style="{ marginInlineStart: '8px' }">[[ dev.ip ]]</a-tag>
         <a-tag v-if="dev.remark" color="blue" :style="{ marginInlineStart: '8px' }">[[ dev.remark ]]</a-tag>
       </div>
@@ -18,10 +18,10 @@
             :style="{ fontFamily: 'monospace', fontSize: '12px' }"></a-textarea>
           <a-space :style="{ marginTop: '8px' }">
             <a-button size="small" @click="copy(dev.config)">
-              <a-icon type="copy"></a-icon> Copy
+              <a-icon type="copy"></a-icon> {{ i18n "copy" }}
             </a-button>
             <a-button size="small" @click="download(dev)">
-              <a-icon type="download"></a-icon> Download
+              <a-icon type="download"></a-icon> {{ i18n "download" }}
             </a-button>
           </a-space>
         </div>
@@ -51,7 +51,7 @@
   const awgConfigModal = {
     visible: false,
     loading: false,
-    title: 'AmneziaWG Config',
+    title: '{{ i18n "pages.interfaceExtra.amneziawgConfig" }}',
     dbInboundId: 0,
     email: '',
     // Declared here, not assigned only in show(): Vue makes the properties of this
@@ -63,7 +63,7 @@
       this.dbInboundId = dbInboundId;
       this.email = client && client.email ? client.email : '';
       this.subId = client && client.subId ? client.subId : '';
-      this.title = 'AmneziaWG Config' + (this.email ? ' - ' + this.email : '');
+      this.title = '{{ i18n "pages.interfaceExtra.amneziawgConfig" }}' + (this.email ? ' - ' + this.email : '');
       this.devices = [];
       this.loading = true;
       this.visible = true;

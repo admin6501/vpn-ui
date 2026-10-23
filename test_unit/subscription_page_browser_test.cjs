@@ -24,10 +24,10 @@ const assert = require('node:assert/strict');
     assert.equal(await value(3), '1.00GB', 'uploaded usage is visible');
     assert.equal(await value(4), '3.00GB', 'account usage is counted once across three inbounds');
     assert.equal(await value(5), expected.total > 0 ? (expected.total / 2**30).toFixed(2) + 'GB' : '∞', 'real quota is visible');
-    assert.match(await value(-2), /[0-9۰-۹]/, 'last-online timestamp remains visible');
-    assert.match(await value(-1), /[0-9۰-۹]/, 'expiry remains visible');
+    assert.match(await value(-2), /\p{Decimal_Number}/u, 'last-online timestamp remains visible');
+    assert.match(await value(-1), /\p{Decimal_Number}/u, 'expiry remains visible');
     const status = await value(1);
-    const label = expected.lang === 'fa-IR' ? (expected.active ? 'فعال' : 'غیرفعال') : (expected.active ? 'Active' : 'Inactive');
+    const label = expected.status;
     assert.equal(status.trim(), label, 'status must reflect enable, expiry and exhausted quota');
     assert.ok(!text.includes('[['), 'no unrendered bindings remain');
     if (expected.links) {

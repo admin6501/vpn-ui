@@ -86,7 +86,7 @@
                   </template>
                 </a-table>
               </a-card>
-              <a-card :title="'{{ i18n "pages.admins.roles" }}'" style="margin-top:16px">
+              <a-card title="{{ i18n "pages.admins.roles" }}" style="margin-top:16px">
                 <a-button type="primary" icon="plus" @click="openRole()">{{ i18n "create" }}</a-button>
                 <a-table :data-source="roles" :columns="roleColumns" :row-key="r=>r.id" :pagination="false" style="margin-top:12px">
                   <template slot="rolePermissions" slot-scope="text,role"><a-tag v-for="slug in role.permissions" :key="slug">[[ permLabel(slug) ]]</a-tag></template>
@@ -96,7 +96,7 @@
                   </template>
                 </a-table>
               </a-card>
-              <a-modal id="admin-role-modal" v-model="roleModal.visible" :title="'{{ i18n "pages.admins.roles" }}'" @ok="saveRole" :confirm-loading="roleModal.loading" :mask-closable="false">
+              <a-modal id="admin-role-modal" v-model="roleModal.visible" title="{{ i18n "pages.admins.roles" }}" @ok="saveRole" :confirm-loading="roleModal.loading" :mask-closable="false">
                 <a-form-item label='{{ i18n "pages.admins.roleName" }}'><a-input v-model.trim="roleModal.name" :max-length="100"></a-input></a-form-item>
                 <a-form-item label='{{ i18n "pages.admins.permissions" }}'><a-checkbox-group v-model="roleModal.permissions" style="width:100%"><a-row><a-col :span="24" v-for="slug in allPermissions" :key="slug"><a-checkbox :value="slug">[[ permLabel(slug) ]]</a-checkbox></a-col></a-row></a-checkbox-group></a-form-item>
               </a-modal>

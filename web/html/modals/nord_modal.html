@@ -173,7 +173,7 @@
                     }
                 });
                 this.cities = Array.from(citiesMap.values()).sort((a, b) => a.name.localeCompare(b.name));
-                
+
                 this.servers = (data.servers || []).map(s => {
                     const firstLocId = (s.location_ids || [])[0];
                     const city = locToCity[firstLocId];
@@ -187,7 +187,7 @@
                 }
 
                 if (this.servers.length === 0) {
-                    app.$message.warning('No servers found for the selected country');
+                    app.$message.warning('{{ i18n "pages.interfaceExtra.noServersFoundForTheSelectedCountry" }}');
                 }
             }
             this.loading(false);
@@ -195,7 +195,7 @@
         addOutbound() {
             const server = this.servers.find(s => s.id === this.serverId);
             if (!server) return;
-            
+
             const tech = server.technologies.find(t => t.id === 35);
             const publicKey = tech.metadata.find(m => m.name === 'public_key').value;
 
@@ -216,12 +216,12 @@
             app.templateSettings.outbounds.push(outbound);
             app.outboundSettings = JSON.stringify(app.templateSettings.outbounds);
             this.close();
-            app.$message.success('NordVPN outbound added');
+            app.$message.success('{{ i18n "pages.interfaceExtra.nordvpnOutboundAdded" }}');
         },
         resetOutbound(index) {
             const server = this.servers.find(s => s.id === this.serverId);
             if (!server || index === -1) return;
-            
+
             const tech = server.technologies.find(t => t.id === 35);
             const publicKey = tech.metadata.find(m => m.name === 'public_key').value;
 
@@ -242,7 +242,7 @@
                 }
             };
             app.templateSettings.outbounds[index] = outbound;
-            
+
             // Sync routing rules
             app.templateSettings.routing.rules.forEach(r => {
                 if (r.outboundTag === oldTag) {
@@ -252,7 +252,7 @@
 
             app.outboundSettings = JSON.stringify(app.templateSettings.outbounds);
             this.close();
-            app.$message.success('NordVPN outbound updated');
+            app.$message.success('{{ i18n "pages.interfaceExtra.nordvpnOutboundUpdated" }}');
         },
         delOutbound(index) {
             if (index !== -1) {

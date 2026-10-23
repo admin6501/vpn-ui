@@ -1,25 +1,18 @@
-# SSTP (accel-ppp) — implementation contract & progress
+# SSTP
 
-> **Document status:** the current-source summary below applies to `admin6501/vpn-ui`. The
-> historical record preserves earlier upstream proposals and dated findings. Its “today”, “not
-> built”, “verified live” and version references describe that recorded stage, not the current
-> release or newly performed tests.
+## v1.0.0: current behavior
 
-## Current source summary
+SSTP uses its portable backend, TLS material and account authentication/accounting. Install its core, configure reachable endpoints and verify the certificate from the client. Listener availability is distinct from a successful PPP/VPN connection. Host PPP/network prerequisites remain necessary. Location inbounds use the same central account quota and permissions.
 
-SSTP support is implemented with the bundled accel-ppp backend. Host PPP support and suitable TLS
-configuration remain protocol prerequisites. Earlier live-box test counts are upstream evidence, not
-a new full E2E certification of this fork.
+Use the [panel guide](docs/PANEL-GUIDE.md), [README](README.md), [node guide](docs/NODES.md) and [renewal reference](docs/CLIENT-RENEWAL.md) for current operation.
 
 **Implementation references:** [web/service/sstp.go](web/service/sstp.go) ·
 [web/service/corecatalog.go](web/service/corecatalog.go)
 
-For installation and prerequisites, use [the README](README.md) and
-[offline guide](docs/OFFLINE-INSTALL.md). See [the documentation index](docs/INDEX.md) for
-operational guides. Release automation checks focused cases; complete protocol/VM E2E validation
-requires a separately configured [test host](test_unit/README.md).
+<details>
+<summary>Historical design and development record</summary>
 
-## Historical design record
+The material below preserves upstream proposals, earlier defaults and dated test results. It is not current installation guidance or evidence that its live tests were rerun for this release.
 
 Adding **SSTP** as a 6th VPN protocol. This doc is the FROZEN CONTRACT every implementer follows so
 parallel work stays consistent (mirrors the style of `openconnect-plan.md`). Written after a 7-agent
@@ -443,3 +436,5 @@ Files: NEW `build/backend/accel-ppp-bundle.sh`, `build/backend/build.sh`, root `
 - Quick compile: `CGO_ENABLED=1 go build -o /tmp/vpn-ui-sstp main.go`
 - Unit: `CGO_ENABLED=1 go test ./web/... -count=1`
 - Full bundled binary: `./build.sh` → `build/out/vpn-ui-amd64` (rebuilds daemons incl. accel-ppp)
+
+</details>

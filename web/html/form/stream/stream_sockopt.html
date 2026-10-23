@@ -9,7 +9,7 @@
     <a-switch v-model="inbound.stream.sockoptSwitch"></a-switch>
   </a-form-item>
   <template v-if="inbound.stream.sockoptSwitch">
-    <a-form-item label="Route Mark">
+    <a-form-item label="{{ i18n "pages.interface.routeMark" }}">
       <a-input-number
         v-model.number="inbound.stream.sockopt.mark"
         :min="0"
@@ -27,7 +27,7 @@
         :min="0"
       ></a-input-number>
     </a-form-item>
-    <a-form-item label="TCP Max Seg">
+    <a-form-item label="{{ i18n "pages.interface.tcpMaxSeg" }}">
       <a-input-number
         v-model.number="inbound.stream.sockopt.tcpMaxSeg"
         :min="0"
@@ -54,13 +54,13 @@
     <a-form-item label="Multipath TCP">
       <a-switch v-model.trim="inbound.stream.sockopt.tcpMptcp"></a-switch>
     </a-form-item>
-    <a-form-item label="Penetrate">
+    <a-form-item label="{{ i18n "pages.interface.penetrate" }}">
       <a-switch v-model.trim="inbound.stream.sockopt.penetrate"></a-switch>
     </a-form-item>
-    <a-form-item label="V6 Only">
+    <a-form-item label="{{ i18n "pages.interface.v6Only" }}">
       <a-switch v-model.trim="inbound.stream.sockopt.V6Only"></a-switch>
     </a-form-item>
-    <a-form-item label="Domain Strategy">
+    <a-form-item label="{{ i18n "pages.xray.wireguard.domainStrategy" }}">
       <a-select
         v-model="inbound.stream.sockopt.domainStrategy"
         :style="{ width: '50%' }"
@@ -71,7 +71,7 @@
         >
       </a-select>
     </a-form-item>
-    <a-form-item label="TCP Congestion">
+    <a-form-item label="{{ i18n "pages.interface.tcpCongestion" }}">
       <a-select
         v-model="inbound.stream.sockopt.tcpcongestion"
         :style="{ width: '50%' }"
@@ -88,15 +88,15 @@
         :style="{ width: '50%' }"
         :dropdown-class-name="themeSwitcher.currentTheme"
       >
-        <a-select-option value="off">Off</a-select-option>
-        <a-select-option value="redirect">Redirect</a-select-option>
+        <a-select-option value="off">{{ i18n "pages.interface.off" }}</a-select-option>
+        <a-select-option value="redirect">{{ i18n "pages.interface.redirect" }}</a-select-option>
         <a-select-option value="tproxy">TProxy</a-select-option>
       </a-select>
     </a-form-item>
-    <a-form-item label="Dialer Proxy">
+    <a-form-item label="{{ i18n "pages.interface.dialerProxy" }}">
       <a-input v-model="inbound.stream.sockopt.dialerProxy"></a-input>
     </a-form-item>
-    <a-form-item label="Interface Name">
+    <a-form-item label="{{ i18n "pages.inboundForm.interfaceName" }}">
       <a-input v-model="inbound.stream.sockopt.interfaceName"></a-input>
     </a-form-item>
     <a-form-item label="Trusted X-Forwarded-For">

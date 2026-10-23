@@ -1,25 +1,18 @@
-# In-core IP limiter (replacing the fail2ban path)
+# Source-IP limiting
 
-> **Document status:** the current-source summary below applies to `admin6501/vpn-ui`. The
-> historical record preserves earlier upstream proposals and dated findings. Its “today”, “not
-> built”, “verified live” and version references describe that recorded stage, not the current
-> release or newly performed tests.
+## v1.0.0: current behavior
 
-## Current source summary
+Enabled account policy is enforced in the data path, with reject-new or evict-oldest behavior. Visible source addresses are counted, so NAT clients share one address. Admission, eviction and policy reload are checked separately. A limit on one node is not a globally atomic session lock across locations. Speed and quota policies remain separate.
 
-The patched Xray core implements source-IP limits; the panel resolves client/inbound settings and
-writes the effective policy. An IP limit counts visible source addresses, not physical devices
-behind NAT. It is separate from quota, speed and protocol-specific peer/session limits.
+Use the [panel guide](docs/PANEL-GUIDE.md), [README](README.md), [node guide](docs/NODES.md) and [renewal reference](docs/CLIENT-RENEWAL.md) for current operation.
 
 **Implementation references:** [web/service/speedlimit.go](web/service/speedlimit.go) ·
 [third_party/Xray-core/common/speedlimit/iplimit.go](third_party/Xray-core/common/speedlimit/iplimit.go)
 
-For installation and prerequisites, use [the README](README.md) and
-[offline guide](docs/OFFLINE-INSTALL.md). See [the documentation index](docs/INDEX.md) for
-operational guides. Release automation checks focused cases; complete protocol/VM E2E validation
-requires a separately configured [test host](test_unit/README.md).
+<details>
+<summary>Historical design and development record</summary>
 
-## Historical design record
+The material below preserves upstream proposals, earlier defaults and dated test results. It is not current installation guidance or evidence that its live tests were rerun for this release.
 
 Goal: a per-account limit on concurrent client source IPs that actually works, enforced inside the
 patched Xray core, with no fail2ban, no access-log parsing, and no collateral damage.
@@ -372,3 +365,5 @@ runtime test.
   before deleting `InboundClientIps` and the job.
 - Whether ssh/mtproto should also gain a shared "Limit After"-style arming. Out of scope; noting it
   so it is a decision, not an omission.
+
+</details>

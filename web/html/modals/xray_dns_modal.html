@@ -45,13 +45,13 @@
       </template>
     </a-form-item>
     <a-divider :style="{ margin: '5px 0' }"></a-divider>
-    <a-form-item label='Skip Fallback'>
+    <a-form-item label='{{ i18n "pages.interface.skipFallback" }}'>
       <a-switch v-model="dnsModal.dnsServer.skipFallback"></a-switch>
     </a-form-item>
-    <a-form-item label='Disable Cache'>
+    <a-form-item label='{{ i18n "pages.xray.dns.disableCache" }}'>
       <a-switch v-model="dnsModal.dnsServer.disableCache"></a-switch>
     </a-form-item>
-    <a-form-item label='Final Query'>
+    <a-form-item label='{{ i18n "pages.interface.finalQuery" }}'>
       <a-switch v-model="dnsModal.dnsServer.finalQuery"></a-switch>
     </a-form-item>
   </a-form>

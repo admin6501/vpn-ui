@@ -1,6 +1,6 @@
 {{ define "page/head_start" }}
 <!DOCTYPE html>
-<html>
+<html lang="{{ or .lang "en-US" }}">
 <head>
   <meta charset="UTF-8">
   <meta name="renderer" content="webkit">
@@ -28,7 +28,7 @@
     body {
       font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Vazirmatn', 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
     }
-    
+
     /* mobile touch scrolling for tabs */
     @media (max-width: 576px) {
       .ant-tabs-nav-container {
@@ -210,7 +210,7 @@
 </script>
 <script src="{{ .base_path }}assets/js/websocket.js?{{ .asset_ver }}"></script>
 {{ end }}
-  
+
 {{ define "page/body_end" }}
 </body>
 </html>

@@ -1,25 +1,18 @@
-# Stable account slots: fixing "deleting one account moves everyone else's IP"
+# Stable account addressing
 
-> **Document status:** the current-source summary below applies to `admin6501/vpn-ui`. The
-> historical record preserves earlier upstream proposals and dated findings. Its “today”, “not
-> built”, “verified live” and version references describe that recorded stage, not the current
-> release or newly performed tests.
+## v1.0.0: current behavior
 
-## Current source summary
+Account slots are persisted identities, not the current row order. Deleting another account must not renumber existing peers. User/device limits reserve address capacity; changing them can require reconciliation. Back up before importing or repairing slot assignments. A membership change is not a credential reset.
 
-Stable account slots are implemented. Pool addresses use each client’s persisted `slot`; removing a
-different client must not renumber surviving slots. Review capacity limits before increasing
-account/device counts.
+Use the [panel guide](docs/PANEL-GUIDE.md), [README](README.md), [node guide](docs/NODES.md) and [renewal reference](docs/CLIENT-RENEWAL.md) for current operation.
 
 **Implementation references:** [web/service/vpnrange.go](web/service/vpnrange.go) ·
 [web/service/account_slot_test.go](web/service/account_slot_test.go)
 
-For installation and prerequisites, use [the README](README.md) and
-[offline guide](docs/OFFLINE-INSTALL.md). See [the documentation index](docs/INDEX.md) for
-operational guides. Release automation checks focused cases; complete protocol/VM E2E validation
-requires a separately configured [test host](test_unit/README.md).
+<details>
+<summary>Historical design and development record</summary>
 
-## Historical design record
+The material below preserves upstream proposals, earlier defaults and dated test results. It is not current installation guidance or evidence that its live tests were rerun for this release.
 
 > **Status: implemented** (2026-07-25). `model.Client.Slot` + `slotOr`/`slotsForNewAccounts`/
 > `assignSlotsToClientMaps` in `web/service/vpnrange.go`, allocation wired into AddInbound /
@@ -267,3 +260,5 @@ sudo python3 -m test_unit.harness.ovpn_accounts_wgc
 sudo python3 -m test_unit.harness.ovpn_accounts_matrix creation-order simultaneous \
     user-limit-2 five-accounts reconnect-fast
 ```
+
+</details>

@@ -61,9 +61,7 @@
       v-if="!streamNetworkOffered(inbound)"
       :style="{ color: 'var(--error)', marginTop: '4px' }"
     >
-      This inbound is running a transport this protocol does not support. Pick one
-      above to fix it. Doing so changes what the server runs, so leave it alone if
-      the inbound is working.
+      {{ i18n "pages.interface.thisInboundIsRunningATransportThisProtocol" }}
     </div>
   </a-form-item>
 </a-form>

@@ -1,44 +1,15 @@
-# Management CLI and panel menu
+# Management CLI
 
-## Current commands
+## v1.0.0: current behavior
 
-The installed `vpn-ui` command is the interactive management menu, embedded in the panel binary and
-extracted to `/usr/bin/vpn-ui`. The actual panel binary is `/opt/vpn-ui/vpn-ui-amd64`. Installation
-and updates refresh the embedded menu.
+Run sudo vpn-ui for the panel management menu. Use its installed status, login recovery, update and removal options. Standard online update uses deploy.sh and retains the database. For nodes, running install-node.sh opens install/update, status, start, stop, restart, logs and confirmed removal; --install preserves direct scripted update. Existing pairing and counters survive an update. A fresh node must use the pairing command from the central panel. Terminal menu text is English.
 
-```bash
-sudo vpn-ui
-sudo /opt/vpn-ui/vpn-ui-amd64 info
-sudo /opt/vpn-ui/vpn-ui-amd64 info --get port
-sudo /opt/vpn-ui/vpn-ui-amd64 info --get webBasePath
-```
+Use the [panel guide](docs/PANEL-GUIDE.md), [README](README.md), [node guide](docs/NODES.md) and [renewal reference](docs/CLIENT-RENEWAL.md) for current operation.
 
-The menu supports update/uninstall, username/password/port/web-path changes, random login reset,
-login information, service start/stop/restart, Xray start/stop/restart/logs, restart of all cores
-and certificate setup. Run `vpn-ui --help` for menu help; run the binary for its own CLI usage. A
-random login reset also changes the port and web path.
+<details>
+<summary>Historical design and development record</summary>
 
-`vpn-ui` does not forward arbitrary arguments to the binary. For example, the account-layer revert
-command is:
-
-```bash
-sudo /opt/vpn-ui/vpn-ui-amd64 revert-accounts
-```
-
-Back up the stopped database and sidecars first. Reverting the account layer is not restoring an
-entire PasarGuard backup; see [the accounts guide](accounts-upgrade-guide.md).
-
-## Offline operation
-
-[The offline installer](install-offline.sh) installs the same embedded menu. It asks Yes/No before
-an optional apt prerequisite installation. With No, installation uses the local binary without
-downloads. Updates and ACME issuance/renewal still need connectivity; the bundled ACME client only
-removes the client-download requirement.
-
-**Sources:** [menu](vpn-ui.sh), [binary CLI](main.go), [service management](web/service/systemd.go),
-[offline guide](docs/OFFLINE-INSTALL.md).
-
-## Historical implementation proposal
+The material below preserves upstream proposals, earlier defaults and dated test results. It is not current installation guidance or evidence that its live tests were rerun for this release.
 
 The following proposal is retained for design context. Its old version numbers, NEW/FIX labels and
 line numbers are not current implementation status.
@@ -234,3 +205,5 @@ same envelope, or make it a thin alias of the `--port` path.
 Match `deploy.sh`'s existing style (`msg`/`act`/`ok`/`warn`/`die`/`hr`, the pacman-ish `::`
 headers), not upstream's `LOGD/LOGE` + raw ANSI. It is already the house style and the two scripts
 sit side by side. No emoji.
+
+</details>

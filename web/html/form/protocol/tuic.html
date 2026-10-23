@@ -9,7 +9,7 @@
         <table width="100%">
             <tr class="client-table-header">
                 <th>{{ i18n "pages.inbounds.email" }}</th>
-                <th>UUID</th>
+                <th>{{ i18n "pages.clients.uuid" }}</th>
                 <th>{{ i18n "pages.inboundForm.password" }}</th>
             </tr>
             <tr v-for="(client, index) in inbound.settings.tuics"
@@ -35,8 +35,8 @@
         type="warning"
         show-icon
         :style="{ marginBottom: '16px' }"
-        message="Clients must set ALPN to h3"
-        description="This server accepts only the h3 ALPN. Most TUIC clients ship with ALPN empty, and an empty ALPN fails the QUIC handshake with an opaque TLS error rather than an auth error, so it reads like a wrong password or a bad certificate. The share links and subscriptions generated here already include alpn=h3. If someone configures a client by hand, that field is the one to check first."
+        message="{{ i18n "pages.interfaceExtra.clientsMustSetALPNToH3" }}"
+        description="{{ i18n "pages.interfaceExtra.tuicRequiresH3InALPNGeneratedLinksAlready" }}"
     ></a-alert>
 
     <a-form-item>
@@ -75,10 +75,7 @@
         <template slot="label">
             <a-tooltip>
                 <template slot="title">
-                    How long the server keeps the state for one UDP association with no
-                    traffic on it. Too low breaks long-lived UDP sessions such as a game
-                    lobby or a voice call; too high just holds memory for sessions nobody
-                    is using.
+                    {{ i18n "pages.interface.howLongTheServerKeepsTheStateFor" }}
                 </template>{{ i18n "pages.inboundForm.udpTimeout" }}<a-icon type="question-circle"></a-icon>
             </a-tooltip>
         </template>
@@ -110,11 +107,7 @@
         <template slot="label">
             <a-tooltip>
                 <template slot="title">
-                    Let a returning client send its first request in the opening packet,
-                    saving one round trip on every reconnect. The cost is real: 0-RTT data
-                    is replayable, and the fixed-size early handshake is a stable pattern
-                    for a censor to match on. Off is the right default; turn it on only
-                    where the latency matters more than either risk.
+                    {{ i18n "pages.interface.letAReturningClientSendItsFirstRequest" }}
                 </template>{{ i18n "pages.inboundForm.0RttHandshake" }}<a-icon type="question-circle"></a-icon>
             </a-tooltip>
         </template>

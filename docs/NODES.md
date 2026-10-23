@@ -1,5 +1,7 @@
 # Dedicated VPN-UI nodes
 
+**Stable release:** v1.0.0. Update the central panel and each agent to use the complete current node UI. Each agent pairs to one panel. See the [panel guide](PANEL-GUIDE.md) for account state, permissions and renewal.
+
 One central panel can manage separate location servers. Accounts, owners, quotas,
 subscription tokens and representative limits stay in the central database.
 Assign the same account to inbounds on several nodes to publish those locations in

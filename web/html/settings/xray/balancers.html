@@ -18,7 +18,7 @@
                         </a-menu-item>
                         <a-menu-item @click="deleteBalancer(index)">
                             <span :style="{ color: 'var(--error)' }">
-                                <a-icon type="delete"></a-icon> 
+                                <a-icon type="delete"></a-icon>
                                 <span>{{ i18n "delete"}}</span>
                             </span>
                         </a-menu-item>
@@ -26,10 +26,10 @@
                 </a-dropdown>
             </template>
             <template slot="strategy" slot-scope="text, balancer, index">
-                <a-tag :style="{ margin: '0' }" v-if="balancer.strategy=='random'" color="purple">Random</a-tag>
-                <a-tag :style="{ margin: '0' }" v-if="balancer.strategy=='roundRobin'" color="green">Round Robin</a-tag>
-                <a-tag :style="{ margin: '0' }" v-if="balancer.strategy=='leastLoad'" color="green">Least Load</a-tag>
-                <a-tag :style="{ margin: '0' }" v-if="balancer.strategy=='leastPing'" color="green">Least Ping</a-tag>
+                <a-tag :style="{ margin: '0' }" v-if="balancer.strategy=='random'" color="purple">{{ i18n "pages.interface.random" }}</a-tag>
+                <a-tag :style="{ margin: '0' }" v-if="balancer.strategy=='roundRobin'" color="green">{{ i18n "pages.interface.roundRobin" }}</a-tag>
+                <a-tag :style="{ margin: '0' }" v-if="balancer.strategy=='leastLoad'" color="green">{{ i18n "pages.interface.leastLoad" }}</a-tag>
+                <a-tag :style="{ margin: '0' }" v-if="balancer.strategy=='leastPing'" color="green">{{ i18n "pages.interface.leastPing" }}</a-tag>
             </template>
             <template slot="selector" slot-scope="text, balancer, index">
                 <a-tag class="info-large-tag" :style="{ margin: '1' }" v-for="sel in balancer.selector">[[ sel ]]</a-tag>
@@ -37,8 +37,8 @@
         </a-table>
         <a-radio-group v-if="observatoryEnable || burstObservatoryEnable" v-model="obsSettings" @change="changeObsCode"
             button-style="solid" :size="isMobile ? 'small' : ''">
-            <a-radio-button value="observatory" v-if="observatoryEnable">Observatory</a-radio-button>
-            <a-radio-button value="burstObservatory" v-if="burstObservatoryEnable">Burst Observatory</a-radio-button>
+            <a-radio-button value="observatory" v-if="observatoryEnable">{{ i18n "pages.interface.observatory" }}</a-radio-button>
+            <a-radio-button value="burstObservatory" v-if="burstObservatoryEnable">{{ i18n "pages.interface.burstObservatory" }}</a-radio-button>
         </a-radio-group>
         <textarea :style="{ position: 'absolute', left: '-800px' }" id="obsSetting"></textarea>
     </a-space>

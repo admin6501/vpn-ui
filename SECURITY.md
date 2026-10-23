@@ -1,5 +1,11 @@
 # Security and deployment
 
+## Stable v1.0.0 security scope
+
+The first stable release retains authenticated sessions bound to account security state, protected owner operations, role/assignment checks, representative two-factor enrollment, verified node TLS/leases and private backups. The pinned toolchain/dependency checks are defined by [go.mod](go.mod) and the [release workflow](.github/workflows/release.yml), including dependency scanning. Per-request HTML language isolation prevents concurrent visitors changing each other's displayed locale. Subscription tokens and exported client profiles remain secrets.
+
+Dated audit findings below are records of the examined source and fixes, not a guarantee that a running server is uncompromised. Database/configuration comparison alone cannot inspect every live runtime or host persistence mechanism. Do not disable TLS/origin/authentication protections to diagnose access issues. For backup and operating procedures see the [panel guide](docs/PANEL-GUIDE.md).
+
 ## Security update (2026-10-11)
 
 This update fixes confirmed issues in the panel:

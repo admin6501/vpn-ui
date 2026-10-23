@@ -22,7 +22,7 @@
                 <a-col v-if="provisioned">
                   <a-space>
                     <a-button type="primary" @click="restartAll">
-                      <a-icon type="reload"></a-icon>Restart All Cores
+                      <a-icon type="reload"></a-icon>{{ i18n "pages.interface.restartAllCores" }}
                     </a-button>
                     <a-button @click="loadStatus(true)">
                       <a-icon type="reload"></a-icon>{{ i18n "pages.core.refresh" }}
@@ -325,7 +325,7 @@
   <!-- Inbound disposition. Removing a core takes the daemon its inbounds run on,
        so this is asked rather than assumed. Keeping them is a legitimate answer:
        the inbounds survive and start working again if the core is reinstalled. -->
-  <a-modal v-model="inboundChoice.visible" :title="'{{ i18n "pages.core.uninstallInboundsTitle" }}'"
+  <a-modal v-model="inboundChoice.visible" title="{{ i18n "pages.core.uninstallInboundsTitle" }}"
     :class="themeSwitcher.currentTheme" :width="isMobile ? '95%' : 520"
     ok-text='{{ i18n "pages.core.uninstallCore" }}' cancel-text='{{ i18n "cancel" }}'
     ok-type="danger" :closable="true" :mask-closable="false"
@@ -472,7 +472,7 @@
     <div :style="{ textAlign: 'right', marginBottom: '8px' }">
       <a-space>
         <a-button size="small" :disabled="!logsContent" @click="downloadLogs">
-          <a-icon type="download"></a-icon>Download
+          <a-icon type="download"></a-icon>{{ i18n "download" }}
         </a-button>
         <a-button size="small" :loading="logsLoading" @click="loadLogs(logsCore)">
           <a-icon type="reload"></a-icon>{{ i18n "pages.core.refresh" }}

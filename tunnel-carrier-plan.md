@@ -1,25 +1,18 @@
-# Carrying a tunnel through anything
+# Tunnel carriers and routes
 
-> **Document status:** the current-source summary below applies to `admin6501/vpn-ui`. The
-> historical record preserves earlier upstream proposals and dated findings. Its “today”, “not
-> built”, “verified live” and version references describe that recorded stage, not the current
-> release or newly performed tests.
+## v1.0.0: current behavior
 
-## Current source summary
+Carrier/outbound policies route selected traffic through the configured next hop. Keep management and the tunnel own outer endpoint reachable outside a default route through that tunnel. Validate the generated route and endpoint reachability before sending all traffic. Panel payload accounting and whole-interface/tunnel meters can measure different legs and overhead; compare the same direction and interval.
 
-Carrier resolution and policy routing are implemented. Accepted carriers and restrictions are
-determined by the linked code; carriers can require host networking support. Test failure/reconnect
-behavior on the actual topology instead of assuming a proposed carrier shape is available.
+Use the [panel guide](docs/PANEL-GUIDE.md), [README](README.md), [node guide](docs/NODES.md) and [renewal reference](docs/CLIENT-RENEWAL.md) for current operation.
 
 **Implementation references:** [web/service/vpnoutcarrier.go](web/service/vpnoutcarrier.go) ·
 [web/service/vpnoutvia.go](web/service/vpnoutvia.go)
 
-For installation and prerequisites, use [the README](README.md) and
-[offline guide](docs/OFFLINE-INSTALL.md). See [the documentation index](docs/INDEX.md) for
-operational guides. Release automation checks focused cases; complete protocol/VM E2E validation
-requires a separately configured [test host](test_unit/README.md).
+<details>
+<summary>Historical design and development record</summary>
 
-## Historical design record
+The material below preserves upstream proposals, earlier defaults and dated test results. It is not current installation guidance or evidence that its live tests were rerun for this release.
 
 An operator names a carrier in an outbound row's **Dialer Proxy** and the tunnel's own outer
 transport travels through it. Today that carrier may only be another VPN tunnel. This makes it any
@@ -149,3 +142,5 @@ tunnel's server directly, and that destination is steered into the tun. It is re
 3. Carrier tag that resolves to nothing -> refused at save, before anything is raised.
 4. Carried kind whose outer cannot ride the carrier -> refused at save, naming the kind and what to
    do instead.
+
+</details>

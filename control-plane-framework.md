@@ -1,25 +1,18 @@
-# Control-plane framework (cplane) - research and implementation plan
+# Current control plane
 
-> **Document status:** the current-source summary below applies to `admin6501/vpn-ui`. The
-> historical record preserves earlier upstream proposals and dated findings. Its “today”, “not
-> built”, “verified live” and version references describe that recorded stage, not the current
-> release or newly performed tests.
+## v1.0.0: current behavior
 
-## Current source summary
+The proposed web/service/cplane package is absent. Current reconciliation uses the existing services, jobs and rbridge adapters. This research is not an installation step or an unfulfilled requirement for the stable release. Central accounts, groups and node snapshots are authoritative; nodes report cumulative counters and reconcile the affected runtime.
 
-The proposed `web/service/cplane` package is not present. Current non-RADIUS reconciliation uses
-`rbridge`; this proposal is not an installation requirement or an unfinished step of the current
-release.
+Use the [panel guide](docs/PANEL-GUIDE.md), [README](README.md), [node guide](docs/NODES.md) and [renewal reference](docs/CLIENT-RENEWAL.md) for current operation.
 
 **Implementation references:** [web/service/rbridge/rbridge.go](web/service/rbridge/rbridge.go) ·
 [web/job/xray_traffic_job.go](web/job/xray_traffic_job.go)
 
-For installation and prerequisites, use [the README](README.md) and
-[offline guide](docs/OFFLINE-INSTALL.md). See [the documentation index](docs/INDEX.md) for
-operational guides. Release automation checks focused cases; complete protocol/VM E2E validation
-requires a separately configured [test host](test_unit/README.md).
+<details>
+<summary>Historical design and development record</summary>
 
-## Historical design record
+The material below preserves upstream proposals, earlier defaults and dated test results. It is not current installation guidance or evidence that its live tests were rerun for this release.
 
 A light, parallel control-plane framework so non-RADIUS VPN protocols (WireGuard, later SSH-VPN,
 MTProto, etc.) plug in by implementing a tiny adapter, instead of each one cloning the ~150-line
@@ -288,3 +281,5 @@ go test ./web/... -count=1         # unit (incl. new cplane TrimToLimit tests) +
   `web/service/ikev2.go` (implement adapter, delete reconcile + `getDisabledEmails`),
   `web/job/xray_traffic_job.go` (Sweeper wire-in + map collect).
 - Later: `web/service/wireguard.go` (adapter #1), and per-service cleanup in Phase 6.
+
+</details>

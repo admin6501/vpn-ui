@@ -28,7 +28,7 @@ const {chromium}=require('playwright');
  await page.locator('.bo-comment-toggle').click();
  if(await comment.isVisible())throw Error('Comment arrow did not collapse its own comment');
  if(!await page.evaluate(()=>app.protocolCount(app.clients[0])===3))throw Error('Repeated protocols inflate the protocol count');
- await page.locator('.bo-lg-serving button').filter({hasText:'INFO'}).click();
+ await page.locator('.bo-lg-serving button').first().click();
  await page.locator('.bo-protocol-details').waitFor({state:'visible'});
  if(await page.locator('.bo-protocol-details > div').count()!==5)throw Error('INFO omitted a location/protocol membership');
  await page.evaluate(async()=>{await clientMembershipModal.show({});clientMembershipModal.tab='limits';await app.$nextTick();});

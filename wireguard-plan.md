@@ -1,27 +1,19 @@
-# WireGuard - research and implementation plan
+# Kernel WireGuard
 
-> **Document status:** the current-source summary below applies to `admin6501/vpn-ui`. The
-> historical record preserves earlier upstream proposals and dated findings. Its “today”, “not
-> built”, “verified live” and version references describe that recorded stage, not the current
-> release or newly performed tests.
+## v1.0.0: current behavior
 
-## Current source summary
+Kernel WireGuard (wg-c) and native Xray WireGuard are separate implementations. Install the corresponding core and host prerequisites. Device slots use individual keys/configurations and tunnel addresses. Download a separate profile per device; copying one profile does not create a new peer. Stable account slots prevent unrelated deletions from shifting addresses.
 
-Kernel WireGuard support and account/peer management are implemented. The host must provide the
-required kernel support; peer configuration is not a physical-device identifier if users copy the
-same key. Native Xray WireGuard outbounds and kernel WireGuard inbounds are different configuration
-paths.
+Use the [panel guide](docs/PANEL-GUIDE.md), [README](README.md), [node guide](docs/NODES.md) and [renewal reference](docs/CLIENT-RENEWAL.md) for current operation.
 
 **Implementation references:** [web/service/wgc.go](web/service/wgc.go) ·
 [web/service/rbridge/rbridge.go](web/service/rbridge/rbridge.go) ·
 [web/service/corecatalog.go](web/service/corecatalog.go)
 
-For installation and prerequisites, use [the README](README.md) and
-[offline guide](docs/OFFLINE-INSTALL.md). See [the documentation index](docs/INDEX.md) for
-operational guides. Release automation checks focused cases; complete protocol/VM E2E validation
-requires a separately configured [test host](test_unit/README.md).
+<details>
+<summary>Historical design and development record</summary>
 
-## Historical design record
+The material below preserves upstream proposals, earlier defaults and dated test results. It is not current installation guidance or evidence that its live tests were rerun for this release.
 
 Adding **WireGuard** (the in-kernel **C** implementation, not Xray's userspace Go wireguard) as an
 8th first-class VPN protocol with real, panel-integrated account management. This document is the
@@ -548,3 +540,5 @@ go test ./web/... -count=1         # unit + i18n key-parity + template-parse
 - Counter-reset delta accounting (why we avoid it): https://github.com/snaeim/wgstat
 - EL9 ships in-kernel WireGuard:
   https://computingforgeeks.com/setup-wireguard-vpn-on-rocky-linux-almalinux/
+
+</details>

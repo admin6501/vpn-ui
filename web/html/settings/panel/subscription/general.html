@@ -10,7 +10,7 @@
             </template>
         </a-setting-list-item>
         <a-setting-list-item paddings="small">
-            <template #title>JSON Subscription</template>
+            <template #title>{{ i18n "pages.interface.jsonSubscription" }}</template>
             <template #description>{{ i18n
                 "pages.settings.subJsonEnable"}}</template>
             <template #control>
@@ -18,9 +18,8 @@
             </template>
         </a-setting-list-item>
         <a-setting-list-item paddings="small">
-            <template #title>Clash / Mihomo Subscription</template>
-            <template #description>Enable direct Clash and Mihomo YAML
-                subscriptions.</template>
+            <template #title>{{ i18n "pages.interface.clashMihomoSubscription" }}</template>
+            <template #description>{{ i18n "pages.interface.enableDirectClashAndMihomoYAMLSubscriptions" }}</template>
             <template #control>
                 <a-switch v-model="allSetting.subClashEnable"></a-switch>
             </template>

@@ -1,5 +1,7 @@
 # TLS certificate pinning security update
 
+**Stable v1.0.0:** retain the pinned-CA hostname verification fixes and the release workflow's real TLS regressions. A configured CA fingerprint does not justify ignoring the destination name. This guide concerns outbound transport TLS; node pairing additionally uses verified HTTPS and an optional trusted CA file. See [Nodes](NODES.md) and [security scope](../SECURITY.md).
+
 The release build requires Go 1.27.3 to include the crypto/x509 distrust update
 for [GO-2026-6809](https://pkg.go.dev/vuln/GO-2026-6809). Both the panel and bundled
 Xray build use the toolchain selected by the root go.mod and the core security

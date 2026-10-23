@@ -10,7 +10,7 @@
                 <a-button type="primary" icon="cloud" v-if="!nodeContext"
                     @click="showWarp()">WARP</a-button>
                 <a-button type="primary" icon="api" v-if="!nodeContext"
-                    @click="showNord()">NordVPN</a-button>
+                    @click="showNord()">{{ i18n "pages.xray.outbound.nordvpn" }}</a-button>
                 <!-- No SSH or VPN Tunnel button: both are protocols in the Add
                      Outbound picker now, which is where an operator looks for
                      one. WARP and NordVPN stay because neither is a protocol,
@@ -172,7 +172,7 @@
                 <a-tooltip v-else
                     :title="outboundTestStates[index].result.error">
                     <a-tag color="red">
-                        Failed
+                        {{ i18n "fail" }}
                     </a-tag>
                 </a-tooltip>
             </div>

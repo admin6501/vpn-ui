@@ -1,26 +1,18 @@
-# AmneziaWG - research and implementation plan
+# AmneziaWG
 
-> **Document status:** the current-source summary below applies to `admin6501/vpn-ui`. The
-> historical record preserves earlier upstream proposals and dated findings. Its “today”, “not
-> built”, “verified live” and version references describe that recorded stage, not the current
-> release or newly performed tests.
+## v1.0.0: current behavior
 
-## Current source summary
+Install the core and matching kernel/module prerequisites before enabling an inbound. Obfuscation parameters belong to the server and must match exported profiles. Device slots have separate keys and tunnel IPs; reuse of one profile shares its peer. Node and central forms use the same account model. Reinstallation must preserve device credentials and address slots.
 
-AmneziaWG is implemented in the service and bundled kernel-module source. The daemon bundle does not
-replace the host kernel module: matching running-kernel headers, DKMS and build tools are required
-if the module is absent. The optional apt step can provide available packages; it does not guarantee
-every kernel flavor is supported.
+Use the [panel guide](docs/PANEL-GUIDE.md), [README](README.md), [node guide](docs/NODES.md) and [renewal reference](docs/CLIENT-RENEWAL.md) for current operation.
 
 **Implementation references:** [web/service/awg.go](web/service/awg.go) ·
 [awgsrc/awgsrc.go](awgsrc/awgsrc.go) · [web/service/corecatalog.go](web/service/corecatalog.go)
 
-For installation and prerequisites, use [the README](README.md) and
-[offline guide](docs/OFFLINE-INSTALL.md). See [the documentation index](docs/INDEX.md) for
-operational guides. Release automation checks focused cases; complete protocol/VM E2E validation
-requires a separately configured [test host](test_unit/README.md).
+<details>
+<summary>Historical design and development record</summary>
 
-## Historical design record
+The material below preserves upstream proposals, earlier defaults and dated test results. It is not current installation guidance or evidence that its live tests were rerun for this release.
 
 Adding **AmneziaWG** (obfuscated WireGuard, in-kernel **C** module) as a new first-class VPN
 protocol, as a sibling of the existing kernel-WireGuard `wg-c` protocol. This document is the
@@ -846,3 +838,5 @@ green. Never auto-run incus E2E (author only; project rule).
   https://copr.fedorainfracloud.org/coprs/amneziavpn/amneziawg/
 - Param ranges/constraints (wg-easy reference):
   https://wg-easy.github.io/wg-easy/v15.3/advanced/config/amnezia/
+
+</details>

@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gin-gonic/gin"
 	"github.com/mhsanaei/3x-ui/v2/database"
 	"github.com/mhsanaei/3x-ui/v2/database/model"
 	"github.com/mhsanaei/3x-ui/v2/web/locale"
@@ -26,7 +27,7 @@ func TestSubscriptionPageBrowserRuntime(t *testing.T) {
 	}
 	script, _ := filepath.Abs("../test_unit/subscription_page_browser_test.cjs")
 	translations, _ := filepath.Abs("../web")
-	for _, tc := range []struct {
+	cases := []struct {
 		name, path, lang                           string
 		total                                      int64
 		expired, disabled, memberDisabled, blocked bool
@@ -38,7 +39,17 @@ func TestSubscriptionPageBrowserRuntime(t *testing.T) {
 		{name: "expired-unlimited", path: "/sub/", lang: "en-US", expired: true},
 		{name: "quota-exhausted-exactly", path: "/sub/", lang: "en-US", total: 3 * gb},
 		{name: "disabled-memberships", path: "/sub/", lang: "en-US", total: 10 * gb, disabled: true, memberDisabled: true},
-	} {
+	}
+	for _, code := range locale.LanguageCodes() {
+		if code == "en-US" || code == "fa-IR" {
+			continue
+		}
+		tc := cases[0]
+		tc.name = "active-" + code
+		tc.lang = code
+		cases = append(cases, tc)
+	}
+	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			newSubTestDB(t)
 			if err := locale.InitLocalizer(os.DirFS(translations), &service.SettingService{}); err != nil {
@@ -134,7 +145,16 @@ func TestSubscriptionPageBrowserRuntime(t *testing.T) {
 			defer server.Close()
 			runBrowser := func(active, links bool) {
 				t.Helper()
-				expected := map[string]any{"lang": tc.lang, "active": active, "links": links, "total": tc.total}
+				statusKey := "subscription.inactive"
+				if active {
+					statusKey = "subscription.active"
+				}
+				c, _ := gin.CreateTestContext(httptest.NewRecorder())
+				c.Request = httptest.NewRequest(http.MethodGet, "/", nil)
+				c.Request.AddCookie(&http.Cookie{Name: "lang", Value: tc.lang})
+				locale.LocalizerMiddleware()(c)
+				translate := c.MustGet("I18n").(func(locale.I18nType, string, ...string) string)
+				expected := map[string]any{"status": translate(locale.Web, statusKey), "lang": tc.lang, "active": active, "links": links, "total": tc.total}
 				raw, _ := json.Marshal(expected)
 				ctx, cancel := context.WithTimeout(context.Background(), 35*time.Second)
 				defer cancel()

@@ -99,12 +99,12 @@
         {{ end }}
         <div class="bo-spec-row" v-if="status.cpuModel">
           <span class="bo-spec-ico bo-spec-ico--cpu"><svg class="bo-icon bo-icon-14" aria-hidden="true"><use href="#bo-i-cpu"></use></svg></span>
-          <dt class="bo-spec-key">CPU</dt>
+          <dt class="bo-spec-key">{{ i18n "pages.index.cpu" }}</dt>
           <dd class="bo-spec-val">[[ status.cpuModel ]]</dd>
         </div>
         <div class="bo-spec-row">
           <span class="bo-spec-ico bo-spec-ico--cores"><svg class="bo-icon bo-icon-14" aria-hidden="true"><use href="#bo-i-grid"></use></svg></span>
-          <dt class="bo-spec-key">Cores</dt>
+          <dt class="bo-spec-key">{{ i18n "pages.core.cores" }}</dt>
           <dd class="bo-spec-val num">[[ CPUFormatter.cpuCoreFormat(status.cpuCores) ]]<span v-if="status.cpuSpeedMhz"> at [[ CPUFormatter.cpuSpeedFormat(status.cpuSpeedMhz) ]]</span></dd>
         </div>
         <!-- Fitted memory, not the live usage the tile below graphs. The DDR
@@ -113,12 +113,12 @@
              disappearing. -->
         <div class="bo-spec-row" v-if="ramText">
           <span class="bo-spec-ico bo-spec-ico--ram"><svg class="bo-icon bo-icon-14" aria-hidden="true"><use href="#bo-i-ram"></use></svg></span>
-          <dt class="bo-spec-key">RAM</dt>
+          <dt class="bo-spec-key">{{ i18n "pages.index.memory" }}</dt>
           <dd class="bo-spec-val num">[[ ramText ]]</dd>
         </div>
         <div class="bo-spec-row" v-if="status.kernel">
           <span class="bo-spec-ico bo-spec-ico--kernel"><svg class="bo-icon bo-icon-14" aria-hidden="true"><use href="#bo-i-zap"></use></svg></span>
-          <dt class="bo-spec-key">Kernel</dt>
+          <dt class="bo-spec-key">{{ i18n "pages.interface.kernel" }}</dt>
           <dd class="bo-spec-val num">[[ status.kernel ]]</dd>
         </div>
         <!-- Whether this machine is a guest, and of what. Detected once per
@@ -885,11 +885,11 @@
           </a-select>
           <a-select size="small" v-model="logModal.level" :style="{ width: '95px' }" @change="reloadLogs()"
             :dropdown-class-name="themeSwitcher.currentTheme">
-            <a-select-option value="debug">Debug</a-select-option>
-            <a-select-option value="info">Info</a-select-option>
-            <a-select-option value="notice">Notice</a-select-option>
-            <a-select-option value="warning">Warning</a-select-option>
-            <a-select-option value="err">Error</a-select-option>
+            <a-select-option value="debug">{{ i18n "pages.interface.debug" }}</a-select-option>
+            <a-select-option value="info">{{ i18n "pages.inbounds.info" }}</a-select-option>
+            <a-select-option value="notice">{{ i18n "pages.interface.notice" }}</a-select-option>
+            <a-select-option value="warning">{{ i18n "pages.interface.warning" }}</a-select-option>
+            <a-select-option value="err">{{ i18n "pages.core.stateError" }}</a-select-option>
           </a-select>
         </a-input-group>
       </a-form-item>
@@ -943,13 +943,13 @@
           </a-select>
         </a-input-group>
       </a-form-item>
-      <a-form-item label="Filter:">
+      <a-form-item label="{{ i18n "pages.interface.filter" }}">
         <a-input size="small" v-model="xraylogModal.filter" @keyup.enter="openXrayLogs()"></a-input>
       </a-form-item>
       <a-form-item>
-        <a-checkbox v-model="xraylogModal.showDirect" @change="openXrayLogs()">Direct</a-checkbox>
-        <a-checkbox v-model="xraylogModal.showBlocked" @change="openXrayLogs()">Blocked</a-checkbox>
-        <a-checkbox v-model="xraylogModal.showProxy" @change="openXrayLogs()">Proxy</a-checkbox>
+        <a-checkbox v-model="xraylogModal.showDirect" @change="openXrayLogs()">{{ i18n "pages.interface.direct" }}</a-checkbox>
+        <a-checkbox v-model="xraylogModal.showBlocked" @change="openXrayLogs()">{{ i18n "pages.interface.blocked" }}</a-checkbox>
+        <a-checkbox v-model="xraylogModal.showProxy" @change="openXrayLogs()">{{ i18n "pages.interface.proxy" }}</a-checkbox>
       </a-form-item>
       <a-form-item>
         <a-button size="small" :type="xraylogModal.live ? 'primary' : 'default'"
@@ -1026,7 +1026,7 @@
   <a-modal id="cpu-history-modal" v-model="cpuHistoryModal.visible" :closable="true"
     @cancel="() => cpuHistoryModal.visible = false" :class="themeSwitcher.currentTheme" width="900px" footer="">
     <template slot="title">
-      CPU History
+      {{ i18n "pages.interface.cpuHistory" }}
       <a-select size="small" v-model="cpuHistoryModal.bucket" class="ml-10" style="width: 80px"
         @change="fetchCpuHistoryBucket">
         <a-select-option :value="2">2m</a-select-option>
@@ -1041,27 +1041,27 @@
       <sparkline :data="cpuHistoryLong" :labels="cpuHistoryLabels" :vb-width="840" :height="220"
         :stroke="status.cpu.color" :stroke-width="2.2" :show-grid="true" :show-axes="true" :tick-count-x="5"
         :max-points="cpuHistoryLong.length" :fill-opacity="0.18" :marker-radius="3.2" :show-tooltip="true" />
-      <div style="margin-top:4px;font-size:11px;opacity:0.65">Timeframe: [[ cpuHistoryModal.bucket ]] sec per point (total [[ cpuHistoryLong.length ]] points)</div>
+      <div style="margin-top:4px;font-size:11px;opacity:0.65">[[ cpuSamplingLabel ]]</div>
     </div>
   </a-modal>
   <!-- Unsupported-distro warning -->
   <a-modal id="distro-warn-modal" v-model="distroModal.visible" :closable="false"
     :mask-closable="false" :class="themeSwitcher.currentTheme" width="520px">
     <template slot="title">
-      <span style="color:#cf1322;font-weight:600">⚠&nbsp; Unsupported distribution</span>
+      <span style="color:#cf1322;font-weight:600">⚠&nbsp; {{ i18n "pages.interface.unsupportedDistribution" }}</span>
     </template>
     <div style="padding:4px 2px">
       <p style="margin-bottom:10px">
-        <b>[[ distroModal.pretty ]]</b> is not on <span v-pre>{{ or .brand_name "VPN-UI" }}</span>'s officially tested distro list.
-        The panel may still run, but <b style="color:#cf1322">expect errors</b>.
+        <b>[[ distroModal.pretty ]]</b><br>
+        {{ i18n "pages.interface.distributionTargetHint" }}
       </p>
       <p style="margin-bottom:0;opacity:0.7;font-size:12px;line-height:1.5">
-        Officially tested: [[ distroModal.tested ]]
+        {{ i18n "pages.interface.targetDistributions" }}: [[ distroModal.tested ]]
       </p>
     </div>
     <template slot="footer">
-      <a-button @click="dismissDistroWarning(false)">Close</a-button>
-      <a-button type="primary" @click="dismissDistroWarning(true)">Close and don't show again</a-button>
+      <a-button @click="dismissDistroWarning(false)">{{ i18n "close" }}</a-button>
+      <a-button type="primary" @click="dismissDistroWarning(true)">{{ i18n "pages.interface.closeAndDonTShowAgain" }}</a-button>
     </template>
   </a-modal>
 {{template "page/shell_end" . }}
@@ -1869,6 +1869,10 @@
       userStatsLoading: false,
     },
     computed: {
+      cpuSamplingLabel() {
+        const label = '{{ i18n "pages.interface.cpuSampling" "Seconds=={seconds}" "Points=={points}" }}';
+        return label.replace('{seconds}', this.cpuHistoryModal.bucket).replace('{points}', this.cpuHistoryLong.length);
+      },
       // geofileStatus keyed by file name, for the Geofiles list. Empty until the
       // fetch lands (or if it fails), and the list checks for a row before
       // rendering one, so an unreachable endpoint shows no badge rather than a
@@ -3522,7 +3526,7 @@
       if (window.wsClient) {
         window.wsClient.connect();
         window.wsClient.on('connected', () => this.stopPolling());
-        
+
         window.wsClient.on('overview_access', (payload) => {
           if (payload && payload.allowed === false) this.revokeOverview();
         });

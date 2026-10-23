@@ -63,13 +63,7 @@
         <template slot="label">
             <a-tooltip>
                 <template slot="title">
-                    How many peer ROUTERS each account may attach. The account gets one
-                    tunnel address per peer, and you fill in each peer's public IP on the
-                    account itself. The limit is structural: only this many addresses
-                    exist, so there is nothing to enforce at connect time (GRE has no
-                    handshake and no session). Lowering it removes the surplus peer slots.
-                    10 = ten peers (default); lower it for better pool capacity. 0 = the
-                    maximum, 64 peers, which fits only ~3 accounts per /24.
+                    {{ i18n "pages.interface.howManyPeerROUTERSEachAccountMayAttach" }}
                 </template>{{ i18n "pages.inboundForm.userLimit" }}<a-icon type="question-circle"></a-icon>
             </a-tooltip>
         </template>
@@ -108,20 +102,19 @@
         <template slot="label">
             <a-tooltip>
                 <template slot="title">{{ i18n "pages.inboundForm.wrapTheTunnelInIpsecEspTransport" }}</template>
-                IPsec
+                {{ i18n "pages.xray.outbound.vpnOutIpsec" }}
                 <a-icon type="question-circle"></a-icon>
             </a-tooltip>
         </template>
         <a-switch v-model="inbound.settings.ipsecEnable"></a-switch>
     </a-form-item>
-    <!-- Acronym only, same reason as FOU below: "IPsec Pre-Shared Key" wrapped onto a
+    <!-- Acronym only, same reason as FOU below: "{{ i18n "pages.interfaceExtra.ipsecPreSharedKey" }}" wrapped onto a
          second line at this label-col width and dropped below the input box. -->
     <a-form-item v-if="inbound.settings.ipsecEnable">
         <template slot="label">
             <a-tooltip>
                 <template slot="title">
-                    The pre-shared key the router must present. Generated for you; change
-                    it if you prefer your own.
+                    {{ i18n "pages.interface.thePreSharedKeyTheRouterMustPresent" }}
                 </template>{{ i18n "pages.inboundForm.ipsecPsk" }}<a-icon type="question-circle"></a-icon>
             </a-tooltip>
         </template>
@@ -138,7 +131,7 @@
 
     <a-divider :style="{ margin: '8px 0 16px' }"></a-divider>
     <!-- Label kept to the bare acronym and the expansion moved beside the switch: at this
-         label-col width "FOU (UDP encapsulation)" wrapped onto a second line, which then
+         label-col width "{{ i18n "pages.interfaceExtra.fouUDPEncapsulation" }}" wrapped onto a second line, which then
          sat below the switch instead of beside it. -->
     <a-form-item>
         <template slot="label">

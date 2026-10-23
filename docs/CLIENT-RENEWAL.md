@@ -1,4 +1,4 @@
-# Manual client renewal
+# Manual client renewal — v1.0.0
 
 Use **Users → the client's three-dot menu → Renew**. Renewal clears current
 upload/download usage on the account and all its inbound memberships, starts the

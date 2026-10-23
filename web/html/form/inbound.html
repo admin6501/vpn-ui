@@ -225,7 +225,7 @@
                       @change="checked => ovpnToggleSeparatePorts(checked)"
                   ></a-switch>
               </a-form-item>
-              <a-form-item v-if="inbound.settings.separatePorts" label="TCP Port"
+              <a-form-item v-if="inbound.settings.separatePorts" label="{{ i18n "pages.interface.tcpPort" }}"
                   :validate-status="tcpPortValidateStatus" :help="tcpPortHelp">
                   <a-space>
                       <a-switch
@@ -246,7 +246,7 @@
                   </a-space>
               </a-form-item>
               <a-form-item
-                  :label="inbound.settings.separatePorts ? 'UDP Port' : 'Port (TCP + UDP)'"
+                  :label="inbound.settings.separatePorts ? '{{ i18n "pages.interfaceExtra.udpPort" }}' : 'Port (TCP + UDP)'"
                   :validate-status="portValidateStatus" :help="portHelp"
               >
                   <a-space>

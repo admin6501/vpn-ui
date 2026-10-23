@@ -177,3 +177,78 @@ func TestComponentLocaleCoverage(t *testing.T) {
 		}
 	}
 }
+
+// References are checked against the real embedded catalog, so a new label cannot
+// silently degrade to a raw message ID despite all locales having equal counts.
+func TestTranslationTemplateReferencesAndConfigurationLiterals(t *testing.T) {
+	raw, err := i18nFS.ReadFile("translation/translate.en_US.toml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var parsed map[string]any
+	if err := toml.Unmarshal(raw, &parsed); err != nil {
+		t.Fatal(err)
+	}
+	reference := map[string]string{}
+	translationValues("", parsed, reference)
+	pattern := regexp.MustCompile(`\bi18n\s+"([A-Za-z][A-Za-z0-9_.]*)"`)
+	if err := fs.WalkDir(htmlFS, "html", func(path string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if entry.IsDir() {
+			return nil
+		}
+		raw, err := htmlFS.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		for _, m := range pattern.FindAllStringSubmatch(string(raw), -1) {
+			if _, ok := reference[m[1]]; !ok {
+				if _, ok := reference[m[1]+".other"]; !ok {
+					t.Errorf("%s references missing message %s", path, m[1])
+				}
+			}
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	entries, err := fs.ReadDir(i18nFS, "translation")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".toml") {
+			continue
+		}
+		raw, err := i18nFS.ReadFile("translation/" + entry.Name())
+		if err != nil {
+			t.Fatal(err)
+		}
+		var parsed map[string]any
+		if err := toml.Unmarshal(raw, &parsed); err != nil {
+			t.Fatal(err)
+		}
+		values := map[string]string{}
+		translationValues("", parsed, values)
+		for key, english := range reference {
+			var literals []string
+			if strings.HasPrefix(key, "pages.interface.default") {
+				for _, literal := range []string{"(path)", "(body)", "(queryInHeader)", "(repeat-x)", "(POST)"} {
+					if strings.Contains(english, literal) {
+						literals = append(literals, literal)
+					}
+				}
+			}
+			if key == "pages.interface.autoManagedContiguousBlockUDPShownTCPMirrors" {
+				literals = []string{"10.2", "10.3"}
+			}
+			for _, literal := range literals {
+				if !strings.Contains(values[key], literal) {
+					t.Errorf("%s/%s changed literal %s", entry.Name(), key, literal)
+				}
+			}
+		}
+	}
+}

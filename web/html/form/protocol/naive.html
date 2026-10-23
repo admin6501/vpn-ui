@@ -42,8 +42,8 @@
         type="warning"
         show-icon
         :style="{ marginBottom: '16px' }"
-        message="Without TLS, every account password is sent in the clear"
-        description="naive authenticates with one Proxy-Authorization: Basic header, and Basic is base64, which is encoding, not encryption. With security set to none, anything on the network path can read the username and password of every account on this inbound, and replay them. This is fine when a TLS terminator in front forwards plaintext to this port. If the port is reachable from the internet, treat every credential on this inbound as already disclosed."
+        message="{{ i18n "pages.interfaceExtra.withoutTLSEveryAccountPasswordIsSentIn" }}"
+        description="{{ i18n "pages.interfaceExtra.naiveproxyUsesHTTPBasicAuthenticationBase64EncodingIs" }}"
     ></a-alert>
 
     <a-form-item>

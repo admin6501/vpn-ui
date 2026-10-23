@@ -18,25 +18,25 @@
       :max="100"
     ></a-input-number>
   </a-form-item>
-  <a-form-item label="Uplink (MB/s)">
+  <a-form-item label="{{ i18n "pages.interface.uplinkMBS" }}">
     <a-input-number
       v-model.number="inbound.stream.kcp.upCap"
       :min="0"
     ></a-input-number>
   </a-form-item>
-  <a-form-item label="Downlink (MB/s)">
+  <a-form-item label="{{ i18n "pages.interface.downlinkMBS" }}">
     <a-input-number
       v-model.number="inbound.stream.kcp.downCap"
       :min="0"
     ></a-input-number>
   </a-form-item>
-  <a-form-item label="CWND Multiplier">
+  <a-form-item label="{{ i18n "pages.interface.cwndMultiplier" }}">
     <a-input-number
       v-model.number="inbound.stream.kcp.cwndMultiplier"
       :min="1"
     ></a-input-number>
   </a-form-item>
-  <a-form-item label="Max Sending Window">
+  <a-form-item label="{{ i18n "pages.interface.maxSendingWindow" }}">
     <a-input-number
       v-model.number="inbound.stream.kcp.maxSendingWindow"
       :min="0"

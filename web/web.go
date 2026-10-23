@@ -305,6 +305,11 @@ func (s *Server) initRouter() (*gin.Engine, error) {
 		engine.StaticFS(basePath+"assets", http.FS(&wrapAssetsFS{FS: assetsFS}))
 	}
 
+	engine.HTMLRender, err = locale.NewHTMLRender(engine.HTMLRender)
+	if err != nil {
+		return nil, err
+	}
+
 	// Apply the redirect middleware (`/xui` to `/panel`)
 	engine.Use(middleware.RedirectMiddleware(basePath))
 

@@ -9,10 +9,7 @@
         <template slot="label">
             <a-tooltip>
                 <template slot="title">
-                    Max simultaneous client IPs per account on this inbound. 10 is the
-                    default, up to 64; 0 = no limit. Named for what it counts: devices
-                    sharing one IP behind NAT count as one, so this caps addresses, not
-                    devices.
+                    {{ i18n "pages.interface.maxSimultaneousClientIPsPerAccountOnThis" }}
                 </template>{{ i18n "pages.inboundForm.ipLimit" }}<a-icon type="question-circle"></a-icon>
             </a-tooltip>
         </template>

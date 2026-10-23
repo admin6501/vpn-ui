@@ -887,12 +887,12 @@ class LanguageManager {
             icon: "🇪🇸",
         },
         {
-            name: "Indonesian",
+            name: "Bahasa Indonesia",
             value: "id-ID",
             icon: "🇮🇩",
         },
         {
-            name: "Український",
+            name: "Українська",
             value: "uk-UA",
             icon: "🇺🇦",
         },
@@ -902,51 +902,37 @@ class LanguageManager {
             icon: "🇹🇷",
         },
         {
-            name: "Português",
+            name: "Português (Brasil)",
             value: "pt-BR",
             icon: "🇧🇷",
         }
     ]
 
+    static normalizeLanguage(value) {
+        if (typeof value !== 'string') return '';
+        const code = value.trim().replace(/_/g, '-').toLowerCase();
+        const exact = this.supportedLanguages.find(lang => lang.value.toLowerCase() === code);
+        if (exact) return exact.value;
+        const base = code.split('-')[0];
+        if (base === 'zh') return /(?:^|-)(?:hant|tw|hk|mo)(?:-|$)/.test(code) ? 'zh-TW' : 'zh-CN';
+        const related = this.supportedLanguages.find(lang => lang.value.split('-')[0] === base);
+        return related ? related.value : '';
+    }
+
     static getLanguage() {
-        let lang = CookieManager.getCookie("lang");
-
-        if (!lang) {
-            if (window.navigator) {
-                lang = window.navigator.language || window.navigator.userLanguage;
-
-                const simularLangs = [
-                    ["ar", this.supportedLanguages[0].value],
-                    ["fa", this.supportedLanguages[2].value],
-                    ["ja", this.supportedLanguages[5].value],
-                    ["ru", this.supportedLanguages[6].value],
-                    ["vi", this.supportedLanguages[7].value],
-                    ["es", this.supportedLanguages[8].value],
-                    ["id", this.supportedLanguages[9].value],
-                    ["uk", this.supportedLanguages[10].value],
-                    ["tr", this.supportedLanguages[11].value],
-                    ["pt", this.supportedLanguages[12].value],
-                ]
-
-                simularLangs.forEach((pair) => {
-                    if (lang === pair[0]) {
-                        lang = pair[1];
-                    }
-                });
-
-                if (LanguageManager.isSupportLanguage(lang)) {
-                    CookieManager.setCookie("lang", lang);
-                } else {
-                    CookieManager.setCookie("lang", "en-US");
-                    window.location.reload();
-                }
-            } else {
-                CookieManager.setCookie("lang", "en-US");
-                window.location.reload();
-            }
+        const stored = CookieManager.getCookie('lang');
+        let selected = this.normalizeLanguage(stored);
+        if (!selected && typeof document !== 'undefined') {
+            selected = this.normalizeLanguage(document.documentElement.lang);
         }
-
-        return lang;
+        if (!selected && window.navigator) {
+            const preferred = window.navigator.languages || [window.navigator.language || window.navigator.userLanguage];
+            selected = preferred.map(code => this.normalizeLanguage(code)).find(Boolean);
+        }
+        selected = selected || 'en-US';
+        if (stored !== selected) CookieManager.setCookie('lang', selected);
+        if (typeof document !== 'undefined') document.documentElement.lang = selected;
+        return selected;
     }
 
     static setLanguage(language) {

@@ -13,8 +13,7 @@
   <a-spin :spinning="greConfigModal.loading">
     <div v-if="!greConfigModal.loading && greConfigModal.peers.length === 0"
          :style="{ padding: '24px 0', textAlign: 'center', color: '#888' }">
-      This account has no peer slots yet. Add the customer's router IP on the client, or
-      leave it blank for a dynamic address, then save the inbound.
+      {{ i18n "pages.interface.thisAccountHasNoPeerSlotsYetAdd" }}
     </div>
     <div v-for="(peer, index) in greConfigModal.peers" :key="index" class="gre-cfg-peer">
       <a-divider v-if="greConfigModal.peers.length > 1">
@@ -22,15 +21,15 @@
       </a-divider>
       <a-row :gutter="8" :style="{ marginBottom: '8px' }">
         <a-col :xs="24" :md="12" :style="{ marginBottom: '8px' }">
-          <div :style="{ marginBottom: '4px', color: '#888' }">Server address (their "remote")</div>
+          <div :style="{ marginBottom: '4px', color: '#888' }">{{ i18n "pages.interface.serverAddressTheirRemote" }}</div>
           <a-input :value="peer.serverIp" read-only @click="copy(peer.serverIp)"></a-input>
         </a-col>
         <a-col :xs="24" :md="12" :style="{ marginBottom: '8px' }">
-          <div :style="{ marginBottom: '4px', color: '#888' }">Their tunnel address</div>
+          <div :style="{ marginBottom: '4px', color: '#888' }">{{ i18n "pages.interface.theirTunnelAddress" }}</div>
           <a-input :value="peer.innerIp" read-only @click="copy(peer.innerIp)"></a-input>
         </a-col>
         <a-col :xs="24" :md="12" :style="{ marginBottom: '8px' }">
-          <div :style="{ marginBottom: '4px', color: '#888' }">Gateway (their default route)</div>
+          <div :style="{ marginBottom: '4px', color: '#888' }">{{ i18n "pages.interface.gatewayTheirDefaultRoute" }}</div>
           <a-input :value="peer.gatewayIp" read-only @click="copy(peer.gatewayIp)"></a-input>
         </a-col>
         <a-col :xs="24" :md="12" :style="{ marginBottom: '8px' }">
@@ -56,24 +55,24 @@
         type="warning"
         show-icon
         :style="{ marginBottom: '8px' }"
-        message="Unencrypted: this tunnel carries cleartext."
+        message="{{ i18n "pages.interfaceExtra.unencryptedThisTunnelCarriesCleartext" }}"
       ></a-alert>
       <a-alert
         v-else-if="peer.mode === 'ipsec'"
         type="success"
         show-icon
         :style="{ marginBottom: '8px' }"
-        message="IPsec required: bare GRE from this customer will be dropped."
+        message="{{ i18n "pages.interfaceExtra.ipsecRequiredBareGREFromThisCustomerWill" }}"
       ></a-alert>
       <a-alert
         v-else
         type="info"
         show-icon
         :style="{ marginBottom: '8px' }"
-        message="IPsec optional: both encrypted and bare GRE are accepted."
+        message="{{ i18n "pages.interfaceExtra.ipsecOptionalBothEncryptedAndBareGREAre" }}"
       ></a-alert>
       <a-form-item v-if="peer.ipsecPsk" :style="{ marginBottom: '8px' }">
-        <div :style="{ marginBottom: '4px', color: '#888' }">IPsec pre-shared key</div>
+        <div :style="{ marginBottom: '4px', color: '#888' }">{{ i18n "pages.xray.outbound.vpnOutIpsecPsk" }}</div>
         <a-input :value="peer.ipsecPsk" read-only @click="copy(peer.ipsecPsk)"></a-input>
       </a-form-item>
 
@@ -92,12 +91,12 @@
            over there.
 
            So this lists the far side's boxes, by ITS labels, in ITS order, each
-           with the value to paste or an explicit "leave blank". A box that must
+           with the value to paste or an explicit "{{ i18n "pages.interfaceExtra.leaveBlank" }}". A box that must
            stay empty is worth a row: blank is a decision here, not an omission. -->
       <div class="gre-out">
         <div class="gre-out-h">
-          <b v-pre>Point another {{ or .brand_name "VPN-UI" }} panel at this inbound</b>
-          <span>its Outbound form, box by box</span>
+          <b>{{ i18n "pages.interface.useInboundAsOutbound" }}</b>
+          <span>{{ i18n "pages.interface.itsOutboundFormBoxByBox" }}</span>
         </div>
         <div class="gre-out-row" v-for="f in greConfigModal.outboundFields(peer)" :key="f.label"
           :class="{ 'gre-out-row--blank': !f.value }">
@@ -106,7 +105,7 @@
             <span>[[ f.value ]]</span>
             <a-icon type="copy"></a-icon>
           </div>
-          <div class="gre-out-v gre-out-v--none" v-else>[[ f.blank || 'leave blank' ]]</div>
+          <div class="gre-out-v gre-out-v--none" v-else>[[ f.blank || '{{ i18n "pages.interfaceExtra.leaveBlank" }}' ]]</div>
           <div class="gre-out-n" v-if="f.note">[[ f.note ]]</div>
         </div>
       </div>
@@ -114,7 +113,7 @@
            of them, and RouterOS syntax pasted into a shell (or the reverse) fails in ways
            that look like the tunnel is broken. -->
       <div :style="{ marginBottom: '4px', color: '#888' }">
-        MikroTik RouterOS setup (click to copy)
+        {{ i18n "pages.interface.mikrotikRouterOSSetupClickToCopy" }}
       </div>
       <a-textarea
         :value="peer.configMikrotik"
@@ -127,10 +126,10 @@
         type="primary"
         :style="{ marginTop: '8px' }"
         @click="download(peer, 'mikrotik')"
-      >Download .txt</a-button>
+      >{{ i18n "pages.interface.downloadTxt" }}</a-button>
 
       <div :style="{ margin: '16px 0 4px', color: '#888' }">
-        Linux setup (click to copy)
+        {{ i18n "pages.interface.linuxSetupClickToCopy" }}
       </div>
       <a-textarea
         :value="peer.configLinux"
@@ -143,7 +142,7 @@
         type="primary"
         :style="{ marginTop: '8px' }"
         @click="download(peer, 'linux')"
-      >Download .txt</a-button>
+      >{{ i18n "pages.interface.downloadTxt" }}</a-button>
     </div>
     {{ template "component/aSubBlock" "gre" }}
   </a-spin>
@@ -168,7 +167,7 @@
       greConfigModal.dbInboundId = dbInboundId;
       greConfigModal.email = client ? client.email : "";
       greConfigModal.subId = client ? client.subId : "";
-      greConfigModal.title = "GRE Setup" + (greConfigModal.email ? " - " + greConfigModal.email : "");
+      greConfigModal.title = "{{ i18n "pages.interfaceExtra.greSetup" }}" + (greConfigModal.email ? " - " + greConfigModal.email : "");
       greConfigModal.peers = [];
       greConfigModal.visible = true;
       greConfigModalApp.fetchConfigs();
@@ -190,49 +189,46 @@
       const ipsec = peer.mode === 'ipsec' || peer.mode === 'ipsec-or-raw';
       const fou = (peer.fouPort || 0) > 0;
       const rows = [
-        { label: 'Server Address', value: peer.serverIp,
-          note: 'this panel, as the far side reaches it' },
-        { label: 'Local Address', value: '',
-          blank: 'leave blank on a single-homed host',
-          note: 'the far side’s OWN outer address. It cannot be read off this '
-              + 'panel: paste the far side’s public address into the Peer IP box '
-              + 'of this account instead, or leave both blank and let this inbound '
-              + 'learn the peer from arriving traffic (raw GRE only, never under FOU).' },
+        { label: '{{ i18n "pages.interfaceExtra.serverAddress" }}', value: peer.serverIp,
+          note: '{{ i18n "pages.interfaceExtra.thisPanelAsTheFarSideReachesIt" }}' },
+        { label: '{{ i18n "pages.interfaceExtra.localAddress" }}', value: '',
+          blank: '{{ i18n "pages.interfaceExtra.leaveBlankOnASingleHomedHost" }}',
+          note: '{{ i18n "pages.interfaceExtra.theRemoteServerSPublicAddressBelongsIn" }}'  },
         // The mask is the fix, not decoration. The outbound's own placeholder
         // teaches 10.11.0.2/30, the classic point-to-point pair, and this panel
         // assigns a /32 out of the account's block: a /30 pasted there claims three
         // addresses that belong to other accounts.
-        { label: 'Tunnel Address', value: peer.innerIp ? peer.innerIp + '/32' : '',
-          note: 'a /32 out of this account’s block, not a /30 pair' },
-        { label: 'Peer Tunnel Address', value: peer.gatewayIp,
-          note: 'shown as the gateway above; this inbound’s end of the tunnel' },
-        { label: 'TTL', value: '', blank: 'leave blank',
-          note: 'outer TTL is per-side and does not have to match' },
+        { label: '{{ i18n "pages.interfaceExtra.tunnelAddress" }}', value: peer.innerIp ? peer.innerIp + '/32' : '',
+          note: '{{ i18n "pages.interfaceExtra.a32OutOfThisAccountSBlock" }}' },
+        { label: '{{ i18n "pages.interfaceExtra.peerTunnelAddress" }}', value: peer.gatewayIp,
+          note: '{{ i18n "pages.interface.gatewayTheirDefaultRoute" }}' },
+        { label: 'TTL', value: '', blank: '{{ i18n "pages.interfaceExtra.leaveBlank" }}',
+          note: '{{ i18n "pages.interfaceExtra.outerTTLIsPerSideAndDoesNot" }}' },
         { label: 'MTU', value: peer.mtu ? String(peer.mtu) : '',
-          blank: 'leave blank, both sides derive the same value',
-          note: peer.mtu ? 'this inbound’s effective MTU' : '' },
-        { label: 'FOU Encapsulation', value: fou ? 'on' : '',
+          blank: '{{ i18n "pages.interfaceExtra.leaveBlankBothSidesDeriveTheSameValue" }}',
+          note: peer.mtu ? '{{ i18n "pages.interfaceExtra.thisInboundSEffectiveMTU" }}' : '' },
+        { label: '{{ i18n "pages.interfaceExtra.fouEncapsulation" }}', value: fou ? 'on' : '',
           blank: 'off',
-          note: fou ? 'this peer slot is pinned and wrapped in UDP'
-                    : 'this inbound is not using FOU for this peer' },
-        { label: 'FOU Port', value: fou && peer.fouPort ? String(peer.fouPort) : '',
-          blank: fou ? '' : 'not applicable while FOU is off' },
+          note: fou ? '{{ i18n "pages.interfaceExtra.thisPeerSlotIsPinnedAndWrappedIn" }}'
+                    : '{{ i18n "pages.interfaceExtra.thisInboundIsNotUsingFOUForThis" }}' },
+        { label: '{{ i18n "pages.interfaceExtra.fouPort" }}', value: fou && peer.fouPort ? String(peer.fouPort) : '',
+          blank: fou ? '' : '{{ i18n "disabled" }}' },
         { label: 'IPsec', value: ipsec ? 'on' : '',
           blank: 'off',
           note: peer.mode === 'ipsec-or-raw'
-            ? 'this inbound accepts either, so on or off both work'
-            : (ipsec ? 'required: bare GRE from this peer is dropped' : 'this inbound expects bare GRE') },
-        { label: 'IPsec Pre-Shared Key', value: ipsec ? (peer.ipsecPsk || '') : '',
-          blank: ipsec ? '' : 'not applicable while IPsec is off' },
+            ? '{{ i18n "pages.interfaceExtra.thisInboundAcceptsEitherSoOnOrOff" }}'
+            : (ipsec ? '{{ i18n "pages.interfaceExtra.ipsecRequiredBareGREFromThisCustomerWill" }}' : '{{ i18n "pages.interfaceExtra.thisInboundExpectsBareGRE" }}') },
+        { label: '{{ i18n "pages.interfaceExtra.ipsecPreSharedKey" }}', value: ipsec ? (peer.ipsecPsk || '') : '',
+          blank: ipsec ? '' : '{{ i18n "disabled" }}' },
         // Load-bearing on a shared charon holding several PSKs: without it the far
         // side cannot say which key this tunnel is meant to use.
-        { label: 'IPsec Remote ID', value: ipsec ? (peer.ipsecId || '') : '',
-          blank: ipsec ? '' : 'not applicable while IPsec is off',
-          note: ipsec ? 'the identity THIS panel presents' : '' },
-        { label: 'IPsec Local ID', value: '', blank: 'leave blank',
-          note: 'this inbound accepts any identity from the peer' },
-        { label: 'IKE Version', value: '2',
-          note: 'this inbound requires IKEv2' },
+        { label: '{{ i18n "pages.interfaceExtra.ipsecRemoteID" }}', value: ipsec ? (peer.ipsecId || '') : '',
+          blank: ipsec ? '' : '{{ i18n "disabled" }}',
+          note: ipsec ? '{{ i18n "pages.interfaceExtra.theIdentityTHISPanelPresents" }}' : '' },
+        { label: '{{ i18n "pages.interfaceExtra.ipsecLocalID" }}', value: '', blank: '{{ i18n "pages.interfaceExtra.leaveBlank" }}',
+          note: '{{ i18n "pages.interfaceExtra.thisInboundAcceptsAnyIdentityFromThePeer" }}' },
+        { label: '{{ i18n "pages.interfaceExtra.ikeVersion" }}', value: '2',
+          note: '{{ i18n "pages.interfaceExtra.thisInboundRequiresIKEv2" }}' },
       ];
       // A row whose value AND explanation are both empty says nothing.
       return rows.filter(r => r.value || r.blank);

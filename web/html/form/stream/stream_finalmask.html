@@ -9,7 +9,7 @@
 
   <!-- TCP Masks – for raw/tcp/httpupgrade/ws/grpc/xhttp -->
   <template v-if="['raw', 'tcp', 'httpupgrade', 'ws', 'grpc', 'xhttp'].includes(inbound.stream.network)">
-  <a-form-item label="TCP Masks">
+  <a-form-item label="{{ i18n "pages.interface.tcpMasks" }}">
     <a-button
       icon="plus"
       type="primary"
@@ -39,15 +39,15 @@
           @change="(type) => { mask.settings = mask._getDefaultSettings(type, {}); }"
           :dropdown-class-name="themeSwitcher.currentTheme"
         >
-          <a-select-option value="fragment">Fragment</a-select-option>
-          <a-select-option value="header-custom">Header Custom</a-select-option>
+          <a-select-option value="fragment">{{ i18n "pages.interface.fragment" }}</a-select-option>
+          <a-select-option value="header-custom">{{ i18n "pages.interface.headerCustom" }}</a-select-option>
           <a-select-option value="sudoku">Sudoku</a-select-option>
         </a-select>
       </a-form-item>
 
       <!-- Fragment settings -->
       <template v-if="mask.type === 'fragment'">
-        <a-form-item label="Packets">
+        <a-form-item label="{{ i18n "pages.interface.packets" }}">
           <a-select
             v-model="mask.settings.packets"
             :dropdown-class-name="themeSwitcher.currentTheme"
@@ -57,35 +57,35 @@
             <a-select-option value="1-5">1-5</a-select-option>
           </a-select>
         </a-form-item>
-        <a-form-item label="Length">
+        <a-form-item label="{{ i18n "pages.interface.length" }}">
           <a-input v-model.trim="mask.settings.length" placeholder="e.g. 100-200" />
         </a-form-item>
-        <a-form-item label="Delay">
+        <a-form-item label="{{ i18n "pages.interface.delay" }}">
           <a-input v-model.trim="mask.settings.delay" placeholder="e.g. 10-20" />
         </a-form-item>
-        <a-form-item label="Max Split">
+        <a-form-item label="{{ i18n "pages.interface.maxSplit" }}">
           <a-input v-model.trim="mask.settings.maxSplit" placeholder="e.g. 3-6" />
         </a-form-item>
       </template>
 
       <!-- Sudoku settings (TCP) -->
       <template v-if="mask.type === 'sudoku'">
-        <a-form-item label="Password">
-          <a-input v-model.trim="mask.settings.password" placeholder="Obfuscation password" />
+        <a-form-item label="{{ i18n "password" }}">
+          <a-input v-model.trim="mask.settings.password" placeholder="{{ i18n "pages.interface.obfuscationPassword" }}" />
         </a-form-item>
         <a-form-item label="ASCII">
           <a-input v-model.trim="mask.settings.ascii" placeholder="ASCII" />
         </a-form-item>
-        <a-form-item label="Custom Table">
-          <a-input v-model.trim="mask.settings.customTable" placeholder="Custom Table" />
+        <a-form-item label="{{ i18n "pages.interface.customTable" }}">
+          <a-input v-model.trim="mask.settings.customTable" placeholder="{{ i18n "pages.interface.customTable" }}" />
         </a-form-item>
-        <a-form-item label="Custom Tables">
-          <a-input v-model.trim="mask.settings.customTables" placeholder="Custom Tables" />
+        <a-form-item label="{{ i18n "pages.interface.customTables" }}">
+          <a-input v-model.trim="mask.settings.customTables" placeholder="{{ i18n "pages.interface.customTables" }}" />
         </a-form-item>
-        <a-form-item label="Padding Min">
+        <a-form-item label="{{ i18n "pages.interface.paddingMin" }}">
           <a-input-number v-model.number="mask.settings.paddingMin" :min="0" />
         </a-form-item>
-        <a-form-item label="Padding Max">
+        <a-form-item label="{{ i18n "pages.interface.paddingMax" }}">
           <a-input-number v-model.number="mask.settings.paddingMax" :min="0" />
         </a-form-item>
       </template>
@@ -93,7 +93,7 @@
       <!-- Header Custom (TCP) – clients/servers/errors are 2D arrays of groups -->
       <template v-if="mask.type === 'header-custom'">
         <!-- Clients -->
-        <a-form-item label="Clients">
+        <a-form-item label="{{ i18n "clients" }}">
           <a-button
             icon="plus"
             type="primary"
@@ -114,35 +114,35 @@
             <a-form-item label='{{ i18n "pages.xray.outbound.type" }}'>
               <a-select v-model="item.type" :dropdown-class-name="themeSwitcher.currentTheme"
                 @change="t => { if(t === 'base64') item.packet = RandomUtil.randomBase64(); else if(t === 'array') { item.rand = 0; item.packet = []; } else { item.packet = ''; } }">
-                <a-select-option value="array">Array</a-select-option>
-                <a-select-option value="str">String</a-select-option>
+                <a-select-option value="array">{{ i18n "pages.interface.array" }}</a-select-option>
+                <a-select-option value="str">{{ i18n "pages.interface.string" }}</a-select-option>
                 <a-select-option value="hex">Hex</a-select-option>
                 <a-select-option value="base64">Base64</a-select-option>
               </a-select>
             </a-form-item>
-            <a-form-item label="Delay (ms)">
+            <a-form-item label="{{ i18n "pages.interface.delayMs" }}">
               <a-input-number v-model.number="item.delay" :min="0" />
             </a-form-item>
             <template v-if="item.type === 'array'">
-              <a-form-item label="Rand">
+              <a-form-item label="{{ i18n "pages.inboundForm.rand" }}">
                 <a-input-number v-model.number="item.rand" :min="0" />
               </a-form-item>
-              <a-form-item label="Rand Range">
+              <a-form-item label="{{ i18n "pages.interface.randRange" }}">
                 <a-input v-model.trim="item.randRange" placeholder="0-255" />
               </a-form-item>
             </template>
-            <a-form-item v-else label="Packet">
+            <a-form-item v-else label="{{ i18n "pages.interface.packet" }}">
               <a-input-group compact v-if="item.type === 'base64'">
-                <a-input v-model.trim="item.packet" placeholder="binary data" :style="{ width: 'calc(100% - 32px)' }" />
+                <a-input v-model.trim="item.packet" placeholder="{{ i18n "pages.interface.binaryData" }}" :style="{ width: 'calc(100% - 32px)' }" />
                 <a-button icon="reload" @click="item.packet = RandomUtil.randomBase64()" />
               </a-input-group>
-              <a-input v-else v-model.trim="item.packet" placeholder="binary data" />
+              <a-input v-else v-model.trim="item.packet" placeholder="{{ i18n "pages.interface.binaryData" }}" />
             </a-form-item>
           </template>
         </template>
 
         <!-- Servers -->
-        <a-form-item label="Servers">
+        <a-form-item label="{{ i18n "pages.interface.servers" }}">
           <a-button
             icon="plus"
             type="primary"
@@ -163,29 +163,29 @@
             <a-form-item label='{{ i18n "pages.xray.outbound.type" }}'>
               <a-select v-model="item.type" :dropdown-class-name="themeSwitcher.currentTheme"
                 @change="t => { if(t === 'base64') item.packet = RandomUtil.randomBase64(); else if(t === 'array') { item.rand = 0; item.packet = []; } else { item.packet = ''; } }">
-                <a-select-option value="array">Array</a-select-option>
-                <a-select-option value="str">String</a-select-option>
+                <a-select-option value="array">{{ i18n "pages.interface.array" }}</a-select-option>
+                <a-select-option value="str">{{ i18n "pages.interface.string" }}</a-select-option>
                 <a-select-option value="hex">Hex</a-select-option>
                 <a-select-option value="base64">Base64</a-select-option>
               </a-select>
             </a-form-item>
-            <a-form-item label="Delay (ms)">
+            <a-form-item label="{{ i18n "pages.interface.delayMs" }}">
               <a-input-number v-model.number="item.delay" :min="0" />
             </a-form-item>
             <template v-if="item.type === 'array'">
-              <a-form-item label="Rand">
+              <a-form-item label="{{ i18n "pages.inboundForm.rand" }}">
                 <a-input-number v-model.number="item.rand" :min="0" />
               </a-form-item>
-              <a-form-item label="Rand Range">
+              <a-form-item label="{{ i18n "pages.interface.randRange" }}">
                 <a-input v-model.trim="item.randRange" placeholder="0-255" />
               </a-form-item>
             </template>
-            <a-form-item v-else label="Packet">
+            <a-form-item v-else label="{{ i18n "pages.interface.packet" }}">
               <a-input-group compact v-if="item.type === 'base64'">
-                <a-input v-model.trim="item.packet" placeholder="binary data" :style="{ width: 'calc(100% - 32px)' }" />
+                <a-input v-model.trim="item.packet" placeholder="{{ i18n "pages.interface.binaryData" }}" :style="{ width: 'calc(100% - 32px)' }" />
                 <a-button icon="reload" @click="item.packet = RandomUtil.randomBase64()" />
               </a-input-group>
-              <a-input v-else v-model.trim="item.packet" placeholder="binary data" />
+              <a-input v-else v-model.trim="item.packet" placeholder="{{ i18n "pages.interface.binaryData" }}" />
             </a-form-item>
           </template>
         </template>
@@ -196,7 +196,7 @@
   </template>
 
   <template v-if="inbound.protocol == Protocols.HYSTERIA || inbound.stream.network == 'kcp'">
-  <a-form-item label="UDP Masks">
+  <a-form-item label="{{ i18n "pages.interface.udpMasks" }}">
     <a-button
       icon="plus"
       type="primary"
@@ -237,45 +237,45 @@
             <a-select-option value="mkcp-aes128gcm"
               >mKCP AES-128-GCM</a-select-option
             >
-            <a-select-option value="header-dns">Header DNS</a-select-option>
+            <a-select-option value="header-dns">{{ i18n "pages.interface.headerDNS" }}</a-select-option>
             <a-select-option value="header-dtls"
-              >Header DTLS 1.2</a-select-option
+              >{{ i18n "pages.interface.headerDTLS12" }}</a-select-option
             >
-            <a-select-option value="header-srtp">Header SRTP</a-select-option>
-            <a-select-option value="header-utp">Header uTP</a-select-option>
+            <a-select-option value="header-srtp">{{ i18n "pages.interface.headerSRTP" }}</a-select-option>
+            <a-select-option value="header-utp">{{ i18n "pages.interface.headerUTP" }}</a-select-option>
             <a-select-option value="header-wechat"
-              >Header WeChat Video</a-select-option
+              >{{ i18n "pages.interface.headerWeChatVideo" }}</a-select-option
             >
             <a-select-option value="header-wireguard"
-              >Header WireGuard</a-select-option
+              >{{ i18n "pages.interface.headerWireGuard" }}</a-select-option
             >
             <a-select-option value="mkcp-original"
-              >mKCP Original</a-select-option
+              >{{ i18n "pages.interface.mkcpOriginal" }}</a-select-option
             >
             <a-select-option value="xdns">xDNS</a-select-option>
             <a-select-option value="xicmp">xICMP</a-select-option>
-            <a-select-option value="header-custom">Header Custom</a-select-option>
-            <a-select-option value="noise">Noise</a-select-option>
+            <a-select-option value="header-custom">{{ i18n "pages.interface.headerCustom" }}</a-select-option>
+            <a-select-option value="noise">{{ i18n "pages.interface.noise" }}</a-select-option>
           </template>
         </a-select>
       </a-form-item>
       <a-form-item
-        label="Password"
+        label="{{ i18n "password" }}"
         v-if="['mkcp-aes128gcm', 'salamander'].includes(mask.type)"
       >
         <a-input
           v-model.trim="mask.settings.password"
-          placeholder="Obfuscation password"
+          placeholder="{{ i18n "pages.interface.obfuscationPassword" }}"
         ></a-input>
       </a-form-item>
-      <a-form-item label="Domain" v-if="mask.type === 'header-dns'">
+      <a-form-item label="{{ i18n "pages.xray.outbound.domain" }}" v-if="mask.type === 'header-dns'">
         <a-input
           v-model.trim="mask.settings.domain"
           placeholder="e.g., www.example.com"
         ></a-input>
       </a-form-item>
       <template v-if="mask.type === 'xdns'">
-        <a-form-item label="Domains">
+        <a-form-item label="{{ i18n "pages.xray.dns.domains" }}">
           <a-select
             mode="tags"
             v-model="mask.settings.domains"
@@ -286,10 +286,10 @@
         </a-form-item>
       </template>
       <template v-if="mask.type === 'noise'">
-        <a-form-item label="Reset">
+        <a-form-item label="{{ i18n "reset" }}">
           <a-input-number v-model.number="mask.settings.reset" :min="0" />
         </a-form-item>
-        <a-form-item label="Noise">
+        <a-form-item label="{{ i18n "pages.interface.noise" }}">
           <a-button
             icon="plus"
             type="primary"
@@ -312,34 +312,34 @@
               :dropdown-class-name="themeSwitcher.currentTheme"
               @change="t => { if(t === 'base64') n.packet = RandomUtil.randomBase64(); else if(t === 'array') n.packet = []; else n.packet = ''; }"
             >
-              <a-select-option value="array">Array</a-select-option>
-              <a-select-option value="str">String</a-select-option>
+              <a-select-option value="array">{{ i18n "pages.interface.array" }}</a-select-option>
+              <a-select-option value="str">{{ i18n "pages.interface.string" }}</a-select-option>
               <a-select-option value="hex">Hex</a-select-option>
               <a-select-option value="base64">Base64</a-select-option>
             </a-select>
           </a-form-item>
           <template v-if="n.type === 'array'">
-            <a-form-item label="Rand">
+            <a-form-item label="{{ i18n "pages.inboundForm.rand" }}">
               <a-input v-model.trim="n.rand" placeholder="0 or 1-8192" />
             </a-form-item>
-            <a-form-item label="Rand Range">
+            <a-form-item label="{{ i18n "pages.interface.randRange" }}">
               <a-input v-model.trim="n.randRange" placeholder="0-255" />
             </a-form-item>
           </template>
-          <a-form-item v-else label="Packet">
+          <a-form-item v-else label="{{ i18n "pages.interface.packet" }}">
             <a-input-group compact v-if="n.type === 'base64'">
-              <a-input v-model.trim="n.packet" placeholder="binary data" :style="{ width: 'calc(100% - 32px)' }" />
+              <a-input v-model.trim="n.packet" placeholder="{{ i18n "pages.interface.binaryData" }}" :style="{ width: 'calc(100% - 32px)' }" />
               <a-button icon="reload" @click="n.packet = RandomUtil.randomBase64()" />
             </a-input-group>
-            <a-input v-else v-model.trim="n.packet" placeholder="binary data" />
+            <a-input v-else v-model.trim="n.packet" placeholder="{{ i18n "pages.interface.binaryData" }}" />
           </a-form-item>
-          <a-form-item label="Delay">
+          <a-form-item label="{{ i18n "pages.interface.delay" }}">
             <a-input v-model.trim="n.delay" placeholder="10-20" />
           </a-form-item>
         </template>
       </template>
       <template v-if="mask.type === 'header-custom'">
-        <a-form-item label="Client">
+        <a-form-item label="{{ i18n "pages.inbounds.client" }}">
           <a-button
             icon="plus"
             type="primary"
@@ -362,30 +362,30 @@
               :dropdown-class-name="themeSwitcher.currentTheme"
               @change="t => { if(t === 'base64') c.packet = RandomUtil.randomBase64(); else if(t === 'array') c.packet = []; else c.packet = ''; }"
             >
-              <a-select-option value="array">Array</a-select-option>
-              <a-select-option value="str">String</a-select-option>
+              <a-select-option value="array">{{ i18n "pages.interface.array" }}</a-select-option>
+              <a-select-option value="str">{{ i18n "pages.interface.string" }}</a-select-option>
               <a-select-option value="hex">Hex</a-select-option>
               <a-select-option value="base64">Base64</a-select-option>
             </a-select>
           </a-form-item>
           <template v-if="c.type === 'array'">
-            <a-form-item label="Rand">
+            <a-form-item label="{{ i18n "pages.inboundForm.rand" }}">
               <a-input-number v-model.number="c.rand" />
             </a-form-item>
-            <a-form-item label="Rand Range">
+            <a-form-item label="{{ i18n "pages.interface.randRange" }}">
               <a-input v-model.trim="c.randRange" placeholder="0-255" />
             </a-form-item>
           </template>
-          <a-form-item v-else label="Packet">
+          <a-form-item v-else label="{{ i18n "pages.interface.packet" }}">
             <a-input-group compact v-if="c.type === 'base64'">
-              <a-input v-model.trim="c.packet" placeholder="binary data" :style="{ width: 'calc(100% - 32px)' }" />
+              <a-input v-model.trim="c.packet" placeholder="{{ i18n "pages.interface.binaryData" }}" :style="{ width: 'calc(100% - 32px)' }" />
               <a-button icon="reload" @click="c.packet = RandomUtil.randomBase64()" />
             </a-input-group>
-            <a-input v-else v-model.trim="c.packet" placeholder="binary data" />
+            <a-input v-else v-model.trim="c.packet" placeholder="{{ i18n "pages.interface.binaryData" }}" />
           </a-form-item>
         </template>
         <a-divider :style="{ margin: '0' }"></a-divider>
-        <a-form-item label="Server">
+        <a-form-item label="{{ i18n "pages.xray.outbound.server" }}">
           <a-button
             icon="plus"
             type="primary"
@@ -408,26 +408,26 @@
               :dropdown-class-name="themeSwitcher.currentTheme"
               @change="t => { if(t === 'base64') s.packet = RandomUtil.randomBase64(); else if(t === 'array') s.packet = []; else s.packet = ''; }"
             >
-              <a-select-option value="array">Array</a-select-option>
-              <a-select-option value="str">String</a-select-option>
+              <a-select-option value="array">{{ i18n "pages.interface.array" }}</a-select-option>
+              <a-select-option value="str">{{ i18n "pages.interface.string" }}</a-select-option>
               <a-select-option value="hex">Hex</a-select-option>
               <a-select-option value="base64">Base64</a-select-option>
             </a-select>
           </a-form-item>
           <template v-if="s.type === 'array'">
-            <a-form-item label="Rand">
+            <a-form-item label="{{ i18n "pages.inboundForm.rand" }}">
               <a-input-number v-model.number="s.rand" />
             </a-form-item>
-            <a-form-item label="Rand Range">
+            <a-form-item label="{{ i18n "pages.interface.randRange" }}">
               <a-input v-model.trim="s.randRange" placeholder="0-255" />
             </a-form-item>
           </template>
-          <a-form-item v-else label="Packet">
+          <a-form-item v-else label="{{ i18n "pages.interface.packet" }}">
             <a-input-group compact v-if="s.type === 'base64'">
-              <a-input v-model.trim="s.packet" placeholder="binary data" :style="{ width: 'calc(100% - 32px)' }" />
+              <a-input v-model.trim="s.packet" placeholder="{{ i18n "pages.interface.binaryData" }}" :style="{ width: 'calc(100% - 32px)' }" />
               <a-button icon="reload" @click="s.packet = RandomUtil.randomBase64()" />
             </a-input-group>
-            <a-input v-else v-model.trim="s.packet" placeholder="binary data" />
+            <a-input v-else v-model.trim="s.packet" placeholder="{{ i18n "pages.interface.binaryData" }}" />
           </a-form-item>
         </template>
       </template>
@@ -445,11 +445,11 @@
 
   <!-- quicParams – only for xhttp H3 and hysteria -->
   <template v-if="inbound.protocol == Protocols.HYSTERIA || inbound.stream.network == 'xhttp'">
-    <a-form-item label="QUIC Params">
+    <a-form-item label="{{ i18n "pages.interface.quicParams" }}">
       <a-switch v-model="inbound.stream.finalmask.enableQuicParams"></a-switch>
     </a-form-item>
     <template v-if="inbound.stream.finalmask.enableQuicParams">
-      <a-form-item label="Congestion">
+      <a-form-item label="{{ i18n "pages.interface.congestion" }}">
         <a-select
           v-model="inbound.stream.finalmask.quicParams.congestion"
           :dropdown-class-name="themeSwitcher.currentTheme"
@@ -457,54 +457,54 @@
           <a-select-option value="reno">Reno</a-select-option>
           <a-select-option value="bbr">BBR</a-select-option>
           <a-select-option value="brutal">Brutal</a-select-option>
-          <a-select-option value="force-brutal">Force Brutal</a-select-option>
+          <a-select-option value="force-brutal">{{ i18n "pages.interface.forceBrutal" }}</a-select-option>
         </a-select>
       </a-form-item>
-      <a-form-item label="Debug">
+      <a-form-item label="{{ i18n "pages.interface.debug" }}">
         <a-switch v-model="inbound.stream.finalmask.quicParams.debug"></a-switch>
       </a-form-item>
       <template v-if="['brutal','force-brutal'].includes(inbound.stream.finalmask.quicParams.congestion)">
-        <a-form-item label="Brutal Up">
+        <a-form-item label="{{ i18n "pages.interface.brutalUp" }}">
           <a-input v-model.trim="inbound.stream.finalmask.quicParams.brutalUp" placeholder="e.g. 60 mbps" />
         </a-form-item>
-        <a-form-item label="Brutal Down">
+        <a-form-item label="{{ i18n "pages.interface.brutalDown" }}">
           <a-input v-model.trim="inbound.stream.finalmask.quicParams.brutalDown" placeholder="e.g. 60 mbps" />
         </a-form-item>
       </template>
-      <a-form-item label="UDP Hop">
+      <a-form-item label="{{ i18n "pages.interface.udpHop" }}">
         <a-switch v-model="inbound.stream.finalmask.quicParams.hasUdpHop"></a-switch>
       </a-form-item>
       <template v-if="inbound.stream.finalmask.quicParams.hasUdpHop">
-        <a-form-item label="Hop Ports">
+        <a-form-item label="{{ i18n "pages.interface.hopPorts" }}">
           <a-input v-model.trim="inbound.stream.finalmask.quicParams.udpHop.ports" placeholder="e.g. 20000-50000" />
         </a-form-item>
-        <a-form-item label="Hop Interval (s)">
+        <a-form-item label="{{ i18n "pages.interface.hopIntervalS" }}">
           <a-input-number v-model.number="inbound.stream.finalmask.quicParams.udpHop.interval" :min="5" />
         </a-form-item>
       </template>
-      <a-form-item label="Max Idle Timeout (s)">
+      <a-form-item label="{{ i18n "pages.interface.maxIdleTimeoutS" }}">
         <a-input-number v-model.number="inbound.stream.finalmask.quicParams.maxIdleTimeout" :min="4" :max="120" />
       </a-form-item>
-      <a-form-item label="Keep Alive Period (s)">
+      <a-form-item label="{{ i18n "pages.interface.keepAlivePeriodS" }}">
         <a-input-number v-model.number="inbound.stream.finalmask.quicParams.keepAlivePeriod" :min="0" :max="60" />
       </a-form-item>
-      <a-form-item label="Disable Path MTU Dis">
+      <a-form-item label="{{ i18n "pages.interface.disablePathMTUDis" }}">
         <a-switch v-model="inbound.stream.finalmask.quicParams.disablePathMTUDiscovery"></a-switch>
       </a-form-item>
-      <a-form-item label="Max Incoming Streams">
-        <a-input-number v-model.number="inbound.stream.finalmask.quicParams.maxIncomingStreams" :min="0" placeholder="0 = default" />
+      <a-form-item label="{{ i18n "pages.interface.maxIncomingStreams" }}">
+        <a-input-number v-model.number="inbound.stream.finalmask.quicParams.maxIncomingStreams" :min="0" placeholder="{{ i18n "pages.interface.value0Default" }}" />
       </a-form-item>
-      <a-form-item label="Init Stream Window">
-        <a-input-number v-model.number="inbound.stream.finalmask.quicParams.initStreamReceiveWindow" :min="0" placeholder="0 = default" />
+      <a-form-item label="{{ i18n "pages.interface.initStreamWindow" }}">
+        <a-input-number v-model.number="inbound.stream.finalmask.quicParams.initStreamReceiveWindow" :min="0" placeholder="{{ i18n "pages.interface.value0Default" }}" />
       </a-form-item>
-      <a-form-item label="Max Stream Window">
-        <a-input-number v-model.number="inbound.stream.finalmask.quicParams.maxStreamReceiveWindow" :min="0" placeholder="0 = default" />
+      <a-form-item label="{{ i18n "pages.interface.maxStreamWindow" }}">
+        <a-input-number v-model.number="inbound.stream.finalmask.quicParams.maxStreamReceiveWindow" :min="0" placeholder="{{ i18n "pages.interface.value0Default" }}" />
       </a-form-item>
-      <a-form-item label="Init Conn Window">
-        <a-input-number v-model.number="inbound.stream.finalmask.quicParams.initConnectionReceiveWindow" :min="0" placeholder="0 = default" />
+      <a-form-item label="{{ i18n "pages.interface.initConnWindow" }}">
+        <a-input-number v-model.number="inbound.stream.finalmask.quicParams.initConnectionReceiveWindow" :min="0" placeholder="{{ i18n "pages.interface.value0Default" }}" />
       </a-form-item>
-      <a-form-item label="Max Conn Window">
-        <a-input-number v-model.number="inbound.stream.finalmask.quicParams.maxConnectionReceiveWindow" :min="0" placeholder="0 = default" />
+      <a-form-item label="{{ i18n "pages.interface.maxConnWindow" }}">
+        <a-input-number v-model.number="inbound.stream.finalmask.quicParams.maxConnectionReceiveWindow" :min="0" placeholder="{{ i18n "pages.interface.value0Default" }}" />
       </a-form-item>
     </template>
   </template>

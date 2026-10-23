@@ -45,14 +45,7 @@
         <template slot="label">
             <a-tooltip>
                 <template slot="title">
-                    How many DEVICES each account may run at once. The panel issues one
-                    config per device, each with its own key and its own tunnel IP, so
-                    import Device 1 on one machine and Device 2 on another: two devices
-                    cannot share a single config (they would share a key, and only one
-                    could stay connected). Lowering it revokes the surplus devices' keys.
-                    10 = ten devices (default), so ten configs per account; lower it for
-                    better pool capacity. 0 = the maximum, 64 devices, which issues 64
-                    configs and fits only ~3 accounts per /24.
+                    {{ i18n "pages.interface.howManyDEVICESEachAccountMayRunAt" }}
                 </template>{{ i18n "pages.inboundForm.userLimit" }}<a-icon type="question-circle"></a-icon>
             </a-tooltip>
         </template>
@@ -99,9 +92,7 @@
         <template slot="label">
             <a-tooltip>
                 <template slot="title">
-                    Add a preshared key (an extra symmetric layer on top of the
-                    keypair). The server generates one PSK per account automatically;
-                    nothing to enter here.
+                    {{ i18n "pages.interface.addAPresharedKeyAnExtraSymmetricLayer" }}
                 </template>{{ i18n "pages.inboundForm.presharedKey" }}<a-icon type="question-circle"></a-icon>
             </a-tooltip>
         </template>
@@ -111,8 +102,7 @@
         <template slot="label">
             <a-tooltip>
                 <template slot="title">
-                    The server's public key. Generated automatically on save; keys
-                    are never created in the browser.
+                    {{ i18n "pages.interface.theServerSPublicKeyGeneratedAutomaticallyOn" }}
                 </template>{{ i18n "pages.inboundForm.serverPublicKey" }}<a-icon type="question-circle"></a-icon>
             </a-tooltip>
         </template>
@@ -175,7 +165,7 @@
             <p :style="{ color: '#888', marginBottom: '12px' }">{{ i18n "pages.inboundForm.dpiObfuscationParametersTheseMustMatchOn" }}</p>
             <a-row type="flex" :gutter="8">
                 <a-col :xs="12" :md="8" :style="{ marginBottom: '8px' }">
-                    <a-tooltip title="Junk packet count sent before the handshake">
+                    <a-tooltip title="{{ i18n "pages.interface.junkPacketCountSentBeforeTheHandshake" }}">
                         <div :style="{ marginBottom: '4px' }">Jc</div>
                     </a-tooltip>
                     <a-input-number
@@ -185,7 +175,7 @@
                     ></a-input-number>
                 </a-col>
                 <a-col :xs="12" :md="8" :style="{ marginBottom: '8px' }">
-                    <a-tooltip title="Minimum size (bytes) of a junk packet">
+                    <a-tooltip title="{{ i18n "pages.interface.minimumSizeBytesOfAJunkPacket" }}">
                         <div :style="{ marginBottom: '4px' }">Jmin</div>
                     </a-tooltip>
                     <a-input-number
@@ -195,7 +185,7 @@
                     ></a-input-number>
                 </a-col>
                 <a-col :xs="12" :md="8" :style="{ marginBottom: '8px' }">
-                    <a-tooltip title="Maximum size (bytes) of a junk packet">
+                    <a-tooltip title="{{ i18n "pages.interface.maximumSizeBytesOfAJunkPacket" }}">
                         <div :style="{ marginBottom: '4px' }">Jmax</div>
                     </a-tooltip>
                     <a-input-number
@@ -205,7 +195,7 @@
                     ></a-input-number>
                 </a-col>
                 <a-col :xs="12" :md="8" :style="{ marginBottom: '8px' }">
-                    <a-tooltip title="Junk prepended to the first (init) handshake packet">
+                    <a-tooltip title="{{ i18n "pages.interface.junkPrependedToTheFirstInitHandshakePacket" }}">
                         <div :style="{ marginBottom: '4px' }">S1</div>
                     </a-tooltip>
                     <a-input-number
@@ -215,7 +205,7 @@
                     ></a-input-number>
                 </a-col>
                 <a-col :xs="12" :md="8" :style="{ marginBottom: '8px' }">
-                    <a-tooltip title="Junk prepended to the second (response) handshake packet">
+                    <a-tooltip title="{{ i18n "pages.interface.junkPrependedToTheSecondResponseHandshakePacket" }}">
                         <div :style="{ marginBottom: '4px' }">S2</div>
                     </a-tooltip>
                     <a-input-number
@@ -227,25 +217,25 @@
             </a-row>
             <a-row type="flex" :gutter="8">
                 <a-col :xs="12" :md="8" :style="{ marginBottom: '8px' }">
-                    <a-tooltip title="Magic header for the init packet (server-minted)">
+                    <a-tooltip title="{{ i18n "pages.interface.magicHeaderForTheInitPacketServerMinted" }}">
                         <div :style="{ marginBottom: '4px' }">H1</div>
                     </a-tooltip>
                     <a-input :value="inbound.settings.h1" read-only></a-input>
                 </a-col>
                 <a-col :xs="12" :md="8" :style="{ marginBottom: '8px' }">
-                    <a-tooltip title="Magic header for the response packet (server-minted)">
+                    <a-tooltip title="{{ i18n "pages.interface.magicHeaderForTheResponsePacketServerMinted" }}">
                         <div :style="{ marginBottom: '4px' }">H2</div>
                     </a-tooltip>
                     <a-input :value="inbound.settings.h2" read-only></a-input>
                 </a-col>
                 <a-col :xs="12" :md="8" :style="{ marginBottom: '8px' }">
-                    <a-tooltip title="Magic header for the cookie packet (server-minted)">
+                    <a-tooltip title="{{ i18n "pages.interface.magicHeaderForTheCookiePacketServerMinted" }}">
                         <div :style="{ marginBottom: '4px' }">H3</div>
                     </a-tooltip>
                     <a-input :value="inbound.settings.h3" read-only></a-input>
                 </a-col>
                 <a-col :xs="12" :md="8" :style="{ marginBottom: '8px' }">
-                    <a-tooltip title="Magic header for the transport packet (server-minted)">
+                    <a-tooltip title="{{ i18n "pages.interface.magicHeaderForTheTransportPacketServerMinted" }}">
                         <div :style="{ marginBottom: '4px' }">H4</div>
                     </a-tooltip>
                     <a-input :value="inbound.settings.h4" read-only></a-input>
