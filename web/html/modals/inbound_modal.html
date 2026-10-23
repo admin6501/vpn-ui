@@ -901,11 +901,8 @@
                     );
 
                 if (this.inModal.inbound.isSSMultiUser) {
-                    if (this.inModal.inbound.settings.shadowsockses.length == 0) {
-                        this.inModal.inbound.settings.shadowsockses = [
-                            new Inbound.ShadowsocksSettings.Shadowsocks(),
-                        ];
-                    }
+                    // Changing a listener's cipher must not create an account.
+                    // Accounts are assigned through groups on the Clients page.
                     if (!this.inModal.inbound.isSS2022) {
                         this.inModal.inbound.settings.shadowsockses.forEach((client) => {
                             client.method = this.inModal.inbound.settings.method;

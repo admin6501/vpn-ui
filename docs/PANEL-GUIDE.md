@@ -22,12 +22,16 @@ Persian and English. See [translation behavior](TRANSLATIONS.md).
 
 1. Install the required core on the central server or selected node. IPsec is selectable and is a
    shared dependency for L2TP/IKEv2. Kernel protocols also need suitable host modules.
-2. Add an inbound with its listener, port/transport, external endpoint and location. Verify port
+2. Add an inbound with its listener, port/transport, external endpoint and location. A group does not need to exist yet; the listener starts with no accounts, including after a cipher change or clone. Verify port
    availability and firewall rules. Moving an existing inbound between hosts is not supported.
 3. Create an account in **Users** and assign its groups/inbounds. Accounts have one identity and
    shared quota across their memberships; memberships have separate access switches.
 4. Open **Info** or the subscription page, download the appropriate client profile and test an
    actual connection. For External Proxy, verify the advertised endpoint, port and label.
+
+Deleting an inbound removes its group links; it keeps accounts, subscription identities and their
+usage. Recreating the same name/port creates a new listener identity. Add that replacement to the
+existing group explicitly to restore its users; matching a name never grants access automatically.
 
 Groups are reusable access assignments. Edit group membership instead of duplicating credentials
 for every location. Administrator scope and representative ownership still restrict assignments.

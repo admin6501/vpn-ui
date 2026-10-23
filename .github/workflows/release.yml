@@ -53,6 +53,10 @@ jobs:
         run: go test -race ./database ./web/session ./web/middleware ./web/controller ./web/service -run '^TestSecurity' -count=1
       - name: Verify client renewal, preserved access and representative billing
         run: go test -race ./web/service ./web/controller -run '^TestAccountRenew|^TestClientRenew' -count=1
+      - name: Verify group-free inbound creation, cipher changes and delete/recreate accounting
+        run: |
+          node test_unit/inbound_create_roster_test.cjs
+          go test -race ./web/controller -run '^TestGroupsFreshInboundAndDeleteRecreatePreserveAccount$' -count=1
       - name: Verify repeated native restores, migrated accounts and rollback
         run: go test -race ./web/service ./web/controller -run '^TestRestore' -count=1
       - name: Verify six audit fixes and allowed certificate, SSH, overview and backup access
@@ -126,7 +130,7 @@ jobs:
           RUN_NODE_UI_BROWSER=1 go test ./web/middleware -run '^TestSecurityBrowserPanelNavigationRuntime$' -count=1 -timeout 60s
           RUN_NODE_UI_BROWSER=1 go test ./sub -run '^TestSubscriptionPageBrowserRuntime$' -count=1 -timeout 300s
           RUN_NODE_UI_BROWSER=1 go test ./web -run '^Test(NodePageBrowserRuntime|OverviewSSLBrowserRuntime|RepresentativeOverviewHidesInboundManagementAndUpdates|AdminRolesBrowserRuntime|DelegatedSettingsBrowserRuntime|RepresentativeEditBrowserRuntime)$' -count=1 -timeout 1200s
-          RUN_NODE_UI_BROWSER=1 go test -race ./web -run '^TestGroupsBrowserRuntime$' -count=1 -timeout 180s
+          RUN_NODE_UI_BROWSER=1 go test -race ./web -run '^Test(GroupsBrowserRuntime|InboundCreateGroupsBrowserRuntime)$' -count=1 -timeout 240s
       - name: Verify ownership transfer and online counts
         run: go test -tags netgo,osusergo ./web/service ./web/controller -run 'TestSaveAccount|TestLeavingAnAccount|TestIndependentAccount|TestMembershipEnable|TestDisabledMembership|TestRemovingTheLastMembership|TestToggleClientEnableByEmail|TestRenameAccount|TestSortAccountRows|TestAccountSort|TestClientLimit|TestResolveUserLimitOverride|TestAllocateBlockIP|TestOldestBlockSession|TestAdmit|TestSpeedLimit|TestAdminRoles|TestAdminOwner|TestAccountOwnershipTransfer|TestPasarGuard|TestOverview|TestVerifiedProvisioned|TestOffline|TestMigrationAccountsVerifiesExistingImported'
       - name: Verify imported subscription quotas and legacy credentials

@@ -2210,7 +2210,9 @@ class Inbound extends XrayCommonClass {
     // be put on several inbounds at once. A new inbound therefore starts empty and
     // the operator adds accounts to it afterwards.
     clearClients() {
-        const list = this.clients;
+        // Single-user Shadowsocks hides `clients`, but its settings still serialize
+        // shadowsockses. Clear the stored list even while that mode is selected.
+        const list = this.protocol === Protocols.SHADOWSOCKS ? this.settings.shadowsockses : this.clients;
         if (Array.isArray(list)) list.splice(0, list.length);
     }
 
