@@ -234,6 +234,9 @@ func TestTranslationTemplateReferencesAndConfigurationLiterals(t *testing.T) {
 		translationValues("", parsed, values)
 		for key, english := range reference {
 			var literals []string
+			if strings.HasPrefix(key, "pages.interface.") && strings.Contains(english, "Brutal") {
+				literals = append(literals, "Brutal")
+			}
 			if strings.HasPrefix(key, "pages.interface.default") {
 				for _, literal := range []string{"(path)", "(body)", "(queryInHeader)", "(repeat-x)", "(POST)"} {
 					if strings.Contains(english, literal) {
