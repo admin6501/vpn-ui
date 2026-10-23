@@ -1,9 +1,11 @@
 package service
 
 import (
+	"encoding/json"
 	"fmt"
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/mhsanaei/3x-ui/v2/database"
 	"github.com/mhsanaei/3x-ui/v2/database/model"
@@ -14,7 +16,7 @@ import (
 func TestNodeBatchProjectionPreservesCredentialsAdmissionAndRemovedMemberships(t *testing.T) {
 	newAccountsDB(t)
 	db := database.GetDB()
-	in := model.Inbound{Id: 1, Tag: "node-projection", Protocol: model.VLESS, Settings: `{"clients":[{"email":"user-0","id":"old-id","custom":"keep"},{"email":"user-2","id":"retired-id"}],"customSetting":true}`}
+	in := model.Inbound{Id: 1, Tag: "node-projection", Protocol: model.VLESS, Settings: `{"clients":[{"email":"user-0","id":"old-id","custom":"keep","created_at":1700000000000,"updated_at":1700000001000},{"email":"user-2","id":"retired-id"}],"customSetting":true}`}
 	if err := db.Create(&in).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -33,6 +35,7 @@ func TestNodeBatchProjectionPreservesCredentialsAdmissionAndRemovedMemberships(t
 			t.Fatal(err)
 		}
 	}
+	sequentialStart := time.Now().Unix() * 1000
 	for _, a := range requested {
 		if _, err := (&AccountService{}).ProjectAccount(db, a.Account.Id); err != nil {
 			t.Fatal(err)
@@ -42,6 +45,7 @@ func TestNodeBatchProjectionPreservesCredentialsAdmissionAndRemovedMemberships(t
 	if err := db.First(&expected, in.Id).Error; err != nil {
 		t.Fatal(err)
 	}
+	sequentialEnd := time.Now().Unix() * 1000
 	if err := db.Model(&in).Update("settings", in.Settings).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -54,6 +58,7 @@ func TestNodeBatchProjectionPreservesCredentialsAdmissionAndRemovedMemberships(t
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { db.Callback().Update().Remove("test_node_projection_writes") })
+	batchStart := time.Now().Unix() * 1000
 	if err := projectNodeAccounts(db, requested); err != nil {
 		t.Fatal(err)
 	}
@@ -61,7 +66,43 @@ func TestNodeBatchProjectionPreservesCredentialsAdmissionAndRemovedMemberships(t
 	if err := db.First(&actual, in.Id).Error; err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(expected.Settings, actual.Settings) {
+	batchEnd := time.Now().Unix() * 1000
+	// New memberships are stamped at projection time. Independent sequential
+	// and batched runs may cross a clock second, so validate those timestamps
+	// against each run's window before comparing the remaining fields exactly.
+	// Existing timestamps stay in the comparison and must remain unchanged.
+	normalize := func(settings string, start, end int64) map[string]any {
+		t.Helper()
+		var root map[string]any
+		if err := json.Unmarshal([]byte(settings), &root); err != nil {
+			t.Fatal(err)
+		}
+		clients, ok := root["clients"].([]any)
+		if !ok {
+			t.Fatal("projection omitted client roster")
+		}
+		for _, value := range clients {
+			client, ok := value.(map[string]any)
+			if !ok {
+				t.Fatal("projection produced a malformed client")
+			}
+			if client["email"] == "user-0" {
+				if client["created_at"] != float64(1700000000000) || client["updated_at"] != float64(1700000001000) {
+					t.Fatal("projection changed existing client timestamps")
+				}
+				continue
+			}
+			for _, key := range []string{"created_at", "updated_at"} {
+				stamp, ok := client[key].(float64)
+				if !ok || stamp != float64(int64(stamp)) || stamp < float64(start) || stamp > float64(end) {
+					t.Fatalf("client %v has invalid %s: %v outside [%d, %d]", client["email"], key, client[key], start, end)
+				}
+				delete(client, key)
+			}
+		}
+		return root
+	}
+	if !reflect.DeepEqual(normalize(expected.Settings, sequentialStart, sequentialEnd), normalize(actual.Settings, batchStart, batchEnd)) {
 		t.Fatal("batch projection changed client credentials, admission, custom fields or removal semantics")
 	}
 	if writes != 1 {
