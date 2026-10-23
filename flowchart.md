@@ -1,5 +1,7 @@
 # backendها چطوری با Xray-core کار می‌کنن
 
+**v1.0.0 scope:** these diagrams show VPN data/control paths. Account/group authority and per-request localization are described in [architecture](docs/ARCHITECTURE.md); dedicated location polling, counters and lease behavior are in [Nodes](docs/NODES.md). Read the [panel guide](docs/PANEL-GUIDE.md) for current operation. The diagrams do not certify live connectivity on every host.
+
 backendهای VPN خودشون هیچ traffic‌ای رو route نمی‌کنن. فقط tunnel رو terminate می‌کنن (توی relayها
 هم خودِ connection کلاینت رو) و همه‌ی packetهای هر client رو تحویل **Xray-core** می‌دن. این
 Xray-core هست که routing، محدودیت‌ها (limit) و خروج به اینترنت (egress) رو انجام می‌ده. اون پلی که

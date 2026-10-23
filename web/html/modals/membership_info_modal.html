@@ -99,7 +99,7 @@
             <span class="k">PSK</span><span class="v mono">[[ card.psk ]]</span>
           </div>
           <div class="ai-kv" v-if="card.remoteId">
-            <span class="k">Remote ID</span><span class="v mono">[[ card.remoteId ]]</span>
+            <span class="k">{{ i18n "pages.interface.remoteID" }}</span><span class="v mono">[[ card.remoteId ]]</span>
           </div>
           <div class="ai-btns" v-if="credText(card)">
             <a-button size="small" type="primary" @click="copy(credText(card))">{{ i18n "copy" }}</a-button>

@@ -41,18 +41,18 @@
 
   <!-- tls settings -->
   <template v-if="inbound.stream.isTls">
-    <a-form-item label="SNI" placeholder="Server Name Indication">
+    <a-form-item label="SNI" placeholder="{{ i18n "pages.interface.serverNameIndication" }}">
       <a-input v-model.trim="inbound.stream.tls.sni"></a-input>
     </a-form-item>
-    <a-form-item label="Cipher Suites">
+    <a-form-item label="{{ i18n "pages.interface.cipherSuites" }}">
       <a-select v-model="inbound.stream.tls.cipherSuites"
         :dropdown-class-name="themeSwitcher.currentTheme">
-        <a-select-option value>Auto</a-select-option>
+        <a-select-option value>{{ i18n "pages.interface.auto" }}</a-select-option>
         <a-select-option v-for="key,value in TLS_CIPHER_OPTION" :value="key">[[
           value ]]</a-select-option>
       </a-select>
     </a-form-item>
-    <a-form-item label="Min/Max Version">
+    <a-form-item label="{{ i18n "pages.interface.minMaxVersion" }}">
       <a-input-group compact>
         <a-select v-model="inbound.stream.tls.minVersion"
           :style="{ width: '50%' }"
@@ -72,7 +72,7 @@
       <a-select v-model="inbound.stream.tls.settings.fingerprint"
         :style="{ width: '100%' }"
         :dropdown-class-name="themeSwitcher.currentTheme">
-        <a-select-option value>None</a-select-option>
+        <a-select-option value>{{ i18n "none" }}</a-select-option>
         <a-select-option v-for="key in UTLS_FINGERPRINT" :value="key">[[ key
           ]]</a-select-option>
       </a-select>
@@ -85,13 +85,13 @@
           ]]</a-select-option>
       </a-select>
     </a-form-item>
-    <a-form-item label="Reject Unknown SNI">
+    <a-form-item label="{{ i18n "pages.interface.rejectUnknownSNI" }}">
       <a-switch v-model="inbound.stream.tls.rejectUnknownSni"></a-switch>
     </a-form-item>
-    <a-form-item label="Disable System Root">
+    <a-form-item label="{{ i18n "pages.interface.disableSystemRoot" }}">
       <a-switch v-model="inbound.stream.tls.disableSystemRoot"></a-switch>
     </a-form-item>
-    <a-form-item label="Session Resumption">
+    <a-form-item label="{{ i18n "pages.interface.sessionResumption" }}">
       <a-switch v-model="inbound.stream.tls.enableSessionResumption"></a-switch>
     </a-form-item>
     <a-divider :style="{ margin: '3px 0' }"></a-divider>
@@ -159,17 +159,17 @@
           <a-textarea v-model="cert.key"></a-textarea>
         </a-form-item>
       </template>
-      <a-form-item label="One Time Loading">
+      <a-form-item label="{{ i18n "pages.interface.oneTimeLoading" }}">
         <a-switch v-model="cert.oneTimeLoading"></a-switch>
       </a-form-item>
-      <a-form-item label='Usage Option'>
+      <a-form-item label='{{ i18n "pages.interface.usageOption" }}'>
         <a-select v-model="cert.usage" :style="{ width: '50%' }"
           :dropdown-class-name="themeSwitcher.currentTheme">
           <a-select-option v-for="key in USAGE_OPTION" :value="key">[[ key
             ]]</a-select-option>
         </a-select>
       </a-form-item>
-      <a-form-item label="Build Chain" v-if="cert.usage === 'issue'">
+      <a-form-item label="{{ i18n "pages.interface.buildChain" }}" v-if="cert.usage === 'issue'">
         <a-switch v-model="cert.buildChain"></a-switch>
       </a-form-item>
     </template>
@@ -179,7 +179,7 @@
     <a-form-item label='ECH config'>
       <a-input v-model="inbound.stream.tls.settings.echConfigList"></a-input>
     </a-form-item>
-    <a-form-item label='ECH force query'>
+    <a-form-item label='{{ i18n "pages.interface.echForceQuery" }}'>
       <a-select v-model="inbound.stream.tls.echForceQuery"
         :dropdown-class-name="themeSwitcher.currentTheme">
         <a-select-option v-for="key in ['none', 'half', 'full']" :value="key">[[
@@ -188,9 +188,8 @@
     </a-form-item>
     <a-form-item label=" ">
       <a-space>
-        <a-button type="primary" icon="import" @click="getNewEchCert">Get New
-          ECH Cert</a-button>
-        <a-button danger @click="clearEchCert">Clear</a-button>
+        <a-button type="primary" icon="import" @click="getNewEchCert">{{ i18n "pages.interface.getNewECHCert" }}</a-button>
+        <a-button danger @click="clearEchCert">{{ i18n "pages.inboundForm.clear" }}</a-button>
       </a-space>
     </a-form-item>
   </template>

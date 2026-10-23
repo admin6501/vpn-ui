@@ -8,7 +8,7 @@ const assert=require('node:assert/strict');
   const errors=[];page.on('pageerror',e=>errors.push(e.message));
   const source=fs.readFileSync('web/html/modals/gre_config_modal.html','utf8');
   const markup=source.slice(0,source.indexOf('<script>')).replace(/{{\s*i18n\s+"([^"]+)"\s*}}/g,'$1').replace(/{{[\s\S]*?}}/g,'');
-  const script=source.slice(source.indexOf('<script>')+8,source.lastIndexOf('</script>'));
+  const script=source.slice(source.indexOf('<script>')+8,source.lastIndexOf('</script>')).replace(/{{\s*i18n\s+"([^"]+)"\s*}}/g,'$1');
   await page.setContent(markup);await page.addStyleTag({path:'web/assets/ant-design-vue/antd.min.css'});
   for(const path of ['web/assets/vue/vue.min.js','web/assets/ant-design-vue/antd.min.js']) await page.addScriptTag({path});
   await page.addScriptTag({content:`

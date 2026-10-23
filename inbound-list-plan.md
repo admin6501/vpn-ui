@@ -1,26 +1,19 @@
-# Inbounds list page: five design directions
+# Inbound and user pages
 
-> **Document status:** the current-source summary below applies to `admin6501/vpn-ui`. The
-> historical record preserves earlier upstream proposals and dated findings. Its “today”, “not
-> built”, “verified live” and version references describe that recorded stage, not the current
-> release or newly performed tests.
+## v1.0.0: current behavior
 
-## Current source summary
+Inbounds manages listeners, location and protocol settings; Users manages accounts across memberships. Overview counts unique accounts. Modern and legacy inbound dialogs remain supported through the panel preference. Client Info, exports and subscription views use current effective access and external endpoint data. The client menu includes Renew; the edit form includes traffic reset beside quota.
 
-The live inbounds page is the shipped template and its model. The design gallery below compares
-earlier alternatives, not selectable panel modes. Persian inbound forms are covered by the release
-checks.
+Use the [panel guide](docs/PANEL-GUIDE.md), [README](README.md), [node guide](docs/NODES.md) and [renewal reference](docs/CLIENT-RENEWAL.md) for current operation.
 
 **Implementation references:** [web/html/inbounds.html](web/html/inbounds.html) ·
 [web/assets/js/model/inbound.js](web/assets/js/model/inbound.js) ·
 [web/inbound_translation_test.go](web/inbound_translation_test.go)
 
-For installation and prerequisites, use [the README](README.md) and
-[offline guide](docs/OFFLINE-INSTALL.md). See [the documentation index](docs/INDEX.md) for
-operational guides. Release automation checks focused cases; complete protocol/VM E2E validation
-requires a separately configured [test host](test_unit/README.md).
+<details>
+<summary>Historical design and development record</summary>
 
-## Historical design record
+The material below preserves upstream proposals, earlier defaults and dated test results. It is not current installation guidance or evidence that its live tests were rerun for this release.
 
 Prototypes for the last major surface in `redesign-plan.md` Phase 4, "table primitive, then
 inbounds". The inbound add/edit form and the inbound info modal were done in the two previous
@@ -320,3 +313,5 @@ here has to be redrawn for it.
 Nor is it the generic table primitive `redesign-plan.md` Phase 4 asks for. The `bo-il-*` classes are
 the start of that vocabulary but they are this page's, and `component/aClientTable.html` has not
 been touched.
+
+</details>

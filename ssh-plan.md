@@ -1,27 +1,19 @@
-# SSH (VPN) - research and implementation plan
+# Built-in SSH proxy
 
-> **Document status:** the current-source summary below applies to `admin6501/vpn-ui`. The
-> historical record preserves earlier upstream proposals and dated findings. Its “today”, “not
-> built”, “verified live” and version references describe that recorded stage, not the current
-> release or newly performed tests.
+## v1.0.0: current behavior
 
-## Current source summary
+This is an embedded account-authenticated forwarding service, not a root shell or a system OpenSSH account manager. Preserve its host key on updates. Export the advertised external endpoint consistently and configure UDP gateway support when required by the client. Outbound SSH host-key pinning accepts the configured fingerprint; a mismatch must fail rather than silently trust a new key.
 
-The SSH gateway is implemented inside the panel and relays account traffic through the Xray SOCKS
-bridge. It does not require a second SSH server package. Authentication, account limits and client
-configuration must match the panel’s SSH protocol settings; the original unimplemented status is
-historical.
+Use the [panel guide](docs/PANEL-GUIDE.md), [README](README.md), [node guide](docs/NODES.md) and [renewal reference](docs/CLIENT-RENEWAL.md) for current operation.
 
 **Implementation references:** [web/service/ssh_server.go](web/service/ssh_server.go) ·
 [web/service/ssh_socks.go](web/service/ssh_socks.go) ·
 [web/service/sshoutbound.go](web/service/sshoutbound.go)
 
-For installation and prerequisites, use [the README](README.md) and
-[offline guide](docs/OFFLINE-INSTALL.md). See [the documentation index](docs/INDEX.md) for
-operational guides. Release automation checks focused cases; complete protocol/VM E2E validation
-requires a separately configured [test host](test_unit/README.md).
+<details>
+<summary>Historical design and development record</summary>
 
-## Historical design record
+The material below preserves upstream proposals, earlier defaults and dated test results. It is not current installation guidance or evidence that its live tests were rerun for this release.
 
 Adding **SSH** as a 10th first-class VPN protocol with real, panel-integrated account management.
 This document is the research record and proposed implementation contract, produced from an 8-agent
@@ -546,3 +538,5 @@ go test ./web/... -count=1         # unit + i18n parity + template-parse
 ```
 
 ```
+
+</details>

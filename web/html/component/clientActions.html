@@ -558,7 +558,7 @@
           const cards = await AccountExport.buildCards(this, targets);
           if (!cards.length) { this.$message.warning('{{ i18n "pages.inbounds.exportNoneSelected" }}'); return; }
           AccountExport.txt(cards, filename || 'accounts');
-        } catch (e) { this.$message.error('Export failed: ' + (e && e.message ? e.message : e)); }
+        } catch (e) { this.$message.error('{{ i18n "pages.interfaceExtra.exportFailed" }}: ' + (e && e.message ? e.message : e)); }
       },
       async exportPdf(targets, filename) {
         if (!targets || !targets.length) { this.$message.warning('{{ i18n "pages.inbounds.exportNoneSelected" }}'); return; }
@@ -566,7 +566,7 @@
           const cards = await AccountExport.buildCards(this, targets);
           if (!cards.length) { this.$message.warning('{{ i18n "pages.inbounds.exportNoneSelected" }}'); return; }
           AccountExport.pdf(cards, filename || 'accounts');
-        } catch (e) { this.$message.error('Export failed: ' + (e && e.message ? e.message : e)); }
+        } catch (e) { this.$message.error('{{ i18n "pages.interfaceExtra.exportFailed" }}: ' + (e && e.message ? e.message : e)); }
       },
       // Single-account export straight from a client row's action buttons.
       exportClientTxt(dbInbound, client) { this.exportTxt([{ inboundId: dbInbound.id, email: client.email }], client.email || dbInbound.remark); },

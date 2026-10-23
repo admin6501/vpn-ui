@@ -1,34 +1,20 @@
-# Resellers: a quota-bounded, client-scoped role
+# Representative administration
 
-> **Document status:** the current-source summary below applies to `admin6501/vpn-ui`. The
-> historical record preserves earlier upstream proposals and dated findings. Its “today”, “not
-> built”, “verified live” and version references describe that recorded stage, not the current
-> release or newly performed tests.
+## v1.0.0: current behavior
 
-## Current source summary
+New representative accounts use consumption-based limits and scoped roles; migrated/prepaid accounts keep their applicable billing mode. Update and reset permission are separate; Renew requires both and the narrower scope. Lifetime usage is not erased by traffic reset or renewal. Enforced two-factor enrollment permits only account security/logout until complete. Customer enablement does not bypass exhausted representative policy.
 
-Representatives created by the current form use consumption-based accounting and a PasarGuard-style
-role. Imported accounts retain administrator ownership.
-
-Roles support add/edit/delete. The owner role is protected and assigned roles cannot be deleted. The
-main administrator can transfer ownership between eligible consumption-based representatives and the
-panel owner.
-
-Legacy prepaid accounting code remains for older data, with separate restrictions. The refund
-blueprint below is not the contract for new representatives. The representative external-proxy
-option is removed.
+Use the [panel guide](docs/PANEL-GUIDE.md), [README](README.md), [node guide](docs/NODES.md) and [renewal reference](docs/CLIENT-RENEWAL.md) for current operation.
 
 **Implementation references:** [web/controller/reseller.go](web/controller/reseller.go) ·
 [web/controller/representative.go](web/controller/representative.go) ·
 [web/service/accountowner.go](web/service/accountowner.go) ·
 [database/model/pasarguard.go](database/model/pasarguard.go)
 
-For installation and prerequisites, use [the README](README.md) and
-[offline guide](docs/OFFLINE-INSTALL.md). See [the documentation index](docs/INDEX.md) for
-operational guides. Release automation checks focused cases; complete protocol/VM E2E validation
-requires a separately configured [test host](test_unit/README.md).
+<details>
+<summary>Historical design and development record</summary>
 
-## Historical design record
+The material below preserves upstream proposals, earlier defaults and dated test results. It is not current installation guidance or evidence that its live tests were rerun for this release.
 
 A reseller logs into the same panel as an admin, sees only the inbounds they were assigned, and
 inside those inbounds sees only the accounts **they themselves created**. They may create, top up,
@@ -578,3 +564,5 @@ Each is followed by what was decided.
    Confirm. **SHIPPED: yes. ClientStats is filtered to their own accounts, not hidden.**
 6. **`model.Client.TotalGB`'s unit** (section 2.2). Verify before implementing. **RESOLVED: bytes.
    See section 10.**
+
+</details>

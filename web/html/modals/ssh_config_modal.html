@@ -4,41 +4,41 @@
   <a-spin :spinning="sshConfigModal.loading">
     <div v-if="!sshConfigModal.loading && sshConfigModal.configs.length === 0"
       :style="{ color: '#888', textAlign: 'center', padding: '24px' }">
-      No SSH configuration is available for this account yet.
+      {{ i18n "pages.interface.noSSHConfigurationIsAvailableForThisAccount" }}
     </div>
     <div v-for="(cfg, index) in sshConfigModal.configs" :key="index" class="ssh-cfg-item">
       <div class="ssh-cfg-head">
-        <b>SSH Config</b>
+        <b>{{ i18n "pages.interface.sshConfig" }}</b>
         <a-tag v-if="cfg.remark" color="blue" :style="{ marginInlineStart: '8px' }">[[ cfg.remark ]]</a-tag>
       </div>
       <div class="ssh-cfg-body">
         <div class="ssh-cfg-text">
-          <div v-if="cfg.link" :style="{ color: '#888', fontSize: '12px', marginBottom: '4px' }">Share link (scan or import)</div>
+          <div v-if="cfg.link" :style="{ color: '#888', fontSize: '12px', marginBottom: '4px' }">{{ i18n "pages.interface.shareLinkScanOrImport" }}</div>
           <a-input v-if="cfg.link" :value="cfg.link" read-only
             :style="{ fontFamily: 'monospace', fontSize: '12px', marginBottom: '12px' }">
             <a-icon v-if="cfg.link" slot="addonAfter" type="copy" :style="{ cursor: 'pointer' }" @click="copy(cfg.link)"></a-icon>
           </a-input>
-          <div :style="{ color: '#888', fontSize: '12px', marginBottom: '4px' }">Connection details</div>
+          <div :style="{ color: '#888', fontSize: '12px', marginBottom: '4px' }">{{ i18n "pages.interface.connectionDetails" }}</div>
           <a-textarea :value="cfg.plain" read-only :auto-size="{ minRows: 4, maxRows: 12 }"
             :style="{ fontFamily: 'monospace', fontSize: '12px' }"></a-textarea>
           <a-space :style="{ marginTop: '8px' }">
             <a-button size="small" @click="copy(cfg.plain)">
-              <a-icon type="copy"></a-icon> Copy
+              <a-icon type="copy"></a-icon> {{ i18n "copy" }}
             </a-button>
             <a-button size="small" @click="download(cfg, 'plain')">
-              <a-icon type="download"></a-icon> Download
+              <a-icon type="download"></a-icon> {{ i18n "download" }}
             </a-button>
           </a-space>
 
-          <div :style="{ color: '#888', fontSize: '12px', margin: '12px 0 4px' }">sing-box outbound</div>
+          <div :style="{ color: '#888', fontSize: '12px', margin: '12px 0 4px' }">{{ i18n "pages.interface.singBoxOutbound" }}</div>
           <a-textarea :value="cfg.singbox" read-only :auto-size="{ minRows: 6, maxRows: 20 }"
             :style="{ fontFamily: 'monospace', fontSize: '12px' }"></a-textarea>
           <a-space :style="{ marginTop: '8px' }">
             <a-button size="small" @click="copy(cfg.singbox)">
-              <a-icon type="copy"></a-icon> Copy
+              <a-icon type="copy"></a-icon> {{ i18n "copy" }}
             </a-button>
             <a-button size="small" @click="download(cfg, 'singbox')">
-              <a-icon type="download"></a-icon> Download
+              <a-icon type="download"></a-icon> {{ i18n "download" }}
             </a-button>
           </a-space>
         </div>
@@ -68,7 +68,7 @@
   const sshConfigModal = {
     visible: false,
     loading: false,
-    title: 'SSH Config',
+    title: '{{ i18n "pages.interfaceExtra.sshConfig" }}',
     dbInboundId: 0,
     email: '',
     username: '',
@@ -83,7 +83,7 @@
       this.subId = client && client.subId ? client.subId : '';
       // SSH identity is the login username (client.id); fall back to the email label.
       this.username = client && client.id ? client.id : this.email;
-      this.title = 'SSH Config' + (this.email ? ' - ' + this.email : '');
+      this.title = '{{ i18n "pages.interfaceExtra.sshConfig" }}' + (this.email ? ' - ' + this.email : '');
       this.configs = [];
       this.loading = true;
       this.visible = true;

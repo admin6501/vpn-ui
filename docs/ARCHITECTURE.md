@@ -1,5 +1,13 @@
 # Protocol architecture
 
+## Stable v1.0.0 control and presentation layers
+
+Central accounts own credentials, quota, expiry and subscription identity. Memberships and groups determine inbound access; role/owner policy bounds every operation. Jobs project changes into native and daemon-backed data paths. Dedicated location agents receive authenticated snapshots and return cumulative, sequenced counters. Nodes poll every second; host diagnostics normally refresh every five seconds. A lost 90-second management lease stops their data plane. See [node architecture and limits](NODES.md).
+
+HTML templates use thirteen bounded language-specific renderers. Middleware resolves cookie/header dialects per request; panel and subscription renders no longer depend on a concurrently mutable global language. The Telegram bot uses its configured language. Shared component/calendar assets are local. See [translation checks](TRANSLATIONS.md).
+
+The diagrams below explain implementations, not certification of every protocol/kernel/distribution combination. The cplane proposal remains historical research. For current UI operations use the [panel guide](PANEL-GUIDE.md).
+
 These diagrams explain representative data/control paths, not a complete protocol inventory or
 live-connectivity certification. GRE also uses a managed interface and nftables; see
 [its service](../web/service/gre.go). Host prerequisites are listed in

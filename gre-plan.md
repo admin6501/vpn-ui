@@ -1,25 +1,18 @@
-# GRE - research and feasibility assessment
+# GRE operation
 
-> **Document status:** the current-source summary below applies to `admin6501/vpn-ui`. The
-> historical record preserves earlier upstream proposals and dated findings. Its “today”, “not
-> built”, “verified live” and version references describe that recorded stage, not the current
-> release or newly performed tests.
+## v1.0.0: current behavior
 
-## Current source summary
+Enter each router peer public IP in the client editor when pinning it. A blank address permits supported dynamic raw-GRE learning; FOU needs a pinned peer. Preserve a host route to the outer server through the original physical gateway before routing the default into GRE. GRE is IP protocol 47, not TCP/UDP port 47. Plain GRE is unencrypted. Optional IPsec shares strongSwan with L2TP/IKEv2; enabling one inbound must preserve other protocols and their authentication configuration.
 
-GRE is implemented as a protocol with its own routing and host prerequisites. GRE transport
-availability depends on the kernel, firewall and peer network; a running panel does not verify a GRE
-link. The dated network spikes below belong to the original research.
+Use the [panel guide](docs/PANEL-GUIDE.md), [README](README.md), [node guide](docs/NODES.md) and [renewal reference](docs/CLIENT-RENEWAL.md) for current operation.
 
 **Implementation references:** [web/service/gre.go](web/service/gre.go) ·
 [web/service/corecatalog.go](web/service/corecatalog.go)
 
-For installation and prerequisites, use [the README](README.md) and
-[offline guide](docs/OFFLINE-INSTALL.md). See [the documentation index](docs/INDEX.md) for
-operational guides. Release automation checks focused cases; complete protocol/VM E2E validation
-requires a separately configured [test host](test_unit/README.md).
+<details>
+<summary>Historical design and development record</summary>
 
-## Historical design record
+The material below preserves upstream proposals, earlier defaults and dated test results. It is not current installation guidance or evidence that its live tests were rerun for this release.
 
 Can **GRE** (Generic Routing Encapsulation, IP protocol 47) be added as a new protocol? (It shipped
 as the 11th, after l2tp, pptp, openvpn, openconnect, sstp, ikev2, wg-c, awg, mtproto and ssh.) This
@@ -826,3 +819,5 @@ The delayed-start mechanism was observed working end to end: a frozen account's 
 became `expiry=1786028564000` on unfreeze, i.e. the 7-day countdown was stamped from when service
 resumed rather than being burned while frozen. `disableInvalidClients` requires `expiry_time > 0`,
 which is what keeps a negative expiry from ever reading as expired.
+
+</details>

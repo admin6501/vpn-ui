@@ -1,5 +1,7 @@
 # Bundled acme.sh
 
+**v1.0.0 packaging:** the full central and node release binaries embed the pinned ACME client. Installing the client offline does not make certificate issuance offline: challenge validation and renewal need the relevant network/DNS access. Keep account keys and certificates private. See [offline installation](../../docs/OFFLINE-INSTALL.md) and [panel operation](../../docs/PANEL-GUIDE.md).
+
 `acme.sh` here is the vendored Let's Encrypt / ACME client, embedded into the panel binary via
 `//go:embed build/acme/acme.sh` (see main.go) and written out by `vpn-ui install-acme <path>`.
 

@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	weblocale "github.com/mhsanaei/3x-ui/v2/web/locale"
 	"github.com/nicksnyder/go-i18n/v2/i18n"
 	"github.com/pelletier/go-toml/v2"
 	"golang.org/x/text/language"
@@ -24,21 +25,28 @@ func TestOverviewSSLBrowserRuntime(t *testing.T) {
 	}
 	bundle := i18n.NewBundle(language.MustParse("en-US"))
 	bundle.RegisterUnmarshalFunc("toml", toml.Unmarshal)
-	for _, lang := range []string{"en_US", "fa_IR"} {
+	for _, code := range weblocale.LanguageCodes() {
+		lang := strings.ReplaceAll(code, "-", "_")
 		if _, err := bundle.LoadMessageFile("translation/translate." + lang + ".toml"); err != nil {
 			t.Fatal(err)
 		}
 	}
-	for _, lang := range []string{"en-US", "fa-IR"} {
+	for _, lang := range weblocale.LanguageCodes() {
 		t.Run(lang, func(t *testing.T) {
 			localizer := i18n.NewLocalizer(bundle, lang)
 			tpl, err := (&Server{}).getHtmlTemplate(template.FuncMap{"i18n": func(key string, args ...string) (string, error) {
-				return localizer.Localize(&i18n.LocalizeConfig{MessageID: key})
+				vars := map[string]any{}
+				for _, arg := range args {
+					if k, v, ok := strings.Cut(arg, "=="); ok {
+						vars[k] = v
+					}
+				}
+				return localizer.Localize(&i18n.LocalizeConfig{MessageID: key, TemplateData: vars})
 			}})
 			if err != nil {
 				t.Fatal(err)
 			}
-			data := map[string]any{"base_path": "/test/", "title": "menu.settings", "perms": map[string]bool{"panelOwner": true, "superAdmin": true, "accessOverview": true, "accessInbounds": true, "accessCoreSettings": true, "panelSettings": true}}
+			data := map[string]any{"lang": lang, "base_path": "/test/", "title": "menu.settings", "perms": map[string]bool{"panelOwner": true, "superAdmin": true, "accessOverview": true, "accessInbounds": true, "accessCoreSettings": true, "panelSettings": true}}
 			pages := map[string][]byte{}
 			for _, name := range []string{"index.html", "settings.html", "clients.html", "inbounds.html"} {
 				var out bytes.Buffer

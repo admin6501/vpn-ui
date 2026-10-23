@@ -205,6 +205,12 @@ func (s *Server) initRouter() (*gin.Engine, error) {
 			logger.Error("sub: no templates available (embedded parse and disk load failed)", err, derr)
 		}
 	}
+	if engine.HTMLRender != nil {
+		engine.HTMLRender, err = locale.NewHTMLRender(engine.HTMLRender)
+		if err != nil {
+			return nil, err
+		}
+	}
 
 	// Assets: use disk if present, fallback to embedded
 	// Serve under both root (/assets) and under the subscription path prefix (LinksPath + "assets")

@@ -9,7 +9,7 @@
     /* antd-vue 1.7.8 gives .ant-form-item-label overflow:hidden and
        white-space:nowrap, so a label wider than its 8-of-24 column is not
        wrapped, it is cut off and its tail sits under the input beside it
-       ("IPsec Pre-Shared Key" on the L2TP tunnel form is the one that was
+       ("{{ i18n "pages.interfaceExtra.ipsecPreSharedKey" }}" on the L2TP tunnel form is the one that was
        reported). Letting every label in this form wrap fixes the whole class of
        them rather than one string, and it is what custom.css already does for
        the narrow-screen layout. The padding keeps a one-line label lined up with
@@ -537,7 +537,7 @@
                     return;
                 }
                 if (typeof parsed !== 'object' || Array.isArray(parsed)) {
-                    this.xhttpObjectErr = 'XHTTP Object must be a JSON object';
+                    this.xhttpObjectErr = '{{ i18n "pages.interfaceExtra.xhttpObjectMustBeAJSONObject" }}';
                     return;
                 }
                 stream.xhttp = xHTTPStreamSettings.fromJson(parsed);
@@ -557,10 +557,10 @@
                     this.outModal.outbound = newOutbound;
                     this.outModal.toggleJson(true);
                     this.outModal.check();
-                    this.$message.success('Link imported successfully...');      
+                    this.$message.success('{{ i18n "pages.interfaceExtra.linkImportedSuccessfully" }}');
                     outModal.link = '';
                 } else {
-                    this.$message.error('Wrong Link!');
+                    this.$message.error('{{ i18n "pages.interfaceExtra.wrongLink" }}');
                     outModal.link = '';
                 }
             },

@@ -1,52 +1,19 @@
-# Per-user speed limiting
+# Speed and reset behavior
 
-> **Document status:** the current-source summary below applies to `admin6501/vpn-ui`. The
-> historical record preserves earlier upstream proposals and dated findings. Its “today”, “not
-> built”, “verified live” and version references describe that recorded stage, not the current
-> release or newly performed tests.
+## v1.0.0: current behavior
 
-## Current source summary
+Client overrides inherit when empty; zero means unlimited per direction. Storage uses 1024-byte KB/s; MB/s uses 1024-based bytes and Mbps uses decimal bits. Therefore 3 MB/s = 24 Mib/s, approximately 25.17 Mbps. Shared account pacing spans memberships; threshold changes use current-period usage, including central node snapshots. Traffic reset clears current usage without extending expiry or enabling deliberately disabled accounts. Renew additionally restarts the recorded package duration and enables the account; lifetime and node cursors remain.
 
-Speed limiting is implemented and policy is shared by account identity across memberships. The
-historical statement that no speed limiter exists is obsolete. Current I/O keeps the restored native
-TCP copy path; this fork does not add a blanket 24-hour idle timeout. Measure live throughput
-separately from configuration generation.
-
-Download and upload have independent shared account buckets, with KB/s, MB/s and Mbps
-selectors. A client override replaces its inbound default; the most restrictive non-zero
-resolved rate across enabled memberships wins. TCP and UDP use the dispatcher pacing paths,
-including VLESS/Vision, VMess, Trojan, Shadowsocks, Hysteria2, TUIC, AnyTLS, Naive and native
-WireGuard. Native WireGuard is identified by inbound tag and assigned tunnel host
-addresses, so overlapping pools on different listeners cannot select another account.
-
-Accounts configured with a future consumption threshold keep unlimited buckets before the
-threshold. Crossing it, resetting period traffic and crossing it again re-rate the same live
-buckets. New bucket activation needs one debounced Xray admission refresh so already-open
-unlimited sessions cannot bypass it; this can briefly reconnect Xray clients. Ordinary rate
-changes and threshold crossings do not restart the core. Unconfigured unlimited accounts
-keep the existing native copy path. Token buckets permit a one-second initial burst (4 KB minimum) and measure
-payload bytes rather than encrypted wire overhead.
-
-On nodes, speed thresholds use central period usage from authenticated snapshots. Cumulative
-node report meters remain intact, so a central reset cannot reset billing cursors. Older panels
-without the optional usage field retain the previous local usage fallback.
-
-Traffic reset projects all authorized memberships, restores quota admission and requests a
-runtime admission refresh even if the cached static Xray configuration is unchanged after an
-API user removal. Reset does not extend an expired deadline, enable manually disabled
-memberships/accounts or unblock a representative. Period and membership usage are cleared;
-lifetime totals, credentials, subscription tokens and ownership remain unchanged.
+Use the [panel guide](docs/PANEL-GUIDE.md), [README](README.md), [node guide](docs/NODES.md) and [renewal reference](docs/CLIENT-RENEWAL.md) for current operation.
 
 **Implementation references:** [web/service/speedlimit.go](web/service/speedlimit.go) ·
 [third_party/Xray-core/common/speedlimit/speedlimit.go](third_party/Xray-core/common/speedlimit/speedlimit.go)
 · [third_party/Xray-core/common/speedlimit/io.go](third_party/Xray-core/common/speedlimit/io.go)
 
-For installation and prerequisites, use [the README](README.md) and
-[offline guide](docs/OFFLINE-INSTALL.md). See [the documentation index](docs/INDEX.md) for
-operational guides. Release automation checks focused cases; complete protocol/VM E2E validation
-requires a separately configured [test host](test_unit/README.md).
+<details>
+<summary>Historical design and development record</summary>
 
-## Historical design record
+The material below preserves upstream proposals, earlier defaults and dated test results. It is not current installation guidance or evidence that its live tests were rerun for this release.
 
 Question asked: is it possible to limit a user's speed (e.g. 5 Mbit down / 2 Mbit up per account)
 across our protocols?
@@ -646,3 +613,5 @@ The gaps to close:
   cost, but real.
 - Watch the documented submodule trap: `build.sh`'s `git submodule update` can silently rewind the
   fork and delete patches from an otherwise "successful" build.
+
+</details>

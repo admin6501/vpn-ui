@@ -24,13 +24,13 @@
         >
       </a-checkbox-group>
     </a-form-item>
-    <a-form-item label="Metadata Only">
+    <a-form-item label="{{ i18n "pages.interface.metadataOnly" }}">
       <a-switch v-model="inbound.sniffing.metadataOnly"></a-switch>
     </a-form-item>
-    <a-form-item label="Route Only">
+    <a-form-item label="{{ i18n "pages.interface.routeOnly" }}">
       <a-switch v-model="inbound.sniffing.routeOnly"></a-switch>
     </a-form-item>
-    <a-form-item label="IPs Excluded">
+    <a-form-item label="{{ i18n "pages.interface.ipsExcluded" }}">
       <a-select
         mode="tags"
         v-model="inbound.sniffing.ipsExcluded"
@@ -39,7 +39,7 @@
         placeholder="IP/CIDR/geoip:*/ext:*"
       ></a-select>
     </a-form-item>
-    <a-form-item label="Domains Excluded">
+    <a-form-item label="{{ i18n "pages.interface.domainsExcluded" }}">
       <a-select
         mode="tags"
         v-model="inbound.sniffing.domainsExcluded"

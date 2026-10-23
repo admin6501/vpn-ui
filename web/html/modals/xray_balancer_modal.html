@@ -1,5 +1,5 @@
 {{define "modals/balancerModal"}}
-<a-modal 
+<a-modal
     id="balancer-modal"
     v-model="balancerModal.visible"
     :title="balancerModal.title"
@@ -19,10 +19,10 @@
         </a-form-item>
         <a-form-item label='{{ i18n "pages.xray.balancer.balancerStrategy" }}'>
             <a-select v-model="balancerModal.balancer.strategy" :dropdown-class-name="themeSwitcher.currentTheme">
-                <a-select-option value="random">Random</a-select-option>
-                <a-select-option value="roundRobin">Round Robin</a-select-option>
-                <a-select-option value="leastLoad">Least Load</a-select-option>
-                <a-select-option value="leastPing">Least Ping</a-select-option>
+                <a-select-option value="random">{{ i18n "pages.interface.random" }}</a-select-option>
+                <a-select-option value="roundRobin">{{ i18n "pages.interface.roundRobin" }}</a-select-option>
+                <a-select-option value="leastLoad">{{ i18n "pages.interface.leastLoad" }}</a-select-option>
+                <a-select-option value="leastPing">{{ i18n "pages.interface.leastPing" }}</a-select-option>
             </a-select>
         </a-form-item>
         <a-form-item label='{{ i18n "pages.xray.balancer.balancerSelectors" }}' has-feedback
@@ -32,7 +32,7 @@
                 <a-select-option v-for="tag in balancerModal.outboundTags" :value="tag">[[ tag ]]</a-select-option>
             </a-select>
         </a-form-item>
-        <a-form-item label="Fallback">
+        <a-form-item label="{{ i18n "pages.interface.fallback" }}">
             <a-select v-model="balancerModal.balancer.fallbackTag" clearable
                 :dropdown-class-name="themeSwitcher.currentTheme">
                 <a-select-option v-for="tag in [ '', ...balancerModal.outboundTags]" :value="tag">[[ tag ]]</a-select-option>

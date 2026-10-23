@@ -1,5 +1,11 @@
 # vpn-ui test unit
 
+## First stable release verification
+
+The [release workflow](../.github/workflows/release.yml) builds amd64 and arm64 natively and runs accounting, renewal/permission, node data-path, TLS, offline installer/update and browser regressions. Translation checks render every catalog message, preserve variables/configuration literals, resolve regional dialects and exercise concurrent panel/subscription languages. Mocked Telegram commands run locally; they do not send real chat messages. Browser checks cover all thirteen supported locales.
+
+Documentation/link coverage is checked by `python3 test_unit/documentation_test.py`; browser language selection by `node test_unit/language_selection_test.cjs`. The Incus matrix below is a separate privileged live-protocol harness, not evidence that all entries ran in CI. Do not substitute dated results for a current deployment test.
+
 Automated end-to-end test harness for the vpn-ui panel across a matrix of Linux distros, driven over
 the panel's real HTTP API and exercised with live VPN clients. Backend: **incus VMs**, **Python**,
 **bash**.

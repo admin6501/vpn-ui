@@ -1,5 +1,7 @@
 # How the VPN backends interact with Xray-core
 
+**v1.0.0 scope:** these diagrams show VPN data/control paths. Account/group authority and per-request localization are described in [architecture](docs/ARCHITECTURE.md); dedicated location polling, counters and lease behavior are in [Nodes](docs/NODES.md). Read the [panel guide](docs/PANEL-GUIDE.md) for current operation. The diagrams do not certify live connectivity on every host.
+
 The VPN backends don't route traffic themselves. They only **terminate the tunnel** (or, for the
 relays, the client's connection) and hand every client's packets to **Xray-core**, which does the
 per-account routing, limits and egress. The bridge is an nftables **TPROXY/REDIRECT** hop into a

@@ -32,7 +32,7 @@
                 <template slot="title">
                     <span>{{ i18n "reset" }}</span>
                 </template>
-                Username
+                {{ i18n "username" }}
                 <a-icon
                     @click="client.id = RandomUtil.randomLowerAndNum(8)"
                     type="sync"
@@ -55,15 +55,10 @@
         <template slot="label">
             <a-tooltip>
                 <template slot="title">
-                    <span>The username half of naive's Basic credential. Leave it empty
-                        to keep using the email, which is what accounts created before
-                        this field do. It must be unique within this inbound and cannot
-                        contain a colon.
-                        <b>Setting one on an existing account revokes its email:</b> the
-                        account then logs in only under this username, so every device
-                        already using it gets 407 until you hand out the new link.</span>
+                    <span>{{ i18n "pages.interface.theUsernameHalfOfNaiveSBasicCredential" }}
+                        <b>{{ i18n "pages.interface.settingOneOnAnExistingAccountRevokesIts" }}</b> {{ i18n "pages.interface.theAccountThenLogsInOnlyUnderThis" }}</span>
                 </template>
-                Username
+                {{ i18n "username" }}
                 <a-icon
                     @click="client.username = RandomUtil.randomLowerAndNum(8)"
                     type="sync"
@@ -83,7 +78,7 @@
                 <template slot="title">
                     <span>{{ i18n "reset" }}</span>
                 </template>
-                Secret
+                {{ i18n "pages.clients.secret" }}
                 <a-icon
                     @click="client.secret = RandomUtil.randomSeq(32, { type: 'hex' })"
                     type="sync"
@@ -122,7 +117,7 @@
                 <template slot="title">
                     <span>{{ i18n "reset" }}</span>
                 </template>
-                Auth Password
+                {{ i18n "pages.interface.authPassword" }}
                 <a-icon
                     @click="client.auth = RandomUtil.randomSeq(10)"
                     type="sync"
@@ -169,7 +164,7 @@
                 <template slot="title">
                     <span>{{ i18n "pages.inbounds.subscriptionDesc" }}</span>
                 </template>
-                Subscription
+                {{ i18n "pages.settings.ssl.tagSub" }}
                 <a-icon
                     @click="client.subId = RandomUtil.randomLowerAndNum(16)"
                     type="sync"
@@ -184,7 +179,7 @@
                 <template slot="title">
                     <span>{{ i18n "pages.inbounds.telegramDesc" }}</span>
                 </template>
-                Telegram ChatID
+                {{ i18n "pages.interface.telegramChatID" }}
                 <a-icon type="question-circle"></a-icon>
             </a-tooltip>
         </template>
@@ -240,7 +235,7 @@
                 id="clientIPs"
                 readonly
                 @click="getDBClientIps(client.email)"
-                placeholder="Click To Get IPs"
+                placeholder="{{ i18n "pages.interface.clickToGetIPs" }}"
                 :auto-size="{ minRows: 5, maxRows: 10 }"
             >
             </a-textarea>
@@ -345,7 +340,7 @@
             value="client._expiryTime"
             v-model="client._expiryTime"
         ></a-persian-datepicker>
-        <a-tag color="red" v-if="isEdit && isExpiry">Expired</a-tag>
+        <a-tag color="red" v-if="isEdit && isExpiry">{{ i18n "pages.settings.ssl.expired" }}</a-tag>
     </a-form-item>
     <a-form-item v-if="client.expiryTime != 0">
         <template slot="label">
@@ -377,8 +372,7 @@
             <template slot="label">
                 <a-tooltip>
                     <template slot="title">
-                        The public IP of this customer's router (its WAN address). Blank =
-                        dynamic, served by the shared tunnel.
+                        {{ i18n "pages.interface.thePublicIPOfThisCustomerSRouter" }}
                     </template>
                     Peer [[ pi ]] IP
                     <a-icon type="question-circle"></a-icon>
@@ -387,12 +381,12 @@
             <a-input
                 :value="grePeerField(client, pi - 1, 'peerIp')"
                 @change="e => greSetPeerField(client, pi - 1, 'peerIp', e.target.value)"
-                placeholder="blank = dynamic address"
+                placeholder="{{ i18n "pages.interface.blankDynamicAddress" }}"
             ></a-input>
             <a-input
                 :value="grePeerField(client, pi - 1, 'remark')"
                 @change="e => greSetPeerField(client, pi - 1, 'remark', e.target.value)"
-                placeholder="label (optional), e.g. branch office"
+                placeholder="{{ i18n "pages.interface.labelOptionalEGBranchOffice" }}"
                 :style="{ marginTop: '4px' }"
             ></a-input>
         </a-form-item>
@@ -404,18 +398,15 @@
          however they are stored. External Proxy is genuinely per account: it only
          picks which relay endpoint this account's links advertise. -->
     <template v-if="inbound.protocol === Protocols.MTPROTO">
-        <div class="bo-if-sub">MTProto Proxy</div>
+        <div class="bo-if-sub">{{ i18n "pages.interface.mtprotoProxy" }}</div>
 
         <a-form-item>
             <template slot="label">
                 <a-tooltip>
                     <template slot="title">
-                        Hand out links pointing at a relay/CDN host:port instead of this
-                        server's own address. Affects this account's links only; the proxy
-                        itself is unchanged. Set here it REPLACES the inbound's own
-                        External Proxy for this account; leave it off to use that.
+                        {{ i18n "pages.interface.handOutLinksPointingAtARelayCDN" }}
                     </template>
-                    External Proxy
+                    {{ i18n "pages.inboundForm.externalProxy" }}
                     <a-icon type="question-circle"></a-icon>
                 </a-tooltip>
             </template>

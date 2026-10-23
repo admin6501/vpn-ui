@@ -5,7 +5,7 @@ function template(file) {
  const s=fs.readFileSync(file,'utf8');
  const start=s.indexOf('<script>');
  const markup=(start>=0?s.slice(0,start):s).replace(/{{define[^}]*}}|{{end}}/g,'').replace(/{{\s*i18n\s+"([^"]+)"\s*}}/g,'$1');
- const script=start>=0?s.slice(start+8,s.lastIndexOf('</script>')):'';
+ const script=start>=0?s.slice(start+8,s.lastIndexOf('</script>')).replace(/{{\s*i18n\s+"([^"]+)"\s*}}/g,'$1'):'';
  return {markup,script};
 }
 (async()=>{

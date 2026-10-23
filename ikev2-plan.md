@@ -1,26 +1,18 @@
-# IKEv2 — research and implementation plan
+# IKEv2 and shared IPsec
 
-> **Document status:** the current-source summary below applies to `admin6501/vpn-ui`. The
-> historical record preserves earlier upstream proposals and dated findings. Its “today”, “not
-> built”, “verified live” and version references describe that recorded stage, not the current
-> release or newly performed tests.
+## v1.0.0: current behavior
 
-## Current source summary
+IPsec is a selectable shared engine and a required dependency for IKEv2/L2TP. Choose the authentication mode offered by the current form and use its exported identities/certificates. Do not overwrite the shared strongSwan configuration with a separate generic VPN script. Removal retains dependencies while another installed core needs them. Verify real host UDP/IPsec reachability independently of a running process.
 
-IKEv2 is implemented with bundled strongSwan integration and protocol-specific
-authentication/session reconciliation. Certificates or PSKs and the necessary host IPsec support
-must be configured for the chosen authentication mode; the historical “nothing built yet” status no
-longer describes this source.
+Use the [panel guide](docs/PANEL-GUIDE.md), [README](README.md), [node guide](docs/NODES.md) and [renewal reference](docs/CLIENT-RENEWAL.md) for current operation.
 
 **Implementation references:** [web/service/ikev2.go](web/service/ikev2.go) ·
 [web/service/rbridge/rbridge.go](web/service/rbridge/rbridge.go)
 
-For installation and prerequisites, use [the README](README.md) and
-[offline guide](docs/OFFLINE-INSTALL.md). See [the documentation index](docs/INDEX.md) for
-operational guides. Release automation checks focused cases; complete protocol/VM E2E validation
-requires a separately configured [test host](test_unit/README.md).
+<details>
+<summary>Historical design and development record</summary>
 
-## Historical design record
+The material below preserves upstream proposals, earlier defaults and dated test results. It is not current installation guidance or evidence that its live tests were rerun for this release.
 
 Adding **IKEv2/IPsec** as a 7th VPN protocol. This document is the research record and proposed
 implementation contract, produced from a 6-agent recon (codebase + web). Mirrors the style of
@@ -384,3 +376,5 @@ leaf `--san <host> --flag serverAuth` (RSA, SAN mandatory, serverAuth EKU).
 - Unit: `CGO_ENABLED=1 go test ./web/... -count=1`
 - Full bundled binary: `./build.sh` (rebuilds daemons incl. strongswan bundle)
 - Daemon bundle alone (docker/podman): `build/backend/build.sh amd64`
+
+</details>

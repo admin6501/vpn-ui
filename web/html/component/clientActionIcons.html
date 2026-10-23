@@ -15,23 +15,23 @@
       <a-icon class="normal-icon" type="qrcode" v-if="record.hasLink()" @click="showQrcode(record.id,client);"></a-icon>
     </a-tooltip>
     <a-tooltip>
-      <template slot="title">WireGuard Config</template>
+      <template slot="title">{{ i18n "pages.interface.wireguardConfig" }}</template>
       <a-icon class="normal-icon" type="qrcode" v-if="record.protocol === Protocols.WGC" @click="showWgcConfig(record.id,client);"></a-icon>
     </a-tooltip>
     <a-tooltip>
-      <template slot="title">WireGuard Config</template>
+      <template slot="title">{{ i18n "pages.interface.wireguardConfig" }}</template>
       <a-icon class="normal-icon" type="qrcode" v-if="record.protocol === Protocols.WIREGUARD" @click="showWireguardXrayConfig(record.id,client);"></a-icon>
     </a-tooltip>
     <a-tooltip>
-      <template slot="title">AmneziaWG Config</template>
+      <template slot="title">{{ i18n "pages.interface.amneziawgConfig" }}</template>
       <a-icon class="normal-icon" type="qrcode" v-if="record.protocol === Protocols.AWG" @click="showAwgConfig(record.id,client);"></a-icon>
     </a-tooltip>
     <a-tooltip>
-      <template slot="title">GRE Setup</template>
+      <template slot="title">{{ i18n "pages.interface.greSetup" }}</template>
       <a-icon class="normal-icon" type="setting" v-if="record.protocol === Protocols.GRE" @click="showGreConfig(record.id,client);"></a-icon>
     </a-tooltip>
     <a-tooltip>
-      <template slot="title">SSH Config</template>
+      <template slot="title">{{ i18n "pages.interface.sshConfig" }}</template>
       <a-icon class="normal-icon" type="qrcode" v-if="record.protocol === Protocols.SSH" @click="showSshConfig(record.id,client);"></a-icon>
     </a-tooltip>
     <a-tooltip>

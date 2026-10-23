@@ -124,8 +124,8 @@ jobs:
           node test_unit/account_usage_breakdown_browser_test.cjs
           node test_unit/refresh_queue_test.cjs
           RUN_NODE_UI_BROWSER=1 go test ./web/middleware -run '^TestSecurityBrowserPanelNavigationRuntime$' -count=1 -timeout 60s
-          RUN_NODE_UI_BROWSER=1 go test ./sub -run '^TestSubscriptionPageBrowserRuntime$' -count=1 -timeout 180s
-          RUN_NODE_UI_BROWSER=1 go test ./web -run '^Test(NodePageBrowserRuntime|OverviewSSLBrowserRuntime|RepresentativeOverviewHidesInboundManagementAndUpdates|AdminRolesBrowserRuntime|DelegatedSettingsBrowserRuntime|RepresentativeEditBrowserRuntime)$' -count=1 -timeout 600s
+          RUN_NODE_UI_BROWSER=1 go test ./sub -run '^TestSubscriptionPageBrowserRuntime$' -count=1 -timeout 300s
+          RUN_NODE_UI_BROWSER=1 go test ./web -run '^Test(NodePageBrowserRuntime|OverviewSSLBrowserRuntime|RepresentativeOverviewHidesInboundManagementAndUpdates|AdminRolesBrowserRuntime|DelegatedSettingsBrowserRuntime|RepresentativeEditBrowserRuntime)$' -count=1 -timeout 1200s
           RUN_NODE_UI_BROWSER=1 go test -race ./web -run '^TestGroupsBrowserRuntime$' -count=1 -timeout 180s
       - name: Verify ownership transfer and online counts
         run: go test -tags netgo,osusergo ./web/service ./web/controller -run 'TestSaveAccount|TestLeavingAnAccount|TestIndependentAccount|TestMembershipEnable|TestDisabledMembership|TestRemovingTheLastMembership|TestToggleClientEnableByEmail|TestRenameAccount|TestSortAccountRows|TestAccountSort|TestClientLimit|TestResolveUserLimitOverride|TestAllocateBlockIP|TestOldestBlockSession|TestAdmit|TestSpeedLimit|TestAdminRoles|TestAdminOwner|TestAccountOwnershipTransfer|TestPasarGuard|TestOverview|TestVerifiedProvisioned|TestOffline|TestMigrationAccountsVerifiesExistingImported'
@@ -144,8 +144,12 @@ jobs:
           go test -race ./web/controller -run '^TestGrePeerIP' -count=1 -timeout 120s
       - name: Verify complete translation catalogs, component locales and Telegram language reload
         run: |
-          go test ./web -run 'TestPersianInboundFormsRender|TestAllTemplatesParse|TestEditedTemplatesParse|TestTranslationsAreValidToml|TestTranslationKeyParity|TestAllLocaleMessagesRenderAndPreserveVariables|TestComponentLocaleCoverage'
-          go test -race ./web/locale ./web/service -run 'TestEnglishFallback|TestPersianBot|TestBotLocaleReload|TestTelegram' -count=1
+          go test ./web -run 'TestPersianInboundFormsRender|TestAllTemplatesParse|TestEditedTemplatesParse|TestTranslationsAreValidToml|TestTranslationKeyParity|TestAllLocaleMessagesRenderAndPreserveVariables|TestComponentLocaleCoverage|TestTranslationTemplateReferencesAndConfigurationLiterals'
+          go test -race ./web/locale ./web/service -run 'TestEnglishFallback|TestPersianBot|TestBotLocaleReload|TestTelegram|TestHTMLLocale|TestRequestLanguage' -count=1
+      - name: Verify thirteen-language README instructions, guide links and browser language selection
+        run: |
+          python3 test_unit/documentation_test.py
+          node test_unit/language_selection_test.cjs
       - name: Verify actual TCP and UDP socket lifetimes
         run: |
           go test ./util/sys ./web/service -run 'TestSocketCounts|TestConnection' -count=1

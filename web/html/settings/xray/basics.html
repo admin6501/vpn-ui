@@ -140,7 +140,7 @@
                     :dropdown-class-name="themeSwitcher.currentTheme"
                     :style="{ width: '100%' }">
                     <a-select-option value>
-                        <span>Empty</span>
+                        <span>{{ i18n "pages.interface.empty" }}</span>
                     </a-select-option>
                     <a-select-option v-for="s in log.access" :value="s">
                         <span>[[ s ]]</span>
@@ -157,7 +157,7 @@
                     :dropdown-class-name="themeSwitcher.currentTheme"
                     :style="{ width: '100%' }">
                     <a-select-option value>
-                        <span>Empty</span>
+                        <span>{{ i18n "pages.interface.empty" }}</span>
                     </a-select-option>
                     <a-select-option v-for="s in log.error" :value="s">
                         <span>[[ s ]]</span>
@@ -174,7 +174,7 @@
                     :dropdown-class-name="themeSwitcher.currentTheme"
                     :style="{ width: '100%' }">
                     <a-select-option value>
-                        <span>Empty</span>
+                        <span>{{ i18n "pages.interface.empty" }}</span>
                     </a-select-option>
                     <a-select-option v-for="s in log.maskAddress" :value="s">
                         <span>[[ s ]]</span>

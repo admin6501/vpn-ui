@@ -1,26 +1,19 @@
-# OpenConnect (ocserv) — implementation plan & progress
+# OpenConnect
 
-> **Document status:** the current-source summary below applies to `admin6501/vpn-ui`. The
-> historical record preserves earlier upstream proposals and dated findings. Its “today”, “not
-> built”, “verified live” and version references describe that recorded stage, not the current
-> release or newly performed tests.
+## v1.0.0: current behavior
 
-## Current source summary
+Install ocserv through Cores, configure the inbound certificate/endpoint and use the client account credentials. Embedded RADIUS supplies supported authentication/accounting; it is not an external daemon installation. Host tun/network privileges and reachable VPN ports are required. Check both runtime logs and measured upload/download for the deployed client mode.
 
-OpenConnect support is implemented through the bundled ocserv backend. TLS configuration and the
-host TUN/routing prerequisites are still needed. The old phase checklist is an upstream development
-record, not the current installation sequence.
+Use the [panel guide](docs/PANEL-GUIDE.md), [README](README.md), [node guide](docs/NODES.md) and [renewal reference](docs/CLIENT-RENEWAL.md) for current operation.
 
 **Implementation references:** [web/service/openconnect.go](web/service/openconnect.go) ·
 [web/service/radius.go](web/service/radius.go) ·
 [web/service/corecatalog.go](web/service/corecatalog.go)
 
-For installation and prerequisites, use [the README](README.md) and
-[offline guide](docs/OFFLINE-INSTALL.md). See [the documentation index](docs/INDEX.md) for
-operational guides. Release automation checks focused cases; complete protocol/VM E2E validation
-requires a separately configured [test host](test_unit/README.md).
+<details>
+<summary>Historical design and development record</summary>
 
-## Historical design record
+The material below preserves upstream proposals, earlier defaults and dated test results. It is not current installation guidance or evidence that its live tests were rerun for this release.
 
 Branch: `feat/openconnect-ocserv` (off `main`). Self-contained record so work can resume after a
 reboot without `/resume`. Mirrors the auto-memory `openconnect-ocserv-plan.md`.
@@ -166,3 +159,5 @@ K-limit reject+evict → accounting. Delete test inbound after.
 - Daemon bundle (needs docker/podman): `build/backend/build.sh amd64` (or run
   `build/backend/ocserv-bundle.sh` in alpine:3.22 with `-v vol:/usr/local -v out:/out`).
 - All 5 commits so far are build + vet + web/service + i18n-parity green.
+
+</details>

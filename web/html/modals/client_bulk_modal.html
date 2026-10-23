@@ -59,11 +59,11 @@
           <label>{{ i18n "pages.client.method" }}</label>
           <a-select v-model="clientsBulkModal.emailMethod" :style="{ width: '100%' }"
             :dropdown-class-name="themeSwitcher.currentTheme">
-            <a-select-option :value="0">Random</a-select-option>
-            <a-select-option :value="1">Random+Prefix</a-select-option>
-            <a-select-option :value="2">Random+Prefix+Num</a-select-option>
-            <a-select-option :value="3">Random+Prefix+Num+Postfix</a-select-option>
-            <a-select-option :value="4">Prefix+Num+Postfix</a-select-option>
+            <a-select-option :value="0">{{ i18n "pages.interface.random" }}</a-select-option>
+            <a-select-option :value="1">{{ i18n "pages.interface.randomPrefix" }}</a-select-option>
+            <a-select-option :value="2">{{ i18n "pages.interface.randomPrefixNum" }}</a-select-option>
+            <a-select-option :value="3">{{ i18n "pages.interface.randomPrefixNumPostfix" }}</a-select-option>
+            <a-select-option :value="4">{{ i18n "pages.interface.prefixNumPostfix" }}</a-select-option>
           </a-select>
         </div>
 

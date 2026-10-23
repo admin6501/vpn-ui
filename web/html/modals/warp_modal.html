@@ -8,28 +8,28 @@
     <template v-else>
         <table :style="{ margin: '5px 0', width: '100%' }">
             <tr class="client-table-odd-row">
-                <td>Access Token</td>
+                <td>{{ i18n "pages.xray.outbound.accessToken" }}</td>
                 <td>[[ warpModal.warpData.access_token ]]</td>
             </tr>
             <tr>
-                <td>Device ID</td>
+                <td>{{ i18n "pages.interface.deviceID" }}</td>
                 <td>[[ warpModal.warpData.device_id ]]</td>
             </tr>
             <tr class="client-table-odd-row">
-                <td>License Key</td>
+                <td>{{ i18n "pages.interface.licenseKey" }}</td>
                 <td>[[ warpModal.warpData.license_key ]]</td>
             </tr>
             <tr>
-                <td>Private Key</td>
+                <td>{{ i18n "pages.inbounds.privatekey" }}</td>
                 <td>[[ warpModal.warpData.private_key ]]</td>
             </tr>
         </table>
         <a-button @click="delConfig" :loading="warpModal.confirmLoading" type="danger">{{ i18n "delete" }}</a-button>
         <a-divider :style="{ margin: '0' }">{{ i18n "pages.xray.outbound.settings" }}</a-divider>
         <a-collapse :style="{ margin: '10px 0' }">
-            <a-collapse-panel header='WARP/WARP+ License Key'>
+            <a-collapse-panel header='{{ i18n "pages.interfaceExtra.warpWARPLicenseKey" }}'>
                 <a-form :colon="false" :label-col="{ md: {span:6} }" :wrapper-col="{ md: {span:14} }">
-                    <a-form-item label="Key">
+                    <a-form-item label="{{ i18n "pages.interface.key" }}">
                         <a-input v-model="warpPlus"></a-input>
                         <a-button @click="updateLicense(warpPlus)" :disabled="warpPlus.length<26"
                             :loading="warpModal.confirmLoading">{{ i18n "update" }}</a-button>
@@ -43,36 +43,36 @@
         <template v-if="!ObjectUtil.isEmpty(warpModal.warpConfig)">
             <table :style="{ width: '100%' }">
                 <tr class="client-table-odd-row">
-                    <td>Device Name</td>
+                    <td>{{ i18n "pages.interface.deviceName" }}</td>
                     <td>[[ warpModal.warpConfig.name ]]</td>
                 </tr>
                 <tr>
-                    <td>Device Model</td>
+                    <td>{{ i18n "pages.interface.deviceModel" }}</td>
                     <td>[[ warpModal.warpConfig.model ]]</td>
                 </tr>
                 <tr class="client-table-odd-row">
-                    <td>Device Enabled</td>
+                    <td>{{ i18n "pages.interface.deviceEnabled" }}</td>
                     <td>[[ warpModal.warpConfig.enabled ]]</td>
                 </tr>
                 <template v-if="!ObjectUtil.isEmpty(warpModal.warpConfig.account)">
                     <tr>
-                        <td>Account Type</td>
+                        <td>{{ i18n "pages.interface.accountType" }}</td>
                         <td>[[ warpModal.warpConfig.account.account_type ]]</td>
                     </tr>
                     <tr class="client-table-odd-row">
-                        <td>Role</td>
+                        <td>{{ i18n "pages.interface.role" }}</td>
                         <td>[[ warpModal.warpConfig.account.role ]]</td>
                     </tr>
                     <tr>
-                        <td>WARP+ Data</td>
+                        <td>{{ i18n "pages.interface.warpData" }}</td>
                         <td>[[ SizeFormatter.sizeFormat(warpModal.warpConfig.account.premium_data) ]]</td>
                     </tr>
                     <tr class="client-table-odd-row">
-                        <td>Quota</td>
+                        <td>{{ i18n "pages.clients.quota" }}</td>
                         <td>[[ SizeFormatter.sizeFormat(warpModal.warpConfig.account.quota) ]]</td>
                     </tr>
                     <tr v-if="!ObjectUtil.isEmpty(warpModal.warpConfig.account.usage)">
-                        <td>Usage</td>
+                        <td>{{ i18n "usage" }}</td>
                         <td>[[ SizeFormatter.sizeFormat(warpModal.warpConfig.account.usage) ]]</td>
                     </tr>
                 </template>

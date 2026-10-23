@@ -20,7 +20,7 @@ type telegramTestLanguage string
 
 func (lang telegramTestLanguage) GetTgLang() (string, error) { return string(lang), nil }
 
-func TestTelegramPersianCommandsRespondAfterLanguageReload(t *testing.T) {
+func TestTelegramAllLanguagesRespondAfterLanguageReload(t *testing.T) {
 	messages := make(chan string, 8)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var data struct {
@@ -45,7 +45,8 @@ func TestTelegramPersianCommandsRespondAfterLanguageReload(t *testing.T) {
 	tgBotMutex.Unlock()
 	defer func() { tgBotMutex.Lock(); bot = previous; isRunning = wasRunning; tgBotMutex.Unlock() }()
 	var service Tgbot
-	for _, lang := range []telegramTestLanguage{"en-US", "fa-IR", "en-US", "fa-IR"} {
+	for _, code := range append(locale.LanguageCodes(), "en-US", "fa-IR") {
+		lang := telegramTestLanguage(code)
 		if err := locale.InitLocalizer(os.DirFS(".."), lang); err != nil {
 			t.Fatal(err)
 		}

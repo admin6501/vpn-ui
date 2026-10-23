@@ -32,7 +32,7 @@
             <!-- Hardcoded English, like the section names and the per-protocol forms:
                  an en_US-only i18n key blanks the label in the other 12 locales
                  (web/i18n_toml_test.go enforces that with a parity ratchet). -->
-            <span class="bo-if-why ok" v-else-if="isEdit">Nothing is blocking this.</span>
+            <span class="bo-if-why ok" v-else-if="isEdit">{{ i18n "pages.interface.nothingIsBlockingThis" }}</span>
             <span class="bo-if-btns">
                 <a-button @click="inModal.close()">{{ i18n "close" }}</a-button>
                 <a-button
@@ -442,7 +442,7 @@
                 return (Number.isInteger(p) && p >= 1 && p <= 65535) ? "" : "error";
             },
             portHelp() {
-                return this.portValidateStatus === "error" ? "Port must be a whole number between 1 and 65535" : "";
+                return this.portValidateStatus === "error" ? "{{ i18n "pages.interfaceExtra.portMustBeAWholeNumberBetween1" }}" : "";
             },
             tcpPortValidateStatus() {
                 const ib = inModal.inbound;
@@ -451,7 +451,7 @@
                 return (Number.isInteger(p) && p >= 1 && p <= 65535) ? "" : "error";
             },
             tcpPortHelp() {
-                return this.tcpPortValidateStatus === "error" ? "Port must be a whole number between 1 and 65535" : "";
+                return this.tcpPortValidateStatus === "error" ? "{{ i18n "pages.interfaceExtra.portMustBeAWholeNumberBetween1" }}" : "";
             },
             // Which sections the rail offers for this protocol, grouped. A section is
             // dropped when its pane rendered no fields (measureSections found 0), so
@@ -770,7 +770,7 @@
                 const badNet = net !== "" && net !== "tcp";
                 const badSec = sec !== "tls";
                 if (!badNet && !badSec) return "";
-                const lead = "Clash and mihomo clients will not receive this inbound";
+                const lead = "{{ i18n "pages.interfaceExtra.clashAndMihomoClientsWillNotReceiveThis" }}";
                 // ORDER IS LOAD-BEARING. The transport is settled before REALITY is
                 // named, so ws+reality reports the transport (the reason that actually
                 // bites) instead of "they do not support AnyTLS over REALITY", which is
@@ -1180,7 +1180,7 @@
                     settings.ciphers[0] === cipher
                 ) {
                     this.$message.warning(
-                        "At least one cipher must be selected",
+                        "{{ i18n "pages.interfaceExtra.atLeastOneCipherMustBeSelected" }}",
                     );
                     return;
                 }
@@ -1236,9 +1236,9 @@
                 // The native Windows SSTP client handles self-signed certs poorly,
                 // so warn before generating one (unlike OpenConnect/ocserv).
                 this.$confirm({
-                    title: "Self-signed certificate — Windows SSTP caveat",
-                    content: "The built-in Windows SSTP client rejects self-signed certificates unless you import the CA into the machine's Trusted Root Certification Authorities store AND set NoCertRevocationCheck=1 in the registry. There is no 'ignore certificate' option in the native Windows client. For real users, prefer a CA-signed certificate bound to a hostname. Generate a self-signed certificate anyway?",
-                    okText: "Generate anyway",
+                    title: "{{ i18n "pages.interfaceExtra.selfSignedCertificateWindowsSSTPCaveat" }}",
+                    content: '{{ i18n "pages.interfaceExtra.theBuiltInWindowsSSTPClientRejectsSelf" }}',
+                    okText: "{{ i18n "pages.interfaceExtra.generateAnyway" }}",
                     cancelText: '{{ i18n "cancel" }}',
                     class: themeSwitcher.currentTheme,
                     onOk: async () => {
@@ -1300,9 +1300,9 @@
                 // server certs unless the CA is imported into the device trust store,
                 // so warn before generating one.
                 this.$confirm({
-                    title: "Self-signed certificate — IKEv2 client caveat",
-                    content: "The native Windows/iOS/Android IKEv2 clients reject self-signed certificates unless you import the generated CA into the device's trusted roots. Prefer a CA-signed cert bound to a hostname for real users. Generate a self-signed CA + server cert anyway?",
-                    okText: "Generate anyway",
+                    title: "{{ i18n "pages.interfaceExtra.selfSignedCertificateIKEv2ClientCaveat" }}",
+                    content: '{{ i18n "pages.interfaceExtra.theNativeWindowsIOSAndroidIKEv2ClientsReject" }}',
+                    okText: "{{ i18n "pages.interfaceExtra.generateAnyway" }}",
                     cancelText: '{{ i18n "cancel" }}',
                     class: themeSwitcher.currentTheme,
                     onOk: async () => {

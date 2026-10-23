@@ -1,26 +1,19 @@
-# Panel UI redesign - research and implementation plan
+# Current interface
 
-> **Document status:** the current-source summary below applies to `admin6501/vpn-ui`. The
-> historical record preserves earlier upstream proposals and dated findings. Its “today”, “not
-> built”, “verified live” and version references describe that recorded stage, not the current
-> release or newly performed tests.
+## v1.0.0: current behavior
 
-## Current source summary
+The shipped panel uses shared theme/components, responsive tables and thirteen web languages. Brand-aware titles and controls read the panel brand setting. Language selection is isolated per request, including subscription pages. The graphical Xray editor is shared between central and node configuration. The historical visual proposals below are not a separate theme installation procedure.
 
-The shipped UI uses the current templates, shared tokens and component stylesheet. The mockups and
-phases below are design history; they do not establish that every proposed layout has shipped or
-every accessibility scenario has been tested.
+Use the [panel guide](docs/PANEL-GUIDE.md), [README](README.md), [node guide](docs/NODES.md) and [renewal reference](docs/CLIENT-RENEWAL.md) for current operation.
 
 **Implementation references:** [web/html/inbounds.html](web/html/inbounds.html) ·
 [web/assets/css/tokens.css](web/assets/css/tokens.css) ·
 [web/assets/css/components.css](web/assets/css/components.css)
 
-For installation and prerequisites, use [the README](README.md) and
-[offline guide](docs/OFFLINE-INSTALL.md). See [the documentation index](docs/INDEX.md) for
-operational guides. Release automation checks focused cases; complete protocol/VM E2E validation
-requires a separately configured [test host](test_unit/README.md).
+<details>
+<summary>Historical design and development record</summary>
 
-## Historical design record
+The material below preserves upstream proposals, earlier defaults and dated test results. It is not current installation guidance or evidence that its live tests were rerun for this release.
 
 Recomposing the whole panel UI onto the `bento` direction from `redesign/`, with the `aurora`
 treatment for VPN Services. This document is the research record and proposed implementation
@@ -468,3 +461,5 @@ accessible name beyond the visible text).
 Destination: `core.html`, anchored to that service's card. That page renders a card per core via
 `v-for` and is where a service is actually started, stopped, and configured, so it is the natural
 target for a status chip. Requires giving those cards stable anchor ids.
+
+</details>

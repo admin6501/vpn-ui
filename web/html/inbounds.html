@@ -173,12 +173,10 @@
                            them. The tooltip still says what the switch does, which
                            is why its text names the dialog instead of relying on
                            this label. -->
-                      <span v-if="!isMobile">Old inbound modify UI</span>
+                      <span v-if="!isMobile">{{ i18n "pages.interface.oldInboundModifyUI" }}</span>
                       <a-tooltip :overlay-class-name="themeSwitcher.currentTheme">
                         <template slot="title">
-                          <span>Serves the Add and Edit inbound dialog as it was
-                            before the redesign, to every admin on this panel. The
-                            page reloads when this changes.</span>
+                          <span>{{ i18n "pages.interface.servesTheAddAndEditInboundDialogAs" }}</span>
                         </template>
                         <a-icon type="question-circle"></a-icon>
                       </a-tooltip>
@@ -378,11 +376,11 @@
                                 v-if="ovpnTransports(dbInbound).length === 1"
                                 type="download"
                                 @click="downloadOvpn(dbInbound.id, ovpnTransports(dbInbound)[0])"
-                                :title="'OpenVPN client config (.ovpn, ' + ovpnTransports(dbInbound)[0].toUpperCase() + ')'"></a-icon>
+                                :title="openvpnConfigTitle(dbInbound)"></a-icon>
                               <a-dropdown v-else :trigger="['click']">
                                 <a-icon class="bo-il-dl" type="download"
                                   @click="e => e.preventDefault()"
-                                  title="OpenVPN client config (.ovpn)"></a-icon>
+                                  title="{{ i18n "pages.interface.openvpnClientConfigOvpn" }}"></a-icon>
                                 <a-menu slot="overlay"
                                   @click="a => clickAction(a, dbInbound)"
                                   :theme="themeSwitcher.currentTheme">
@@ -427,7 +425,7 @@
                              different thing from an empty cell, and worth
                              saying rather than dashing out. -->
                         <span class="bo-il-none" v-else
-                          title="GRE is IP protocol 47 and has no ports">proto 47</span>
+                          title="{{ i18n "pages.interface.greIsIPProtocol47AndHasNo" }}">proto 47</span>
                       </div>
                     </template>
                     <!-- Used against cap, over a meter, over the all-time figure
@@ -1225,6 +1223,10 @@
       // Which .ovpn files this inbound actually has to offer. Both transports can
       // be on at once, and either can be off; the row's download control is a
       // menu only when there is genuinely something to choose between.
+      openvpnConfigTitle(dbInbound) {
+        const label = '{{ i18n "pages.interface.openvpnClientConfigOvpn" }}';
+        return label + ' (' + this.ovpnTransports(dbInbound)[0].toUpperCase() + ')';
+      },
       ovpnTransports(dbInbound) {
         if (!dbInbound.isOpenvpn) return [];
         const s = dbInbound.toInbound().settings;
@@ -1315,12 +1317,12 @@
         const isPort = v => Number.isInteger(v) && v >= 1 && v <= 65535;
         if (inbound.protocol === 'openvpn') {
           const s = inbound.settings || {};
-          if (!s.udpEnable && !s.tcpEnable) { this.$message.error('OpenVPN requires at least one of TCP/UDP enabled'); return false; }
-          if (s.udpEnable && !isPort(inbound.port)) { this.$message.error('Invalid UDP port (must be 1-65535)'); return false; }
-          if (s.tcpEnable && !isPort(s.tcpPort)) { this.$message.error('Invalid TCP port (must be 1-65535)'); return false; }
-          if (!s.caCert || !s.serverCert) { this.$message.error('OpenVPN certificate is required — generate a certificate before saving'); return false; }
+          if (!s.udpEnable && !s.tcpEnable) { this.$message.error('{{ i18n "pages.interfaceExtra.openvpnRequiresAtLeastOneOfTCPUDP" }}'); return false; }
+          if (s.udpEnable && !isPort(inbound.port)) { this.$message.error('{{ i18n "pages.interfaceExtra.invalidUDPPortMustBe165535" }}'); return false; }
+          if (s.tcpEnable && !isPort(s.tcpPort)) { this.$message.error('{{ i18n "pages.interfaceExtra.invalidTCPPortMustBe165535" }}'); return false; }
+          if (!s.caCert || !s.serverCert) { this.$message.error('{{ i18n "pages.interfaceExtra.openvpnCertificateIsRequiredGenerateACertificateBefore" }}'); return false; }
         } else if (!isPort(inbound.port)) {
-          this.$message.error('Invalid port (must be 1-65535)'); return false;
+          this.$message.error('{{ i18n "pages.interfaceExtra.invalidPortMustBe165535" }}'); return false;
         }
         return true;
       },
@@ -1896,7 +1898,7 @@
       }
       this.loading();
       this.getDefaultSettings();
-      
+
       // Keep time-based expiration current even when no traffic or row changes.
       this.accountSummaryTimer = setInterval(() => {
         this.refreshAccountSummary();
@@ -1908,7 +1910,7 @@
       // Setup WebSocket for real-time updates
       if (window.wsClient) {
         window.wsClient.connect();
-        
+
         // Listen for inbounds updates
         window.wsClient.on('inbounds', (payload) => {
           if (this.isRefreshEnabled && payload && Array.isArray(payload)) {
@@ -1927,7 +1929,7 @@
           // Note: Do NOT update total consumed traffic (stats.up, stats.down) from this event
           // because clientTraffics contains delta/incremental values, not total accumulated values.
           // Total traffic is updated via the 'inbounds' WebSocket event (or 'invalidate' fallback for large panels).
-          
+
           // Update online clients list in real-time
           if (payload && Array.isArray(payload.onlineClients)) {
             const nextOnlineClients = payload.onlineClients;
@@ -1978,7 +1980,7 @@
               }
             }
           }
-          
+
           // Update last online map in real-time
           // Replace entirely (server sends the full map) to avoid unbounded growth from deleted clients
           if (payload && payload.lastOnlineMap && typeof payload.lastOnlineMap === 'object') {

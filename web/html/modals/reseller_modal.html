@@ -4,7 +4,7 @@
   :cancel-button-props="{ props: { disabled: resellerModal.confirmLoading } }"
   :ok-text="resellerModal.okText" cancel-text='{{ i18n "close" }}' :class="themeSwitcher.currentTheme">
   <!-- label-col is 10, not 8: at 8 the longest labels ("Minimum Account (GB)",
-       "Minimum Top-Up (GB)") are wider than the box and lose
+       "{{ i18n "pages.interfaceExtra.minimumTopUpGB" }}") are wider than the box and lose
        their trailing characters and tooltip icon, since a form-item label does not
        wrap. 10 covers the widest of them and takes the width from the gap between
        the columns, so the controls keep the size they already had. -->

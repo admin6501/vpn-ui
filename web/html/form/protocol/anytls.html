@@ -37,8 +37,8 @@
         type="warning"
         show-icon
         :style="{ marginBottom: '16px' }"
-        message="This inbound is not doing TLS"
-        description="AnyTLS exists to look like an ordinary TLS session, and with security set to none this listener is not one. That is correct if something in front of it terminates TLS and forwards plaintext to this port, which is a normal offload setup. It is wrong if this port is reachable from the internet: the traffic is then neither encrypted nor camouflaged, which defeats the entire point of the protocol and is trivial to fingerprint."
+        message="{{ i18n "pages.interfaceExtra.thisInboundIsNotDoingTLS" }}"
+        description="{{ i18n "pages.interfaceExtra.anytlsRequiresTLSEncryptionAPlaintextListenerIs" }}"
     ></a-alert>
 
     <!--
@@ -55,7 +55,7 @@
         show-icon
         :style="{ marginBottom: '16px' }"
         :message="anytlsClashDropReason(inbound)"
-        description="Nothing reports this. The Clash subscription builds normally and just has no node for this inbound, so the first sign is a user saying the server vanished from their app. The raw subscription is unaffected: its anytls:// link describes this inbound faithfully, REALITY parameters included, and imports correctly into sing-box. So this only matters if any of your users are on Clash or mihomo. If they are, serve AnyTLS over the TCP transport with TLS; if they are not, ignore this."
+        description="{{ i18n "pages.interfaceExtra.clashAndMihomoDoNotExportThisUnsupported" }}"
     ></a-alert>
 
     <a-form-item>

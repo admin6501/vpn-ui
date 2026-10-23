@@ -22,6 +22,7 @@ var (
 	LocalizerWeb     *i18n.Localizer
 	LocalizerBot     *i18n.Localizer
 	localizerDefault *i18n.Localizer // always English; fallback for keys missing in the active locale
+	webLocalizers    map[string]*i18n.Localizer
 )
 
 // I18nType represents the type of interface for internationalization.
@@ -59,6 +60,7 @@ func InitLocalizer(i18nFS fs.FS, settingService SettingService) error {
 	i18nBundle = bundle
 	localizerDefault = fallback
 	LocalizerBot = botLocalizer
+	webLocalizers = languageLocalizers(bundle)
 	localizersMu.Unlock()
 	return nil
 }
@@ -152,16 +154,12 @@ func LocalizerMiddleware() gin.HandlerFunc {
 				logger.Warning("i18n lazy load failed:", err)
 			}
 			localizerDefault = i18n.NewLocalizer(i18nBundle, "en-US")
+			webLocalizers = languageLocalizers(i18nBundle)
 		}
-		var lang string
+		lang := RequestLanguage(c)
+		c.Set("language", lang)
 
-		if cookie, err := c.Request.Cookie("lang"); err == nil {
-			lang = cookie.Value
-		} else {
-			lang = c.GetHeader("Accept-Language")
-		}
-
-		LocalizerWeb = i18n.NewLocalizer(i18nBundle, lang)
+		LocalizerWeb = webLocalizers[lang]
 
 		localizer := LocalizerWeb
 		fallback := localizerDefault
@@ -175,6 +173,14 @@ func LocalizerMiddleware() gin.HandlerFunc {
 		})
 		c.Next()
 	}
+}
+
+func languageLocalizers(bundle *i18n.Bundle) map[string]*i18n.Localizer {
+	result := make(map[string]*i18n.Localizer, len(languageCodes))
+	for _, code := range languageCodes {
+		result[code] = i18n.NewLocalizer(bundle, code)
+	}
+	return result
 }
 
 // loadTranslationsFromDisk attempts to load translation files from "web/translation" using the local filesystem.

@@ -241,7 +241,7 @@ if (window.nodeXrayId) axios.interceptors.request.use(config => {
       title: '{{ i18n "pages.xray.rules.source"}}', children: [
         { title: 'IP', dataIndex: "sourceIP", align: 'center', width: 20, ellipsis: true },
         { title: '{{ i18n "pages.inbounds.port" }}', dataIndex: 'sourcePort', align: 'center', width: 10, ellipsis: true },
-        { title: 'VLESS Route', dataIndex: 'vlessRoute', align: 'center', width: 15, ellipsis: true }]
+        { title: '{{ i18n "pages.interfaceExtra.vlessRoute" }}', dataIndex: 'vlessRoute', align: 'center', width: 15, ellipsis: true }]
     },
     {
       title: '{{ i18n "pages.inbounds.network"}}', children: [
@@ -407,7 +407,7 @@ if (window.nodeXrayId) axios.interceptors.request.use(config => {
           bittorrent: ["bittorrent"],
         },
         IPsOptions: [
-          { label: 'Private IPs', value: 'geoip:private' },
+          { label: '{{ i18n "pages.interfaceExtra.privateIPs" }}', value: 'geoip:private' },
           { label: '🇮🇷 Iran', value: 'ext:geoip_IR.dat:ir' },
           { label: '🇨🇳 China', value: 'geoip:cn' },
           { label: '🇷🇺 Russia', value: 'ext:geoip_RU.dat:ru' },
@@ -431,7 +431,7 @@ if (window.nodeXrayId) axios.interceptors.request.use(config => {
           { label: '🇻🇳 .vn', value: 'regexp:.*\\.vn$' },
         ],
         BlockDomainsOptions: [
-          { label: 'Ads All', value: 'geosite:category-ads-all' },
+          { label: '{{ i18n "pages.interfaceExtra.adsAll" }}', value: 'geosite:category-ads-all' },
           { label: 'Ads IR 🇮🇷', value: 'ext:geosite_IR.dat:category-ads-all' },
           { label: 'Ads RU 🇷🇺', value: 'ext:geosite_RU.dat:category-ads-all' },
           { label: 'Malware 🇮🇷', value: 'ext:geosite_IR.dat:malware' },
@@ -1248,7 +1248,7 @@ if (window.nodeXrayId) axios.interceptors.request.use(config => {
         try {
           const outboundJSON = JSON.stringify(outbound);
           const allOutboundsJSON = JSON.stringify(this.templateSettings.outbounds || []);
-          
+
           const msg = await HttpUtil.post("/panel/xray/testOutbound", {
             outbound: outboundJSON,
             allOutbounds: allOutboundsJSON
@@ -1260,7 +1260,7 @@ if (window.nodeXrayId) axios.interceptors.request.use(config => {
           if (msg.success && msg.obj) {
             const result = msg.obj;
             this.$set(this.outboundTestStates[index], 'result', result);
-            
+
             if (result.success) {
               Vue.prototype.$message.success(
                 `{{ i18n "pages.xray.outbound.testSuccess" }}: ${result.delay}ms (${result.statusCode})`

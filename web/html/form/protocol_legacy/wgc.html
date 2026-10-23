@@ -45,14 +45,7 @@
         <template slot="label">
             <a-tooltip>
                 <template slot="title">
-                    How many DEVICES each account may run at once. The panel issues one
-                    config per device, each with its own key and its own tunnel IP, so
-                    import Device 1 on one machine and Device 2 on another: two devices
-                    cannot share a single config (they would share a key, and only one
-                    could stay connected). Lowering it revokes the surplus devices' keys.
-                    10 = ten devices (default), so ten configs per account; lower it for
-                    better pool capacity. 0 = the maximum, 64 devices, which issues 64
-                    configs and fits only ~3 accounts per /24.
+                    {{ i18n "pages.interface.howManyDEVICESEachAccountMayRunAt" }}
                 </template>{{ i18n "pages.inboundForm.userLimit" }}<a-icon type="question-circle"></a-icon>
             </a-tooltip>
         </template>
@@ -99,9 +92,7 @@
         <template slot="label">
             <a-tooltip>
                 <template slot="title">
-                    Add a preshared key (an extra symmetric layer on top of the
-                    keypair). The server generates one PSK per account automatically;
-                    nothing to enter here.
+                    {{ i18n "pages.interface.addAPresharedKeyAnExtraSymmetricLayer" }}
                 </template>{{ i18n "pages.inboundForm.presharedKey" }}<a-icon type="question-circle"></a-icon>
             </a-tooltip>
         </template>
@@ -111,8 +102,7 @@
         <template slot="label">
             <a-tooltip>
                 <template slot="title">
-                    The server's public key. Generated automatically on save; keys
-                    are never created in the browser.
+                    {{ i18n "pages.interface.theServerSPublicKeyGeneratedAutomaticallyOn" }}
                 </template>{{ i18n "pages.inboundForm.serverPublicKey" }}<a-icon type="question-circle"></a-icon>
             </a-tooltip>
         </template>

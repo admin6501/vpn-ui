@@ -1,5 +1,7 @@
 # نصب آفلاین / Offline installation
 
+**First stable release: v1.0.0.** The release contains four Linux binaries (panel and node, each amd64/arm64), two installers, the migration ZIP and `SHA256SUMS`. Check the architecture before choosing a binary; the installed panel compatibility filename ends in `-amd64` on both architectures. The agent installer opens a management menu when run without arguments; use `--install` for direct scripted update. See [all assets](../README.md#release-assets).
+
 ## فارسی
 
 باینری `vpn-ui-amd64` و اسکریپت `install-offline.sh` را از ریلیز رسمی **admin6501/vpn-ui** روی یک

@@ -1,27 +1,19 @@
-# Per-account device limits: analysis and solutions
+# Device and session limits
 
-> **Document status:** the current-source summary below applies to `admin6501/vpn-ui`. The
-> historical record preserves earlier upstream proposals and dated findings. Its “today”, “not
-> built”, “verified live” and version references describe that recorded stage, not the current
-> release or newly performed tests.
+## v1.0.0: current behavior
 
-## Current source summary
+The meaning of UserLimit depends on the protocol: address slots, VPN sessions or visible source IPs. WireGuard/AmneziaWG provide distinct device profiles. Source-IP limiting cannot distinguish physical devices behind one NAT. Zero may reserve finite address slots for some kernel VPNs, so read the protocol form rather than assuming zero always means unlimited. Node session limits are local.
 
-The current code includes Xray source-IP limits and protocol-specific session/peer limits. Source-IP
-counting cannot distinguish devices sharing one NAT address; copying one credential/key does not
-provide a reliable physical-device identity. The historical statement that no limiter exists is not
-the current implementation.
+Use the [panel guide](docs/PANEL-GUIDE.md), [README](README.md), [node guide](docs/NODES.md) and [renewal reference](docs/CLIENT-RENEWAL.md) for current operation.
 
 **Implementation references:** [web/service/speedlimit.go](web/service/speedlimit.go) ·
 [third_party/Xray-core/common/speedlimit/iplimit.go](third_party/Xray-core/common/speedlimit/iplimit.go)
 · [web/service/awg_devices_test.go](web/service/awg_devices_test.go)
 
-For installation and prerequisites, use [the README](README.md) and
-[offline guide](docs/OFFLINE-INSTALL.md). See [the documentation index](docs/INDEX.md) for
-operational guides. Release automation checks focused cases; complete protocol/VM E2E validation
-requires a separately configured [test host](test_unit/README.md).
+<details>
+<summary>Historical design and development record</summary>
 
-## Historical design record
+The material below preserves upstream proposals, earlier defaults and dated test results. It is not current installation guidance or evidence that its live tests were rerun for this release.
 
 Question: can we count an account's devices reliably (like RADIUS does) for the Xray-native
 protocols, including when devices share one public IP behind NAT?
@@ -291,3 +283,5 @@ device-model wg-c peers; a working kill path.
   engineering estimates, not measurements. Instrument first.
 - Mux adoption among our users, which directly scales any stream cap.
 - Whether stock clients accept non-standard-version UUIDs (for vlessRoute).
+
+</details>

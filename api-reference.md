@@ -1,4 +1,4 @@
-# vpn-ui panel API reference
+# VPN-UI v1.0.0 API reference
 
 Request and response shapes for Xray-native protocols, VPN/relay protocols, the accounts/membership
 layer, representative roles and ownership transfer. Protocol constants also include internal and
@@ -15,6 +15,7 @@ values from your installation. A generated configuration does not establish that
 connect on your host:
 
 ```sh
+umask 077
 BASE='https://HOST:PORT/<basePath>'   # e.g. https://vpn.example.com:2083/aX9k2m
 JAR=jar.txt
 ```
@@ -50,11 +51,10 @@ curl -sS -c "$JAR" -X POST "$BASE/login" \
 Then send `-b "$JAR"` on every call. `GET $BASE/logout` clears it.
 
 The cookie is named **`vpn-ui`**. It is a signed (not encrypted) gin-contrib cookie session that
-holds **only the admin's numeric id**; the user row is re-read from the database on every request,
+holds the administrator ID and a digest binding it to current credentials and revocation state; it carries neither password hashes nor TOTP secrets. The user row is re-read from the database on every request,
 so a permission change or an account disable takes effect immediately rather than lingering until
 the cookie expires. `MaxAge` comes from the `sessionMaxAge` panel setting (minutes) and `HttpOnly`
-is set. A cookie written by a pre-upgrade binary held a gob-encoded user row; it fails the type
-assertion and soft logs the session out, which is one forced re-login and not a bug.
+is set. Cookies without the current credential binding, including legacy whole-user cookies, require a fresh login. Password, username, TOTP or session-version changes invalidate older sessions.
 
 An account with 2FA that sent no code gets HTTP 200, `success:false`, and
 `obj: {"twoFactorRequired": true}`. Resend with `twoFactorCode`.
@@ -116,11 +116,13 @@ logged in" and here you have one from a `/panel` route instead.
 `/panel` it converts a redirect-to-HTML into an honest `401`. Checking `Content-Type` for JSON is
 the belt-and-braces version.
 
-### Gotcha 1: bodies are form-urlencoded, not JSON
+### Request encoding is endpoint-specific
 
-The panel's own frontend posts through axios with `Qs.stringify`, so **every POST body is
-`application/x-www-form-urlencoded`**, and the Go side binds it with Gin's `ShouldBind` + `form:`
-struct tags. A JSON body works only where a handler happens to bind both; do not rely on it.
+The legacy inbound/client examples here use `application/x-www-form-urlencoded`, with nested
+configuration encoded as JSON strings in form fields. Newer APIs, including node control/configuration,
+also accept JSON where their request binder supports it. File import uses multipart form data.
+Do not assume every POST uses the same encoding; inspect the endpoint handler or use its documented
+example. The route/source inventory is in [docs/API-ROUTES.md](docs/API-ROUTES.md).
 
 Anything structurally nested is passed as **a JSON string inside a form field**. For an inbound that
 is `settings`, `streamSettings` and `sniffing`:
@@ -1543,13 +1545,20 @@ A validation failure on `/add` writes nothing.
 - **`security=tls` with a blank `certificateFile` makes Xray refuse the entire config**, not just
   that inbound. `up=0, down=0` on an inbound that should have traffic usually means it never worked
   at all.
-- **Country geo files are not bundled.** Selecting one writes `ext:geoip_IR.dat:ir` and Xray refuses
-  the whole config.
+- **Full release binaries bundle all six base/Iran/Russia geoip/geosite files.** Selecting a custom external file still requires that file on the relevant central/node runtime. Development builds that skip bundles do not have the same packaging guarantees.
 - Installing a protocol's **core** installs the server, not the outbound client.
 
 ---
 
-## 14. Where the browser model and the server disagree
+## 14. Default-model development record
+
+Current protocol settings are defined by the Go defaults and browser models named above. Explicit
+values avoid relying on defaults that differ across old binaries. The following retained comparison
+is a historical development record, not a new claim that every listed divergence remains a stable-release bug.
+
+<details>
+<summary>Earlier constructor/fromJson comparison and fixes</summary>
+
 
 The Go table in `web/service/protocoldefaults.go` was ported from the JS classes in
 `web/assets/js/model/inbound.js`, key for key. It matches them, with the exceptions below. **The Go
@@ -1661,6 +1670,9 @@ settings map for any protocol that goes through `NormalizeVpnRanges`, and the br
 on l2tp and pptp, whose `fromJson` seeds `ipRanges` from it when the list is empty. It is a
 compatibility path on both sides, not a server-side oddity. `localIp` is the one that is genuinely
 Go-only.
+
+
+</details>
 
 ## 15. Representative roles and account ownership
 
@@ -1864,3 +1876,23 @@ credentials when required. Schema/account/group migration or Xray startup failur
 returns an error and attempts to reopen the previous database; a failed
 file replacement during recovery retains the fallback file. Native and foreign imports serialize their
 shared staging paths. Invalid uploads leave the current database running.
+
+## 17. Manual renewal, counters and status
+
+`POST /panel/api/inbounds/renewClient/:email` uses the normal session and requires user-update
+and usage-reset rights in the narrower authorized scope. For a timed legacy account whose original
+period is unknown, submit `renewalDuration` as integer milliseconds (maximum 36,500 days).
+Known periods must match if supplied; an account without time expiry only accepts zero.
+Renew clears current upload/download across memberships, restarts the full duration immediately
+and enables the account. Quota, credentials, Sub ID, device/peer addressing and access assignments
+remain. Lifetime representative consumption and cumulative node cursors remain too.
+
+Traffic reset is a different operation: it does not restart expiry or override disabled membership,
+account or representative policy. An enabled switch alone is not proof of effective access.
+Shared Sub IDs can expose configurations from distinct accounts without merging their quotas.
+Historical unattributed traffic is retained explicitly rather than fabricated as a per-inbound split.
+See [renewal](docs/CLIENT-RENEWAL.md) and [panel guide](docs/PANEL-GUIDE.md).
+
+Node polling is one second and diagnostics normally five seconds. A node pairs with one panel.
+IPsec is independently selectable in the central and node Cores dialogs and remains a shared dependency
+of L2TP/IKEv2. See [current node operations](docs/NODES.md).

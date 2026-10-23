@@ -37,7 +37,7 @@
       placeholder="1280"
     ></a-input-number>
   </a-form-item>
-  <a-form-item label="Gateway">
+  <a-form-item label="{{ i18n "pages.interface.gateway" }}">
     <a-select
       mode="tags"
       v-model="inbound.settings.gateway"
@@ -52,7 +52,7 @@
       v-model="inbound.settings.dns"
       :style="{ width: '100%' }"
       :token-separators="[',']"
-      placeholder="DNS servers"
+      placeholder="{{ i18n "pages.interface.dnsServers" }}"
     ></a-select>
   </a-form-item>
   <a-form-item>
@@ -71,7 +71,7 @@
       placeholder="0"
     ></a-input-number>
   </a-form-item>
-  <a-form-item label="Auto Routing Table">
+  <a-form-item label="{{ i18n "pages.interface.autoRoutingTable" }}">
     <a-select
       mode="tags"
       v-model="inbound.settings.autoSystemRoutingTable"
@@ -80,9 +80,9 @@
       placeholder="e.g. vpn, proxy"
     ></a-select>
   </a-form-item>
-  <a-form-item label="Auto Outbounds">
+  <a-form-item label="{{ i18n "pages.interface.autoOutbounds" }}">
     <a-input
-      v-model.trim="inbound.settings.autoOutboundsInterface"
+      v-model.trim="inbound.settings.{{ i18n "pages.interface.auto" }}OutboundsInterface"
       placeholder="auto"
     ></a-input>
   </a-form-item>

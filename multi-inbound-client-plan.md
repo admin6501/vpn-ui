@@ -1,28 +1,20 @@
-# One client, multiple inbounds - research and implementation plan
+# Accounts and memberships
 
-> **Document status:** the current-source summary below applies to `admin6501/vpn-ui`. The
-> historical record preserves earlier upstream proposals and dated findings. Its “today”, “not
-> built”, “verified live” and version references describe that recorded stage, not the current
-> release or newly performed tests.
+## v1.0.0: current behavior
 
-## Current source summary
+Users is the primary account manager. One account can have multiple inbound memberships with shared period quota and expiry; each membership retains its own access switch. Groups provide reusable assignment. Distinct accounts sharing a Sub ID remain distinct accounts. Renew and traffic reset project every authorized membership without recreating credentials.
 
-The accounts/membership layer is implemented. One account can have multiple memberships and shared
-quota/subscription identity; ownership checks apply to account operations. Overview totals count
-unique accounts rather than membership rows. Protocol-specific constraints still apply when
-assigning memberships.
+Use the [panel guide](docs/PANEL-GUIDE.md), [README](README.md), [node guide](docs/NODES.md) and [renewal reference](docs/CLIENT-RENEWAL.md) for current operation.
 
 **Implementation references:** [web/service/account.go](web/service/account.go) ·
 [web/service/accountlist.go](web/service/accountlist.go) ·
 [web/service/accountproject.go](web/service/accountproject.go) ·
 [accounts-upgrade-guide.md](accounts-upgrade-guide.md)
 
-For installation and prerequisites, use [the README](README.md) and
-[offline guide](docs/OFFLINE-INSTALL.md). See [the documentation index](docs/INDEX.md) for
-operational guides. Release automation checks focused cases; complete protocol/VM E2E validation
-requires a separately configured [test host](test_unit/README.md).
+<details>
+<summary>Historical design and development record</summary>
 
-## Historical design record
+The material below preserves upstream proposals, earlier defaults and dated test results. It is not current installation guidance or evidence that its live tests were rerun for this release.
 
 Making ONE account usable across SEVERAL inbounds of DIFFERENT protocols, with one quota, one
 expiry, one edit, and one subscription link. This document is the research record and proposed
@@ -1102,3 +1094,5 @@ Mirror `inbound_subid_test.go` for structure:
   reason stated at `:37-39`.
 - Slots do not move when a membership is added or removed (mirror the before/after measurement in
   `account-slot-plan.md:22-38`).
+
+</details>

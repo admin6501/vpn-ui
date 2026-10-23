@@ -72,23 +72,23 @@
                 <template slot="content">
                     <table cellpadding="2" :style="{ maxWidth: '300px' }">
                         <tr v-if="rule.sourceIP">
-                            <td>Source IP</td>
+                            <td>{{ i18n "pages.interface.sourceIP" }}</td>
                             <td><a-tag color="blue" v-for="r in rule.sourceIP.split(',')">[[ r ]]</a-tag></td>
                         </tr>
                         <tr v-if="rule.sourcePort">
-                            <td>Source Port</td>
+                            <td>{{ i18n "pages.interface.sourcePort" }}</td>
                             <td><a-tag color="green" v-for="r in rule.sourcePort.split(',')">[[ r ]]</a-tag></td>
                         </tr>
                         <tr v-if="rule.vlessRoute">
-                            <td>VLESS Route</td>
+                            <td>{{ i18n "pages.interface.vlessRoute" }}</td>
                             <td><a-tag color="geekblue" v-for="r in rule.vlessRoute.split(',')">[[ r ]]</a-tag></td>
                         </tr>
                         <tr v-if="rule.network">
-                            <td>Network</td>
+                            <td>{{ i18n "pages.inbounds.network" }}</td>
                             <td><a-tag color="blue" v-for="r in rule.network.split(',')">[[ r ]]</a-tag></td>
                         </tr>
                         <tr v-if="rule.protocol">
-                            <td>Protocol</td>
+                            <td>{{ i18n "protocol" }}</td>
                             <td><a-tag color="green" v-for="r in rule.protocol.split(',')">[[ r ]]</a-tag></td>
                         </tr>
                         <tr v-if="rule.attrs">
@@ -100,15 +100,15 @@
                             <td><a-tag color="green" v-for="r in rule.ip.split(',')">[[ r ]]</a-tag></td>
                         </tr>
                         <tr v-if="rule.domain">
-                            <td>Domain</td>
+                            <td>{{ i18n "pages.xray.outbound.domain" }}</td>
                             <td><a-tag color="blue" v-for="r in rule.domain.split(',')">[[ r ]]</a-tag></td>
                         </tr>
                         <tr v-if="rule.port">
-                            <td>Port</td>
+                            <td>{{ i18n "pages.inbounds.port" }}</td>
                             <td><a-tag color="green" v-for="r in rule.port.split(',')">[[ r ]]</a-tag></td>
                         </tr>
                         <tr v-if="rule.balancerTag">
-                            <td>Balancer Tag</td>
+                            <td>{{ i18n "pages.interface.balancerTag" }}</td>
                             <td><a-tag color="blue">[[ rule.balancerTag ]]</a-tag></td>
                         </tr>
                     </table>

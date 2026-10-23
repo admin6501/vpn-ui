@@ -223,7 +223,7 @@
                       <template v-if="row.memberships && row.memberships.length">
                         <span>{{ i18n "pages.clients.protocolCount" }}: [[ protocolCount(row) ]]</span>
                         <a-popover trigger="click" placement="bottomRight" :overlay-class-name="themeSwitcher.currentTheme">
-                          <a-button size="small" icon="info-circle">INFO</a-button>
+                          <a-button size="small" icon="info-circle">{{ i18n "pages.inbounds.info" }}</a-button>
                           <template slot="content">
                             <div class="bo-protocol-details">
                               <div v-for="m in row.memberships" :key="m.inboundId">
@@ -447,7 +447,7 @@
         <template v-if="renewal.needsDays">
           <p>{{ i18n "pages.clients.renewUnknown" }}</p>
           <a-input-number v-model="renewal.days" :min="1" :max="36500" :precision="0"
-            :placeholder="'{{ i18n "pages.clients.renewDays" }}'" :style="{width: '100%'}"></a-input-number>
+            placeholder="{{ i18n "pages.clients.renewDays" }}" :style="{width: '100%'}"></a-input-number>
         </template>
         <p v-else>{{ i18n "pages.clients.renewDays" }}:
           [[ renewal.duration > 0 ? renewal.duration / 86400000 : '{{ i18n "unlimited" }}' ]]</p>

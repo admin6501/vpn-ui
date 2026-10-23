@@ -1,5 +1,11 @@
 # Upgrading to the accounts model
 
+## Stable release account rules
+
+v1.0.0 retains existing identities and usage during upgrade. An unassigned account can be managed by the protected owner; the backfill invariant below describes migration of old served accounts, not a rule requiring every newly created account to have a membership. Groups control reusable assignments. Distinct accounts sharing a subscription ID stay separate accounts and quotas. Current-period counters, lifetime representative usage and cumulative node cursors must not be confused.
+
+Manual **Renew** resets current usage, restarts the recorded duration and enables the account without changing credentials/access; unknown old durations prompt for days. Ordinary **Reset traffic** does not restart expiry. See [renewal](docs/CLIENT-RENEWAL.md) and [panel operations](docs/PANEL-GUIDE.md). Back up consistently before migration/repair; usage repair cannot reconstruct historical source-inbound attribution that was never recorded.
+
 > This guide describes the account layer, not importing a PasarGuard ZIP. For ZIP conversion use
 > [the migration guide](migration/INSTALL-MIGRATION.fa.md). Representative ownership follows the
 > [current role/account model](reseller-plan.md).
