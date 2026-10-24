@@ -4193,7 +4193,9 @@ func (s *InboundService) MigrationRemoveOrphanedTraffics() {
 	}
 }
 
-// removeOrphanedTraffics deletes the counter rows no settings entry claims.
+// removeOrphanedTraffics deletes counter rows owned by neither a canonical
+// account nor a legacy settings entry. Canonical accounts may be parked with
+// no memberships and still retain their quota and traffic history.
 //
 // It was broken two ways at once, which is why installs still carry orphans that
 // hold an email against a re-create:
@@ -4218,6 +4220,10 @@ func removeOrphanedTraffics(db *gorm.DB) error {
 	return db.Exec(`
 		DELETE FROM client_traffics
 		WHERE NOT EXISTS (
+			SELECT 1 FROM accounts
+			WHERE LOWER(TRIM(accounts.email)) = LOWER(TRIM(client_traffics.email))
+		)
+		AND NOT EXISTS (
 			SELECT 1
 			FROM inbounds,
 				JSON_EACH(COALESCE(JSON_EXTRACT(inbounds.settings, '$.clients'), '[]')) AS client
@@ -5444,8 +5450,9 @@ func (s *InboundService) MigrationRequirements() {
 	}
 	tx.Save(inbounds)
 
-	// Remove orphaned traffics
-	tx.Where("inbound_id = 0").Delete(xray.ClientTraffic{})
+	// A shared/parked account legitimately has no legacy home inbound. Its
+	// inbound_id may be zero without its quota/usage row being orphaned. The
+	// identity-aware MigrationRemoveOrphanedTraffics pass handles actual orphans.
 
 	// Migrate old MultiDomain to External Proxy
 	var externalProxy []struct {

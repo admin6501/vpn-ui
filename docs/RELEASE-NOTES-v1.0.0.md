@@ -32,6 +32,9 @@ records describe upstream development, not previous stable releases of this fork
   changes, cloning and reused Add forms keep empty account rosters. Deleting and recreating the
   same listener name/port works; explicitly reattach the replacement to its group to restore users.
   Existing account credentials, subscription identity and current/lifetime usage are retained.
+- Native restore and upgrade migrations retain shared account traffic even without a legacy
+  home inbound, including Shadowsocks and parked accounts. Orphan cleanup preserves rows owned
+  by an account. Removing an Xray outbound and rebuilding its configuration retain client usage.
 - Overview counts unique accounts. Quota exhaustion and finite time expiry both affect depleted
   status. Subscription pages show effective state, actual quota, upload/download and available
   configurations, including representative-blocked accounts without mutating their records.
@@ -175,6 +178,11 @@ Documentation: [all guides](https://github.com/admin6501/vpn-ui/blob/main/docs/I
 ساخت اینباند به وجود گروه نیاز ندارد. تغییر رمزنگاری Shadowsocks، کلون یا فرمِ دوباره‌استفاده‌شده
 کاربر تصادفی اضافه نمی‌کند. پس از حذف، ساخت دوباره با همان نام و پورت ممکن است؛ اینباند جدید را
 دوباره به گروه قبلی اضافه کنید. حساب، ساب، رمز و مصرف کاربر حفظ می‌شوند.
+
+پاک‌سازی قدیمی هنگام ریستور یا مهاجرت، مصرف حساب‌هایی را که اینباند اصلی نداشتند اشتباهی حذف
+می‌کرد؛ این مسیر برای حساب‌های مرکزی، Shadowsocks و حساب‌های بدون عضویت اصلاح شده است.
+حذف اوت‌باند و بازسازی تنظیمات Xray مصرف کاربران را حفظ می‌کند. مصرفی که قبلاً حذف شده، برای
+بازیابی دقیق به بکاپ معتبر نیاز دارد؛ نصب نسخهٔ اصلاح‌شده به‌تنهایی اعداد گذشته را برنمی‌گرداند.
 
 کاربران و گروه‌ها سهمیه و دسترسی مرکزی دارند. مصرف جدید بر اساس اینباند ثبت می‌شود و باقیماندهٔ
 تاریخیِ بدون اطلاعات مبدأ جدا نشان داده می‌شود. تیک فعال به‌تنهایی محدودیت حجم، زمان، نماینده یا
