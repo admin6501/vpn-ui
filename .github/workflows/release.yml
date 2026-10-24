@@ -57,8 +57,8 @@ jobs:
         run: |
           node test_unit/inbound_create_roster_test.cjs
           go test -race ./web/controller -run '^TestGroupsFreshInboundAndDeleteRecreatePreserveAccount$' -count=1
-      - name: Verify repeated native restores, migrated accounts and rollback
-        run: go test -race ./web/service ./web/controller -run '^TestRestore' -count=1
+      - name: Verify repeated native restores, preserved account usage, outbound edits and rollback
+        run: go test -race ./web/service ./web/controller -run '^Test(Restore|MigrationPreservesCentralTrafficWithoutHomeInbound|MigrationCleanupPreservesParkedCanonicalTraffic|XrayOutboundEditPreservesCentralAndMembershipTraffic)' -count=1
       - name: Verify six audit fixes and allowed certificate, SSH, overview and backup access
         run: go test -race ./web/controller ./web/service ./web/session -run 'TestSecurityAudit' -count=1
       - name: Verify explicit representative Overview grants, live revocation and concurrent logs

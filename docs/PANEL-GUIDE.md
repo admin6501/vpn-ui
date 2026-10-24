@@ -60,6 +60,11 @@ any protocol; it is not another hidden user's traffic. Preserve a consistent bac
 repairing records, and compare newly measured traffic separately from historical consumption.
 Lifetime/representative accounting and current-period traffic are different counters.
 
+Native restore and upgrade preserve shared account counters, including accounts without a
+legacy home inbound or with no memberships. Deleting an Xray outbound changes its configuration
+without resetting client traffic. If an older migration already deleted a shared counter, compare
+a matching backup before restoring usage; an upgrade alone cannot recreate the lost history.
+
 ## Renewing and resetting a customer
 
 Use **Users → three-dot menu → Renew**. This clears current upload/download for the account and

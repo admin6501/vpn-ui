@@ -12,92 +12,106 @@ import (
 	"github.com/mhsanaei/3x-ui/v2/database"
 	"github.com/mhsanaei/3x-ui/v2/database/model"
 	"github.com/mhsanaei/3x-ui/v2/logger"
+	"github.com/mhsanaei/3x-ui/v2/xray"
 	"github.com/op/go-logging"
 )
 
 func TestRestoreTwoDifferentNativeBackups(t *testing.T) {
-	for _, canonical := range []bool{true, false} {
-		t.Run(fmt.Sprint("canonical=", canonical), func(t *testing.T) {
-			logger.InitLogger(logging.CRITICAL)
-			dir := t.TempDir()
-			t.Setenv("VPNUI_DB_FOLDER", dir)
-			t.Setenv("VPNUI_OFFLINE", "1")
-			t.Setenv("VPNUI_NODE_AGENT", "1")
-			t.Cleanup(func() { _ = database.CloseDB() })
-			backups := []string{}
-			for i := 1; i <= 2; i++ {
-				file := filepath.Join(dir, fmt.Sprintf("backup-%d.db", i))
+	for _, protocol := range []model.Protocol{model.VLESS, model.Shadowsocks} {
+		for _, canonical := range []bool{true, false} {
+			t.Run(fmt.Sprintf("%s/canonical=%t", protocol, canonical), func(t *testing.T) {
+				logger.InitLogger(logging.CRITICAL)
+				dir := t.TempDir()
+				t.Setenv("VPNUI_DB_FOLDER", dir)
+				t.Setenv("VPNUI_OFFLINE", "1")
+				t.Setenv("VPNUI_NODE_AGENT", "1")
+				t.Cleanup(func() { _ = database.CloseDB() })
+				backups := []string{}
+				for i := 1; i <= 2; i++ {
+					file := filepath.Join(dir, fmt.Sprintf("backup-%d.db", i))
+					if err := database.InitDB(config.GetDBPath()); err != nil {
+						t.Fatal(err)
+					}
+					ib := model.Inbound{UserId: 1, Tag: fmt.Sprintf("backup-%d", i), Remark: fmt.Sprintf("Group %d", i), Port: 46000 + i, Protocol: protocol, Settings: fmt.Sprintf(`{"method":"chacha20-ietf-poly1305","password":"listener-password","clients":[{"password":"preserved-password","id":"11111111-1111-4111-8111-11111111111%d","email":"backup-%d","enable":true}]}`, i, i), StreamSettings: `{}`}
+					if err := database.GetDB().Create(&ib).Error; err != nil {
+						t.Fatal(err)
+					}
+					// Central counters can legitimately have no legacy home inbound.
+					if err := database.GetDB().Create(&xray.ClientTraffic{Email: fmt.Sprintf("backup-%d", i), InboundId: 0, Up: int64(i) * 12345, Down: int64(i) * 67890, AllTime: int64(i) * 99999, Total: 10 * gb, Enable: true}).Error; err != nil {
+						t.Fatal(err)
+					}
+					if err := SetNodeCorePaused("xray", true); err != nil {
+						t.Fatal(err)
+					}
+					if canonical {
+						(&AccountService{}).MigrationAccounts()
+						if err := (&GroupService{}).Migrate(); err != nil {
+							t.Fatal(err)
+						}
+					}
+					if err := database.CloseDB(); err != nil {
+						t.Fatal(err)
+					}
+					if err := os.Rename(config.GetDBPath(), file); err != nil {
+						t.Fatal(err)
+					}
+					backups = append(backups, file)
+				}
 				if err := database.InitDB(config.GetDBPath()); err != nil {
 					t.Fatal(err)
 				}
-				ib := model.Inbound{UserId: 1, Tag: fmt.Sprintf("backup-%d", i), Remark: fmt.Sprintf("Group %d", i), Port: 46000 + i, Protocol: model.VLESS, Settings: fmt.Sprintf(`{"clients":[{"id":"11111111-1111-4111-8111-11111111111%d","email":"backup-%d","enable":true}]}`, i, i), StreamSettings: `{}`}
-				if err := database.GetDB().Create(&ib).Error; err != nil {
-					t.Fatal(err)
-				}
-				if err := SetNodeCorePaused("xray", true); err != nil {
-					t.Fatal(err)
-				}
-				if canonical {
-					(&AccountService{}).MigrationAccounts()
-					if err := (&GroupService{}).Migrate(); err != nil {
+				svc := &ServerService{}
+				for i, file := range backups {
+					src, err := os.Open(file)
+					if err != nil {
 						t.Fatal(err)
 					}
+					err = svc.ImportDB(src)
+					src.Close()
+					if err != nil {
+						t.Fatal(err)
+					}
+					var ibs []model.Inbound
+					if err := database.GetDB().Find(&ibs).Error; err != nil {
+						t.Fatal(err)
+					}
+					if len(ibs) != 1 || ibs[0].Tag != fmt.Sprintf("backup-%d", i+1) {
+						t.Fatal("restore did not replace inbounds", ibs)
+					}
+					var accounts []model.Account
+					if err := database.GetDB().Find(&accounts).Error; err != nil {
+						t.Fatal(err)
+					}
+					if len(accounts) != 1 || accounts[0].Email != fmt.Sprintf("backup-%d", i+1) {
+						t.Fatalf("restore %d did not publish restored customers: %+v", i+1, accounts)
+					}
+					var usage xray.ClientTraffic
+					if err := database.GetDB().Where("email = ?", accounts[0].Email).First(&usage).Error; err != nil {
+						t.Fatal("native restore deleted shared traffic", err)
+					}
+					if usage.Up != int64(i+1)*12345 || usage.Down != int64(i+1)*67890 || usage.AllTime != int64(i+1)*99999 || usage.Total != 10*gb || !usage.Enable {
+						t.Fatalf("native restore changed shared traffic or quota: %+v", usage)
+					}
+					if !GroupsMigrated(database.GetDB()) || !AdminGroupsMigrated(database.GetDB()) {
+						t.Fatal("restored backup group migrations were not completed")
+					}
+					var groups []model.ClientGroup
+					if err := database.GetDB().Find(&groups).Error; err != nil {
+						t.Fatal(err)
+					}
+					if len(groups) != 1 || !strings.Contains(groups[0].Name, fmt.Sprintf("Group %d", i+1)) {
+						t.Fatal("restore left the wrong groups", groups)
+					}
+					var memberships []model.AccountGroup
+					if err := database.GetDB().Find(&memberships).Error; err != nil {
+						t.Fatal(err)
+					}
+					if len(memberships) != 1 || memberships[0].AccountID != accounts[0].Id || memberships[0].GroupID != groups[0].ID {
+						t.Fatal("restored customer did not retain group membership", memberships)
+					}
 				}
-				if err := database.CloseDB(); err != nil {
-					t.Fatal(err)
-				}
-				if err := os.Rename(config.GetDBPath(), file); err != nil {
-					t.Fatal(err)
-				}
-				backups = append(backups, file)
-			}
-			if err := database.InitDB(config.GetDBPath()); err != nil {
-				t.Fatal(err)
-			}
-			svc := &ServerService{}
-			for i, file := range backups {
-				src, err := os.Open(file)
-				if err != nil {
-					t.Fatal(err)
-				}
-				err = svc.ImportDB(src)
-				src.Close()
-				if err != nil {
-					t.Fatal(err)
-				}
-				var ibs []model.Inbound
-				if err := database.GetDB().Find(&ibs).Error; err != nil {
-					t.Fatal(err)
-				}
-				if len(ibs) != 1 || ibs[0].Tag != fmt.Sprintf("backup-%d", i+1) {
-					t.Fatal("restore did not replace inbounds", ibs)
-				}
-				var accounts []model.Account
-				if err := database.GetDB().Find(&accounts).Error; err != nil {
-					t.Fatal(err)
-				}
-				if len(accounts) != 1 || accounts[0].Email != fmt.Sprintf("backup-%d", i+1) {
-					t.Fatalf("restore %d did not publish restored customers: %+v", i+1, accounts)
-				}
-				if !GroupsMigrated(database.GetDB()) || !AdminGroupsMigrated(database.GetDB()) {
-					t.Fatal("restored backup group migrations were not completed")
-				}
-				var groups []model.ClientGroup
-				if err := database.GetDB().Find(&groups).Error; err != nil {
-					t.Fatal(err)
-				}
-				if len(groups) != 1 || !strings.Contains(groups[0].Name, fmt.Sprintf("Group %d", i+1)) {
-					t.Fatal("restore left the wrong groups", groups)
-				}
-				var memberships []model.AccountGroup
-				if err := database.GetDB().Find(&memberships).Error; err != nil {
-					t.Fatal(err)
-				}
-				if len(memberships) != 1 || memberships[0].AccountID != accounts[0].Id || memberships[0].GroupID != groups[0].ID {
-					t.Fatal("restored customer did not retain group membership", memberships)
-				}
-			}
-		})
+			})
+		}
 	}
 }
 
