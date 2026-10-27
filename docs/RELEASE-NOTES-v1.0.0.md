@@ -26,6 +26,9 @@ records describe upstream development, not previous stable releases of this fork
   subscription exports. Protocol profiles and device-specific configurations can be downloaded.
   Source-IP, session/device and download/upload speed controls are shown for supported protocols.
 
+- WARP rejects failed or incomplete provider responses without replacing stored credentials or
+  recording a failed license change. Requests have a timeout and bounded response size.
+
 ## Accounts, traffic, renewal and representatives
 
 - Users manages one account across several inbounds/locations with a central quota, expiry,
@@ -214,3 +217,5 @@ IP خروجی، دیگر هم‌زمان برچسب خطا نشان نمی‌د�
 [راهنمای فارسی نصب](https://github.com/admin6501/vpn-ui/blob/main/README_FA.md) ·
 [راهنمای فارسی کار با پنل](https://github.com/admin6501/vpn-ui/blob/main/docs/PANEL-GUIDE.fa.md) ·
 [راهنمای فارسی نود](https://github.com/admin6501/vpn-ui/blob/main/docs/NODES.fa.md).
+
+اصلاح مدیریت خطای WARP: پاسخ خطا یا ناقص سرویس باعث ذخیرهٔ اطلاعات نامعتبر یا ثبت موفقیت کاذب لایسنس نمی‌شود؛ زمان انتظار و اندازهٔ پاسخ محدود شده‌اند.
