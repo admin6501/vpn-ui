@@ -4,170 +4,162 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"time"
-
-	"github.com/mhsanaei/3x-ui/v2/logger"
-	"github.com/mhsanaei/3x-ui/v2/util/common"
 )
 
 // WarpService provides business logic for Cloudflare WARP integration.
-// It manages WARP configuration and connectivity settings.
-type WarpService struct {
-	SettingService
-}
+type WarpService struct{ SettingService }
 
-func (s *WarpService) GetWarpData() (string, error) {
-	warp, err := s.SettingService.GetWarp()
-	if err != nil {
-		return "", err
+func (s *WarpService) GetWarpData() (string, error) { return s.GetWarp() }
+func (s *WarpService) DelWarpData() error           { return s.SetWarp("") }
+
+// Provider errors must never be treated as new credentials or a saved license.
+// Bound both the request lifetime and response size; do not expose response bodies
+// in errors because successful provider responses contain account credentials.
+func warpRequest(method, endpoint, token string, payload any) (map[string]any, []byte, error) {
+	var body []byte
+	var err error
+	if payload != nil {
+		body, err = json.Marshal(payload)
+		if err != nil {
+			return nil, nil, err
+		}
 	}
-	return warp, nil
+	req, err := http.NewRequest(method, "https://api.cloudflareclient.com/v0a2158/reg"+endpoint, bytes.NewReader(body))
+	if err != nil {
+		return nil, nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("CF-Client-Version", "a-7.21-0721")
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	resp, err := (&http.Client{Timeout: 20 * time.Second}).Do(req)
+	if err != nil {
+		return nil, nil, fmt.Errorf("WARP request failed: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, nil, fmt.Errorf("WARP provider returned HTTP %d", resp.StatusCode)
+	}
+	const limit = 1 << 20
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, limit+1))
+	if err != nil {
+		return nil, nil, err
+	}
+	if len(raw) > limit {
+		return nil, nil, fmt.Errorf("WARP response is too large")
+	}
+	var data map[string]any
+	if err = json.Unmarshal(raw, &data); err != nil || len(data) == 0 {
+		return nil, nil, fmt.Errorf("WARP provider returned an invalid response")
+	}
+	if success, ok := data["success"].(bool); ok && !success {
+		return nil, nil, fmt.Errorf("WARP provider rejected the request")
+	}
+	if errors, ok := data["errors"].([]any); ok && len(errors) > 0 {
+		return nil, nil, fmt.Errorf("WARP provider rejected the request")
+	}
+	return data, raw, nil
 }
 
-func (s *WarpService) DelWarpData() error {
-	err := s.SettingService.SetWarp("")
+func (s *WarpService) warpCredentials() (map[string]string, error) {
+	raw, err := s.GetWarp()
 	if err != nil {
-		return err
+		return nil, err
+	}
+	var data map[string]string
+	if err = json.Unmarshal([]byte(raw), &data); err != nil {
+		return nil, err
+	}
+	if data["device_id"] == "" || data["access_token"] == "" {
+		return nil, fmt.Errorf("WARP account credentials are missing")
+	}
+	return data, nil
+}
+
+func validateWarpConfig(data map[string]any) error {
+	config, ok := data["config"].(map[string]any)
+	if !ok {
+		return fmt.Errorf("WARP response is missing its configuration")
+	}
+	peers, ok := config["peers"].([]any)
+	if !ok || len(peers) == 0 {
+		return fmt.Errorf("WARP response is missing its peers")
 	}
 	return nil
 }
 
 func (s *WarpService) GetWarpConfig() (string, error) {
-	var warpData map[string]string
-	warp, err := s.SettingService.GetWarp()
+	account, err := s.warpCredentials()
 	if err != nil {
 		return "", err
 	}
-	err = json.Unmarshal([]byte(warp), &warpData)
+	data, raw, err := warpRequest(http.MethodGet, "/"+url.PathEscape(account["device_id"]), account["access_token"], nil)
 	if err != nil {
 		return "", err
 	}
-
-	url := fmt.Sprintf("https://api.cloudflareclient.com/v0a2158/reg/%s", warpData["device_id"])
-
-	req, err := http.NewRequest("GET", url, nil)
-	if err != nil {
+	if err = validateWarpConfig(data); err != nil {
 		return "", err
 	}
-	req.Header.Set("Authorization", "Bearer "+warpData["access_token"])
-
-	client := &http.Client{}
-	resp, err := client.Do(req)
-	if err != nil {
-		return "", err
-	}
-	defer resp.Body.Close()
-	buffer := &bytes.Buffer{}
-	_, err = buffer.ReadFrom(resp.Body)
-	if err != nil {
-		return "", err
-	}
-
-	return buffer.String(), nil
+	return string(raw), nil
 }
 
-func (s *WarpService) RegWarp(secretKey string, publicKey string) (string, error) {
-	tos := time.Now().UTC().Format("2006-01-02T15:04:05.000Z")
+func (s *WarpService) RegWarp(secretKey, publicKey string) (string, error) {
 	hostName, _ := os.Hostname()
-	data := fmt.Sprintf(`{"key":"%s","tos":"%s","type": "PC","model": "vpn-ui", "name": "%s"}`, publicKey, tos, hostName)
-
-	url := "https://api.cloudflareclient.com/v0a2158/reg"
-
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer([]byte(data)))
+	payload := map[string]string{"key": publicKey, "tos": time.Now().UTC().Format("2006-01-02T15:04:05.000Z"), "type": "PC", "model": "vpn-ui", "name": hostName}
+	data, raw, err := warpRequest(http.MethodPost, "", "", payload)
 	if err != nil {
 		return "", err
 	}
-
-	req.Header.Add("CF-Client-Version", "a-7.21-0721")
-	req.Header.Add("Content-Type", "application/json")
-
-	client := &http.Client{}
-	resp, err := client.Do(req)
+	deviceID, _ := data["id"].(string)
+	token, _ := data["token"].(string)
+	account, _ := data["account"].(map[string]any)
+	license, ok := account["license"].(string)
+	if deviceID == "" || token == "" || !ok {
+		return "", fmt.Errorf("WARP registration response is missing account credentials")
+	}
+	if err = validateWarpConfig(data); err != nil {
+		return "", err
+	}
+	warpData, err := json.MarshalIndent(map[string]string{"access_token": token, "device_id": deviceID, "license_key": license, "private_key": secretKey}, "", "  ")
 	if err != nil {
 		return "", err
 	}
-	defer resp.Body.Close()
-	buffer := &bytes.Buffer{}
-	_, err = buffer.ReadFrom(resp.Body)
+	result, err := json.Marshal(map[string]json.RawMessage{"data": warpData, "config": raw})
 	if err != nil {
 		return "", err
 	}
-
-	var rspData map[string]any
-	err = json.Unmarshal(buffer.Bytes(), &rspData)
-	if err != nil {
+	if err = s.SetWarp(string(warpData)); err != nil {
 		return "", err
 	}
-
-	deviceId := rspData["id"].(string)
-	token := rspData["token"].(string)
-	license, ok := rspData["account"].(map[string]any)["license"].(string)
-	if !ok {
-		logger.Debug("Error accessing license value.")
-		return "", err
-	}
-
-	warpData := fmt.Sprintf("{\n  \"access_token\": \"%s\",\n  \"device_id\": \"%s\",", token, deviceId)
-	warpData += fmt.Sprintf("\n  \"license_key\": \"%s\",\n  \"private_key\": \"%s\"\n}", license, secretKey)
-
-	s.SettingService.SetWarp(warpData)
-
-	result := fmt.Sprintf("{\n  \"data\": %s,\n  \"config\": %s\n}", warpData, buffer.String())
-
-	return result, nil
+	return string(result), nil
 }
 
 func (s *WarpService) SetWarpLicense(license string) (string, error) {
-	var warpData map[string]string
-	warp, err := s.SettingService.GetWarp()
+	account, err := s.warpCredentials()
 	if err != nil {
 		return "", err
 	}
-	err = json.Unmarshal([]byte(warp), &warpData)
+	data, _, err := warpRequest(http.MethodPut, "/"+url.PathEscape(account["device_id"])+"/account", account["access_token"], map[string]string{"license": license})
 	if err != nil {
 		return "", err
 	}
-
-	url := fmt.Sprintf("https://api.cloudflareclient.com/v0a2158/reg/%s/account", warpData["device_id"])
-	data := fmt.Sprintf(`{"license": "%s"}`, license)
-
-	req, err := http.NewRequest("PUT", url, bytes.NewBuffer([]byte(data)))
+	_, hasLicense := data["license"].(string)
+	if !hasLicense && data["success"] != true {
+		return "", fmt.Errorf("WARP license response is incomplete")
+	}
+	account["license_key"] = license
+	raw, err := json.MarshalIndent(account, "", "  ")
 	if err != nil {
 		return "", err
 	}
-	req.Header.Set("Authorization", "Bearer "+warpData["access_token"])
-
-	client := &http.Client{}
-	resp, err := client.Do(req)
-	if err != nil {
+	if err = s.SetWarp(string(raw)); err != nil {
 		return "", err
 	}
-	defer resp.Body.Close()
-	buffer := &bytes.Buffer{}
-	_, err = buffer.ReadFrom(resp.Body)
-	if err != nil {
-		return "", err
-	}
-
-	var response map[string]any
-	err = json.Unmarshal(buffer.Bytes(), &response)
-	if err != nil {
-		return "", err
-	}
-	if response["success"] == false {
-		errorArr, _ := response["errors"].([]any)
-		errorObj := errorArr[0].(map[string]any)
-		return "", common.NewError(errorObj["code"], errorObj["message"])
-	}
-
-	warpData["license_key"] = license
-	newWarpData, err := json.MarshalIndent(warpData, "", "  ")
-	if err != nil {
-		return "", err
-	}
-	s.SettingService.SetWarp(string(newWarpData))
-
-	return string(newWarpData), nil
+	return string(raw), nil
 }
