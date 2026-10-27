@@ -97,6 +97,8 @@ jobs:
       - name: Build all portable VPN backends
         if: steps.backend-cache.outputs.cache-hit != 'true'
         run: bash build/backend/build.sh ${{ matrix.arch }}
+      - name: Verify complete panel, account, node and subscription regression suite
+        run: go test -p 2 ./... -count=1 -timeout 10m
       - name: Verify IP admission, eviction, reload and concurrent connection safety
         working-directory: third_party/Xray-core
         run: go test -race ./common/speedlimit -count=1
@@ -129,7 +131,7 @@ jobs:
           node test_unit/refresh_queue_test.cjs
           RUN_NODE_UI_BROWSER=1 go test ./web/middleware -run '^TestSecurityBrowserPanelNavigationRuntime$' -count=1 -timeout 60s
           RUN_NODE_UI_BROWSER=1 go test ./sub -run '^TestSubscriptionPageBrowserRuntime$' -count=1 -timeout 300s
-          RUN_NODE_UI_BROWSER=1 go test ./web -run '^Test(NodePageBrowserRuntime|OverviewSSLBrowserRuntime|RepresentativeOverviewHidesInboundManagementAndUpdates|AdminRolesBrowserRuntime|DelegatedSettingsBrowserRuntime|RepresentativeEditBrowserRuntime)$' -count=1 -timeout 1200s
+          RUN_NODE_UI_BROWSER=1 go test ./web -run '^Test(NodePageBrowserRuntime|OverviewSSLBrowserRuntime|RepresentativeOverviewHidesInboundManagementAndUpdates|AdminRolesBrowserRuntime|DelegatedSettingsBrowserRuntime|RepresentativeEditBrowserRuntime|OutboundTableBrowserRuntime|InboundProtocolFormsBrowserRuntime|OutboundProtocolFormsBrowserRuntime)$' -count=1 -timeout 1200s
           RUN_NODE_UI_BROWSER=1 go test -race ./web -run '^Test(GroupsBrowserRuntime|InboundCreateGroupsBrowserRuntime)$' -count=1 -timeout 240s
       - name: Verify ownership transfer and online counts
         run: go test -tags netgo,osusergo ./web/service ./web/controller -run 'TestSaveAccount|TestLeavingAnAccount|TestIndependentAccount|TestMembershipEnable|TestDisabledMembership|TestRemovingTheLastMembership|TestToggleClientEnableByEmail|TestRenameAccount|TestSortAccountRows|TestAccountSort|TestClientLimit|TestResolveUserLimitOverride|TestAllocateBlockIP|TestOldestBlockSession|TestAdmit|TestSpeedLimit|TestAdminRoles|TestAdminOwner|TestAccountOwnershipTransfer|TestPasarGuard|TestOverview|TestVerifiedProvisioned|TestOffline|TestMigrationAccountsVerifiesExistingImported'

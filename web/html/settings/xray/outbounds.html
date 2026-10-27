@@ -34,9 +34,9 @@
             </a-button-group>
         </a-col>
     </a-row>
-    <a-table :columns="outboundColumns" bordered :row-key="r => r.key"
+    <a-table class="ob-table" :columns="outboundColumns" bordered :row-key="r => r.key"
         :data-source="outboundData"
-        :scroll="isMobile ? {} : { x: 800 }" :pagination="false"
+        :scroll="{ x: 800 }" table-layout="fixed" :pagination="false"
         :indent-size="0"
         :locale='{ filterConfirm: `{{ i18n "confirm" }}`, filterReset: `{{ i18n "reset" }}` }'>
         <template slot="action" slot-scope="text, outbound, index">
@@ -126,11 +126,13 @@
                  the switch that starts the counting. -->
             <a-tooltip v-if="!outboundTrafficMeasured(outbound)"
                 title='{{ i18n "pages.xray.outbound.trafficUnmeasuredDesc" }}'>
-                <a-tag :style="{ margin: '0' }">[[
+                <a-tag class="ob-traffic-tag">[[
                     findOutboundTraffic(outbound) ]]</a-tag>
             </a-tooltip>
-            <a-tag v-else color="green">[[ findOutboundTraffic(outbound)
-                ]]</a-tag>
+            <a-tag v-else class="ob-traffic-tag" color="green">
+                <span v-for="(part, partIndex) in findOutboundTraffic(outbound).split(' / ')"
+                    :key="partIndex" class="ob-traffic-line num">[[ part ]]</span>
+            </a-tag>
         </template>
         <template slot="test" slot-scope="text, outbound, index">
             <a-tooltip>
@@ -169,7 +171,7 @@
                             :title="exitInfo(index).ipv6">[[ exitInfo(index).ipv6 ]]</span>
                     </span>
                 </div>
-                <a-tooltip v-else
+                <a-tooltip v-if="!outboundTestStates[index].result.success"
                     :title="outboundTestStates[index].result.error">
                     <a-tag color="red">
                         {{ i18n "fail" }}

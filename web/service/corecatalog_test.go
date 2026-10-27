@@ -444,14 +444,21 @@ func TestEveryVpnProtocolMapsToItsCore(t *testing.T) {
 		}
 	}
 
-	// And every installable core must be reachable from some protocol, or installing it
-	// is the only thing the operator can ever do with it.
+	// Every installable core must serve a protocol or a declared shared dependency.
 	served := map[string]bool{}
 	for _, p := range []string{"l2tp", "pptp", "openvpn", "openconnect", "sstp",
 		"ikev2", "wg-c", "awg", "gre", "mtproto"} {
 		served[protocolCoreName(p)] = true
 	}
 	for _, core := range installableCores() {
+		if core == "ipsec" {
+			for _, consumer := range []string{"l2tp", "ikev2"} {
+				if !needsFeature([]string{protocolCoreName(consumer)}, featStrongswan) {
+					t.Errorf("IPsec must remain reachable as a shared dependency of %s", consumer)
+				}
+			}
+			continue
+		}
 		if !served[core] {
 			t.Errorf("core %q is installable but no protocol maps to it, so its gate can never fire", core)
 		}
