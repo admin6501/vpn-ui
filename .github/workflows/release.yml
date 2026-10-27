@@ -90,7 +90,7 @@ jobs:
           done
       - name: Cache portable VPN backends
         id: backend-cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: backend/bin/${{ matrix.arch }}
           key: backend-${{ matrix.arch }}-${{ hashFiles('build/backend/**', '.gitmodules') }}-v1
