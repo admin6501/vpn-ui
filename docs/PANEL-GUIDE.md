@@ -124,3 +124,9 @@ For diagnosis use `systemctl status vpn-ui --no-pager` and
 The [unlisted-user checker](../scripts/check-unlisted-xray-users.py) compares configured identities;
 a zero result is not a complete host compromise assessment. Inspect live runtime and host access
 separately. No database-only check can certify an entire server clean.
+
+## Xray outbound traffic and tests
+
+The Outbounds table shows upload and download on separate lines. Narrow screens scroll the
+table horizontally; traffic and IPv6 addresses remain inside their columns. A successful
+connectivity test remains successful when the optional exit-address probe cannot answer.

@@ -1,0 +1,37 @@
+name: Panel regression
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  panel:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Apply pinned Xray security dependency patch
+        run: bash build/core/apply-security.sh
+      - name: Verify complete functional, API, account and subscription suite
+        run: go test -p 2 ./... -count=1 -timeout 10m
+      - name: Install browser test runtime
+        run: |
+          npm install --prefix /tmp/vpn-ui-browser-tests playwright@1.62.1 --no-audit --no-fund
+          /tmp/vpn-ui-browser-tests/node_modules/.bin/playwright install --with-deps chromium
+      - name: Verify panel forms, roles, locales and responsive tables in Chromium
+        run: |
+          export NODE_PATH=/tmp/vpn-ui-browser-tests/node_modules
+          export NODE_UI_CHROME=$(node -e 'console.log(require("playwright").chromium.executablePath())')
+          RUN_NODE_UI_BROWSER=1 go test -p 2 ./web ./sub ./web/middleware -run 'BrowserRuntime|TestRepresentativeOverviewHidesInboundManagementAndUpdates|TestAdministratorSidebarKeepsGrantedInbounds' -count=1 -timeout 20m
+          for test_script in test_unit/client_details_browser_test.cjs test_unit/gre_peer_browser_test.cjs test_unit/client_renew_browser_test.cjs test_unit/account_usage_breakdown_browser_test.cjs test_unit/refresh_queue_test.cjs test_unit/language_selection_test.cjs test_unit/hysteria_link_test.cjs test_unit/client_edit_regression_test.cjs test_unit/inbound_stats_test.js test_unit/overview_ssl_stats_test.cjs test_unit/export_test/export.test.js; do
+            node "$test_script"
+          done
+      - name: Verify documentation and language guide links
+        run: python3 test_unit/documentation_test.py

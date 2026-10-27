@@ -8,6 +8,10 @@ records describe upstream development, not previous stable releases of this fork
 
 ## Panel, protocols and presentation
 
+- Xray outbound traffic stays within its column: upload/download use separate lines, column
+  widths are balanced, and narrow tables scroll without widening the page. Successful tests
+  remain successful when optional exit-IP metadata is unavailable.
+
 - Manage Xray-native VLESS, VMess, Trojan, Shadowsocks, Hysteria2, AnyTLS, TUIC, NaiveProxy and
   native WireGuard, plus OpenVPN, OpenConnect, L2TP, PPTP, SSTP, IKEv2, kernel WireGuard,
   AmneziaWG, GRE, MTProto and the embedded SSH proxy.
@@ -169,6 +173,10 @@ Documentation: [all guides](https://github.com/admin6501/vpn-ui/blob/main/docs/I
 [translations](https://github.com/admin6501/vpn-ui/blob/main/docs/TRANSLATIONS.md).
 
 ## توضیح نسخه به فارسی
+
+در جدول خروجی‌های Xray، آپلود و دانلود در دو خط و داخل ستون ترافیک نمایش داده می‌شوند؛
+عرض ستون‌ها متعادل شده و جدول در صفحهٔ باریک اسکرول می‌شود. تست موفق بدون اطلاعات اختیاری
+IP خروجی، دیگر هم‌زمان برچسب خطا نشان نمی‌دهد.
 
 **این اولین نسخهٔ پایدار این فورک با شمارهٔ v1.0.0 است.** پنل مرکزی، عامل نود، نصب آنلاین/آفلاین
 و ابزار مهاجرت همراه راهنماهای هماهنگ منتشر می‌شوند. پنل، ساب و ربات ۱۳ زبان دارند؛ شش README

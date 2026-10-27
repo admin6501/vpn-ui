@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -119,11 +120,17 @@ func TestWgcXrayConfig(t *testing.T) {
 	}
 	t.Logf("generated config (%d bytes)", len(blob))
 
-	xrayBin := "../../corebundle/core/amd64/xray"
+	xrayBin := filepath.Join("../../corebundle/core", runtime.GOARCH, "xray")
 	if _, err := os.Stat(xrayBin); err != nil {
 		t.Skipf("xray binary not found at %s: %v", xrayBin, err)
 	}
-	out, err := exec.Command(xrayBin, "-test", "-c", cfgPath).CombinedOutput()
+	assets, err := filepath.Abs("../../corebundle/core")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command(xrayBin, "-test", "-c", cfgPath)
+	cmd.Env = append(os.Environ(), "XRAY_LOCATION_ASSET="+assets)
+	out, err := cmd.CombinedOutput()
 	t.Logf("xray -test output:\n%s", string(out))
 	if err != nil {
 		// dump the routing + dokodemo portion of the config for diagnosis

@@ -1055,6 +1055,18 @@ body.dark .bo-distro--asahi{--distro-ink:#BD2F1D}
 body.dark .bo-distro--tails{--distro-ink:#7655A0}
 body.dark .bo-distro--photon{--distro-ink:#2C67A6}
 
+/* Keep every outbound badge within its cell, including large byte values and
+   translated unmeasured labels. The table scrolls inside its own container on
+   narrow screens; upload/download stack rather than consuming Test Result. */
+.ob-table { width:100%; max-width:100%; min-width:0; }
+.ob-table .ant-table-tbody > tr > td { overflow-wrap:anywhere; }
+.ob-table .ant-tag { max-width:100%; white-space:normal; overflow-wrap:anywhere; }
+.ob-table .ob-traffic-tag {
+  display:inline-block; box-sizing:border-box; margin:0; padding:2px 8px;
+  line-height:1.5; text-align:center;
+}
+.ob-traffic-line { display:block; }
+
 /* Outbound test: the exit address the probe observed, under the delay tag.
    The IPs are `num` (LTR-pinned, tabular) so a v6 address cannot be bidi
    reordered in fa/ar, and they wrap rather than widen the column. */
