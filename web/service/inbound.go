@@ -5927,10 +5927,29 @@ func (s *InboundService) DelInboundClientByEmail(inboundId int, email string) (b
 
 	db := database.GetDB()
 
-	// remove IP bindings
-	if err := s.DelClientIPs(db, storedEmail); err != nil {
-		logger.Error("Error in delete client IPs")
+	// Traffic and IP bindings belong to the account, not this membership. Preserve
+	// them until the final served inbound has been removed, including retries.
+	serving, err := servingInboundIds(db, storedEmail)
+	if err != nil {
 		return false, err
+	}
+	remainingID := 0
+	for _, id := range serving {
+		if id != inboundId {
+			remainingID = id
+			break
+		}
+	}
+	if remainingID != 0 {
+		if err := db.Model(&xray.ClientTraffic{}).Where("LOWER(TRIM(email)) = ?", accountKey(storedEmail)).Update("inbound_id", remainingID).Error; err != nil {
+			return false, err
+		}
+	}
+	if remainingID == 0 {
+		if err := s.DelClientIPs(db, storedEmail); err != nil {
+			logger.Error("Error in delete client IPs")
+			return false, err
+		}
 	}
 
 	needRestart := false
@@ -5950,7 +5969,7 @@ func (s *InboundService) DelInboundClientByEmail(inboundId int, email string) (b
 		if err := db.Model(xray.ClientTraffic{}).Where("email = ?", storedEmail).Count(&stats).Error; err != nil {
 			return false, err
 		}
-		if stats > 0 {
+		if stats > 0 && remainingID == 0 {
 			if err := s.DelClientStat(db, storedEmail); err != nil {
 				logger.Error("Delete stats Data Error")
 				return false, err

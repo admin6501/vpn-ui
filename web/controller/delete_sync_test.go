@@ -170,3 +170,14 @@ func TestRenamingAClientCarriesItsAccount(t *testing.T) {
 		}
 	}
 }
+
+// Automation must be able to distinguish a panel that preserves account-level
+// traffic during multi-inbound deletion from older releases.
+func TestMultiDeleteCapabilityIsAvailableToClientsReader(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	f := newIdorFixture(t)
+	w := f.as(t, f.ali, http.MethodGet, "/panel/api/inbounds/multiDeleteCapability", "")
+	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"preservesSharedTraffic":true`) {
+		t.Fatalf("unexpected capability response: %d %s", w.Code, w.Body.String())
+	}
+}
