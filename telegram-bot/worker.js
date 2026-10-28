@@ -1238,6 +1238,11 @@ async function handleAdminUICallback(c, cq, answer) {
   if (/^admin:planpick:\d+$/.test(d)) {
     const draft=st.admin_plan_draft,id=Number(d.split(":")[2]);if(!draft||Date.now()>draft.expires)return answer("درخواست منقضی شده است.",true);
     const cat=await getCategory(env,id);try{await assertCategory(env,cat);await groupCredentials(env,cat.group_ids,0)}catch(e){return answer(`دسته‌بندی معتبر نیست: ${String(e.message).slice(0,120)}`,true)}
+    if(draft.categoryOnly) {
+      const changed=await run(env,"UPDATE bot_plan_specs SET category_id=? WHERE plan_key=? AND EXISTS(SELECT 1 FROM plans WHERE key=?) AND EXISTS(SELECT 1 FROM bot_categories WHERE id=? AND active=1 AND group_ids=? AND panel_identity=?)",id,draft.key,draft.key,id,cat.group_ids,cat.panel_identity);
+      if(!changed.meta.changes)return answer("بسته یا دسته‌بندی تغییر کرده است؛ دوباره تلاش کنید.",true);
+      delete st.admin_plan_draft;return renderAdmin("✅ دسته‌بندی بسته تغییر کرد؛ قیمت، حجم و مدت آن حفظ شد.",adminBack(`admin:plan:${draft.key}`));
+    }
     try {
       const old=await getPlan(env,draft.key);
       if(draft.editing && !old)return answer("بسته پیدا نشد.",true);
@@ -1287,13 +1292,17 @@ async function handleAdminUICallback(c, cq, answer) {
     return renderAdmin(`📦 <b>مدیریت بسته‌ها</b>${plans.length !== safe.length ? "\nبعضی کلیدهای قدیمی نامعتبرند؛ با دستورات قبلی اصلاحشان کنید." : ""}`, kb(rows));
   }
   if (d === "admin:plan_add") return prompt("plan_new", "", "➕ کلید انگلیسی، قیمت تومان، حجم گیگ و مدت روز را با فاصله بفرستید.\nمثال: <code>p10 70000 10 30</code>", "admin:plans");
-  for (const [prefix, kind] of [["admin:plan:","show"],["admin:price:","price"],["admin:editplan:","edit"],["admin:delplan:","delete"],["admin:confirmplan:","confirm"]]) {
+  for (const [prefix, kind] of [["admin:plan:","show"],["admin:price:","price"],["admin:editplan:","edit"],["admin:planmove:","move"],["admin:delplan:","delete"],["admin:confirmplan:","confirm"]]) {
     if (!d.startsWith(prefix)) continue;
     const key = d.slice(prefix.length); if (!planKeyOK(key)) return answer("کلید بسته نامعتبر است.", true);
     const plan = await getPlan(env, key); if (!plan) return answer("بسته پیدا نشد.", true);
-    if (kind === "show") return renderAdmin(`📦 <b>${esc(planLabel(plan))}</b>\nکلید: <code>${esc(key)}</code>\nقیمت: ${toman(plan.price)}\nمدت: ${plan.days || "تنظیم نشده"} روز\nدسته‌بندی: ${esc(plan.category_name || "تنظیم نشده")}`, kb([[btn("💰 تغییر قیمت", `admin:price:${key}`),btn("✏️ تغییر حجم و قیمت", `admin:editplan:${key}`)],[btn("🗑 حذف بسته", `admin:delplan:${key}`)],[btn("🔙 بازگشت", "admin:plans")]]));
+    if (kind === "show") return renderAdmin(`📦 <b>${esc(planLabel(plan))}</b>\nکلید: <code>${esc(key)}</code>\nقیمت: ${toman(plan.price)}\nمدت: ${plan.days || "تنظیم نشده"} روز\nدسته‌بندی: ${esc(plan.category_name || "تنظیم نشده")}`, kb([[btn("💰 تغییر قیمت", `admin:price:${key}`),btn("✏️ تغییر حجم و قیمت", `admin:editplan:${key}`)],[btn("🗂 تغییر دسته‌بندی", `admin:planmove:${key}`)],[btn("🗑 حذف بسته", `admin:delplan:${key}`)],[btn("🔙 بازگشت", "admin:plans")]]));
     if (kind === "price") return prompt("price", key, `قیمت جدید «${esc(key)}» را به تومان بفرستید.`, "admin:plans");
     if (kind === "edit") return prompt("plan_edit", key, `قیمت، حجم گیگ و مدت روز «${esc(key)}» را بفرستید. مثال: <code>70000 10 30</code>`, "admin:plans");
+    if (kind === "move") {
+      if (!Number.isSafeInteger(Number(plan.days)) || Number(plan.days)<=0) return answer("مدت بسته تنظیم نشده؛ ابتدا از ویرایش بسته مدت را وارد کنید.",true);
+      st.admin_plan_draft={key,categoryOnly:true,expires:Date.now()+30*60*1000};return showPlanCategoryChoices(env,chat,0);
+    }
     if (kind === "delete") return renderAdmin(`بستهٔ <code>${esc(key)}</code> حذف شود؟`, kb([[btn("✅ تایید حذف", `admin:confirmplan:${key}`)],[btn("❌ انصراف", "admin:plans")]]));
     await handleAdminCommand(c, {chat:{id:chat},from:cq.from,text:`/delplan ${key}`}); return showAdminHome(env, chat);
   }
