@@ -154,3 +154,23 @@ CREATE TABLE IF NOT EXISTS bot_users (
  blocked INTEGER NOT NULL DEFAULT 0 CHECK(blocked IN (0,1)),
  last_seen TEXT NOT NULL DEFAULT ''
 );
+
+-- Store the panel group and duration with each category, plan, and order.
+CREATE TABLE IF NOT EXISTS bot_categories (
+ id INTEGER PRIMARY KEY AUTOINCREMENT,
+ name TEXT NOT NULL,
+ group_ids TEXT NOT NULL,
+ panel_identity TEXT NOT NULL DEFAULT '',
+ active INTEGER NOT NULL DEFAULT 1 CHECK(active IN (0,1))
+);
+CREATE TABLE IF NOT EXISTS bot_plan_specs (
+ plan_key TEXT PRIMARY KEY,
+ category_id INTEGER NOT NULL,
+ days INTEGER NOT NULL CHECK(days > 0)
+);
+CREATE TABLE IF NOT EXISTS bot_order_routes (
+ order_id INTEGER PRIMARY KEY,
+ group_ids TEXT NOT NULL,
+ anchor_id INTEGER NOT NULL DEFAULT 0,
+ panel_identity TEXT NOT NULL DEFAULT ''
+);

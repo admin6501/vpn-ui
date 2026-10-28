@@ -44,7 +44,6 @@ const MAX_START_TEXT = 700;
 const META = {
   referral_discount: ["int", "🎁 مبلغ هدیه دعوت (تومان)"],
   name_mode: ["name_mode", "🏷 نوع نام‌گذاری سرویس"],
-  duration_days: ["int", "مدت همه بسته‌ها (روز)"],
   test_enabled: ["bool", "سرویس تست: 1 = فعال، 0 = غیرفعال"],
   test_mb: ["int", "حجم سرویس تست (مگابایت)"],
   test_days: ["int", "مدت سرویس تست (روز)"],
@@ -55,8 +54,6 @@ const META = {
   channel_link: ["text", "لینک کانال"],
   main_menu_image_url: ["text", "لینک عکس منوی اصلی (برای خالی کردن: -)"],
   start_text: ["text", "متن پیام شروع"],
-  panel_group_ids: ["ids", "آیدی گروه‌های پنل، با کاما (مثلا 1 یا 1,2)"],
-  panel_inbound_id: ["int", "آیدی اینباند پنل"],
   sub_base_url: ["text", "آدرس پایه لینک ساب، مثلا https://example.com:8000/sub/"],
 };
 
@@ -129,8 +126,21 @@ async function saveState(env, uid, obj) {
     uid, JSON.stringify(obj));
 }
 
-const getPlans = (env) => all(env, "SELECT * FROM plans ORDER BY sort, price");
-const getPlan = (env, key) => first(env, "SELECT * FROM plans WHERE key=?", key);
+const PLAN_SELECT = "SELECT p.*,s.category_id,s.days,c.name AS category_name,c.group_ids,c.panel_identity,c.active AS category_active FROM plans p LEFT JOIN bot_plan_specs s ON s.plan_key=p.key LEFT JOIN bot_categories c ON c.id=s.category_id";
+const getPlans = (env) => all(env, `${PLAN_SELECT} ORDER BY p.sort,p.price`);
+const getPlan = (env, key) => first(env, `${PLAN_SELECT} WHERE p.key=?`, key);
+const getCategory = (env,id) => first(env,"SELECT * FROM bot_categories WHERE id=?",id);
+async function currentPanelIdentity(env) {
+  if (env.panelStoredIdentity) return env.panelStoredIdentity;
+  if (!env.PANEL_URL || !env.PANEL_USER) throw new Error("ابتدا اتصال پنل را تنظیم کنید");
+  return panelAccountKey(env.PANEL_URL,env.PANEL_USER);
+}
+async function assertCategory(env,category) {
+  if (!category || Number(category.active ?? category.category_active)!==1 || !parseIds(category.group_ids).length) throw new Error("دسته‌بندی بسته تنظیم نشده یا غیرفعال است");
+  const identity=await currentPanelIdentity(env);
+  if(category.panel_identity && category.panel_identity!==identity) throw new Error("دسته‌بندی متعلق به اتصال قبلی پنل است؛ دوباره تنظیم کنید");
+  return identity;
+}
 const getOrder = (env, id) => first(env, "SELECT * FROM orders WHERE id=?", id);
 const setOrderStatus = (env, id, s) => run(env, "UPDATE orders SET status=? WHERE id=?", s, id);
 const claimOrder = async (env, id, from, to) =>
@@ -217,23 +227,23 @@ function subLink(env, subId) {
 function assertPanelReady(env) {
   if (!/^https:\/\//i.test(env.PANEL_URL || "") || !/^https:\/\//i.test(env.cfg.sub_base_url || "")) throw new Error("آدرس پنل و ساب باید HTTPS باشند");
   if (!env.cfg.sub_base_url) throw new Error("تنظیم sub_base_url خالی است (/set sub_base_url ...)");
-  if (!/^\d+$/.test(env.cfg.panel_inbound_id)) throw new Error("تنظیم panel_inbound_id خالی است (/set panel_inbound_id ...)");
-  if (!parseIds(env.cfg.panel_group_ids).length) throw new Error("تنظیم panel_group_ids خالی است");
 }
 
 // Read actual permitted groups/inbounds before constructing credentials.
-async function groupCredentials(env) {
+async function groupCredentials(env, groupIds=env.cfg.panel_group_ids, anchorId=env.cfg.panel_inbound_id) {
   const [groups, inbounds] = await Promise.all([
     panelCall(env, "GET", "/panel/api/clients/groups"),
     panelCall(env, "GET", "/panel/api/clients/assignable"),
   ]);
   if (!groups.success || !inbounds.success || !Array.isArray(groups.obj) || !Array.isArray(inbounds.obj))
     throw new Error("دریافت گروه‌ها یا ورودی‌های مجاز از پنل ناموفق بود");
-  const ids = parseIds(env.cfg.panel_group_ids);
+  const ids = parseIds(groupIds);
+  if(!ids.length) throw new Error("گروه بسته تنظیم نشده است");
   const selected = ids.map(id => groups.obj.find(g => Number(g.id) === id));
   if (selected.some(g => !g || !Array.isArray(g.inboundIds))) throw new Error("گروه انتخاب‌شده در دسترس نیست");
   const inboundIds = [...new Set(selected.flatMap(g => g.inboundIds.map(Number)))];
-  const anchor = Number(env.cfg.panel_inbound_id);
+  if (!inboundIds.length || inboundIds.some(id=>!Number.isSafeInteger(id)||id<=0)) throw new Error("ورودی‌های گروه معتبر نیستند");
+  const anchor = Number(anchorId) || inboundIds[0];
   if (!inboundIds.includes(anchor)) throw new Error("ورودی انتخاب‌شده عضو گروه‌های انتخابی نیست");
   const members = inboundIds.map(id => inbounds.obj.find(i => Number(i.inboundId) === id));
   if (members.some(i => !i)) throw new Error("یکی از ورودی‌های گروه در دسترس نماینده نیست");
@@ -259,19 +269,20 @@ async function groupCredentials(env) {
   // WireGuard, GRE and MTProto use email as id, set after email is minted.
   return { id, uuid, password, vpnUsername, auth, secret, naiveUsername,
     ...(anchorProtocol === "naive" ? { username: naiveUsername } : {}),
-    ...(anchorProtocol === "vmess" ? { security: "auto" } : {}), anchorProtocol };
+    ...(anchorProtocol === "vmess" ? { security: "auto" } : {}), anchorProtocol, anchorId:anchor };
 
 }
 
-async function panelCreate(env, { name, bytes, days, attemptKey, onDispatch }) {
+async function panelCreate(env, { name, bytes, days, attemptKey, onDispatch, groupIds=env.cfg.panel_group_ids, anchorId=env.cfg.panel_inbound_id }) {
   assertPanelReady(env);
   if (!Number.isSafeInteger(bytes) || bytes <= 0 || !Number.isSafeInteger(days) || days <= 0 || !Number.isSafeInteger(Date.now() + days * DAY_MS)) throw new Error("حجم یا مدت بسته معتبر نیست");
-  const credentials = await groupCredentials(env);
+  const credentials = await groupCredentials(env,groupIds,anchorId);
   const subId = b64url(18);
   const email = `${name}_${hex(8)}`;
   if (["wg-c", "awg", "wireguard", "gre", "mtproto"].includes(credentials.anchorProtocol)) credentials.id = email;
   delete credentials.anchorProtocol;
-  const inboundId = Number(env.cfg.panel_inbound_id);
+  const inboundId = credentials.anchorId;
+  delete credentials.anchorId;
   if (attemptKey) await run(env, "INSERT INTO provision_attempts(attempt_key,email,sub_id,inbound_id,created_at) VALUES(?,?,?,?,?)", attemptKey, email, subId, inboundId, now());
   const settings = JSON.stringify({
     clients: [{
@@ -282,7 +293,7 @@ async function panelCreate(env, { name, bytes, days, attemptKey, onDispatch }) {
   });
   const form = new URLSearchParams();
   form.set("id", String(inboundId));
-  for (const g of parseIds(env.cfg.panel_group_ids)) form.append("groupIds", String(g));
+  for (const g of parseIds(groupIds)) form.append("groupIds", String(g));
   form.set("settings", settings);
   const j = await panelCall(env, "POST", "/panel/api/inbounds/addClient", form, onDispatch);
   if (!j.success) throw new Error("پنل رد کرد: " + (j.msg || JSON.stringify(j)));
@@ -435,11 +446,25 @@ async function isMember(env, uid) {
   return !!r.ok && (["member", "administrator", "creator"].includes(r.result.status) || (r.result.status === "restricted" && r.result.is_member === true));
 }
 
-async function plansKb(env, prefix) {
-  const plans = await getPlans(env);
-  const rows = plans.map((p) => [btn(`📦 ${planLabel(p)} — ${toman(p.price)}`, `${prefix}_${p.key}`)]);
-  rows.push([btn("🔙 بازگشت", "main_menu")]);
-  return kb(rows);
+async function plansKb(env,prefix,plans) {
+  const rows=plans.map(p=>[btn(`📦 ${planLabel(p)} — ${p.days} روز — ${toman(p.price)}`,`${prefix}_${p.key}`)]);
+  rows.push([btn("🔙 بازگشت","main_menu")]);return kb(rows);
+}
+async function showCustomerCategories(env,cq,mode,page=0) {
+  const suffix=mode === "test" ? "testcat" : "buycat";
+  const where=mode === "test" ? "" : "AND EXISTS(SELECT 1 FROM bot_plan_specs s JOIN plans p ON p.key=s.plan_key WHERE s.category_id=c.id)";
+  const cats=await all(env,`SELECT c.* FROM bot_categories c WHERE c.active=1 ${where} ORDER BY c.id DESC LIMIT 11 OFFSET ?`,page*10);
+  const rows=cats.slice(0,10).map(c=>[btn(String(c.name).slice(0,45),`${suffix}:${c.id}:0`)]);
+  const nav=[];if(page>0)nav.push(btn("◀️ قبلی",`${mode}cats:${page-1}`));if(cats.length>10)nav.push(btn("بعدی ▶️",`${mode}cats:${page+1}`));if(nav.length)rows.push(nav);rows.push([btn("🔙 بازگشت","main_menu")]);
+  return render(env,cq,cats.length ? "🗂 دسته‌بندی را انتخاب کنید:" : "دسته‌بندی قابل استفاده‌ای تنظیم نشده است.",kb(rows));
+}
+async function categoryMatchesAccount(env,category,account,knownChoices) {
+  await assertCategory(env,category);
+  const choices=knownChoices || await panelChoices(env);if(!choices || !Array.isArray(account.memberships))return false;
+  const ids=parseIds(category.group_ids), groups=ids.map(id=>choices.groups.find(g=>Number(g.id)===id));
+  if(groups.some(g=>!g || !Array.isArray(g.inboundIds)))return false;
+  const wanted=new Set(groups.flatMap(g=>g.inboundIds.map(Number))), actual=new Set(account.memberships.map(m=>Number(m.inboundId)));
+  return wanted.size>0 && wanted.size===actual.size && [...wanted].every(id=>actual.has(id));
 }
 
 // ---------------------------------------------------------- کارت سرویس
@@ -546,8 +571,10 @@ function invoiceText(env, o) {
 
 async function createInvoice(c, user, chat_id, name, plan, renewId, cq) {
   const { env, st } = c;
-  const days = renewId ? durationDays((await getService(env, renewId))?.duration) : num(env, "duration_days");
-  if (!Number.isSafeInteger(days) || days <= 0) throw new Error("مدت سرویس مشخص نیست؛ با پشتیبانی تماس بگیرید");
+  const identity=await assertCategory(env,plan);
+  if(!renewId) {assertPanelReady(env);await groupCredentials(env,plan.group_ids,0)}
+  const days = Number(plan.days);
+  if (!Number.isSafeInteger(days) || days <= 0 || days>36500 || !Number.isSafeInteger(Date.now()+days*DAY_MS)) throw new Error("مدت سرویس مشخص نیست؛ با پشتیبانی تماس بگیرید");
   const discount = await takeDiscount(env, user.id);
   const final = Math.max(plan.price - discount, 0);
   const r = await run(env,
@@ -555,6 +582,7 @@ async function createInvoice(c, user, chat_id, name, plan, renewId, cq) {
     user.id, user.username || "-", name, planLabel(plan), plan.price, discount, final, durationText(days),
     renewId || null, plan.gb, days, now(), "draft");
   const orderId = r.meta.last_row_id;
+  await run(env,"INSERT INTO bot_order_routes(order_id,group_ids,anchor_id,panel_identity) VALUES(?,?,0,?)",orderId,plan.group_ids,identity);
   st.step = "receipt"; st.order_id = orderId; delete st.renew_service_id;
   const order = await getOrder(env, orderId);
   if (cq) { try { await tg(env, "deleteMessage", { chat_id, message_id: cq.message.message_id }); } catch {} }
@@ -572,6 +600,8 @@ async function fulfillOrder(env, order, onDispatch) {
     if (!svc.panel_email) throw new Error("این سرویس به پنل متصل نیست (قدیمی است)؛ دستی در پنل تمدید کنید");
     const account = await panelServiceAccount(env, svc);
     if (!account) throw new Error("سرویس در پنل متصل فعلی یافت نشد");
+    const route=await first(env,"SELECT group_ids,panel_identity FROM bot_order_routes WHERE order_id=?",order.id);
+    if(!route || !(await categoryMatchesAccount(env,{...route,active:1},account))) throw new Error("گروه سفارش با سرویس فعلی مطابقت ندارد؛ بررسی ادمین لازم است");
     const lock = await run(env, "INSERT OR IGNORE INTO service_operations(service_id,kind,created_at) VALUES(?,?,?)",svc.id,"renew",now());
     if (!lock.meta.changes) throw new Error("عملیات دیگری روی سرویس در حال انجام است");
     try {
@@ -580,7 +610,11 @@ async function fulfillOrder(env, order, onDispatch) {
       return { renewed: true, name: svc.name, link: currentServiceLink(env,svc,account), warn };
     } finally { await run(env, "DELETE FROM service_operations WHERE service_id=?",svc.id); }
   }
-  const p = await panelCreate(env, { name: order.service_name, bytes, days, attemptKey: `order:${order.id}:${hex(8)}`, onDispatch });
+  const route=await first(env,"SELECT group_ids,anchor_id,panel_identity FROM bot_order_routes WHERE order_id=?",order.id);
+  if(!route || !parseIds(route.group_ids).length) throw new Error("گروه سفارش مشخص نیست؛ بررسی ادمین لازم است");
+  const identity=await currentPanelIdentity(env);
+  if(route.panel_identity && route.panel_identity!==identity) throw new Error("سفارش متعلق به اتصال قبلی پنل است؛ بررسی ادمین لازم است");
+  const p = await panelCreate(env, { name: order.service_name, bytes, days, groupIds:route.group_ids,anchorId:route.anchor_id,attemptKey: `order:${order.id}:${hex(8)}`, onDispatch });
   await insertService(env, { ...p, user_id: order.user_id, name: order.service_name, volume: order.volume, duration: order.duration });
   return { renewed: false, name: order.service_name, link: p.link, warn: "" };
 }
@@ -711,7 +745,7 @@ async function handleAdminText(c, msg) {
 const ADMIN_HELP =
   "🛠 <b>دستورات ادمین</b>\n\n" +
   "<b>تنظیمات</b>\n/settings — نمایش همه مقادیر\n/set KEY VALUE — تغییر یک مقدار\n\n" +
-  "<b>بسته‌ها</b>\n/plans — لیست\n/setprice KEY PRICE — تغییر قیمت\n/setplan KEY PRICE GB — افزودن/ویرایش بسته\n/delplan KEY — حذف بسته\n\n" +
+  "<b>بسته‌ها</b>\n/plans — لیست\n/setprice KEY PRICE — تغییر قیمت\n/setplan KEY PRICE GB — ویرایش بسته موجود\n/delplan KEY — حذف بسته\nبرای ساخت بسته و تنظیم دسته و مدت از پنل دکمه‌ای استفاده کنید.\n\n" +
   "<b>ادمین‌ها</b>\n/admins — لیست\n/addadmin ID — افزودن ادمین (فقط ادمین اصلی)\n/deladmin ID — حذف ادمین (فقط ادمین اصلی)\n\n" +
   "<b>سایر</b>\n/stats — آمار فروش\n/resettest ID — اجازه تست دوباره به یک کاربر\n/panelcheck — تست اتصال به پنل و نمایش گروه‌ها/اینباندها";
 
@@ -762,6 +796,8 @@ async function handleAdminCommand(c, msg) {
     return reply(r.meta.changes ? "✅ قیمت تغییر کرد." : "❌ کلید بسته پیدا نشد (/plans).");
   }
   if (cmd === "/setplan" && a.length === 3 && /^[A-Za-z0-9_-]{1,32}$/.test(a[0]) && /^\d+$/.test(a[1]) && /^\d+(\.\d+)?$/.test(a[2]) && Number(a[2]) > 0) {
+    const existing=await getPlan(env,a[0]);
+    if (!existing?.category_id || !existing?.days) return reply("برای ایجاد بسته و انتخاب مدت و دسته‌بندی، از پنل مدیریت استفاده کنید.");
     const sort = (await first(env, "SELECT COALESCE(MAX(sort),0)+1 AS n FROM plans")).n;
     await run(env,
       "INSERT INTO plans(key,gb,price,sort) VALUES(?,?,?,?) ON CONFLICT(key) DO UPDATE SET gb=excluded.gb, price=excluded.price",
@@ -769,7 +805,7 @@ async function handleAdminCommand(c, msg) {
     return reply("✅ بسته ذخیره شد.");
   }
   if (cmd === "/delplan" && a.length === 1) {
-    await run(env, "DELETE FROM plans WHERE key=?", a[0]);
+    await env.DB.batch([env.DB.prepare("DELETE FROM bot_plan_specs WHERE plan_key=?").bind(a[0]),env.DB.prepare("DELETE FROM plans WHERE key=?").bind(a[0])]);
     return reply("✅ حذف شد.");
   }
 
@@ -848,6 +884,7 @@ const adminOrderStatus = status => ({draft:"پیش‌نویس",pending:"منتظ
 const adminBack = (target = "admin:root") => kb([[btn("🔙 بازگشت", target)]]);
 const adminHomeKb = () => kb([
   [btn("⚙️ تنظیمات ربات", "admin:settings"), btn("📦 مدیریت بسته‌ها", "admin:plans")],
+  [btn("🗂 مدیریت دسته‌بندی‌ها", "admin:categories")],
   [btn("👮 مدیریت ادمین‌ها", "admin:admins"), btn("📊 آمار فروش", "admin:stats")],
   [btn("👥 لیست کاربران", "admin:users:0"),btn("🔎 جستجوی سرویس", "admin:service_search")],
   [btn("💰 مدیریت کیف پول", "admin:wallet"),btn("⚠️ سفارش‌های قابل بررسی", "admin:wallet_reviews")],
@@ -915,10 +952,13 @@ async function handleAdminUIInput(c, msg) {
       const config={url:draft.url,user:draft.user,pass};
       try { await probePanel(config); } catch(e) { return send(`❌ اتصال تأیید نشد: ${esc(e.message)}\nرمز را دوباره بفرستید یا از تنظیمات شروع کنید.`); }
       const queries=[env.DB.prepare("INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").bind("panel_credentials_v1",await encryptPanel(env.BOT_TOKEN,config)),env.DB.prepare("INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").bind("panel_identity_v1",newIdentity),env.DB.prepare("DELETE FROM settings WHERE key=?").bind(draftKey)];
-      if(changingAccount) for(const key of ["panel_group_ids","panel_inbound_id","sub_base_url"]) queries.push(env.DB.prepare("INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").bind(key,""));
+      if(changingAccount) {
+        for(const key of ["panel_group_ids","panel_inbound_id","sub_base_url"]) queries.push(env.DB.prepare("INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").bind(key,""));
+        queries.push(env.DB.prepare("UPDATE bot_categories SET active=0"),env.DB.prepare("UPDATE bot_order_routes SET panel_identity='__blocked__' WHERE panel_identity=''"));
+      }
       await env.DB.batch(queries); panelCookie=null;panelCookieKey="";
-      delete st.admin_ui_step; delete st.admin_ui_key;
-      return sendMsg(env,msg.chat.id,"✅ اتصال پنل تأیید و ذخیره شد. حالا گروه و ورودی را انتخاب کنید.",kb([[btn("📂 انتخاب گروه و ورودی","admin:pgroups")],[btn("🔙 تنظیمات","admin:settings")]]));
+      st.admin_ui_step="panel_sub"; delete st.admin_ui_key;
+      return sendMsg(env,msg.chat.id,"✅ اتصال پنل ذخیره شد. آدرس پایه HTTPS اشتراک را بفرستید؛ بعداً برای هر دسته‌بندی گروه پنل را انتخاب می‌کنید.",adminBack("admin:settings"));
     }
     delete st.admin_ui_step; return send("درخواست نامعتبر است؛ دوباره شروع کنید.");
   }
@@ -950,16 +990,20 @@ async function handleAdminUIInput(c, msg) {
     if (!/^\d+$/.test(value) || !Number.isSafeInteger(Number(value))) return send("قیمت را به تومان و با عدد صحیح انگلیسی وارد کنید.");
     if (!(await getPlan(env, st.admin_ui_key))) return send("بسته دیگر وجود ندارد؛ از منو انتخاب کنید.");
     command = `/setprice ${st.admin_ui_key} ${value}`;
-  } else if (step === "plan_edit") {
-    const parts = value.split(/\s+/);
-    if (parts.length !== 2 || !/^\d+$/.test(parts[0]) || !/^\d+(\.\d+)?$/.test(parts[1]) || !Number.isSafeInteger(Number(parts[0])) || !(Number(parts[1]) > 0) || !Number.isFinite(Number(parts[1]))) return send("قیمت و حجم را به شکل «70000 10» با اعداد انگلیسی وارد کنید.");
-    if (!(await getPlan(env, st.admin_ui_key))) return send("بسته دیگر وجود ندارد؛ از منو انتخاب کنید.");
-    command = `/setplan ${st.admin_ui_key} ${parts.join(" ")}`;
-  } else if (step === "plan_new") {
-    const parts = value.split(/\s+/);
-    if (parts.length !== 3 || !planKeyOK(parts[0]) || !/^\d+$/.test(parts[1]) || !Number.isSafeInteger(Number(parts[1])) || !/^\d+(\.\d+)?$/.test(parts[2]) || !(Number(parts[2]) > 0) || !Number.isFinite(Number(parts[2]))) return send("کلید، قیمت و حجم را به شکل «p10 70000 10» با حروف و اعداد انگلیسی وارد کنید.");
-    if (await getPlan(env, parts[0])) return send("این کلید از قبل وجود دارد؛ برای تغییر آن از فهرست بسته‌ها استفاده کنید.");
-    command = `/setplan ${parts.join(" ")}`;
+  } else if (step === "plan_edit" || step === "plan_new") {
+    const parts=value.split(/\s+/), editing=step === "plan_edit";
+    const key=editing ? st.admin_ui_key : parts.shift();
+    if(!planKeyOK(key) || parts.length!==3 || !/^\d+$/.test(parts[0]) || !Number.isSafeInteger(Number(parts[0])) || !/^\d+(\.\d+)?$/.test(parts[1]) || !(Number(parts[1])>0) || !Number.isSafeInteger(Math.round(Number(parts[1])*GB)) || Math.round(Number(parts[1])*GB)<1 || !positiveId(parts[2]) || Number(parts[2])>36500) return send("قیمت، حجم گیگ و مدت روز را با اعداد انگلیسی وارد کنید؛ مثال: 70000 10 30.");
+    const old=await getPlan(env,key);
+    if(editing && !old) return send("بسته پیدا نشد.");
+    if(!editing && old) return send("این کلید قبلاً ثبت شده است.");
+    st.admin_plan_draft={key,price:Number(parts[0]),gb:Number(parts[1]),days:Number(parts[2]),editing,expires:Date.now()+30*60*1000};
+    delete st.admin_ui_step;delete st.admin_ui_key;
+    return showPlanCategoryChoices(env,msg.chat.id,0);
+  } else if (step === "category_name") {
+    if(!value || value.length>50 || /[\r\n]/.test(value)) return send("نام دسته‌بندی باید یک خط و حداکثر ۵۰ نویسه باشد.");
+    st.admin_category_draft={name:value,expires:Date.now()+30*60*1000};delete st.admin_ui_step;delete st.admin_ui_key;
+    return showCategoryGroupChoices(env,msg.chat.id,0);
   } else if (step === "add_admin") {
     if (!env.owners.includes(msg.from.id)) { delete st.admin_ui_step; return send("فقط ادمین اصلی اجازه دارد."); }
     if (!positiveId(value)) return send("آیدی عددی معتبر تلگرام را با اعداد انگلیسی وارد کنید.");
@@ -982,11 +1026,27 @@ async function panelChoices(env) {
   } catch { return null; }
 }
 
+async function showPlanCategoryChoices(env,chat,page) {
+  const cats=await all(env,"SELECT id,name FROM bot_categories WHERE active=1 ORDER BY id DESC LIMIT 11 OFFSET ?",page*10);
+  const rows=cats.slice(0,10).map(x=>[btn(String(x.name).slice(0,45),`admin:planpick:${x.id}`)]);
+  const nav=[];if(page>0)nav.push(btn("◀️ قبلی",`admin:planchoices:${page-1}`));if(cats.length>10)nav.push(btn("بعدی ▶️",`admin:planchoices:${page+1}`));if(nav.length)rows.push(nav);rows.push([btn("🔙 مدیریت بسته‌ها","admin:plans")]);
+  return sendMsg(env,chat,cats.length ? "دسته‌بندی بسته را انتخاب کنید:" : "دسته‌بندی فعالی نیست؛ ابتدا دسته‌بندی بسازید.",kb(rows));
+}
+async function showCategoryGroupChoices(env,chat,page) {
+  const choices=await panelChoices(env);if(!choices)return sendMsg(env,chat,"خواندن گروه‌ها از پنل ناموفق بود.",adminBack("admin:categories"));
+  const groups=choices.groups.filter(g=>positiveId(String(g.id)) && Array.isArray(g.inboundIds) && g.inboundIds.length>0 && g.inboundIds.every(id=>choices.inbounds.some(i=>Number(i.inboundId)===Number(id))));
+  const rows=groups.slice(page*10,(page+1)*10).map(g=>[btn(String(g.name || g.remark || `گروه ${g.id}`).slice(0,45),`admin:categorygroup:${g.id}`)]);
+  const nav=[];if(page>0)nav.push(btn("◀️ قبلی",`admin:categorygroups:${page-1}`));if((page+1)*10<groups.length)nav.push(btn("بعدی ▶️",`admin:categorygroups:${page+1}`));if(nav.length)rows.push(nav);rows.push([btn("🔙 دسته‌بندی‌ها","admin:categories")]);
+  return sendMsg(env,chat,groups.length ? "گروه پنل این دسته‌بندی را انتخاب کنید:" : "گروه دارای ورودی مجاز پیدا نشد.",kb(rows));
+}
+
 async function handleAdminUICallback(c, cq, answer) {
   const { env, st } = c, uid = cq.from.id, chat = cq.message.chat.id, d = cq.data;
   const owner = env.owners.includes(uid);
   if (d !== "admin:reset_confirm" && d !== "admin:reset_all_confirm") { delete st.admin_ui_step; delete st.admin_ui_key; }
   if (d !== "admin:wallet_confirm") delete st.admin_wallet_change;
+  if (!d.startsWith("admin:planpick:") && !d.startsWith("admin:planchoices:")) delete st.admin_plan_draft;
+  if (!d.startsWith("admin:categorygroup:") && !d.startsWith("admin:categorygroups:")) delete st.admin_category_draft;
   delete st.admin_step; delete st.admin_order;
   const renderAdmin = (text, keyboard) => render(env, cq, text, keyboard);
   const prompt = async (step, key, text, back = "admin:root") => {
@@ -1135,6 +1195,59 @@ async function handleAdminUICallback(c, cq, answer) {
     catch(e) { return sendMsg(env,chat, String(e.message).includes("WALLET_INSUFFICIENT") ? "❌ موجودی برای کسر کافی نیست." : "❌ تغییر موجودی انجام نشد یا قبلاً ثبت شده است؛ موجودی را بررسی کنید.",adminBack()); }
     return showAdminWallet(env,chat,change.userId,true);
   }
+  if (d === "admin:categories" || /^admin:categories:\d+$/.test(d)) {
+    const page=Number(d.split(":")[2] || 0);if(!Number.isSafeInteger(page)||page>1000000)return answer("صفحه نامعتبر است.",true);
+    const cats=await all(env,"SELECT id,name,active FROM bot_categories ORDER BY id DESC LIMIT 11 OFFSET ?",page*10);
+    const rows=cats.slice(0,10).map(x=>[btn(`${Number(x.active) ? "🗂" : "⚠️"} ${String(x.name).slice(0,40)}`,`admin:category:${x.id}`)]);
+    const nav=[];if(page>0)nav.push(btn("◀️ قبلی",`admin:categories:${page-1}`));if(cats.length>10)nav.push(btn("بعدی ▶️",`admin:categories:${page+1}`));if(nav.length)rows.push(nav);rows.push([btn("➕ افزودن دسته‌بندی","admin:category_add")],[btn("🔙 بازگشت","admin:root")]);
+    return renderAdmin("🗂 دسته‌بندی‌ها و گروه‌های متصل به پنل:",kb(rows));
+  }
+  if(d === "admin:category_add")return prompt("category_name","","نام دسته‌بندی را بفرستید؛ سپس گروه پنل را انتخاب کنید.","admin:categories");
+  if (/^admin:category:\d+$/.test(d)) {
+    const id=Number(d.split(":")[2]),cat=await getCategory(env,id);if(!cat)return answer("دسته‌بندی پیدا نشد.",true);
+    return renderAdmin(`🗂 <b>${esc(cat.name)}</b>\nگروه پنل: <code>${esc(cat.group_ids)}</code>\nوضعیت: ${cat.active ? "فعال" : "نیازمند انتخاب دوباره گروه"}`,kb([[btn("✏️ تغییر گروه پنل",`admin:category_rebind:${id}`)],[btn("🗑 حذف دسته‌بندی",`admin:category_delete:${id}`)],[btn("🔙 بازگشت","admin:categories")]]));
+  }
+  if (/^admin:category_rebind:\d+$/.test(d)) {
+    const id=Number(d.split(":")[2]),cat=await getCategory(env,id);if(!cat)return answer("دسته‌بندی پیدا نشد.",true);
+    st.admin_category_draft={id,name:cat.name,expires:Date.now()+30*60*1000};return showCategoryGroupChoices(env,chat,0);
+  }
+  if (/^admin:categorygroups:\d+$/.test(d)) {
+    const page=Number(d.split(":")[2]);if(!st.admin_category_draft || Date.now()>st.admin_category_draft.expires || !Number.isSafeInteger(page)||page>1000000)return answer("درخواست منقضی شده است.",true);
+    return showCategoryGroupChoices(env,chat,page);
+  }
+  if (/^admin:categorygroup:\d+$/.test(d)) {
+    const draft=st.admin_category_draft,id=d.split(":")[2];if(!draft||Date.now()>draft.expires||!positiveId(id))return answer("درخواست منقضی است.",true);
+    let identity;try{identity=await currentPanelIdentity(env);await groupCredentials(env,id,0)}catch(e){return answer(`گروه معتبر یا قابل استفاده نیست: ${String(e.message).slice(0,120)}`,true)}
+    if(draft.id){const updated=await run(env,"UPDATE bot_categories SET group_ids=?,panel_identity=?,active=1 WHERE id=?",id,identity,draft.id);if(!updated.meta.changes)return answer("دسته‌بندی پیدا نشد.",true)}
+    else await run(env,"INSERT INTO bot_categories(name,group_ids,panel_identity) VALUES(?,?,?)",draft.name,id,identity);
+    delete st.admin_category_draft;return renderAdmin("✅ دسته‌بندی و گروه پنل ذخیره شدند.",adminBack("admin:categories"));
+  }
+  if (/^admin:category_delete:\d+$/.test(d)) {
+    const id=Number(d.split(":")[2]),cat=await getCategory(env,id);if(!cat)return answer("دسته‌بندی پیدا نشد.",true);
+    const use=await first(env,"SELECT COUNT(*) AS n FROM bot_plan_specs WHERE category_id=?",id);if(use.n)return answer("ابتدا بسته‌های این دسته را جابه‌جا یا حذف کنید.",true);
+    return renderAdmin(`دسته‌بندی «${esc(cat.name)}» حذف شود؟`,kb([[btn("✅ تأیید",`admin:category_confirm:${id}`)],[btn("❌ انصراف","admin:categories")]]));
+  }
+  if (/^admin:category_confirm:\d+$/.test(d)) {
+    const id=Number(d.split(":")[2]);const r=await run(env,"DELETE FROM bot_categories WHERE id=? AND NOT EXISTS(SELECT 1 FROM bot_plan_specs WHERE category_id=?)",id,id);
+    return renderAdmin(r.meta.changes ? "✅ دسته‌بندی حذف شد." : "دسته‌بندی پیدا نشد یا دارای بسته است.",adminBack("admin:categories"));
+  }
+  if (/^admin:planchoices:\d+$/.test(d)) {
+    const page=Number(d.split(":")[2]);if(!st.admin_plan_draft||Date.now()>st.admin_plan_draft.expires||!Number.isSafeInteger(page)||page>1000000)return answer("درخواست منقضی شده است.",true);
+    return showPlanCategoryChoices(env,chat,page);
+  }
+  if (/^admin:planpick:\d+$/.test(d)) {
+    const draft=st.admin_plan_draft,id=Number(d.split(":")[2]);if(!draft||Date.now()>draft.expires)return answer("درخواست منقضی شده است.",true);
+    const cat=await getCategory(env,id);try{await assertCategory(env,cat);await groupCredentials(env,cat.group_ids,0)}catch(e){return answer(`دسته‌بندی معتبر نیست: ${String(e.message).slice(0,120)}`,true)}
+    try {
+      const old=await getPlan(env,draft.key);
+      if(draft.editing && !old)return answer("بسته پیدا نشد.",true);
+      if(!draft.editing && old)return answer("کلید بسته قبلاً ثبت شده است.",true);
+      const sort=(await first(env,"SELECT COALESCE(MAX(sort),0)+1 AS n FROM plans")).n;
+      const change=draft.editing ? env.DB.prepare("UPDATE plans SET gb=?,price=? WHERE key=?").bind(draft.gb,draft.price,draft.key) : env.DB.prepare("INSERT INTO plans(key,gb,price,sort) VALUES(?,?,?,?)").bind(draft.key,draft.gb,draft.price,sort);
+      await env.DB.batch([change,env.DB.prepare("INSERT INTO bot_plan_specs(plan_key,category_id,days) VALUES(?,?,?) ON CONFLICT(plan_key) DO UPDATE SET category_id=excluded.category_id,days=excluded.days").bind(draft.key,id,draft.days)]);
+    }catch{return answer("ذخیره بسته ناموفق بود؛ وضعیت را دوباره بررسی کنید.",true)}
+    delete st.admin_plan_draft;return renderAdmin("✅ بسته با مدت و دسته‌بندی ذخیره شد.",adminBack("admin:plans"));
+  }
   if (d === "admin:settings") {
     delete st.admin_ui_step; delete st.admin_ui_key;
     const rows = [];
@@ -1147,39 +1260,6 @@ async function handleAdminUICallback(c, cq, answer) {
     if (!owner) return answer("فقط ادمین اصلی اجازه تنظیم اتصال پنل را دارد.", true);
     await run(env, "DELETE FROM settings WHERE key=?", `panel_draft:${uid}`);
     return prompt("panel_url", "", "➕ آدرس کامل HTTPS پنل شامل پورت و مسیر پنل را بفرستید.\nمثال: <code>https://panel.example.com:2053/SECRET_PATH</code>", "admin:settings");
-  }
-  if (d === "admin:pgroups" || /^admin:pgroups:\d+$/.test(d)) {
-    if (!owner) return answer("فقط ادمین اصلی اجازه دارد.", true);
-    const choices=await panelChoices(env);
-    if(!choices) return renderAdmin("خواندن گروه‌ها یا ورودی‌ها ناموفق بود. اتصال و دسترسی حساب نماینده را بررسی کنید.",adminBack("admin:settings"));
-    const usable=choices.groups.filter(g=>positiveId(String(g.id)) && Array.isArray(g.inboundIds) && g.inboundIds.some(x=>choices.inbounds.some(i=>Number(i.inboundId)===Number(x))));
-    const page=Number(d.split(":")[2] || 0); if(!Number.isSafeInteger(page) || page<0 || page>Math.max(0,Math.ceil(usable.length/15)-1)) return answer("صفحه یافت نشد.",true);
-    const rows=usable.slice(page*15,(page+1)*15).map(g=>[btn(String(g.name || `گروه ${g.id}`).slice(0,50),`admin:pg:${g.id}`)]);
-    const nav=[]; if(page>0)nav.push(btn("◀️ قبلی",`admin:pgroups:${page-1}`));if((page+1)*15<usable.length)nav.push(btn("بعدی ▶️",`admin:pgroups:${page+1}`));if(nav.length)rows.push(nav);rows.push([btn("🔙 بازگشت","admin:settings")]);
-    return renderAdmin(usable.length ? "✅ پنل متصل است. گروه فروش را انتخاب کنید:" : "گروه قابل استفاده پیدا نشد؛ دسترسی نماینده را در پنل بررسی کنید.",kb(rows));
-  }
-  if (d.startsWith("admin:pg:")) {
-    if (!owner) return answer("فقط ادمین اصلی اجازه دارد.", true);
-    const [, ,groupId,pageText] = d.split(":"); const page=Number(pageText || 0);
-    if(!positiveId(groupId) || !Number.isSafeInteger(page) || page<0) return answer("گروه نامعتبر است.",true);
-    const choices=await panelChoices(env);
-    if(!choices) return answer("دریافت اطلاعات پنل ناموفق بود.",true);
-    const g=choices.groups.find(x=>Number(x.id)===Number(groupId)); if(!g || !Array.isArray(g.inboundIds)) return answer("گروه دیگر در دسترس نیست.",true);
-    const allowed=choices.inbounds.filter(x=>positiveId(String(x.inboundId)) && g.inboundIds.some(id=>Number(id)===Number(x.inboundId)));
-    if(page>Math.max(0,Math.ceil(allowed.length/15)-1))return answer("صفحه یافت نشد.",true);
-    const rows=allowed.slice(page*15,(page+1)*15).map(i=>[btn(`${i.remark || `ورودی ${i.inboundId}`} (${i.protocol || "?"})`.slice(0,55),`admin:pi:${groupId}:${i.inboundId}`)]);
-    const nav=[];if(page>0)nav.push(btn("◀️ قبلی",`admin:pg:${groupId}:${page-1}`));if((page+1)*15<allowed.length)nav.push(btn("بعدی ▶️",`admin:pg:${groupId}:${page+1}`));if(nav.length)rows.push(nav);rows.push([btn("🔙 بازگشت","admin:pgroups")]);
-    return renderAdmin(allowed.length ? "ورودی اصلی این گروه را انتخاب کنید. همهٔ ورودی‌های گروه برای سرویس استفاده می‌شوند." : "ورودی قابل استفاده‌ای در این گروه نیست.",kb(rows));
-  }
-  if (d.startsWith("admin:pi:")) {
-    if (!owner) return answer("فقط ادمین اصلی اجازه دارد.", true);
-    const [, ,groupId,inboundId]=d.split(":"); if(!positiveId(groupId)||!positiveId(inboundId)) return answer("شناسه نامعتبر است.",true);
-    const choices=await panelChoices(env);
-    if(!choices)return answer("دریافت اطلاعات پنل ناموفق بود.",true);
-    const g=choices.groups.find(x=>Number(x.id)===Number(groupId));
-    if(!g || !Array.isArray(g.inboundIds) || !g.inboundIds.some(x=>Number(x)===Number(inboundId)) || !choices.inbounds.some(i=>Number(i.inboundId)===Number(inboundId))) return answer("گروه یا ورودی دیگر قابل استفاده نیست.",true);
-    await env.DB.batch([env.DB.prepare("INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").bind("panel_group_ids",groupId),env.DB.prepare("INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").bind("panel_inbound_id",inboundId)]);
-    return prompt("panel_sub", "", "✅ گروه و ورودی ذخیره شد. آدرس پایهٔ HTTPS اشتراک را بفرستید، مانند <code>https://sub.example.com:2096/sub/</code>.", "admin:settings");
   }
   if (d.startsWith("admin:setting:")) {
     const key = d.slice("admin:setting:".length), meta = Object.hasOwn(META, key) ? META[key] : null;
@@ -1202,18 +1282,18 @@ async function handleAdminUICallback(c, cq, answer) {
   if (d === "admin:plans") {
     delete st.admin_ui_step; delete st.admin_ui_key;
     const plans = await getPlans(env), safe = plans.filter(p => planKeyOK(p.key));
-    const rows = safe.map(p => [btn(`${planLabel(p)} — ${toman(p.price)}`, `admin:plan:${p.key}`)]);
+    const rows = safe.map(p => [btn(`${planLabel(p)} — ${p.days || "?"} روز — ${p.category_name || "بدون دسته"} — ${toman(p.price)}`, `admin:plan:${p.key}`)]);
     rows.push([btn("➕ افزودن بسته", "admin:plan_add")],[btn("🔙 بازگشت", "admin:root")]);
     return renderAdmin(`📦 <b>مدیریت بسته‌ها</b>${plans.length !== safe.length ? "\nبعضی کلیدهای قدیمی نامعتبرند؛ با دستورات قبلی اصلاحشان کنید." : ""}`, kb(rows));
   }
-  if (d === "admin:plan_add") return prompt("plan_new", "", "➕ کلید انگلیسی، قیمت (تومان) و حجم (گیگ) را با فاصله بفرستید.\nمثال: <code>p10 70000 10</code>", "admin:plans");
+  if (d === "admin:plan_add") return prompt("plan_new", "", "➕ کلید انگلیسی، قیمت تومان، حجم گیگ و مدت روز را با فاصله بفرستید.\nمثال: <code>p10 70000 10 30</code>", "admin:plans");
   for (const [prefix, kind] of [["admin:plan:","show"],["admin:price:","price"],["admin:editplan:","edit"],["admin:delplan:","delete"],["admin:confirmplan:","confirm"]]) {
     if (!d.startsWith(prefix)) continue;
     const key = d.slice(prefix.length); if (!planKeyOK(key)) return answer("کلید بسته نامعتبر است.", true);
     const plan = await getPlan(env, key); if (!plan) return answer("بسته پیدا نشد.", true);
-    if (kind === "show") return renderAdmin(`📦 <b>${esc(planLabel(plan))}</b>\nکلید: <code>${esc(key)}</code>\nقیمت: ${toman(plan.price)}`, kb([[btn("💰 تغییر قیمت", `admin:price:${key}`),btn("✏️ تغییر حجم و قیمت", `admin:editplan:${key}`)],[btn("🗑 حذف بسته", `admin:delplan:${key}`)],[btn("🔙 بازگشت", "admin:plans")]]));
+    if (kind === "show") return renderAdmin(`📦 <b>${esc(planLabel(plan))}</b>\nکلید: <code>${esc(key)}</code>\nقیمت: ${toman(plan.price)}\nمدت: ${plan.days || "تنظیم نشده"} روز\nدسته‌بندی: ${esc(plan.category_name || "تنظیم نشده")}`, kb([[btn("💰 تغییر قیمت", `admin:price:${key}`),btn("✏️ تغییر حجم و قیمت", `admin:editplan:${key}`)],[btn("🗑 حذف بسته", `admin:delplan:${key}`)],[btn("🔙 بازگشت", "admin:plans")]]));
     if (kind === "price") return prompt("price", key, `قیمت جدید «${esc(key)}» را به تومان بفرستید.`, "admin:plans");
-    if (kind === "edit") return prompt("plan_edit", key, `قیمت و حجم جدید «${esc(key)}» را با فاصله بفرستید. مثال: <code>70000 10</code>`, "admin:plans");
+    if (kind === "edit") return prompt("plan_edit", key, `قیمت، حجم گیگ و مدت روز «${esc(key)}» را بفرستید. مثال: <code>70000 10 30</code>`, "admin:plans");
     if (kind === "delete") return renderAdmin(`بستهٔ <code>${esc(key)}</code> حذف شود؟`, kb([[btn("✅ تایید حذف", `admin:confirmplan:${key}`)],[btn("❌ انصراف", "admin:plans")]]));
     await handleAdminCommand(c, {chat:{id:chat},from:cq.from,text:`/delplan ${key}`}); return showAdminHome(env, chat);
   }
@@ -1286,7 +1366,8 @@ async function onMessage(c, msg) {
       if (name.length > 30) return sendMsg(env, msg.chat.id, "❌ نام سرویس خیلی طولانی است. کوتاه‌تر بنویسید.");
       const plan = await getPlan(env, st.plan_key);
       if (!plan) { c.st = {}; return sendMsg(env, msg.chat.id, "❌ بسته یافت نشد، دوباره از منو اقدام کنید."); }
-      return createInvoice(c, msg.from, msg.chat.id, name, plan, null, null);
+      try { await assertCategory(env,plan);await groupCredentials(env,plan.group_ids,0);return await createInvoice(c, msg.from, msg.chat.id, name, plan, null, null); }
+      catch(e) { return sendMsg(env,msg.chat.id,`❌ بسته در دسترس نیست: ${esc(String(e.message).slice(0,160))}`,backKb("buy")); }
     }
     if (st.step === "receipt") return handleReceipt(c, msg);
     if (st.step === "invite_code_input") {
@@ -1445,15 +1526,22 @@ async function onCallback(c, cq) {
     return;
   }
 
-  if (d === "main_menu") { delete st.step; delete st.admin_ui_step; delete st.admin_ui_key; delete st.admin_step; delete st.admin_order; delete st.admin_wallet_change; delete st.wallet_topup_id; await del(); return sendMainMenu(env, chat_id); }
+  if (d === "main_menu") { delete st.step; delete st.test_category; delete st.test_name; delete st.admin_ui_step; delete st.admin_ui_key; delete st.admin_step; delete st.admin_order; delete st.admin_wallet_change; delete st.wallet_topup_id; await del(); return sendMainMenu(env, chat_id); }
 
   // --- سرویس تست (هر کاربر فقط یک‌بار)
   if (d === "test_service") {
     if (env.cfg.test_enabled !== "1") return answer("سرویس تست فعلا غیرفعال است.", true);
     const existing=await first(env,"SELECT created_at FROM test_claims WHERE user_id=?",uid);
     if(existing) return answer(String(existing.created_at || "").startsWith("processing|") || String(existing.created_at || "").startsWith("review|") ? "درخواست تست قبلی در حال پردازش یا بررسی است." : "شما قبلاً سرویس تست دریافت کرده‌اید.",true);
-    delete st.test_name;delete st.step;
-    return render(env,cq,"🎁 نام سرویس تست را چگونه انتخاب می‌کنید؟",kb([[btn("✏️ نام دلخواه", "testname:custom")],[btn("🎲 نام تصادفی", "testname:random")],[btn("🔙 بازگشت", "main_menu")]]));
+    delete st.test_name;delete st.step;delete st.test_category;
+    return showCustomerCategories(env,cq,"test");
+  }
+  if (/^testcat:\d+:\d+$/.test(d)) {
+    if(env.cfg.test_enabled!=="1")return answer("سرویس تست فعلا غیرفعال است.",true);
+    const id=Number(d.split(":")[1]),cat=await getCategory(env,id);
+    try {await assertCategory(env,cat);await groupCredentials(env,cat.group_ids,0)} catch {return answer("این دسته‌بندی فعلاً در دسترس نیست.",true)}
+    st.test_category=id;delete st.test_name;delete st.step;
+    return render(env,cq,`🎁 دسته‌بندی «${esc(cat.name)}» انتخاب شد. نام سرویس تست را چگونه انتخاب می‌کنید؟`,kb([[btn("✏️ نام دلخواه", "testname:custom")],[btn("🎲 نام تصادفی", "testname:random")],[btn("🔙 دسته‌بندی‌ها", "test_service")]]));
   }
   if (d === "testname:custom") {
     if (env.cfg.test_enabled !== "1") return answer("سرویس تست فعلا غیرفعال است.",true);
@@ -1463,6 +1551,8 @@ async function onCallback(c, cq) {
   if (d === "testname:random" || d === "testname:make") {
     if (env.cfg.test_enabled !== "1") return answer("سرویس تست فعلا غیرفعال است.", true);
     if (d === "testname:make" && (st.step !== "test_name_ready" || !NAME_RE.test(st.test_name || "") || st.test_name.length>30)) return answer("ابتدا نام سرویس را انتخاب کنید.",true);
+    const cat=await getCategory(env,Number(st.test_category));
+    try{await assertCategory(env,cat)}catch{return answer("دسته‌بندی تست را دوباره انتخاب کنید.",true)}
     const testName=d === "testname:make" ? st.test_name : randomServiceName();
     const token = `processing|${hex(12)}|${now()}`;
     const claimed = await run(env, "INSERT OR IGNORE INTO test_claims(user_id,created_at) VALUES(?,?)", uid, token);
@@ -1477,7 +1567,7 @@ async function onCallback(c, cq) {
     let dispatched = false, p;
     const mb = num(env, "test_mb"), days = num(env, "test_days"), label = `${mb} مگابایت`;
     try {
-      p = await panelCreate(env, { name: testName, bytes: mb * MB, days, attemptKey: `test:${uid}:${hex(8)}`, onDispatch: () => { dispatched = true; } });
+      p = await panelCreate(env, { name: testName, bytes: mb * MB, days, groupIds:cat.group_ids,anchorId:0,attemptKey: `test:${uid}:${hex(8)}`, onDispatch: () => { dispatched = true; } });
       await insertService(env, { ...p, user_id: uid, name: testName, volume: label, duration: `${days} روزه` });
       await run(env, "UPDATE test_claims SET created_at=? WHERE user_id=? AND created_at=?", `done|${now()}`, uid, token);
     } catch (e) {
@@ -1595,18 +1685,25 @@ async function onCallback(c, cq) {
     return render(env, cq, "✅ سرویس حذف شد.\n\n🗂 <b>سرویس های من</b>", kb(rows));
   }
 
-  if (d === "buy") {
-    delete st.renew_service_id;
-    if (!(await getPlans(env)).length) return render(env, cq, "📦 هنوز بسته‌ای برای خرید تنظیم نشده است. لطفاً بعداً مراجعه کنید.", backKb());
-    return render(env, cq,
-      "🛍 <b>لطفا سرویسی که میخواهید خریداری کنید را انتخاب کنید!</b>\n\n" +
-      `⏳ مدت زمان همه بسته‌ها: ${durationText(num(env, "duration_days"))}\n👥 تعداد کاربر: نامحدود\n\nبسته مورد نظر را انتخاب کنید:`,
-      await plansKb(env, "plan"));
+  if (d === "buy") { delete st.renew_service_id;return showCustomerCategories(env,cq,"buy"); }
+  if (/^(buy|test)cats:\d+$/.test(d)) {
+    const [type,pageText]=d.split(":"),page=Number(pageText);if(!Number.isSafeInteger(page)||page>1000000)return answer("صفحه نامعتبر است.",true);
+    if(type==="testcats" && env.cfg.test_enabled!=="1")return answer("سرویس تست فعلا غیرفعال است.",true);
+    return showCustomerCategories(env,cq,type==="testcats"?"test":"buy",page);
   }
-
+  if (/^buycat:\d+:\d+$/.test(d)) {
+    const [,id,pageText]=d.split(":"),page=Number(pageText),cat=await getCategory(env,Number(id));
+    if(!Number.isSafeInteger(page)||page>1000000)return answer("صفحه نامعتبر است.",true);
+    try {await assertCategory(env,cat)}catch{return answer("دسته‌بندی در دسترس نیست.",true)}
+    const plans=await all(env,`${PLAN_SELECT} WHERE s.category_id=? AND c.active=1 ORDER BY p.sort,p.price LIMIT 11 OFFSET ?`,Number(id),page*10);
+    const rows=plans.slice(0,10).map(p=>[btn(`${planLabel(p)} — ${p.days} روز — ${toman(p.price)}`,`plan_${p.key}`)]);
+    const nav=[];if(page>0)nav.push(btn("◀️ قبلی",`buycat:${id}:${page-1}`));if(plans.length>10)nav.push(btn("بعدی ▶️",`buycat:${id}:${page+1}`));if(nav.length)rows.push(nav);rows.push([btn("🔙 دسته‌بندی‌ها","buy")]);
+    return render(env,cq,`📦 <b>${esc(cat.name)}</b>\n${plans.length ? "بسته را انتخاب کنید:" : "بسته‌ای در این دسته ثبت نشده است."}`,kb(rows));
+  }
   if (d.startsWith("plan_")) {
     const plan = await getPlan(env, d.slice(5));
     if (!plan) return;
+    try {await assertCategory(env,plan);await groupCredentials(env,plan.group_ids,0)} catch(e) { return answer(`بسته در دسترس نیست: ${String(e.message).slice(0,120)}`,true); }
     if (st.step === "receipt" && st.order_id) return answer("سفارش فعلی را تکمیل کنید یا به منوی اصلی برگردید.",true);
     if (env.cfg.name_mode === "random") {
       return createInvoice(c,cq.from,chat_id,randomServiceName(),plan,null,cq);
@@ -1620,25 +1717,23 @@ async function onCallback(c, cq) {
   }
 
   if (d.startsWith("renew_")) {
-    const id = Number(d.split("_")[1]);
-    const s = await getService(env, id);
-    if (!s || s.user_id !== uid) return answer("سرویس یافت نشد!", true);
-    try { if (!(await panelServiceAccount(env,s))) return sendMsg(env,chat_id,"❌ سرویس در پنل متصل فعلی یافت نشد.",backKb("my_services")); }
-    catch { return sendMsg(env,chat_id,"⚠️ بررسی سرویس در پنل ناموفق بود؛ دوباره تلاش کنید.",backKb("my_services")); }
-    if (!(await getPlans(env)).length) return render(env,cq,"📦 هنوز بسته‌ای برای تمدید تنظیم نشده است. لطفاً با پشتیبانی تماس بگیرید.",backKb("my_services"));
-    st.renew_service_id = id;
-    return render(env, cq, `🔄 <b>تمدید سرویس «${esc(s.name)}»</b>\n\nبسته مورد نظر برای تمدید را انتخاب کنید:`,
-      await plansKb(env, "rplan"));
+    const id=Number(d.split("_")[1]),svc=await getService(env,id);if(!svc || svc.user_id!==uid)return answer("سرویس یافت نشد.",true);
+    let account;try{account=await panelServiceAccount(env,svc)}catch{return sendMsg(env,chat_id,"⚠️ بررسی سرویس در پنل ناموفق بود.",backKb("my_services"))}
+    if(!account)return answer("سرویس در پنل یافت نشد.",true);
+    const candidates=(await getPlans(env)).filter(p=>Number(p.category_active)===1 && Number(p.days)===durationDays(svc.duration) && Math.round(Number(p.gb)*GB)===Number(svc.volume_bytes));
+    const choices=await panelChoices(env);if(!choices)return answer("دریافت گروه‌ها از پنل ناموفق بود.",true);
+    const valid=[];for(const p of candidates){try{if(await categoryMatchesAccount(env,p,account,choices))valid.push(p)}catch{}}
+    if(!valid.length)return render(env,cq,"بسته‌ای با حجم، مدت و گروه فعلی این سرویس برای تمدید موجود نیست؛ با پشتیبانی تماس بگیرید.",backKb("my_services"));
+    st.renew_service_id=id;return render(env,cq,`🔄 <b>تمدید سرویس «${esc(svc.name)}»</b>\nبسته مطابق سرویس را انتخاب کنید:`,await plansKb(env,"rplan",valid));
   }
-
   if (d.startsWith("rplan_")) {
-    const plan = await getPlan(env, d.slice(6));
-    const s = st.renew_service_id ? await getService(env, st.renew_service_id) : null;
-    if (!plan || !s || s.user_id !== uid) return answer("خطا در پردازش، دوباره تلاش کنید.", true);
-    try { if (!(await panelServiceAccount(env,s))) return sendMsg(env,chat_id,"❌ سرویس در پنل متصل فعلی یافت نشد.",backKb("my_services")); }
-    catch { return sendMsg(env,chat_id,"⚠️ بررسی سرویس در پنل ناموفق بود؛ دوباره تلاش کنید.",backKb("my_services")); }
-    if (Math.round(plan.gb * GB) !== Number(s.volume_bytes)) return answer("تمدید فقط با همان حجم قبلی امکان‌پذیر است؛ برای تغییر بسته با پشتیبانی تماس بگیرید.", true);
-    return createInvoice(c, cq.from, chat_id, s.name, plan, s.id, cq);
+    const plan=await getPlan(env,d.slice(6)),svc=st.renew_service_id ? await getService(env,st.renew_service_id) : null;
+    if(!plan||!svc||svc.user_id!==uid)return answer("خطا در پردازش، دوباره تلاش کنید.",true);
+    try {
+      const account=await panelServiceAccount(env,svc);
+      if(!account || !(await categoryMatchesAccount(env,plan,account)) || Number(plan.days)!==durationDays(svc.duration) || Math.round(Number(plan.gb)*GB)!==Number(svc.volume_bytes))return answer("این بسته با گروه، حجم یا مدت سرویس مطابقت ندارد.",true);
+      return await createInvoice(c,cq.from,chat_id,svc.name,plan,svc.id,cq);
+    } catch {return answer("بررسی پنل یا دسته‌بندی ناموفق بود.",true)}
   }
 
   if (d === "invite_code") {

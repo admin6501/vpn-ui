@@ -6,7 +6,7 @@ import worker from '../worker.js';
 
 test('full purchase and duplicate approval produce one panel user', async()=>{
  const sql=new DatabaseSync(':memory:');sql.exec(readFileSync(new URL('../schema.sql',import.meta.url),'utf8'));
- sql.exec("INSERT INTO plans(key,gb,price,sort) VALUES('p10',10,70000,1)");
+ sql.exec("INSERT INTO plans(key,gb,price,sort) VALUES('p10',10,70000,1); INSERT INTO bot_categories(id,name,group_ids) VALUES(1,'Test','1'); INSERT INTO bot_plan_specs VALUES('p10',1,30)");
  const prep=(query,args=[])=>({bind(...xs){return prep(query,xs)},async run(){const r=sql.prepare(query).run(...args);return {meta:{changes:Number(r.changes),last_row_id:Number(r.lastInsertRowid)}}},async all(){return {results:sql.prepare(query).all(...args)}},async first(){return sql.prepare(query).get(...args) ?? null}});
  const DB={prepare:q=>prep(q),batch:async stmts=>Promise.all(stmts.map(s=>s.all()))};
  sql.prepare('INSERT INTO settings(key,value) VALUES(?,?)').run('panel_inbound_id','3');
@@ -25,7 +25,7 @@ test('full purchase and duplicate approval produce one panel user', async()=>{
  let id=0; async function update(data){let tasks=[];const req=new Request('https://worker.example/webhook',{method:'POST',headers:{'X-Telegram-Bot-Api-Secret-Token':'secret'},body:JSON.stringify({update_id:++id,...data})});assert.equal((await worker.fetch(req,env,{waitUntil:p=>tasks.push(p)})).status,200);await Promise.all(tasks)}
  const message=text=>({message:{from:{id:2,first_name:'Client'},chat:{id:2,type:'private'},message_id:++id,text}});
  const cb=(data,uid=2)=>({callback_query:{id:`cb${++id}`,from:{id:uid},message:{chat:{id:uid,type:'private'},message_id:33},data}});
- await update(message('/start'));await update(cb('buy'));await update(cb('plan_p10'));await update(message('Amir'));await update(message('receipt'));
+ await update(message('/start'));await update(cb('buy'));await update(cb('buycat:1:0'));await update(cb('plan_p10'));await update(message('Amir'));await update(message('receipt'));
  const order=sql.prepare('SELECT * FROM orders').get();assert.equal(order.status,'pending');
  await update(cb(`approve_${order.id}`,1));await update(cb(`approve_${order.id}`,1));
  assert.equal(creates,1);assert.equal(sql.prepare('SELECT status FROM orders').get().status,'approved');assert.equal(sql.prepare('SELECT COUNT(*) n FROM services').get().n,1);

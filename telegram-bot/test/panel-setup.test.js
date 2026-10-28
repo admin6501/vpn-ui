@@ -24,15 +24,16 @@ function fixture(){
  return {sql,out,env,message,cb,panelRequests,setPass(p){acceptPass=p}};
 }
 
-test('owner adds panel, chooses group and inbound, sets subscription; stored credentials encrypted',async()=>{
+test('owner adds panel and subscription, then assigns a group to a category; credentials encrypted',async()=>{
  const f=fixture();await f.cb(1,'admin:settings');assert.ok(JSON.stringify(f.out.at(-2)).includes('admin:panelsetup') || f.out.some(x=>JSON.stringify(x.body).includes('admin:panelsetup')));
  await f.cb(1,'admin:panelsetup');await f.message(1,'https://panel.example:2053/path');await f.message(1,'rep');await f.message(1,'pass-秘密');
  const row=f.sql.prepare("SELECT value FROM settings WHERE key='panel_credentials_v1'").get();assert.ok(row);assert.ok(!row.value.includes('pass-秘密')&&!row.value.includes('rep'));
  const saved=await decryptPanel(f.env.BOT_TOKEN,row.value);assert.deepEqual(saved,{url:'https://panel.example:2053/path',user:'rep',pass:'pass-秘密'});
  assert.equal(f.sql.prepare("SELECT value FROM settings WHERE key='panel_draft:1'").get(),undefined);
  assert.ok(!JSON.stringify(f.out).includes('pass-秘密'));assert.ok(f.out.filter(x=>x.method==='deleteMessage').length>=3);
- await f.cb(1,'admin:pgroups');await f.cb(1,'admin:pg:9');await f.cb(1,'admin:pi:9:31');await f.message(1,'https://sub.example:2096/sub/');
- let settings=Object.fromEntries(f.sql.prepare("SELECT key,value FROM settings WHERE key IN ('panel_group_ids','panel_inbound_id','sub_base_url')").all().map(x=>[x.key,x.value]));assert.deepEqual(settings,{panel_group_ids:'9',panel_inbound_id:'31',sub_base_url:'https://sub.example:2096/sub/'});
+ await f.message(1,'https://sub.example:2096/sub/');
+ let settings=Object.fromEntries(f.sql.prepare("SELECT key,value FROM settings WHERE key IN ('panel_group_ids','panel_inbound_id','sub_base_url')").all().map(x=>[x.key,x.value]));assert.deepEqual(settings,{panel_group_ids:'',panel_inbound_id:'',sub_base_url:'https://sub.example:2096/sub/'});
+ await f.cb(1,'admin:category_add');await f.message(1,'Premium');await f.cb(1,'admin:categorygroup:9');assert.equal(f.sql.prepare('SELECT group_ids FROM bot_categories').get().group_ids,'9');
  await f.cb(1,'admin:panelcheck');assert.ok(f.out.some(x=>x.body.text?.includes('اتصال به پنل برقرار')));
 });
 
