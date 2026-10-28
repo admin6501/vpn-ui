@@ -26,3 +26,12 @@ test('server does not disable an existing webhook',()=>{
 test('server upgrades existing database without changing plans or settings',()=>{
  const {dir,database,result}=runServer(false,true);try{assert.equal(result.status,0,result.stderr);const db=new DatabaseSync(database);assert.equal(db.prepare('SELECT COUNT(*) AS n FROM plans').get().n,1);assert.equal(db.prepare("SELECT value FROM settings WHERE key='test_enabled'").get().value,'1');assert.ok(db.prepare("SELECT name FROM sqlite_master WHERE name='bot_users'").get());db.close()}finally{rmSync(dir,{recursive:true,force:true})}
 });
+
+test('shutdown interrupts long polling promptly',()=>{
+ const dir=mkdtempSync(join(tmpdir(),'bot-stop-'));try{
+  const config=join(dir,'config.json'), database=join(dir,'db.sqlite');writeFileSync(config,JSON.stringify({BOT_TOKEN:'123:FakeToken',ADMIN_ID:'123'}));
+  writeFileSync(join(dir,'mock.mjs'),`globalThis.fetch=async (url,opt)=>{const method=new URL(url).pathname.split('/').pop();if(method==='getWebhookInfo')return Response.json({ok:true,result:{url:''}});if(method==='getUpdates'){setTimeout(()=>process.kill(process.pid,'SIGTERM'),30);return new Promise((resolve,reject)=>{const hold=setInterval(()=>{},1000);opt.signal.addEventListener('abort',()=>{clearInterval(hold);reject(Error('aborted'))},{once:true})})}throw Error('unexpected')};`);
+  const started=Date.now();const result=spawnSync(process.execPath,['--import',join(dir,'mock.mjs'),'server.mjs'],{cwd:new URL('..',import.meta.url),env:{...process.env,BOT_CONFIG:config,BOT_DATABASE:database},encoding:'utf8',timeout:3000});
+  assert.equal(result.status,0,result.stderr);assert.ok(Date.now()-started<2500);assert.match(result.stdout,/Bot stopped/);
+ }finally{rmSync(dir,{recursive:true,force:true})}
+});
