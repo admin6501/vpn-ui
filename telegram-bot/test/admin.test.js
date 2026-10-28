@@ -7,9 +7,9 @@ import worker from '../worker.js';
 function fixture(){
  const sql=new DatabaseSync(':memory:');sql.exec(readFileSync(new URL('../schema.sql',import.meta.url),'utf8'));
  const prep=(q,a=[])=>({bind(...x){return prep(q,x)},async run(){const r=sql.prepare(q).run(...a);return {meta:{changes:Number(r.changes),last_row_id:Number(r.lastInsertRowid)}}},async all(){return {results:sql.prepare(q).all(...a)}},async first(){return sql.prepare(q).get(...a)??null}});
- const DB={prepare:q=>prep(q),batch:async ss=>Promise.all(ss.map(s=>s.all()))};let output=[], sequence=0;
+ const DB={prepare:q=>prep(q),batch:async ss=>Promise.all(ss.map(s=>s.all()))};let output=[], sequence=0;const chats=new Map();
  globalThis.fetch=async(url,opt)=>{const p=new URL(url).pathname;
-  if(p.startsWith('/bot')){let method=p.split('/').at(-1),body=JSON.parse(opt.body);output.push({method,body});return new Response(JSON.stringify(method==='getChatMember'?{ok:true,result:{status:'member'}}:{ok:true,result:{message_id:123}}));}
+  if(p.startsWith('/bot')){let method=p.split('/').at(-1),body=JSON.parse(opt.body);output.push({method,body});if(method==='getChat')return Response.json(chats.has(body.chat_id)?{ok:true,result:chats.get(body.chat_id)}:{ok:false,description:'chat unavailable'});return new Response(JSON.stringify(method==='getChatMember'?{ok:true,result:{status:'member'}}:{ok:true,result:{message_id:123}}));}
   if(p.endsWith('/login'))return new Response(JSON.stringify({success:true}),{headers:{'set-cookie':'vpn-ui=test'}});
   if(p.endsWith('/clients/groups'))return new Response(JSON.stringify({success:true,obj:[{id:1,inboundIds:[3]}]}));
   if(p.endsWith('/clients/assignable'))return new Response(JSON.stringify({success:true,obj:[{inboundId:3,protocol:'vless'}]}));
@@ -21,7 +21,7 @@ function fixture(){
  const message=(uid,text,name='A')=>emit({message:{from:{id:uid,first_name:name},chat:{id:uid,type:'private'},message_id:++sequence,text}});
  const callback=(uid,data)=>emit({callback_query:{id:'cb'+ ++sequence,from:{id:uid,first_name:'A'},message:{chat:{id:uid,type:'private'},message_id:12},data}});
  const last=()=>output.filter(o=>o.method==='sendMessage').at(-1)?.body;
- return {sql,output,message,callback,last};
+ return {sql,output,message,callback,last,chats};
 }
 
 test('start text can be edited, is safely displayed, validated and reset',async()=>{
@@ -44,6 +44,7 @@ test('custom start text is used with main menu photo',async()=>{
 test('admin menu exposes every section, settings edit and toggle',async()=>{
  const f=fixture();await f.message(1,'/start');assert.ok(JSON.stringify(f.last().reply_markup).includes('admin:root'));
  await f.callback(1,'admin:root');for(const name of ['admin:settings','admin:plans','admin:admins','admin:stats','admin:resettest','admin:panelcheck'])assert.ok(JSON.stringify(f.last().reply_markup).includes(name));
+ assert.ok(!JSON.stringify(f.last().reply_markup).includes('admin:help'));
  await f.callback(1,'admin:settings');assert.ok(JSON.stringify(f.last().reply_markup).includes('admin:setting:sub_base_url'));
  await f.callback(1,'admin:setting:duration_days');await f.message(1,'45');assert.equal(f.sql.prepare("SELECT value FROM settings WHERE key='duration_days'").get().value,'45');
  await f.callback(1,'admin:setting:test_enabled');await f.callback(1,'admin:test:0');assert.equal(f.sql.prepare("SELECT value FROM settings WHERE key='test_enabled'").get().value,'0');
@@ -142,4 +143,18 @@ test('admin searches saved service names and panel emails and views panel detail
  await f.callback(1,'admin:service_search');await f.message(1,'service');assert.match(f.last().text,/نتیجه جستجوی سرویس/);assert.ok(JSON.stringify(f.last().reply_markup).includes('admin:searchpage:1'));
  await f.callback(1,'admin:searchpage:1');assert.ok(JSON.stringify(f.last().reply_markup).includes('admin:svc:1'));await f.callback(1,'admin:svc:1');assert.match(f.last().text,/حساب پنل/);assert.match(f.last().text,/وضعیت حساب.*فعال/);
  await f.callback(1,'admin:service_search');await f.message(1,'active');assert.ok(JSON.stringify(f.last().reply_markup).includes('admin:svc:1'));
+});
+
+test('legacy user names are recovered from Telegram without altering block state',async()=>{
+ const f=fixture();f.sql.prepare('INSERT INTO services(user_id,name) VALUES(?,?)').run(888,'old');f.sql.prepare('INSERT INTO bot_users(user_id,blocked) VALUES(888,1)').run();
+ f.chats.set(888,{id:888,type:'private',first_name:'Ali <X>',username:'ali_user'});
+ await f.callback(2,'admin:users:0');assert.equal(f.output.filter(x=>x.method==='getChat').length,0);
+ await f.callback(1,'admin:users:0');const list=JSON.stringify(f.last().reply_markup);assert.ok(list.includes('Ali <X>'));assert.ok(list.includes('@ali_user'));
+ const u=f.sql.prepare('SELECT first_name,username,blocked FROM bot_users WHERE user_id=888').get();assert.equal(u.first_name,'Ali <X>');assert.equal(u.username,'ali_user');assert.equal(u.blocked,1);
+ await f.callback(1,'admin:user:888');assert.match(f.last().text,/Ali &lt;X&gt;/);assert.match(f.last().text,/@ali_user/);assert.match(f.last().text,/مسدود/);
+});
+test('unavailable legacy identity falls back to historical order username without inventing a name',async()=>{
+ const f=fixture();f.sql.prepare("INSERT INTO orders(user_id,username,service_name) VALUES(?,?,'old')").run(777,'legacy_user');
+ await f.callback(1,'admin:user:777');assert.match(f.last().text,/نام در دسترس نیست/);assert.match(f.last().text,/@legacy_user/);assert.match(f.last().text,/ممکن است تغییر کرده باشد/);
+ f.chats.set(777,{id:999,type:'private',first_name:'Wrong',username:'wrong'});await f.callback(1,'admin:user:777');assert.doesNotMatch(f.last().text,/Wrong|@wrong/);
 });

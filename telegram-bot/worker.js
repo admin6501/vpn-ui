@@ -823,6 +823,26 @@ async function handleAdminCommand(c, msg) {
 // دکمه‌های مدیریت فقط رابط دستورات موجود هستند؛ بررسی مجوز در هر درخواست انجام می‌شود.
 const BOT_USERS_QUERY = `WITH ids AS (SELECT user_id FROM bot_users UNION SELECT user_id FROM states UNION SELECT user_id FROM services UNION SELECT user_id FROM orders UNION SELECT user_id FROM wallet_entries UNION SELECT user_id FROM wallet_topups UNION SELECT user_id FROM wallet_payments UNION SELECT user_id FROM discounts UNION SELECT user_id FROM test_claims UNION SELECT referrer_id AS user_id FROM referrals UNION SELECT referred_id AS user_id FROM referrals)`;
 async function botUserExists(env,id) { return !!(await first(env,`${BOT_USERS_QUERY} SELECT user_id FROM ids WHERE user_id=? LIMIT 1`,id)); }
+async function botUserIdentity(env,id,cached) {
+  let user=cached || await first(env,"SELECT first_name,username,blocked FROM bot_users WHERE user_id=?",id) || {};
+  if (!user.first_name || !user.username) {
+    try {
+      const response=await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/getChat`,{
+        method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({chat_id:id}),signal:AbortSignal.timeout(4000),
+      });
+      const result=await response.json(), chat=result?.result;
+      if (result?.ok && Number(chat?.id)===id && chat.type === "private" && typeof chat.first_name === "string" && chat.first_name) {
+        await run(env,"INSERT INTO bot_users(user_id,first_name,username) VALUES(?,?,?) ON CONFLICT(user_id) DO UPDATE SET first_name=CASE WHEN bot_users.first_name='' THEN excluded.first_name ELSE bot_users.first_name END,username=CASE WHEN bot_users.username='' THEN excluded.username ELSE bot_users.username END",id,chat.first_name.slice(0,128),String(chat.username || "").slice(0,64));
+        user=await first(env,"SELECT first_name,username,blocked FROM bot_users WHERE user_id=?",id) || user;
+      }
+    } catch { /* Telegram may not have a reachable private chat for older users. */ }
+  }
+  if (!user.username) {
+    const old=await first(env,"SELECT username FROM orders WHERE user_id=? AND username IS NOT NULL AND username!='' AND username!='-' ORDER BY id DESC LIMIT 1",id);
+    if(old?.username) user={...user,username:String(old.username).slice(0,64),usernameFromOrder:true};
+  }
+  return user;
+}
 const adminTime = value => /^\d{12,13}$/.test(String(value || "")) ? new Date(Number(value)).toLocaleString("fa-IR",{timeZone:"Asia/Tehran"}) : String(value || "—");
 const adminOrderStatus = status => ({draft:"پیش‌نویس",pending:"منتظر تأیید",approved:"تأییدشده",needs_fix:"نیازمند اصلاح",needs_review:"نیازمند بررسی",needs_review_refunded:"نیازمند بررسی؛ وجه برگشت داده شد",wallet_processing:"در حال پرداخت",wallet_failed_refunded:"ناموفق؛ وجه برگشت داده شد",wallet_review_resolved:"بررسی‌شده"}[status] || status || "—");
 const adminBack = (target = "admin:root") => kb([[btn("🔙 بازگشت", target)]]);
@@ -835,7 +855,7 @@ const adminHomeKb = () => kb([
   [btn("🏷 نوع نام‌گذاری سرویس", "admin:setting:name_mode")],
   [btn("🎁 مجوز دوباره تست", "admin:resettest"), btn("🔌 بررسی اتصال پنل", "admin:panelcheck")],
   [btn("♻️ ریست تست همه", "admin:reset_all_tests")],
-  [btn("📖 راهنما", "admin:help"), btn("🏠 منوی مشتری", "main_menu")],
+  [btn("🏠 منوی مشتری", "main_menu")],
 ]);
 const showAdminHome = (env, chat) => sendMsg(env, chat, "🛠 <b>پنل مدیریت ربات</b>\n\nبخش موردنظر را انتخاب کنید:", adminHomeKb());
 const planKeyOK = key => /^[A-Za-z0-9_-]{1,32}$/.test(key);
@@ -1037,18 +1057,19 @@ async function handleAdminUICallback(c, cq, answer) {
   if (/^admin:users:\d+$/.test(d)) {
     const page=Number(d.split(":")[2]); if(!Number.isSafeInteger(page)||page<0||page>1000000)return answer("صفحه نامعتبر است.",true);
     const users=await all(env,`${BOT_USERS_QUERY} SELECT ids.user_id, u.first_name, u.username, u.blocked FROM ids LEFT JOIN bot_users u ON u.user_id=ids.user_id WHERE ids.user_id>0 ORDER BY ids.user_id DESC LIMIT 11 OFFSET ?`,page*10);
-    const rows=users.slice(0,10).map(u=>[btn(`${u.blocked ? "⛔ " : "👤 "}${String(u.first_name || u.username || u.user_id).slice(0,30)} — ${u.user_id}`,`admin:user:${u.user_id}`)]);
+    const shown=await Promise.all(users.slice(0,10).map(async u=>({...u,...await botUserIdentity(env,Number(u.user_id),u)})));
+    const rows=shown.map(u=>[btn(`${u.blocked ? "⛔ " : "👤 "}${String(u.first_name || "نام نامشخص").slice(0,20)}${u.username ? ` (@${String(u.username).replace(/^@/,"").slice(0,20)})` : ""} — ${u.user_id}`,`admin:user:${u.user_id}`)]);
     const nav=[];if(page>0)nav.push(btn("◀️ قبلی",`admin:users:${page-1}`));if(users.length>10)nav.push(btn("بعدی ▶️",`admin:users:${page+1}`));if(nav.length)rows.push(nav);rows.push([btn("🔙 بازگشت","admin:root")]);
     return renderAdmin(`👥 <b>کاربران ربات — صفحه ${page+1}</b>\nکاربران قدیمی بر اساس رکوردهای موجود نمایش داده می‌شوند.`,kb(rows));
   }
   if (/^admin:user:\d+$/.test(d)) {
     const target=Number(d.split(":")[2]);if(!positiveId(String(target))||!await botUserExists(env,target))return answer("کاربر پیدا نشد.",true);
-    const u=await first(env,"SELECT first_name,username,blocked FROM bot_users WHERE user_id=?",target);
-    const balance=await walletBalance(env,target); const name=esc(u?.first_name || "نام ثبت نشده"), username=esc(u?.username || "—");
+    const u=await botUserIdentity(env,target);
+    const balance=await walletBalance(env,target); const name=esc(u?.first_name || "نام در دسترس نیست"), username=esc(u?.username ? "@"+String(u.username).replace(/^@/,"") : "ثبت نشده یا در دسترس نیست");
     const rows=[[btn("📦 سرویس‌ها و وضعیت",`admin:us:${target}:0`),btn("🧾 همه سفارش‌ها",`admin:uo:${target}:0`)],[btn("💰 کیف پول",`admin:wallet_view:${target}`),btn("📜 تراکنش‌ها",`admin:ut:${target}:0`)]];
     if(!env.admins.has(target)) rows.push([btn(u?.blocked ? "✅ رفع مسدودی" : "⛔ مسدود کردن",`admin:ub:${target}:${u?.blocked ? 0 : 1}`)]);
     rows.push([btn("🔙 کاربران","admin:users:0")]);
-    return renderAdmin(`👤 <b>${name}</b>\nشناسه: <code>${target}</code>\nنام کاربری: ${username}\nدسترسی ربات: ${u?.blocked ? "مسدود" : "باز"}\nموجودی: ${toman(balance)}`,kb(rows));
+    return renderAdmin(`👤 <b>${name}</b>\nشناسه: <code>${target}</code>\nنام کاربری: ${username}${u.usernameFromOrder ? " (از سفارش قدیمی؛ ممکن است تغییر کرده باشد)" : ""}\nدسترسی ربات: ${u?.blocked ? "مسدود" : "باز"}\nموجودی: ${toman(balance)}`,kb(rows));
   }
   if (/^admin:ub:\d+:[01]$/.test(d)) {
     const [, ,id,blocked]=d.split(":"),target=Number(id);
