@@ -55,3 +55,15 @@ test('renewal stops before panel write if group membership changes after invoice
  f.setGroups([{id:1,name:'Alpha',inboundIds:[3]}]);await f.cb(1,`approve_${order.id}`);
  assert.equal(f.sent.length,0);assert.equal(f.sql.prepare('SELECT status FROM orders WHERE id=?').get(order.id).status,'pending');
 });
+
+test('admin changes only plan category and leaves existing invoice route untouched',async()=>{
+ const f=fixture();await category(f,'A',1);await category(f,'B',2);await plan(f,'a10',100,10,14,1);
+ await f.cb(2,'plan_a10');await f.message(2,'Alice');const order=f.sql.prepare('SELECT id FROM orders').get();
+ await f.cb(1,'admin:plan:a10');assert.ok(JSON.stringify(f.last().reply_markup).includes('admin:planmove:a10'));
+ await f.cb(2,'admin:planmove:a10');await f.cb(2,'admin:planpick:2');assert.equal(f.sql.prepare("SELECT category_id FROM bot_plan_specs WHERE plan_key='a10'").get().category_id,1);
+ await f.cb(1,'admin:planmove:a10');assert.ok(JSON.stringify(f.last().reply_markup).includes('admin:planpick:2'));
+ f.sql.exec("UPDATE plans SET price=150,gb=12 WHERE key='a10'; UPDATE bot_plan_specs SET days=21 WHERE plan_key='a10'");
+ await f.cb(1,'admin:planpick:2');assert.deepEqual({...f.sql.prepare("SELECT p.price,p.gb,s.days,s.category_id FROM plans p JOIN bot_plan_specs s ON s.plan_key=p.key WHERE p.key='a10'").get()},{price:150,gb:12,days:21,category_id:2});
+ assert.equal(f.sql.prepare('SELECT group_ids FROM bot_order_routes WHERE order_id=?').get(order.id).group_ids,'1');
+ await f.cb(1,'admin:planpick:1');assert.equal(f.sql.prepare("SELECT category_id FROM bot_plan_specs WHERE plan_key='a10'").get().category_id,2);
+});
