@@ -46,16 +46,16 @@ test('admin menu exposes every section, settings edit and toggle',async()=>{
  await f.callback(1,'admin:root');for(const name of ['admin:settings','admin:plans','admin:admins','admin:stats','admin:resettest','admin:panelcheck'])assert.ok(JSON.stringify(f.last().reply_markup).includes(name));
  assert.ok(!JSON.stringify(f.last().reply_markup).includes('admin:help'));
  await f.callback(1,'admin:settings');assert.ok(JSON.stringify(f.last().reply_markup).includes('admin:setting:sub_base_url'));
- await f.callback(1,'admin:setting:duration_days');await f.message(1,'45');assert.equal(f.sql.prepare("SELECT value FROM settings WHERE key='duration_days'").get().value,'45');
+ await f.callback(1,'admin:setting:test_days');await f.message(1,'45');assert.equal(f.sql.prepare("SELECT value FROM settings WHERE key='test_days'").get().value,'45');
  await f.callback(1,'admin:setting:test_enabled');await f.callback(1,'admin:test:0');assert.equal(f.sql.prepare("SELECT value FROM settings WHERE key='test_enabled'").get().value,'0');
  await f.callback(1,'admin:panelcheck');assert.ok(f.output.some(x=>x.body.text?.includes('اتصال به پنل برقرار')));
  await f.callback(1,'admin:stats');assert.ok(f.output.some(x=>x.body.text?.includes('مجموع فروش')));
 });
 
 test('buttons create, change and confirm deletion of plans',async()=>{
- const f=fixture();await f.callback(1,'admin:plan_add');await f.message(1,'p3 12345 3');assert.equal(f.sql.prepare("SELECT price FROM plans WHERE key='p3'").get().price,12345);
+ const f=fixture();f.sql.exec("INSERT INTO bot_categories(id,name,group_ids) VALUES(1,'Test','1')");await f.callback(1,'admin:plan_add');await f.message(1,'p3 12345 3 30');await f.callback(1,'admin:planpick:1');assert.equal(f.sql.prepare("SELECT price FROM plans WHERE key='p3'").get().price,12345);
  await f.callback(1,'admin:price:p3');await f.message(1,'50000');assert.equal(f.sql.prepare("SELECT price FROM plans WHERE key='p3'").get().price,50000);
- await f.callback(1,'admin:editplan:p3');await f.message(1,'60000 7.5');assert.equal(f.sql.prepare("SELECT gb FROM plans WHERE key='p3'").get().gb,7.5);
+ await f.callback(1,'admin:editplan:p3');await f.message(1,'60000 7.5 45');await f.callback(1,'admin:planpick:1');assert.equal(f.sql.prepare("SELECT gb FROM plans WHERE key='p3'").get().gb,7.5);
  await f.callback(1,'admin:delplan:p3');assert.ok(f.sql.prepare("SELECT key FROM plans WHERE key='p3'").get());
  await f.callback(1,'admin:confirmplan:p3');assert.equal(f.sql.prepare("SELECT key FROM plans WHERE key='p3'").get(),undefined);
 });
@@ -73,13 +73,13 @@ test('reset test requires confirmation, cancel and navigation clear wizard state
  await f.callback(1,'admin:resettest');await f.message(1,'77');assert.ok(f.sql.prepare('SELECT user_id FROM test_claims WHERE user_id=77').get());
  await f.callback(1,'admin:root');await f.callback(1,'admin:reset_confirm');assert.ok(f.sql.prepare('SELECT user_id FROM test_claims WHERE user_id=77').get());
  await f.callback(1,'admin:resettest');await f.message(1,'77');await f.callback(1,'admin:reset_confirm');assert.equal(f.sql.prepare('SELECT user_id FROM test_claims WHERE user_id=77').get(),undefined);
- await f.callback(1,'admin:setting:duration_days');await f.callback(1,'admin:stats');await f.message(1,'99');assert.equal(f.sql.prepare("SELECT value FROM settings WHERE key='duration_days'").get(),undefined);
+ await f.callback(1,'admin:setting:test_days');await f.callback(1,'admin:stats');await f.message(1,'99');assert.equal(f.sql.prepare("SELECT value FROM settings WHERE key='test_days'").get(),undefined);
 });
 
 test('fresh database has no sample records and customer sees an empty-plan message',async()=>{
  const f=fixture();
  for(const table of ['plans','services','orders','admins','test_claims','wallet_entries']) assert.equal(f.sql.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get().n,0,table);
- await f.callback(2,'buy'); assert.ok(f.output.some(x=>x.body.text?.includes('هنوز بسته‌ای برای خرید تنظیم نشده')));
+ await f.callback(2,'buy'); assert.ok(f.output.some(x=>x.body.text?.includes('دسته‌بندی قابل استفاده‌ای تنظیم نشده')));
  f.sql.exec("INSERT INTO plans(key,gb,price,sort) VALUES('mine',3,100,1)");
  f.sql.exec(readFileSync(new URL('../schema.sql',import.meta.url),'utf8'));
  assert.equal(f.sql.prepare('SELECT COUNT(*) AS n FROM plans').get().n,1);
@@ -123,7 +123,7 @@ test('referral reward button sets amount, zero disables registration without con
 });
 
 test('admin selects custom or random names and random purchase skips name prompt',async()=>{
- const f=fixture();f.sql.prepare("INSERT INTO plans(key,gb,price,sort) VALUES('p10',10,70000,1)").run();
+ const f=fixture();f.sql.exec("INSERT INTO plans(key,gb,price,sort) VALUES('p10',10,70000,1); INSERT INTO bot_categories(id,name,group_ids) VALUES(1,'Test','1'); INSERT INTO bot_plan_specs VALUES('p10',1,30); INSERT INTO settings(key,value) VALUES('sub_base_url','https://sub.example/sub/')");
  await f.callback(1,'admin:root');assert.ok(JSON.stringify(f.last().reply_markup).includes('admin:setting:name_mode'));
  await f.callback(5,'admin:namemode:random');assert.equal(f.sql.prepare("SELECT value FROM settings WHERE key='name_mode'").get(),undefined);
  await f.callback(1,'admin:setting:name_mode');await f.callback(1,'admin:namemode:random');assert.equal(f.sql.prepare("SELECT value FROM settings WHERE key='name_mode'").get().value,'random');

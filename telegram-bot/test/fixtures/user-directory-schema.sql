@@ -1,0 +1,156 @@
+CREATE TABLE IF NOT EXISTS orders (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER,
+  username TEXT,
+  service_name TEXT,
+  volume TEXT,
+  price INTEGER,
+  discount INTEGER DEFAULT 0,
+  final_price INTEGER,
+  duration TEXT,
+  renew_service_id INTEGER,
+  gb REAL,
+  days INTEGER,
+  status TEXT DEFAULT 'pending',
+  created_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_orders_user_status ON orders(user_id, status);
+
+CREATE TABLE IF NOT EXISTS services (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER,
+  name TEXT,
+  volume TEXT,
+  duration TEXT,
+  sub_link TEXT,
+  config_link TEXT,
+  created_at TEXT,
+  panel_email TEXT,
+  inbound_id INTEGER,
+  sub_id TEXT,
+  volume_bytes INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_services_user ON services(user_id);
+
+CREATE TABLE IF NOT EXISTS discounts (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER,
+  amount INTEGER,
+  used INTEGER DEFAULT 0,
+  created_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_discounts_user ON discounts(user_id, used);
+
+CREATE TABLE IF NOT EXISTS referrals (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  referrer_id INTEGER,
+  referred_id INTEGER UNIQUE,
+  created_at TEXT
+);
+
+-- وضعیت مکالمه هر کاربر
+CREATE TABLE IF NOT EXISTS states (
+  user_id INTEGER PRIMARY KEY,
+  data TEXT
+);
+
+-- بسته‌ها: با /setprice و /setplan در خود ربات عوض می‌شوند
+CREATE TABLE IF NOT EXISTS plans (
+  key TEXT PRIMARY KEY,
+  gb REAL,
+  price INTEGER,
+  sort INTEGER
+);
+
+-- تنظیمات قابل تغییر با /set
+CREATE TABLE IF NOT EXISTS settings (
+  key TEXT PRIMARY KEY,
+  value TEXT
+);
+
+-- ادمین‌های اضافه‌شده با /addadmin
+CREATE TABLE IF NOT EXISTS admins (
+  user_id INTEGER PRIMARY KEY,
+  added_at TEXT
+);
+
+-- هر کاربر فقط یک‌بار سرویس تست می‌گیرد
+CREATE TABLE IF NOT EXISTS test_claims (
+  user_id INTEGER PRIMARY KEY,
+  created_at TEXT
+);
+
+-- جلوگیری از پردازش تکراری webhook تلگرام
+CREATE TABLE IF NOT EXISTS telegram_updates (update_id INTEGER PRIMARY KEY, created_at TEXT NOT NULL);
+
+CREATE TABLE IF NOT EXISTS provision_attempts (attempt_key TEXT PRIMARY KEY, email TEXT NOT NULL, sub_id TEXT NOT NULL, inbound_id INTEGER NOT NULL, created_at TEXT NOT NULL);
+
+CREATE TABLE IF NOT EXISTS service_operations (service_id INTEGER PRIMARY KEY, kind TEXT NOT NULL, created_at TEXT NOT NULL);
+-- Wallet migration: additive and repeatable; back up D1 before applying.
+CREATE TABLE IF NOT EXISTS wallet_entries (
+ id INTEGER PRIMARY KEY AUTOINCREMENT,
+ user_id INTEGER NOT NULL CHECK(user_id > 0),
+ delta INTEGER NOT NULL CHECK(typeof(delta)='integer' AND delta != 0 AND delta BETWEEN -9000000000000000 AND 9000000000000000),
+ reference TEXT NOT NULL UNIQUE,
+ reason TEXT NOT NULL,
+ actor_id INTEGER,
+ created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_wallet_entries_user ON wallet_entries(user_id,id);
+CREATE TRIGGER IF NOT EXISTS wallet_entries_balance_guard BEFORE INSERT ON wallet_entries BEGIN
+ SELECT CASE WHEN COALESCE((SELECT SUM(delta) FROM wallet_entries WHERE user_id=NEW.user_id),0) + NEW.delta < 0 THEN RAISE(ABORT,'WALLET_INSUFFICIENT') END;
+ SELECT CASE WHEN COALESCE((SELECT SUM(delta) FROM wallet_entries WHERE user_id=NEW.user_id),0) + NEW.delta > 9000000000000000 THEN RAISE(ABORT,'WALLET_LIMIT') END;
+END;
+CREATE TRIGGER IF NOT EXISTS wallet_entries_no_update BEFORE UPDATE ON wallet_entries BEGIN SELECT RAISE(ABORT,'WALLET_IMMUTABLE'); END;
+CREATE TRIGGER IF NOT EXISTS wallet_entries_no_delete BEFORE DELETE ON wallet_entries BEGIN SELECT RAISE(ABORT,'WALLET_IMMUTABLE'); END;
+
+CREATE TABLE IF NOT EXISTS wallet_payments (
+ order_id INTEGER PRIMARY KEY,
+ user_id INTEGER NOT NULL CHECK(user_id>0),
+ amount INTEGER NOT NULL CHECK(typeof(amount)='integer' AND amount BETWEEN 0 AND 9000000000000000),
+ state TEXT NOT NULL CHECK(state IN ('processing','review','settled','refunded')),
+ created_at TEXT NOT NULL
+);
+CREATE TRIGGER IF NOT EXISTS wallet_payment_verify BEFORE INSERT ON wallet_payments BEGIN
+ SELECT CASE WHEN NOT EXISTS (SELECT 1 FROM orders WHERE id=NEW.order_id AND user_id=NEW.user_id AND final_price=NEW.amount AND status='wallet_processing') THEN RAISE(ABORT,'WALLET_ORDER_MISMATCH') END;
+END;
+CREATE TRIGGER IF NOT EXISTS wallet_payment_debit AFTER INSERT ON wallet_payments WHEN NEW.amount>0 BEGIN
+ INSERT INTO wallet_entries(user_id,delta,reference,reason,created_at) VALUES(NEW.user_id,-NEW.amount,'order:'||NEW.order_id||':debit','purchase',NEW.created_at);
+END;
+CREATE TRIGGER IF NOT EXISTS wallet_payment_transition BEFORE UPDATE ON wallet_payments BEGIN
+ SELECT CASE WHEN NEW.order_id!=OLD.order_id OR NEW.user_id!=OLD.user_id OR NEW.amount!=OLD.amount OR NEW.created_at!=OLD.created_at OR NOT ((OLD.state='processing' AND NEW.state IN ('review','settled','refunded')) OR (OLD.state='review' AND NEW.state IN ('settled','refunded'))) THEN RAISE(ABORT,'WALLET_INVALID_TRANSITION') END;
+END;
+CREATE TRIGGER IF NOT EXISTS wallet_payment_refund AFTER UPDATE OF state ON wallet_payments WHEN NEW.state='refunded' AND NEW.amount>0 BEGIN
+ INSERT INTO wallet_entries(user_id,delta,reference,reason,created_at) VALUES(NEW.user_id,NEW.amount,'order:'||NEW.order_id||':refund','refund',NEW.created_at);
+END;
+
+CREATE TABLE IF NOT EXISTS wallet_topups (
+ id INTEGER PRIMARY KEY AUTOINCREMENT,
+ user_id INTEGER NOT NULL CHECK(user_id>0),
+ amount INTEGER NOT NULL CHECK(typeof(amount)='integer' AND amount BETWEEN 1 AND 9000000000000000),
+ status TEXT NOT NULL CHECK(status IN ('draft','pending','needs_fix','credited','rejected')),
+ created_at TEXT NOT NULL,
+ reviewed_by INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_wallet_topups_user ON wallet_topups(user_id,id);
+CREATE TRIGGER IF NOT EXISTS wallet_topup_transition BEFORE UPDATE ON wallet_topups BEGIN
+ SELECT CASE WHEN NEW.user_id!=OLD.user_id OR NEW.amount!=OLD.amount OR NEW.created_at!=OLD.created_at OR NOT ((OLD.status IN ('draft','needs_fix') AND NEW.status='pending') OR (OLD.status='pending' AND NEW.status IN ('credited','needs_fix','rejected'))) THEN RAISE(ABORT,'WALLET_INVALID_TOPUP') END;
+END;
+CREATE TRIGGER IF NOT EXISTS wallet_topup_credit AFTER UPDATE OF status ON wallet_topups WHEN NEW.status='credited' BEGIN
+ INSERT INTO wallet_entries(user_id,delta,reference,reason,actor_id,created_at) VALUES(NEW.user_id,NEW.amount,'topup:'||NEW.id,'topup',NEW.reviewed_by,NEW.created_at);
+END;
+
+CREATE TABLE IF NOT EXISTS wallet_review_resolutions (
+ order_id INTEGER PRIMARY KEY,
+ actor_id INTEGER NOT NULL,
+ resolved_at TEXT NOT NULL
+);
+
+-- Telegram user directory and bot-only access control.
+CREATE TABLE IF NOT EXISTS bot_users (
+ user_id INTEGER PRIMARY KEY,
+ first_name TEXT NOT NULL DEFAULT '',
+ username TEXT NOT NULL DEFAULT '',
+ blocked INTEGER NOT NULL DEFAULT 0 CHECK(blocked IN (0,1)),
+ last_seen TEXT NOT NULL DEFAULT ''
+);

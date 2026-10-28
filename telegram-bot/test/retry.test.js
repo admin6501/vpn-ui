@@ -8,7 +8,7 @@ function fixture(){
  const sql=new DatabaseSync(':memory:');sql.exec(readFileSync(new URL('../schema.sql',import.meta.url),'utf8'));
  const prep=(q,a=[])=>({bind(...x){return prep(q,x)},async run(){let r=sql.prepare(q).run(...a);return {meta:{changes:Number(r.changes),last_row_id:Number(r.lastInsertRowid)}}},async all(){return {results:sql.prepare(q).all(...a)}},async first(){return sql.prepare(q).get(...a)??null}});
  const env={DB:{prepare:q=>prep(q),batch:async ss=>Promise.all(ss.map(s=>s.all()))},BOT_TOKEN:'t',WEBHOOK_SECRET:'secret',ADMIN_ID:'1',PANEL_URL:'https://panel.example/base',PANEL_USER:'u',PANEL_PASS:'p'};
- sql.prepare('INSERT INTO settings(key,value) VALUES(?,?)').run('panel_inbound_id','3');sql.prepare('INSERT INTO settings(key,value) VALUES(?,?)').run('sub_base_url','https://sub.example/sub/');
+ sql.exec("INSERT INTO bot_categories(id,name,group_ids) VALUES(1,'Test','1'); INSERT INTO states(user_id,data) VALUES(2,'{\"test_category\":1}')");sql.prepare('INSERT INTO settings(key,value) VALUES(?,?)').run('panel_inbound_id','3');sql.prepare('INSERT INTO settings(key,value) VALUES(?,?)').run('sub_base_url','https://sub.example/sub/');
  let stage='good',calls=0,seq=0,output=[];
  globalThis.fetch=async(url,opt)=>{const p=new URL(url).pathname;
   if(p.startsWith('/bot')){const method=p.split('/').at(-1),body=JSON.parse(opt.body);output.push({method,body});if(stage==='receiptfail' && method==='copyMessage')return new Response(JSON.stringify({ok:false,description:'blocked'}));if(stage==='deliveryfail' && method==='sendMessage' && body.chat_id===2 && body.text?.includes('سرویس تست شما ساخته شد'))throw Error('telegram unavailable');return new Response(JSON.stringify({ok:true,result:{message_id:8}}));}
@@ -39,7 +39,7 @@ test('telegram notification failure keeps created trial and cannot cause duplica
 });
 
 test('paid order preflight error remains retryable but post-dispatch error requires review',async()=>{
- for(const [mode,want] of [['preflight','pending'],['ambiguous','needs_review']]){const f=fixture();f.sql.prepare("INSERT INTO orders(user_id,username,service_name,volume,price,final_price,duration,gb,days,status) VALUES(2,'u','A','10 گیگ',10,10,'۱ ماهه (۳۰ روزه)',10,30,'pending')").run();
+ for(const [mode,want] of [['preflight','pending'],['ambiguous','needs_review']]){const f=fixture();f.sql.prepare("INSERT INTO orders(user_id,username,service_name,volume,price,final_price,duration,gb,days,status) VALUES(2,'u','A','10 گیگ',10,10,'۱ ماهه (۳۰ روزه)',10,30,'pending')").run();f.sql.exec("INSERT INTO bot_order_routes VALUES(1,'1',3,'')");
   f.setStage(mode);await f.cb(1,'approve_1');assert.equal(f.sql.prepare('SELECT status FROM orders WHERE id=1').get().status,want);
   f.setStage('good');await f.cb(1,'approve_1');assert.equal(f.sql.prepare('SELECT status FROM orders WHERE id=1').get().status,want==='pending'?'approved':'needs_review');assert.equal(f.calls,1);
  }
@@ -47,7 +47,7 @@ test('paid order preflight error remains retryable but post-dispatch error requi
 
 test('receipt delivery failure is not falsely acknowledged and resending works',async()=>{
  const f=fixture();f.sql.prepare("INSERT INTO orders(user_id,username,service_name,volume,price,final_price,duration,gb,days,status) VALUES(2,'u','A','10 گیگ',10,10,'30 روزه',10,30,'draft')").run();
- f.sql.prepare('INSERT INTO states(user_id,data) VALUES(?,?)').run(2,JSON.stringify({step:'receipt',order_id:1}));
+ f.sql.prepare('INSERT OR REPLACE INTO states(user_id,data) VALUES(?,?)').run(2,JSON.stringify({step:'receipt',order_id:1}));
  f.setStage('receiptfail');await f.message(2,'receipt');assert.equal(f.sql.prepare('SELECT status FROM orders WHERE id=1').get().status,'needs_fix');assert.ok(f.output.some(x=>x.body.text?.includes('ارسال فیش به ادمین ناموفق')));
  f.setStage('good');await f.message(2,'receipt');assert.equal(f.sql.prepare('SELECT status FROM orders WHERE id=1').get().status,'pending');assert.ok(f.output.some(x=>x.body.text?.includes('فیش شما دریافت شد')));
 });
@@ -57,6 +57,6 @@ test('concurrent trial callbacks allow only one create',async()=>{
 });
 
 test('trial asks for custom or random name and uses the selected name',async()=>{
- const f=fixture();await f.cb(2,'test_service');assert.ok(JSON.stringify(f.output).includes('testname:custom'));assert.ok(JSON.stringify(f.output).includes('testname:random'));assert.equal(f.calls,0);
+ const f=fixture();await f.cb(2,'test_service');await f.cb(2,'testcat:1:0');assert.ok(JSON.stringify(f.output).includes('testname:custom'));assert.ok(JSON.stringify(f.output).includes('testname:random'));assert.equal(f.calls,0);
  await f.cb(2,'testname:custom');await f.message(2,'invalid 22');assert.equal(f.calls,0);await f.message(2,'MyTest');assert.equal(f.calls,0);await f.cb(2,'testname:make');assert.equal(f.calls,1);assert.equal(f.sql.prepare('SELECT name FROM services WHERE user_id=2').get().name,'MyTest');
 });

@@ -7,7 +7,7 @@ import {walletBalance,adjustWallet,reserveWalletPayment,completeWalletPayment,re
 
 function fixture(){
  const sql=new DatabaseSync(':memory:');sql.exec(readFileSync(new URL('../schema.sql',import.meta.url),'utf8'));
- sql.exec("INSERT INTO plans(key,gb,price,sort) VALUES('p10',10,70000,1)");
+ sql.exec("INSERT INTO plans(key,gb,price,sort) VALUES('p10',10,70000,1); INSERT INTO bot_categories(id,name,group_ids) VALUES(1,'Test','1'); INSERT INTO bot_plan_specs VALUES('p10',1,30)");
  const prep=(q,a=[])=>({q,a,bind(...x){return prep(q,x)},async run(){const before=Number(sql.prepare('SELECT total_changes() AS n').get().n);const r=sql.prepare(q).run(...a);const changes=Number(sql.prepare('SELECT total_changes() AS n').get().n)-before;return {meta:{changes,last_row_id:Number(r.lastInsertRowid)}}},async all(){return {results:sql.prepare(q).all(...a),meta:{changes:0}}},async first(){return sql.prepare(q).get(...a)??null}});
  let queue=Promise.resolve(); const DB={prepare:q=>prep(q),batch(ss){const work=async()=>{sql.exec('BEGIN');try{let r=[];for(const s of ss){r.push(/^\s*select\b/i.test(s.q)?await s.all():await s.run())}sql.exec('COMMIT');return r}catch(e){sql.exec('ROLLBACK');throw e}};const next=queue.then(work);queue=next.catch(()=>{});return next}};
  const env={DB,BOT_TOKEN:'token',WEBHOOK_SECRET:'secret',ADMIN_ID:'1',PANEL_URL:'https://panel.example/base',PANEL_USER:'u',PANEL_PASS:'p',CARD_NUMBER:'1111',CARD_HOLDER:'Test'};
@@ -26,7 +26,7 @@ function fixture(){
  async function emit(data){let tasks=[];let req=new Request('https://worker.example/webhook',{method:'POST',headers:{'X-Telegram-Bot-Api-Secret-Token':'secret'},body:JSON.stringify({update_id:++seq,...data})});assert.equal((await worker.fetch(req,env,{waitUntil:p=>tasks.push(p)})).status,200);await Promise.all(tasks)}
  const message=(uid,text)=>emit({message:{from:{id:uid},chat:{id:uid,type:'private'},message_id:++seq,text}});
  const cb=(uid,data)=>emit({callback_query:{id:'cb'+ ++seq,from:{id:uid},message:{chat:{id:uid,type:'private'},message_id:1},data}});
- const order=(user=2,price=70,renew=null)=>sql.prepare("INSERT INTO orders(user_id,username,service_name,volume,price,final_price,duration,gb,days,status,renew_service_id) VALUES(?,'u','A','10 گیگ',?,?,'۱ ماهه (۳۰ روزه)',10,30,'draft',?)").run(user,price,price,renew);
+ const order=(user=2,price=70,renew=null)=>{const r=sql.prepare("INSERT INTO orders(user_id,username,service_name,volume,price,final_price,duration,gb,days,status,renew_service_id) VALUES(?,'u','A','10 گیگ',?,?,'۱ ماهه (۳۰ روزه)',10,30,'draft',?)").run(user,price,price,renew);sql.prepare("INSERT INTO bot_order_routes VALUES(?,'1',3,'')").run(r.lastInsertRowid);return r};
  return {sql,env,out:output,message,cb,order,setMode(v){mode=v},get calls(){return calls}};
 }
 
@@ -80,7 +80,7 @@ test('uncertain refunded order blocks another wallet purchase until admin review
  await f.cb(1,'admin:wallet_close_yes:1');await f.cb(2,'wallet:pay:2');assert.equal(f.calls,2);assert.equal(await walletBalance(f.env,2),30);assert.equal(f.sql.prepare('SELECT status FROM orders WHERE id=2').get().status,'approved');
 });
 test('customer buys through plan and invoice buttons using wallet balance',async()=>{
- const f=fixture();await adjustWallet(f.env,2,100000,1,'seed');await f.cb(2,'buy');await f.cb(2,'plan_p10');await f.message(2,'Amir');
+ const f=fixture();await adjustWallet(f.env,2,100000,1,'seed');await f.cb(2,'buy');await f.cb(2,'buycat:1:0');await f.cb(2,'plan_p10');await f.message(2,'Amir');
  assert.ok(f.out.some(x=>JSON.stringify(x.body.reply_markup||{}).includes('wallet:pay:1')));await f.cb(2,'wallet:pay:1');
  assert.equal(await walletBalance(f.env,2),30000);assert.equal(f.sql.prepare('SELECT status FROM orders WHERE id=1').get().status,'approved');assert.equal(f.sql.prepare('SELECT COUNT(*) n FROM services').get().n,1);
 });
