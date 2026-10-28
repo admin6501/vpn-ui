@@ -80,17 +80,6 @@ CREATE TABLE IF NOT EXISTS test_claims (
   created_at TEXT
 );
 
-INSERT OR IGNORE INTO plans (key, gb, price, sort) VALUES
-  ('p10',  10,  70000,   1),
-  ('p20',  20,  140000,  2),
-  ('p30',  30,  210000,  3),
-  ('p40',  40,  280000,  4),
-  ('p50',  50,  350000,  5),
-  ('p75',  75,  525000,  6),
-  ('p100', 100, 700000,  7),
-  ('p125', 125, 875000,  8),
-  ('p150', 150, 1000000, 9);
-
 -- جلوگیری از پردازش تکراری webhook تلگرام
 CREATE TABLE IF NOT EXISTS telegram_updates (update_id INTEGER PRIMARY KEY, created_at TEXT NOT NULL);
 

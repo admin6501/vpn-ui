@@ -73,3 +73,12 @@ test('reset test requires confirmation, cancel and navigation clear wizard state
  await f.callback(1,'admin:resettest');await f.message(1,'77');await f.callback(1,'admin:reset_confirm');assert.equal(f.sql.prepare('SELECT user_id FROM test_claims WHERE user_id=77').get(),undefined);
  await f.callback(1,'admin:setting:duration_days');await f.callback(1,'admin:stats');await f.message(1,'99');assert.equal(f.sql.prepare("SELECT value FROM settings WHERE key='duration_days'").get(),undefined);
 });
+
+test('fresh database has no sample records and customer sees an empty-plan message',async()=>{
+ const f=fixture();
+ for(const table of ['plans','services','orders','admins','test_claims','wallet_entries']) assert.equal(f.sql.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get().n,0,table);
+ await f.callback(2,'buy'); assert.ok(f.output.some(x=>x.body.text?.includes('هنوز بسته‌ای برای خرید تنظیم نشده')));
+ f.sql.exec("INSERT INTO plans(key,gb,price,sort) VALUES('mine',3,100,1)");
+ f.sql.exec(readFileSync(new URL('../schema.sql',import.meta.url),'utf8'));
+ assert.equal(f.sql.prepare('SELECT COUNT(*) AS n FROM plans').get().n,1);
+});
