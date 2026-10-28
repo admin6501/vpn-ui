@@ -1,6 +1,7 @@
 import { DatabaseSync } from 'node:sqlite';
 import { readFileSync, mkdirSync, chmodSync, existsSync } from 'node:fs';
 import { dirname } from 'node:path';
+import { setTimeout as delay } from 'node:timers/promises';
 import worker, { handleUpdate } from './worker.js';
 
 const config=JSON.parse(readFileSync(process.env.BOT_CONFIG || '/etc/vpn-ui-bot/config.json','utf8'));
@@ -24,12 +25,14 @@ class Statement {
 }
 const DB={prepare(sql){return new Statement(sql)},async batch(statements){db.exec('BEGIN IMMEDIATE');try {const results=statements.map(s=>s.execute());db.exec('COMMIT');return results}catch(e){db.exec('ROLLBACK');throw e}}};
 const env={...config,DB};
+let stopping=false;
+const shutdown=new AbortController();
+const stop=()=>{stopping=true;shutdown.abort()};
+process.on('SIGTERM',stop); process.on('SIGINT',stop);
 async function telegram(method, data={}){
- const r=await fetch(`https://api.telegram.org/bot${config.BOT_TOKEN}/${method}`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(data),signal:AbortSignal.timeout(40000)});
+ const r=await fetch(`https://api.telegram.org/bot${config.BOT_TOKEN}/${method}`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(data),signal:AbortSignal.any([shutdown.signal,AbortSignal.timeout(40000)])});
  const obj=await r.json();if(!obj.ok)throw Error(`Telegram ${method}: ${obj.description || r.status}`);return obj.result;
 }
-let stopping=false;
-process.on('SIGTERM',()=>{stopping=true}); process.on('SIGINT',()=>{stopping=true});
 const info=await telegram('getWebhookInfo');
 if(info.url) throw Error('A Telegram webhook is active. Remove it explicitly before using server polling.');
 console.log('Bot started using long polling.');
@@ -44,6 +47,6 @@ while(!stopping){
    await handleUpdate(env,update);
    db.prepare('UPDATE server_poll_state SET offset=? WHERE id=1').run(update.update_id+1);
   }
- }catch(e){console.error('Polling/recovery error:',e.message);await new Promise(r=>setTimeout(r,5000))}
+ }catch(e){if(!stopping){console.error('Polling/recovery error:',e.message);await delay(5000,undefined,{signal:shutdown.signal}).catch(()=>{})}}
 }
 db.close();console.log('Bot stopped.');

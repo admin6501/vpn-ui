@@ -16,7 +16,7 @@ function fixture(schemaChanged=false) {
  writeFileSync(join(conf,'config.json'),'{}');const db=new DatabaseSync(join(data,'bot.sqlite'));db.exec('CREATE TABLE keepme(v); INSERT INTO keepme VALUES(42)');db.close();
  assert.equal(spawnSync('tar',['-czf',join(dir,'repo.tar.gz'),'-C',dir,'vpn-ui-main']).status,0);
  const fake=(name,body)=>writeFileSync(join(bin,name),'#!/usr/bin/env bash\n'+body+'\n',{mode:0o755});
- fake('curl','cp "$MOCK_ARCHIVE" "${@: -1}"');fake('npm','exit 0');fake('systemctl','echo "$*" >> "$MOCK_LOG"; if [[ "${MOCK_FAIL_START:-}" == 1 && "$1" == start && ! -e "$MOCK_LOG.failed" ]]; then touch "$MOCK_LOG.failed"; exit 1; fi; exit 0');
+ fake('curl','cp "$MOCK_ARCHIVE" "${@: -1}"');fake('npm','exit 0');fake('systemctl','echo "$*" >> "$MOCK_LOG"; if [[ "${MOCK_INTERRUPT_ON:-}" == "$1" && ! -e "$MOCK_LOG.interrupted" ]]; then touch "$MOCK_LOG.interrupted"; kill -TERM "$PPID"; exit 0; fi; if [[ "${MOCK_FAIL_START:-}" == 1 && "$1" == start && ! -e "$MOCK_LOG.failed" ]]; then touch "$MOCK_LOG.failed"; exit 1; fi; exit 0');
  let script=readFileSync('manage-server.sh','utf8');
  script=script.replace('APP=/opt/vpn-ui-telegram-bot',`APP=${app}`).replace('CONF=/etc/vpn-ui-bot',`CONF=${conf}`).replace('DATA=/var/lib/vpn-ui-bot',`DATA=${data}`).replace('NODE=/opt/vpn-ui-bot-node/bin/node',`NODE=${process.execPath}`).replace('[[ $EUID == 0 ]]', '[[ 1 == 1 ]]').replaceAll('/opt/.vpn-ui-bot-stage.',`${dir}/.stage.`).replaceAll('/opt/vpn-ui-bot-node',`${dir}/runtime`).replaceAll('/etc/systemd/system/vpn-ui-telegram-bot.service',`${dir}/service`).replaceAll('/usr/local/bin/vpn-ui-bot',`${dir}/link`);
  const menu=join(dir,'menu.sh');writeFileSync(menu,script);
@@ -49,4 +49,8 @@ test('database statistics report counts without exposing client identifiers',()=
 
 test('update accepts clean previous schema without modifying existing data',()=>{
  const f=fixture();try{copyFileSync(resolve('test/fixtures/clean-schema.sql'),join(f.app,'schema.sql'));const result=f.run('9\n\n0\n');assert.equal(result.status,0,result.stderr);assert.match(result.stdout,/آپدیت انجام شد/);const db=new DatabaseSync(join(f.data,'bot.sqlite'));assert.equal(db.prepare('SELECT v FROM keepme').get().v,42);db.close()}finally{rmSync(f.dir,{recursive:true,force:true})}
+});
+
+test('interrupted update during stop or startup restores code and restarts service',()=>{
+ for(const phase of ['stop','start']){const f=fixture();try{const result=f.run('9\n\n0\n',{MOCK_INTERRUPT_ON:phase});assert.equal(result.status,0,result.stderr);assert.equal(readFileSync(join(f.app,'worker.js'),'utf8'),'// old version\n');assert.ok(existsSync(join(f.data,'bot.sqlite')));const calls=readFileSync(join(f.dir,'calls'),'utf8');assert.match(calls,/start vpn-ui-telegram-bot.service/)}finally{rmSync(f.dir,{recursive:true,force:true})}}
 });

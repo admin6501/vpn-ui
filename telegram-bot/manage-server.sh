@@ -70,9 +70,27 @@ PY
  chmod 600 "$out" || return 1
  echo "بکاپ: $out"
 }
-update_bot(){
+update_bot()(
  [[ -f "$CONF/config.json" && -f "$DATA/bot.sqlite" && -x "$NODE" && -d "$APP" ]] || { echo 'نصب کامل ربات پیدا نشد.'; return 1; }
- local tmp stage previous was_running=0
+ local tmp='' stage='' previous='' was_running=0 stop_requested=0 committed=0
+ cleanup_update(){
+   local result=$?
+   trap - EXIT INT TERM HUP
+   if (( stop_requested && !committed )); then
+     if [[ -n "$previous" && -d "$previous" ]]; then
+       if [[ -e "$APP" ]]; then rm -rf -- "$APP"; fi
+       mv -- "$previous" "$APP" || echo 'بازگرداندن فایل‌های قبلی ناموفق بود؛ سرویس را بررسی کنید.' >&2
+     fi
+     systemctl start vpn-ui-telegram-bot.service || echo 'راه‌اندازی دوباره سرویس ناموفق بود؛ وضعیت آن را بررسی کنید.' >&2
+   fi
+   [[ -z "$tmp" || ! -d "$tmp" ]] || rm -rf -- "$tmp"
+   [[ -z "$stage" || ! -d "$stage" ]] || rm -rf -- "$stage"
+   return "$result"
+ }
+ trap cleanup_update EXIT
+ trap 'exit 130' INT
+ trap 'exit 143' TERM
+ trap 'exit 129' HUP
  tmp=$(mktemp -d) || return 1
  stage=$(mktemp -d /opt/.vpn-ui-bot-stage.XXXXXX) || { rm -rf "$tmp"; return 1; }
  previous="${stage}.previous"
@@ -100,6 +118,7 @@ update_bot(){
  rm -rf "$tmp"
  if systemctl is-active --quiet vpn-ui-telegram-bot.service; then
    was_running=1
+   stop_requested=1
    if ! systemctl stop vpn-ui-telegram-bot.service; then rm -rf "$stage"; echo 'توقف سرویس ناموفق بود.'; return 1; fi
  fi
  if ! backup; then
@@ -125,9 +144,10 @@ update_bot(){
      return 1
    fi
  fi
+ committed=1
  rm -rf "$previous"
  echo 'آپدیت انجام شد. تنظیمات و دیتابیس نگه داشته شدند.'
-}
+)
 database_counts(){
  [[ -f "$DATA/bot.sqlite" ]] || { echo 'دیتابیس پیدا نشد.'; return 1; }
  python3 - "$DATA/bot.sqlite" <<'PY'
