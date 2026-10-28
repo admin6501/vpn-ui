@@ -148,3 +148,12 @@ cd vpn-ui
 ## مجوز
 
 [GPL-3.0](LICENSE). نام و حقوق پروژهٔ اصلی و مؤلفه‌های ثالث حفظ می‌شوند. READMEهای ساب‌ماژول‌ها برای خود آن مؤلفه‌اند؛ راهنمای نصب پنل، مستندات همین فورک است.
+
+
+## ربات فروش تلگرام
+
+ربات اختیاری فروش و مدیریت سرویس VPN-UI با کیف پول برای نصب روی سرور Ubuntu یا Debian آماده است. نصب تازه دیتابیس محلی جدید می‌سازد و اطلاعات ربات Cloudflare را منتقل نمی‌کند. [راهنمای ربات](telegram-bot/README-server.txt).
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/admin6501/vpn-ui/main/scripts/install-telegram-bot.sh -o install-telegram-bot.sh && sudo bash install-telegram-bot.sh
+```

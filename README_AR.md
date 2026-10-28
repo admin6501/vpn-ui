@@ -148,3 +148,12 @@ cd vpn-ui
 ## الترخيص
 
 [GPL-3.0](LICENSE). تظل إشعارات المشروع الأصلي والجهات الخارجية سليمة. تصف وحدات README الموردة/الفرعية مكوناتها الخاصة؛ استخدم أدلة هذه الشوكة لتثبيت اللوحة وتشغيلها.
+
+
+## بوت المبيعات على تيليجرام
+
+يمكن تثبيت بوت اختياري لبيع خدمات VPN-UI وإدارتها مع محفظة على Ubuntu أو Debian. ينشئ التثبيت قاعدة بيانات محلية جديدة ولا ينقل بيانات Cloudflare. [دليل البوت](telegram-bot/README-server.txt).
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/admin6501/vpn-ui/main/scripts/install-telegram-bot.sh -o install-telegram-bot.sh && sudo bash install-telegram-bot.sh
+```

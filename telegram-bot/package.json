@@ -1,0 +1,1 @@
+{"name":"vpn-ui-telegram-worker","private":true,"type":"module","scripts":{"test":"node --test"},"devDependencies":{"jsqr":"^1.4.0","wrangler":"^4.0.0"},"dependencies":{"qrcode":"^1.5.4"}}

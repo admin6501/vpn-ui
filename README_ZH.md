@@ -148,3 +148,12 @@ cd vpn-ui
 ## 许可证
 
 [GPL-3.0](LICENSE)。项目和第三方的原始署名及许可声明保持不变。子模块和第三方组件的 README 描述各自组件；安装和运行本面板请使用本分支的指南。
+
+
+## Telegram 销售机器人
+
+可在 Ubuntu 或 Debian 上安装可选的 VPN-UI Telegram 销售和服务管理机器人，支持钱包。全新安装会创建本地数据库，不会导入 Cloudflare 数据。[机器人指南](telegram-bot/README-server.txt)。
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/admin6501/vpn-ui/main/scripts/install-telegram-bot.sh -o install-telegram-bot.sh && sudo bash install-telegram-bot.sh
+```

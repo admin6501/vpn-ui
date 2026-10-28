@@ -148,3 +148,12 @@ Sürüm iş akışı, desteklenen dillerdeki yerel mimarileri, odaklanmış muha
 ## Lisans
 
 [GPL-3.0](LICENSE). Orijinal proje ve üçüncü taraf bildirimleri bozulmadan kalır. Satıcı/alt modül README'ler kendi bileşenlerini tanımlar; Panel kurulumu ve çalıştırılması için bu çatalın kılavuzlarını kullanın.
+
+
+## Telegram satış botu
+
+VPN-UI için cüzdanlı isteğe bağlı Telegram satış ve servis yönetimi botu Ubuntu veya Debian üzerine kurulabilir. Yeni kurulum yerel veritabanı oluşturur; Cloudflare verilerini aktarmaz. [Bot kılavuzu](telegram-bot/README-server.txt).
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/admin6501/vpn-ui/main/scripts/install-telegram-bot.sh -o install-telegram-bot.sh && sudo bash install-telegram-bot.sh
+```

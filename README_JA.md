@@ -148,3 +148,12 @@ cd vpn-ui
 ## ライセンス
 
 [GPL-3.0](LICENSE)。元のプロジェクトとサードパーティの通知はそのまま残ります。ベンダー/サブモジュールの README では、独自のコンポーネントについて説明しています。パネルの取り付けと操作にはこのフォークのガイドを使用してください。
+
+
+## Telegram 販売ボット
+
+Ubuntu または Debian 向けに、ウォレット付きの VPN-UI 販売・サービス管理用 Telegram ボットを用意しています。新規インストールはローカルデータベースを作成し、Cloudflare のデータは移行しません。[ボットの手順](telegram-bot/README-server.txt)。
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/admin6501/vpn-ui/main/scripts/install-telegram-bot.sh -o install-telegram-bot.sh && sudo bash install-telegram-bot.sh
+```
