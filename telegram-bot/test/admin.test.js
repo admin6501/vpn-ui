@@ -127,9 +127,10 @@ test('admin selects custom or random names and random purchase skips name prompt
  await f.callback(1,'admin:root');assert.ok(JSON.stringify(f.last().reply_markup).includes('admin:setting:name_mode'));
  await f.callback(5,'admin:namemode:random');assert.equal(f.sql.prepare("SELECT value FROM settings WHERE key='name_mode'").get(),undefined);
  await f.callback(1,'admin:setting:name_mode');await f.callback(1,'admin:namemode:random');assert.equal(f.sql.prepare("SELECT value FROM settings WHERE key='name_mode'").get().value,'random');
+ assert.equal(f.last().reply_markup.inline_keyboard[0][0].callback_data,'admin:root');await f.callback(1,'admin:root');assert.match(f.last().text,/پنل مدیریت ربات/);
  await f.callback(2,'plan_p10');let row=f.sql.prepare('SELECT service_name FROM orders WHERE user_id=2').get();assert.match(row.service_name,/^Client[a-z]{12}$/);assert.match(f.last().text,/مبلغ قابل پرداخت/);
  await f.callback(2,'plan_p10');assert.equal(f.sql.prepare('SELECT COUNT(*) n FROM orders WHERE user_id=2').get().n,1);
- await f.callback(1,'admin:namemode:custom');await f.callback(3,'plan_p10');assert.match(f.last().text,/نام.*سرویس/);assert.equal(f.sql.prepare('SELECT COUNT(*) n FROM orders WHERE user_id=3').get().n,0);await f.message(3,'MyName');assert.equal(f.sql.prepare('SELECT service_name FROM orders WHERE user_id=3').get().service_name,'MyName');
+ await f.callback(1,'admin:namemode:custom');assert.equal(f.last().reply_markup.inline_keyboard[0][0].callback_data,'admin:root');await f.callback(3,'plan_p10');assert.match(f.last().text,/نام.*سرویس/);assert.equal(f.sql.prepare('SELECT COUNT(*) n FROM orders WHERE user_id=3').get().n,0);await f.message(3,'MyName');assert.equal(f.sql.prepare('SELECT service_name FROM orders WHERE user_id=3').get().service_name,'MyName');
 });
 test('user profile links to safe wallet adjustment and complete ledger',async()=>{
  const f=fixture();await f.message(2,'/start');await f.callback(1,'admin:user:2');await f.callback(1,'admin:wallet_view:2');assert.ok(JSON.stringify(f.last().reply_markup).includes('admin:wallet_add:2'));

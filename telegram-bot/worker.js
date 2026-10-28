@@ -1197,7 +1197,7 @@ async function handleAdminUICallback(c, cq, answer) {
   if (/^admin:namemode:(custom|random)$/.test(d)) {
     const value=d.split(":")[2];
     await run(env,"INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value","name_mode",value);
-    return renderAdmin(`✅ نوع نام‌گذاری به «${value === "random" ? "تصادفی خودکار" : "نام دلخواه مشتری"}» تغییر کرد.`,adminBack("admin:settings"));
+    return renderAdmin(`✅ نوع نام‌گذاری به «${value === "random" ? "تصادفی خودکار" : "نام دلخواه مشتری"}» تغییر کرد.`,adminBack("admin:root"));
   }
   if (d === "admin:plans") {
     delete st.admin_ui_step; delete st.admin_ui_key;
