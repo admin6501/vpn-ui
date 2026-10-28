@@ -1465,6 +1465,7 @@ async function onCallback(c, cq) {
 
   if (d === "buy") {
     delete st.renew_service_id;
+    if (!(await getPlans(env)).length) return render(env, cq, "📦 هنوز بسته‌ای برای خرید تنظیم نشده است. لطفاً بعداً مراجعه کنید.", backKb());
     return render(env, cq,
       "🛍 <b>لطفا سرویسی که میخواهید خریداری کنید را انتخاب کنید!</b>\n\n" +
       `⏳ مدت زمان همه بسته‌ها: ${durationText(num(env, "duration_days"))}\n👥 تعداد کاربر: نامحدود\n\nبسته مورد نظر را انتخاب کنید:`,
@@ -1488,6 +1489,7 @@ async function onCallback(c, cq) {
     if (!s || s.user_id !== uid) return answer("سرویس یافت نشد!", true);
     try { if (!(await panelServiceAccount(env,s))) return sendMsg(env,chat_id,"❌ سرویس در پنل متصل فعلی یافت نشد.",backKb("my_services")); }
     catch { return sendMsg(env,chat_id,"⚠️ بررسی سرویس در پنل ناموفق بود؛ دوباره تلاش کنید.",backKb("my_services")); }
+    if (!(await getPlans(env)).length) return render(env,cq,"📦 هنوز بسته‌ای برای تمدید تنظیم نشده است. لطفاً با پشتیبانی تماس بگیرید.",backKb("my_services"));
     st.renew_service_id = id;
     return render(env, cq, `🔄 <b>تمدید سرویس «${esc(s.name)}»</b>\n\nبسته مورد نظر برای تمدید را انتخاب کنید:`,
       await plansKb(env, "rplan"));

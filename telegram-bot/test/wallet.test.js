@@ -7,6 +7,7 @@ import {walletBalance,adjustWallet,reserveWalletPayment,completeWalletPayment,re
 
 function fixture(){
  const sql=new DatabaseSync(':memory:');sql.exec(readFileSync(new URL('../schema.sql',import.meta.url),'utf8'));
+ sql.exec("INSERT INTO plans(key,gb,price,sort) VALUES('p10',10,70000,1)");
  const prep=(q,a=[])=>({q,a,bind(...x){return prep(q,x)},async run(){const before=Number(sql.prepare('SELECT total_changes() AS n').get().n);const r=sql.prepare(q).run(...a);const changes=Number(sql.prepare('SELECT total_changes() AS n').get().n)-before;return {meta:{changes,last_row_id:Number(r.lastInsertRowid)}}},async all(){return {results:sql.prepare(q).all(...a),meta:{changes:0}}},async first(){return sql.prepare(q).get(...a)??null}});
  let queue=Promise.resolve(); const DB={prepare:q=>prep(q),batch(ss){const work=async()=>{sql.exec('BEGIN');try{let r=[];for(const s of ss){r.push(/^\s*select\b/i.test(s.q)?await s.all():await s.run())}sql.exec('COMMIT');return r}catch(e){sql.exec('ROLLBACK');throw e}};const next=queue.then(work);queue=next.catch(()=>{});return next}};
  const env={DB,BOT_TOKEN:'token',WEBHOOK_SECRET:'secret',ADMIN_ID:'1',PANEL_URL:'https://panel.example/base',PANEL_USER:'u',PANEL_PASS:'p',CARD_NUMBER:'1111',CARD_HOLDER:'Test'};

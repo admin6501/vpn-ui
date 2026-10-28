@@ -6,6 +6,7 @@ import worker from '../worker.js';
 
 test('full purchase and duplicate approval produce one panel user', async()=>{
  const sql=new DatabaseSync(':memory:');sql.exec(readFileSync(new URL('../schema.sql',import.meta.url),'utf8'));
+ sql.exec("INSERT INTO plans(key,gb,price,sort) VALUES('p10',10,70000,1)");
  const prep=(query,args=[])=>({bind(...xs){return prep(query,xs)},async run(){const r=sql.prepare(query).run(...args);return {meta:{changes:Number(r.changes),last_row_id:Number(r.lastInsertRowid)}}},async all(){return {results:sql.prepare(query).all(...args)}},async first(){return sql.prepare(query).get(...args) ?? null}});
  const DB={prepare:q=>prep(q),batch:async stmts=>Promise.all(stmts.map(s=>s.all()))};
  sql.prepare('INSERT INTO settings(key,value) VALUES(?,?)').run('panel_inbound_id','3');

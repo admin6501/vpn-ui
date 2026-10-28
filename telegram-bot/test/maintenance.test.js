@@ -39,3 +39,14 @@ test('failed start restores the old code and keeps database',()=>{
 test('data deletion requires explicit separate confirmation',()=>{
  const f=fixture();try{const result=f.run('10\nREMOVE\nDELETE\n');assert.equal(result.status,0,result.stderr);assert.equal(existsSync(f.data),false);assert.equal(existsSync(f.conf),false)}finally{rmSync(f.dir,{recursive:true,force:true})}
 });
+
+test('reviewed seed-only update accepts previous schema and preserves existing plans',()=>{
+ const f=fixture();try{copyFileSync(resolve('test/fixtures/previous-schema.sql'),join(f.app,'schema.sql'));const db=new DatabaseSync(join(f.data,'bot.sqlite'));db.exec("CREATE TABLE plans(key TEXT PRIMARY KEY,gb REAL,price INTEGER,sort INTEGER); INSERT INTO plans VALUES('custom',4,55,1)");db.close();const result=f.run('9\n\n0\n');assert.equal(result.status,0,result.stderr);assert.match(result.stdout,/آپدیت انجام شد/);const after=new DatabaseSync(join(f.data,'bot.sqlite'));assert.equal(after.prepare('SELECT count(*) n FROM plans').get().n,1);after.close()}finally{rmSync(f.dir,{recursive:true,force:true})}
+});
+test('sample cleanup deletes only matching plans and leaves services',()=>{
+ const f=fixture();try{const db=new DatabaseSync(join(f.data,'bot.sqlite'));db.exec("CREATE TABLE plans(key TEXT PRIMARY KEY,gb REAL,price INTEGER,sort INTEGER); INSERT INTO plans VALUES('p10',10,70000,1),('p20',20,42,2),('mine',5,70000,3); CREATE TABLE services(id INTEGER); INSERT INTO services VALUES(1)");db.close();const result=f.run('11\nREMOVE\n\n0\n');assert.equal(result.status,0,result.stderr);assert.match(result.stdout,/1 بسته/);const after=new DatabaseSync(join(f.data,'bot.sqlite'));assert.equal(after.prepare('SELECT count(*) n FROM plans').get().n,2);assert.equal(after.prepare('SELECT count(*) n FROM services').get().n,1);after.close()}finally{rmSync(f.dir,{recursive:true,force:true})}
+});
+
+test('database statistics report counts without exposing client identifiers',()=>{
+ const f=fixture();try{const db=new DatabaseSync(join(f.data,'bot.sqlite'));db.exec(readFileSync('schema.sql','utf8'));db.exec("INSERT INTO services(user_id,name) VALUES(987654321,'private-client')");db.close();const result=f.run('12\n\n0\n');assert.equal(result.status,0,result.stderr);assert.match(result.stdout,/سرویس‌های ثبت‌شده در ربات: 1/);assert.doesNotMatch(result.stdout,/987654321|private-client/)}finally{rmSync(f.dir,{recursive:true,force:true})}
+});

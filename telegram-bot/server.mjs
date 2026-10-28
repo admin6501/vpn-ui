@@ -1,5 +1,5 @@
 import { DatabaseSync } from 'node:sqlite';
-import { readFileSync, mkdirSync, chmodSync } from 'node:fs';
+import { readFileSync, mkdirSync, chmodSync, existsSync } from 'node:fs';
 import { dirname } from 'node:path';
 import worker, { handleUpdate } from './worker.js';
 
@@ -7,10 +7,12 @@ const config=JSON.parse(readFileSync(process.env.BOT_CONFIG || '/etc/vpn-ui-bot/
 if (!/^\d+:[A-Za-z0-9_-]+$/.test(config.BOT_TOKEN) || !/^\d+(,\d+)*$/.test(config.ADMIN_ID)) throw Error('Invalid bot token or admin ID');
 const path=process.env.BOT_DATABASE || '/var/lib/vpn-ui-bot/bot.sqlite';
 mkdirSync(dirname(path),{recursive:true,mode:0o700});
+const freshDatabase=!existsSync(path);
 const db=new DatabaseSync(path); chmodSync(path,0o600);
 db.exec('PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000;');
 // The schema contains only CREATE IF NOT EXISTS statements; existing data remains intact.
 db.exec(readFileSync(new URL('./schema.sql',import.meta.url),'utf8'));
+if(freshDatabase) db.exec("INSERT INTO settings(key,value) VALUES ('referral_discount','0'),('test_enabled','0'),('panel_group_ids','')");
 db.exec('CREATE TABLE IF NOT EXISTS server_poll_state (id INTEGER PRIMARY KEY CHECK(id=1), offset INTEGER NOT NULL); INSERT OR IGNORE INTO server_poll_state VALUES(1,0)');
 class Statement {
  constructor(sql,args=[]){this.sql=sql;this.args=args}
