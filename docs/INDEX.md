@@ -17,7 +17,7 @@
 | PasarGuard conversion | [Migration](../migration/INSTALL-MIGRATION.fa.md) |
 | Management menus and recovery | [CLI](../management-cli-plan.md) |
 | Database/account backfill and preserved state | [Upgrade guide](../accounts-upgrade-guide.md) |
-| HTTP calls and endpoint inventory | [API reference](../api-reference.md), [route inventory](API-ROUTES.md) |
+| HTTP calls and endpoint inventory | [API reference](../api-reference.md), [route inventory](API-ROUTES.md), [راهنمای API نمایندگان و ربات فروش](REPRESENTATIVE-BOT-API.fa.md) |
 | Data/control paths | [Architecture](ARCHITECTURE.md), [فارسی](../flowchart.md), [English](../flowchart_en.md) |
 | Connection lifetimes | [Timeout reference](connection-lifetimes.fa.md) |
 | Groups | [گروه‌ها](groups-fa.md) |
