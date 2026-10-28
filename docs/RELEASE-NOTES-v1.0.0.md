@@ -29,6 +29,8 @@ records describe upstream development, not previous stable releases of this fork
 - WARP rejects failed or incomplete provider responses without replacing stored credentials or
   recording a failed license change. Requests have a timeout and bounded response size.
 
+- Before a group client is created or a representative is charged, validate required connection fields for every selected managed inbound, including missing passwords, IDs, protocol-specific key formats and manually supplied device keys. Valid per-membership generated keys remain supported.
+
 ## Accounts, traffic, renewal and representatives
 
 - Users manages one account across several inbounds/locations with a central quota, expiry,
@@ -219,3 +221,5 @@ IP خروجی، دیگر هم‌زمان برچسب خطا نشان نمی‌د�
 [راهنمای فارسی نود](https://github.com/admin6501/vpn-ui/blob/main/docs/NODES.fa.md).
 
 اصلاح مدیریت خطای WARP: پاسخ خطا یا ناقص سرویس باعث ذخیرهٔ اطلاعات نامعتبر یا ثبت موفقیت کاذب لایسنس نمی‌شود؛ زمان انتظار و اندازهٔ پاسخ محدود شده‌اند.
+
+در ساخت کاربر گروهی، مشخصات اتصال همهٔ ورودی‌های انتخاب‌شده پیش از ساخت و کسر اعتبار بررسی می‌شوند و در صورت نقص یا مقدار نامعتبر، درخواست با نام ورودی و فیلد رد می‌شود.

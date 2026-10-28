@@ -1040,6 +1040,10 @@ func (a *InboundController) addInboundClient(c *gin.Context) {
 		jsonMsg(c, I18nWeb(c, "somethingWentWrong"), err)
 		return
 	}
+	if err := service.ValidateGroupClientCredentials(membershipIds, data.Id, data.Settings); err != nil {
+		jsonMsg(c, I18nWeb(c, "somethingWentWrong"), err)
+		return
+	}
 	if _, grouped, _ := postedGroupIDs(c); grouped {
 		if err := (&service.GroupService{}).PreflightCreate(membershipIds, postedClientEmails(data)); err != nil {
 			jsonMsg(c, I18nWeb(c, "somethingWentWrong"), err)
@@ -1180,6 +1184,15 @@ func (a *InboundController) saveAccountClient(c *gin.Context) {
 	if err := a.validateMembershipSet(membershipIds); err != nil {
 		jsonMsg(c, I18nWeb(c, "somethingWentWrong"), err)
 		return
+	}
+	if existing, lookupErr := accountService.GetAccountByEmail(email); lookupErr != nil {
+		jsonMsg(c, I18nWeb(c, "somethingWentWrong"), lookupErr)
+		return
+	} else if existing == nil && len(membershipIds) > 0 {
+		if err := service.ValidateGroupClientCredentials(membershipIds, 0, data.Settings); err != nil {
+			jsonMsg(c, I18nWeb(c, "somethingWentWrong"), err)
+			return
+		}
 	}
 	// The per-protocol admission guards ApplyMemberships does not run: the IP-pool
 	// capacity check and the one-account rule of a PSK or EAP-TLS IKEv2 inbound. Same
