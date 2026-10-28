@@ -148,3 +148,12 @@ Alur kerja rilis memvalidasi arsitektur asli, akuntansi terfokus dan perilaku iz
 ## Lisensi
 
 [GPL-3.0](LICENSE). Proyek asli dan pemberitahuan pihak ketiga tetap utuh. README yang divendorkan/submodul menjelaskan komponennya sendiri; gunakan panduan garpu ini untuk pemasangan dan pengoperasian panel.
+
+
+## Bot penjualan Telegram
+
+Bot Telegram opsional untuk penjualan dan pengelolaan layanan VPN-UI dengan dompet tersedia untuk Ubuntu atau Debian. Instalasi baru membuat database lokal dan tidak mengimpor data Cloudflare. [Panduan bot](telegram-bot/README-server.txt).
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/admin6501/vpn-ui/main/scripts/install-telegram-bot.sh -o install-telegram-bot.sh && sudo bash install-telegram-bot.sh
+```

@@ -148,3 +148,12 @@ cd vpn-ui
 ## 許可證
 
 [GPL-3.0](LICENSE)。保留原專案及第三方的署名和授權聲明。子模組與第三方元件的 README 描述各自元件；安裝及操作本面板請使用此分支的指南。
+
+
+## Telegram 銷售機器人
+
+可在 Ubuntu 或 Debian 上安裝選用的 VPN-UI Telegram 銷售與服務管理機器人，支援錢包。全新安裝會建立本機資料庫，不會匯入 Cloudflare 資料。[機器人指南](telegram-bot/README-server.txt)。
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/admin6501/vpn-ui/main/scripts/install-telegram-bot.sh -o install-telegram-bot.sh && sudo bash install-telegram-bot.sh
+```

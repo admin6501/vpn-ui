@@ -148,3 +148,12 @@ Quy trình phát hành xác thực cả kiến ​​trúc gốc, hành vi cấp
 ## Giấy phép
 
 [GPL-3.0](LICENSE). Dự án ban đầu và thông báo của bên thứ ba vẫn còn nguyên. README được cung cấp/mô-đun con mô tả các thành phần của riêng chúng; sử dụng hướng dẫn của nĩa này để lắp đặt và vận hành bảng điều khiển.
+
+
+## Bot bán hàng Telegram
+
+Có thể cài bot Telegram tùy chọn để bán và quản lý dịch vụ VPN-UI cùng ví trên Ubuntu hoặc Debian. Cài mới tạo cơ sở dữ liệu cục bộ và không nhập dữ liệu Cloudflare. [Hướng dẫn bot](telegram-bot/README-server.txt).
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/admin6501/vpn-ui/main/scripts/install-telegram-bot.sh -o install-telegram-bot.sh && sudo bash install-telegram-bot.sh
+```

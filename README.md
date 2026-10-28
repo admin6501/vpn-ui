@@ -148,3 +148,12 @@ The release workflow validates both native architectures, focused accounting and
 ## License
 
 [GPL-3.0](LICENSE). Original project and third-party notices remain intact. Vendored/submodule READMEs describe their own components; use this fork's guides for panel installation and operation.
+
+
+## Telegram sales bot
+
+An optional Telegram sales bot for VPN-UI can be installed on an Ubuntu/Debian server. It includes service management and a wallet. A fresh install creates a new local database; it does not import an existing Cloudflare bot. See [bot instructions](telegram-bot/README-server.txt).
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/admin6501/vpn-ui/main/scripts/install-telegram-bot.sh -o install-telegram-bot.sh && sudo bash install-telegram-bot.sh
+```

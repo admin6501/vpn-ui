@@ -148,3 +148,12 @@ O fluxo de trabalho de lançamento valida arquiteturas nativas, contabilidade fo
 ## Licença
 
 [GPL-3.0](LICENSE). O projeto original e os avisos de terceiros permanecem intactos. READMEs de fornecedores/submódulos descrevem seus próprios componentes; use os guias deste garfo para instalação e operação do painel.
+
+
+## Bot de vendas no Telegram
+
+Um bot opcional de vendas e gestão de serviços VPN-UI com carteira está disponível para Ubuntu ou Debian. A instalação cria um banco local novo e não importa os dados do Cloudflare. [Guia do bot](telegram-bot/README-server.txt).
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/admin6501/vpn-ui/main/scripts/install-telegram-bot.sh -o install-telegram-bot.sh && sudo bash install-telegram-bot.sh
+```
