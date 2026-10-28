@@ -128,6 +128,7 @@ func (a *InboundController) initRouter(g *gin.RouterGroup) {
 	g.POST("/onlineMemberships", read, a.onlineMemberships)
 	g.POST("/lastOnline", read, a.lastOnline)
 	g.POST("/updateClientTraffic/:email", requirePerm(model.PermEditClient), ownsClient, a.updateClientTraffic)
+	g.GET("/multiDeleteCapability", read, func(c *gin.Context) { jsonObj(c, gin.H{"preservesSharedTraffic": true}, nil) })
 	g.POST("/:id/delClientByEmail/:email", requirePerm(model.PermDeleteClient), owns, a.delInboundClientByEmail)
 	g.GET("/:id/ovpn/:proto", read, owns, a.downloadOvpn)
 	g.POST("/:id/generate-openvpn-certs", requirePerm(model.PermEditInbound), owns, a.generateOpenVpnCerts)
@@ -2899,9 +2900,8 @@ func (a *InboundController) delInboundClientByEmail(c *gin.Context) {
 	a.refundDeletedClient(email, used, usedKnown)
 
 	jsonMsg(c, "Client deleted successfully", nil)
-	if needRestart {
-		a.xrayService.SetToNeedRestart()
-	}
+	// Reconcile protocol daemons and WireGuard peers after deleting by email.
+	a.reconcileForInbounds([]int{inboundId}, needRestart)
 }
 
 // callerOwnsInbound reports whether the logged-in admin may act on this inbound.

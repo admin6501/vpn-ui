@@ -6,6 +6,10 @@ migration tools together with a complete, current documentation set. This page d
 stable release as a whole; older version numbers and dated live-test reports in retained design
 records describe upstream development, not previous stable releases of this fork.
 
+## تغییر جدید: حذف کاربر چندورودی
+
+با حذف کاربر از یکی از چند ورودی، مصرف و IPهای مشترک تا حذف آخرین ورودی حفظ می‌شوند و بازپرداخت اعتبار نماینده بر اساس مصرف ثبت‌شده محاسبه می‌شود. تنظیمات سرویس پروتکل مربوط هم بازسازی می‌شود. ربات می‌تواند قابلیت پنل را تشخیص دهد، اما باید هر ورودی را جداگانه حذف و نتیجه را بررسی کند؛ در صورت قطع یا خطا، حذف ممکن است ناقص بماند و باید بررسی شود.
+
 ## Panel, protocols and presentation
 
 - Xray outbound traffic stays within its column: upload/download use separate lines, column
@@ -32,6 +36,14 @@ records describe upstream development, not previous stable releases of this fork
 - Before a group client is created or a representative is charged, validate required connection fields for every selected managed inbound, including missing passwords, IDs, protocol-specific key formats and manually supplied device keys. Valid per-membership generated keys remain supported.
 
 ## Accounts, traffic, renewal and representatives
+
+- Deleting an account by email from one of several inbounds now retains its shared
+  traffic and saved IPs until the final membership is removed. The traffic row moves
+  to a remaining inbound, so the final reseller refund uses the recorded consumption.
+  Email-based deletion also reconciles the affected protocol daemon or WireGuard peers.
+  `GET /panel/api/inbounds/multiDeleteCapability` lets bot clients detect this behavior;
+  callers must still delete and verify each membership and handle partial failures.
+
 
 - Users manages one account across several inbounds/locations with a central quota, expiry,
   credentials and subscription. Groups provide reusable assignments while preserving ownership
