@@ -13,6 +13,7 @@ function fixture(){
   if(p.endsWith('/login'))return new Response(JSON.stringify({success:true}),{headers:{'set-cookie':'vpn-ui=test'}});
   if(p.endsWith('/clients/groups'))return new Response(JSON.stringify({success:true,obj:[{id:1,inboundIds:[3]}]}));
   if(p.endsWith('/clients/assignable'))return new Response(JSON.stringify({success:true,obj:[{inboundId:3,protocol:'vless'}]}));
+  if(p.endsWith('/clients/list'))return new Response(JSON.stringify({success:true,obj:{rows:[{email:'active',subId:'s1',enable:true,up:0,down:0,totalGB:0,expiryTime:0},{email:'disabled',subId:'s2',enable:false,up:0,down:0,totalGB:0,expiryTime:0}],total:2}}));
   throw Error('unexpected fetch: '+p);
  };
  const env={DB,BOT_TOKEN:'token',WEBHOOK_SECRET:'secret',ADMIN_ID:'1',PANEL_URL:'https://panel.example/base',PANEL_USER:'u',PANEL_PASS:'p',CHANNEL_USERNAME:'@channel'};
@@ -81,4 +82,64 @@ test('fresh database has no sample records and customer sees an empty-plan messa
  f.sql.exec("INSERT INTO plans(key,gb,price,sort) VALUES('mine',3,100,1)");
  f.sql.exec(readFileSync(new URL('../schema.sql',import.meta.url),'utf8'));
  assert.equal(f.sql.prepare('SELECT COUNT(*) AS n FROM plans').get().n,1);
+});
+
+test('user directory paginates at ten and includes older service and order records',async()=>{
+ const f=fixture();for(let i=10;i<33;i++)f.sql.prepare('INSERT INTO bot_users(user_id,first_name) VALUES(?,?)').run(i,`User${i}`);
+ f.sql.prepare('INSERT INTO services(user_id,name) VALUES(?,?)').run(100,'old service');
+ await f.callback(1,'admin:users:0');let markup=f.last().reply_markup.inline_keyboard;assert.equal(markup.filter(r=>r[0]?.callback_data?.startsWith('admin:user:')).length,10);assert.ok(JSON.stringify(markup).includes('admin:users:1'));assert.ok(JSON.stringify(markup).includes('admin:user:100'));
+ await f.callback(1,'admin:users:1');markup=f.last().reply_markup.inline_keyboard;assert.equal(markup.filter(r=>r[0]?.callback_data?.startsWith('admin:user:')).length,10);
+ await f.callback(1,'admin:user:100');assert.match(f.last().text,/شناسه.*100/);assert.ok(JSON.stringify(f.last().reply_markup).includes('admin:uo:100:0'));
+});
+test('block only affects bot use, protects admins, and unblock restores access',async()=>{
+ const f=fixture();await f.message(2,'/start');f.sql.prepare('INSERT INTO services(user_id,name) VALUES(2,?)').run('kept');
+ await f.callback(9,'admin:ub:2:1');assert.equal(f.sql.prepare('SELECT blocked FROM bot_users WHERE user_id=2').get().blocked,0);
+ await f.callback(1,'admin:ub:2:1');assert.equal(f.sql.prepare('SELECT blocked FROM bot_users WHERE user_id=2').get().blocked,1);
+ await f.message(2,'/start');assert.match(f.last().text,/مسدود/);await f.callback(2,'buy');assert.ok(f.output.some(x=>x.method==='answerCallbackQuery'&&x.body.text?.includes('مسدود')));
+ assert.equal(f.sql.prepare('SELECT COUNT(*) n FROM services').get().n,1);await f.callback(1,'admin:ub:2:0');await f.message(2,'/start');assert.match(f.last().text,/سلام A/);
+ await f.callback(1,'admin:ub:1:1');assert.equal(f.sql.prepare('SELECT blocked FROM bot_users WHERE user_id=1').get().blocked,0);
+});
+test('admin sees all orders and wallet history in pages and current panel status',async()=>{
+ const f=fixture();await f.message(2,'/start');for(let i=0;i<12;i++){f.sql.prepare("INSERT INTO orders(user_id,service_name,final_price,status,created_at) VALUES(2,?,?,?,?)").run(`S${i}`,100,'approved','today');f.sql.prepare("INSERT INTO wallet_entries(user_id,delta,reference,reason,created_at) VALUES(2,10,?,'topup','today')").run(`ref${i}`)}
+ f.sql.exec("INSERT INTO services(user_id,name,panel_email,sub_id) VALUES(2,'Live','active','s1'),(2,'Disabled','disabled','s2'),(2,'Missing','missing','s3')");
+ await f.callback(1,'admin:uo:2:0');assert.match(f.last().text,/#12/);assert.ok(JSON.stringify(f.last().reply_markup).includes('admin:uo:2:1'));await f.callback(1,'admin:uo:2:1');assert.match(f.last().text,/#1/);
+ await f.callback(1,'admin:ut:2:0');assert.ok(JSON.stringify(f.last().reply_markup).includes('admin:ut:2:1'));await f.callback(1,'admin:ut:2:1');assert.match(f.last().text,/شارژ/);
+ await f.callback(1,'admin:us:2:0');assert.match(f.last().text,/Live — فعال/);assert.match(f.last().text,/Disabled — غیرفعال/);assert.match(f.last().text,/Missing — در پنل یافت نشد/);
+ await f.callback(1,'admin:user:2');assert.match(f.last().text,/120 تومان/);
+});
+test('global trial reset requires confirmation and retains unresolved claims',async()=>{
+ const f=fixture();f.sql.exec("INSERT INTO test_claims VALUES(10,'done|today'),(11,'processing|abc'),(12,'review|today'),(13,'legacy')");
+ await f.callback(2,'admin:reset_all_confirm');assert.equal(f.sql.prepare('SELECT COUNT(*) n FROM test_claims').get().n,4);
+ await f.callback(1,'admin:reset_all_tests');assert.equal(f.sql.prepare('SELECT COUNT(*) n FROM test_claims').get().n,4);
+ await f.callback(1,'admin:reset_all_confirm');assert.deepEqual(f.sql.prepare('SELECT user_id FROM test_claims ORDER BY user_id').all().map(x=>x.user_id),[11,12]);assert.match(f.last().text,/2 کاربر/);
+ await f.callback(1,'admin:reset_all_confirm');assert.equal(f.sql.prepare('SELECT COUNT(*) n FROM test_claims').get().n,2);
+});
+
+test('referral reward button sets amount, zero disables registration without consuming eligibility',async()=>{
+ const f=fixture();await f.callback(1,'admin:root');assert.ok(JSON.stringify(f.last().reply_markup).includes('admin:setting:referral_discount'));
+ await f.callback(1,'admin:setting:referral_discount');await f.message(1,'0');await f.callback(2,'enter_invite');assert.match(f.last().text,/غیرفعال/);assert.equal(f.sql.prepare('SELECT COUNT(*) n FROM referrals').get().n,0);
+ await f.callback(1,'admin:setting:referral_discount');await f.message(1,'15000');assert.equal(f.sql.prepare("SELECT value FROM settings WHERE key='referral_discount'").get().value,'15000');await f.callback(2,'enter_invite');await f.message(2,'3');assert.equal(f.sql.prepare('SELECT amount FROM discounts WHERE user_id=3').get().amount,15000);
+});
+
+test('admin selects custom or random names and random purchase skips name prompt',async()=>{
+ const f=fixture();f.sql.prepare("INSERT INTO plans(key,gb,price,sort) VALUES('p10',10,70000,1)").run();
+ await f.callback(1,'admin:root');assert.ok(JSON.stringify(f.last().reply_markup).includes('admin:setting:name_mode'));
+ await f.callback(5,'admin:namemode:random');assert.equal(f.sql.prepare("SELECT value FROM settings WHERE key='name_mode'").get(),undefined);
+ await f.callback(1,'admin:setting:name_mode');await f.callback(1,'admin:namemode:random');assert.equal(f.sql.prepare("SELECT value FROM settings WHERE key='name_mode'").get().value,'random');
+ await f.callback(2,'plan_p10');let row=f.sql.prepare('SELECT service_name FROM orders WHERE user_id=2').get();assert.match(row.service_name,/^Client[a-z]{12}$/);assert.match(f.last().text,/مبلغ قابل پرداخت/);
+ await f.callback(2,'plan_p10');assert.equal(f.sql.prepare('SELECT COUNT(*) n FROM orders WHERE user_id=2').get().n,1);
+ await f.callback(1,'admin:namemode:custom');await f.callback(3,'plan_p10');assert.match(f.last().text,/نام.*سرویس/);assert.equal(f.sql.prepare('SELECT COUNT(*) n FROM orders WHERE user_id=3').get().n,0);await f.message(3,'MyName');assert.equal(f.sql.prepare('SELECT service_name FROM orders WHERE user_id=3').get().service_name,'MyName');
+});
+test('user profile links to safe wallet adjustment and complete ledger',async()=>{
+ const f=fixture();await f.message(2,'/start');await f.callback(1,'admin:user:2');await f.callback(1,'admin:wallet_view:2');assert.ok(JSON.stringify(f.last().reply_markup).includes('admin:wallet_add:2'));
+ await f.callback(1,'admin:wallet_add:2');await f.message(1,'100');assert.equal(f.sql.prepare('SELECT COUNT(*) n FROM wallet_entries WHERE user_id=2').get().n,0);await f.callback(1,'admin:wallet_confirm');assert.equal(f.sql.prepare('SELECT SUM(delta) n FROM wallet_entries WHERE user_id=2').get().n,100);
+ await f.callback(1,'admin:ut:2:0');assert.match(f.last().text,/100 تومان/);await f.callback(1,'admin:wallet_sub:2');await f.message(1,'101');await f.callback(1,'admin:wallet_confirm');assert.equal(f.sql.prepare('SELECT SUM(delta) n FROM wallet_entries WHERE user_id=2').get().n,100);
+});
+
+test('admin searches saved service names and panel emails and views panel details',async()=>{
+ const f=fixture();for(let i=0;i<12;i++)f.sql.prepare('INSERT INTO services(user_id,name,panel_email,sub_id) VALUES(?,?,?,?)').run(2,`service${i}`,i===0?'active':`match${i}`,i===0?'s1':'x');
+ await f.callback(2,'admin:service_search');await f.message(2,'service');assert.ok(!f.output.some(x=>x.body.text?.includes('نتیجه جستجوی سرویس')));
+ await f.callback(1,'admin:service_search');await f.message(1,'service');assert.match(f.last().text,/نتیجه جستجوی سرویس/);assert.ok(JSON.stringify(f.last().reply_markup).includes('admin:searchpage:1'));
+ await f.callback(1,'admin:searchpage:1');assert.ok(JSON.stringify(f.last().reply_markup).includes('admin:svc:1'));await f.callback(1,'admin:svc:1');assert.match(f.last().text,/حساب پنل/);assert.match(f.last().text,/وضعیت حساب.*فعال/);
+ await f.callback(1,'admin:service_search');await f.message(1,'active');assert.ok(JSON.stringify(f.last().reply_markup).includes('admin:svc:1'));
 });

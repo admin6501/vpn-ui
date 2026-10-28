@@ -23,22 +23,21 @@ function fixture(){
  return {sql,cb,out,writes,active,setEnabled(v){enabled=v},setBlocked(v){blocked=v},setError(v){error=v}};
 }
 
-test('buttons reflect each client switch and toggle just that inbound',async()=>{
- const f=fixture();await f.cb(2,'cfgmanage:1:0');const msg=f.out.filter(x=>x.method==='sendMessage').at(-1).body;
- const kb=msg.reply_markup.inline_keyboard.flat();assert.ok(kb.some(x=>x.callback_data==='cfgset:1:3:0'&&x.text.includes('غیرفعال')));assert.ok(kb.some(x=>x.callback_data==='cfgset:1:4:1'&&x.text.includes('فعال')));
- await f.cb(2,'cfgset:1:3:0');assert.equal(f.active.get(3),false);assert.equal(f.active.get(4),false);assert.equal(f.writes.length,1);
- await f.cb(2,'cfgmanage:1:0');assert.ok(f.out.filter(x=>x.method==='sendMessage').at(-1).body.reply_markup.inline_keyboard.flat().some(x=>x.callback_data==='cfgset:1:3:1'));
- await f.cb(2,'cfgset:1:3:1');assert.equal(f.active.get(3),true);assert.equal(f.active.get(4),false);assert.deepEqual(f.writes.map(x=>x.enable),['false','true']);
- await f.cb(2,'cfgset:1:3:1');assert.equal(f.writes.length,2);
+test('only admin can toggle each inbound and stale client buttons cannot change it',async()=>{
+ const f=fixture();
+ await f.cb(2,'cfgmanage:1:0');await f.cb(2,'cfgset:1:3:0');await f.cb(2,'cfgset:1:4:1');await f.cb(2,'admin:ss:1:3:0');assert.equal(f.writes.length,0);
+ await f.cb(1,'admin:sc:1:0');let kb=f.out.filter(x=>x.method==='sendMessage').at(-1).body.reply_markup.inline_keyboard.flat();
+ assert.ok(kb.some(x=>x.callback_data==='admin:ss:1:3:0'));assert.ok(kb.some(x=>x.callback_data==='admin:ss:1:4:1'));
+ await f.cb(1,'admin:ss:1:3:0');assert.equal(f.active.get(3),false);assert.equal(f.active.get(4),false);await f.cb(1,'admin:ss:1:3:1');assert.equal(f.active.get(3),true);assert.deepEqual(f.writes.map(x=>x.enable),['false','true']);
 });
-test('other users cannot see or change service and unowned inbound is rejected',async()=>{
- const f=fixture();await f.cb(99,'cfgmanage:1:0');await f.cb(99,'cfgset:1:3:0');await f.cb(2,'cfgset:1:99:0');assert.equal(f.writes.length,0);
+test('admin cannot manipulate an unowned inbound or missing service',async()=>{
+ const f=fixture();await f.cb(1,'admin:ss:1:99:0');await f.cb(1,'admin:ss:99:3:0');assert.equal(f.writes.length,0);
 });
-test('disabled account, panel rejection and representative block never report successful activation',async()=>{
- const f=fixture();f.setEnabled(false);await f.cb(2,'cfgmanage:1:0');await f.cb(2,'cfgset:1:4:1');assert.equal(f.writes.length,0);
- f.setEnabled(true);f.setError(true);await f.cb(2,'cfgset:1:4:1');assert.equal(f.active.get(4),false);assert.ok(f.out.some(x=>x.body.text?.includes('نتیجهٔ تغییر وضعیت مشخص نیست')));
- f.setError(false);f.setBlocked(true);await f.cb(2,'cfgset:1:4:1');assert.ok(f.out.some(x=>x.body.text?.includes('تغییر در پنل تأیید نشد')));
+test('disabled account and panel errors never claim a successful change',async()=>{
+ const f=fixture();f.setEnabled(false);await f.cb(1,'admin:sc:1:0');await f.cb(1,'admin:ss:1:3:0');assert.equal(f.writes.length,0);
+ f.setEnabled(true);f.setError(true);await f.cb(1,'admin:ss:1:3:0');assert.equal(f.active.get(3),true);assert.ok(f.out.some(x=>x.body.text?.includes('نتیجهٔ تغییر وضعیت مشخص نیست')));
+ f.setError(false);f.setBlocked(true);await f.cb(1,'admin:ss:1:4:1');assert.ok(f.out.some(x=>x.body.text?.includes('تغییر در پنل تأیید نشد')));
 });
-test('locked service prevents simultaneous delete or toggle',async()=>{
- const f=fixture();f.sql.prepare('INSERT INTO service_operations VALUES(?,?,?)').run(1,'delete','now');await f.cb(2,'cfgset:1:3:0');assert.equal(f.writes.length,0);
+test('locked service prevents simultaneous admin change',async()=>{
+ const f=fixture();f.sql.prepare('INSERT INTO service_operations VALUES(?,?,?)').run(1,'delete','now');await f.cb(1,'admin:ss:1:3:0');assert.equal(f.writes.length,0);
 });

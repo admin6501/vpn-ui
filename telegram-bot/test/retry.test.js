@@ -25,17 +25,17 @@ function fixture(){
 }
 
 test('trial preflight failure releases the claim and next attempt can succeed exactly once',async()=>{
- const f=fixture();f.setStage('preflight');await f.cb(2,'test_service');assert.equal(f.calls,0);assert.equal(f.sql.prepare('SELECT * FROM test_claims').get(),undefined);
- f.setStage('good');await f.cb(2,'test_service');assert.equal(f.calls,1);assert.match(f.sql.prepare('SELECT created_at FROM test_claims').get().created_at,/^done\|/);assert.equal(f.sql.prepare('SELECT COUNT(*) n FROM services').get().n,1);
- await f.cb(2,'test_service');assert.equal(f.calls,1);
+ const f=fixture();f.setStage('preflight');await f.cb(2,'testname:random');assert.equal(f.calls,0);assert.equal(f.sql.prepare('SELECT * FROM test_claims').get(),undefined);
+ f.setStage('good');await f.cb(2,'testname:random');assert.equal(f.calls,1);assert.match(f.sql.prepare('SELECT created_at FROM test_claims').get().created_at,/^done\|/);assert.equal(f.sql.prepare('SELECT COUNT(*) n FROM services').get().n,1);
+ await f.cb(2,'testname:random');assert.equal(f.calls,1);
 });
 
 test('unknown and explicit rejection after dispatch stay reviewable, never auto-create twice',async()=>{
- for(const mode of ['ambiguous','rejected']){const f=fixture();f.setStage(mode);await f.cb(2,'test_service');assert.equal(f.calls,1);assert.match(f.sql.prepare('SELECT created_at FROM test_claims').get().created_at,/^review\|/);await f.cb(2,'test_service');assert.equal(f.calls,1);assert.ok(f.output.some(x=>x.body.text?.includes('نیاز به بررسی')));}
+ for(const mode of ['ambiguous','rejected']){const f=fixture();f.setStage(mode);await f.cb(2,'testname:random');assert.equal(f.calls,1);assert.match(f.sql.prepare('SELECT created_at FROM test_claims').get().created_at,/^review\|/);await f.cb(2,'testname:random');assert.equal(f.calls,1);assert.ok(f.output.some(x=>x.body.text?.includes('نیاز به بررسی')));}
 });
 
 test('telegram notification failure keeps created trial and cannot cause duplicate',async()=>{
- const f=fixture();f.setStage('deliveryfail');await f.cb(2,'test_service');assert.equal(f.calls,1);assert.match(f.sql.prepare('SELECT created_at FROM test_claims').get().created_at,/^done\|/);assert.equal(f.sql.prepare('SELECT COUNT(*) n FROM services').get().n,1);f.setStage('good');await f.cb(2,'test_service');assert.equal(f.calls,1);
+ const f=fixture();f.setStage('deliveryfail');await f.cb(2,'testname:random');assert.equal(f.calls,1);assert.match(f.sql.prepare('SELECT created_at FROM test_claims').get().created_at,/^done\|/);assert.equal(f.sql.prepare('SELECT COUNT(*) n FROM services').get().n,1);f.setStage('good');await f.cb(2,'testname:random');assert.equal(f.calls,1);
 });
 
 test('paid order preflight error remains retryable but post-dispatch error requires review',async()=>{
@@ -53,5 +53,10 @@ test('receipt delivery failure is not falsely acknowledged and resending works',
 });
 
 test('concurrent trial callbacks allow only one create',async()=>{
- const f=fixture();await Promise.all([f.cb(2,'test_service'),f.cb(2,'test_service')]);assert.equal(f.calls,1);assert.equal(f.sql.prepare('SELECT COUNT(*) n FROM services').get().n,1);
+ const f=fixture();await Promise.all([f.cb(2,'testname:random'),f.cb(2,'testname:random')]);assert.equal(f.calls,1);assert.equal(f.sql.prepare('SELECT COUNT(*) n FROM services').get().n,1);
+});
+
+test('trial asks for custom or random name and uses the selected name',async()=>{
+ const f=fixture();await f.cb(2,'test_service');assert.ok(JSON.stringify(f.output).includes('testname:custom'));assert.ok(JSON.stringify(f.output).includes('testname:random'));assert.equal(f.calls,0);
+ await f.cb(2,'testname:custom');await f.message(2,'invalid 22');assert.equal(f.calls,0);await f.message(2,'MyTest');assert.equal(f.calls,0);await f.cb(2,'testname:make');assert.equal(f.calls,1);assert.equal(f.sql.prepare('SELECT name FROM services WHERE user_id=2').get().name,'MyTest');
 });

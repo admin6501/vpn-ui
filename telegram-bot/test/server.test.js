@@ -6,10 +6,11 @@ import {join} from 'node:path';
 import {spawnSync} from 'node:child_process';
 import {DatabaseSync} from 'node:sqlite';
 
-function runServer(webhook=false){
+function runServer(webhook=false,preseed=false){
  const dir=mkdtempSync(join(tmpdir(),'vpn-ui-bot-'));
  const config=join(dir,'config.json'), database=join(dir,'db.sqlite'), calls=join(dir,'calls');
  writeFileSync(config,JSON.stringify({BOT_TOKEN:'123:FakeToken',ADMIN_ID:'123'}));
+ if(preseed){const db=new DatabaseSync(database);db.exec(readFileSync(new URL('./fixtures/clean-schema.sql',import.meta.url),'utf8'));db.exec("INSERT INTO plans(key,gb,price,sort) VALUES('mine',5,500,1); INSERT INTO settings(key,value) VALUES('test_enabled','1')");db.close();}
  writeFileSync(join(dir,'mock.mjs'), `import {appendFileSync} from 'node:fs'; let count=0; globalThis.fetch=async (url)=>{const m=new URL(url).pathname.split('/').pop();appendFileSync(process.env.CALLS,m+'\\n');if(m==='getWebhookInfo')return Response.json({ok:true,result:{url:process.env.WEBHOOK?'https://example.org/webhook':''}});if(m==='getUpdates'){if(!count++)return Response.json({ok:true,result:[{update_id:100,message:{from:{id:123,first_name:'Ali'},chat:{id:123,type:'private'},message_id:1,text:'/start'}}]});setTimeout(()=>process.kill(process.pid,'SIGTERM'),20);await new Promise(r=>setTimeout(r,60));return Response.json({ok:true,result:[]});}return Response.json({ok:true,result:{message_id:1}})};`);
  const result=spawnSync(process.execPath,['--import',join(dir,'mock.mjs'),'server.mjs'],{cwd:new URL('..',import.meta.url),env:{...process.env,BOT_CONFIG:config,BOT_DATABASE:database,CALLS:calls,WEBHOOK:webhook?'1':''},encoding:'utf8',timeout:10000});
  return {dir,database,calls,result};
@@ -21,4 +22,7 @@ test('server polls Telegram, handles start, and persists offset',()=>{
 });
 test('server does not disable an existing webhook',()=>{
  const {dir,calls,result}=runServer(true);try{assert.notEqual(result.status,0);assert.match(result.stderr,/webhook is active/);assert.doesNotMatch(readFileSync(calls,'utf8'),/deleteWebhook|getUpdates/)}finally{rmSync(dir,{recursive:true,force:true})}
+});
+test('server upgrades existing database without changing plans or settings',()=>{
+ const {dir,database,result}=runServer(false,true);try{assert.equal(result.status,0,result.stderr);const db=new DatabaseSync(database);assert.equal(db.prepare('SELECT COUNT(*) AS n FROM plans').get().n,1);assert.equal(db.prepare("SELECT value FROM settings WHERE key='test_enabled'").get().value,'1');assert.ok(db.prepare("SELECT name FROM sqlite_master WHERE name='bot_users'").get());db.close()}finally{rmSync(dir,{recursive:true,force:true})}
 });

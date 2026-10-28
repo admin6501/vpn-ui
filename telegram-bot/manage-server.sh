@@ -82,13 +82,13 @@ update_bot(){
    echo 'دریافت نسخه جدید ناموفق بود؛ ربات تغییر نکرد.'; rm -rf "$tmp" "$stage"; return 1
  fi
  local source="$tmp/vpn-ui-main/telegram-bot"
- # The one reviewed schema change below only removes the default plan inserts.
+ # The reviewed schema change adds an empty user directory and removes seed plans.
  # Other schema changes still require an explicit migration.
  if ! cmp -s "$APP/schema.sql" "$source/schema.sql"; then
    local old_hash new_hash
    old_hash=$(sha256sum "$APP/schema.sql" | awk '{print $1}')
    new_hash=$(sha256sum "$source/schema.sql" | awk '{print $1}')
-   if [[ "$old_hash" != 586bc5f4900800bf85250e193800c338a7f0f4e46228b956f4c60116b6f2c1ae || "$new_hash" != 6f8ec662b729ec101df2e2dd968515a07f96e6c67cd5874dd32399752f7cb956 ]]; then
+   if [[ ( "$old_hash" != 586bc5f4900800bf85250e193800c338a7f0f4e46228b956f4c60116b6f2c1ae && "$old_hash" != 6f8ec662b729ec101df2e2dd968515a07f96e6c67cd5874dd32399752f7cb956 ) || "$new_hash" != 0c48c78842130427ad196612565634c87cf74f6b22c5c31d5fa8331c1296ea05 ]]; then
      echo 'ساختار دیتابیس نسخه جدید تغییر کرده است؛ آپدیت متوقف شد و به روش مهاجرت نیاز دارد.'; rm -rf "$tmp" "$stage"; return 1
    fi
  fi
@@ -127,22 +127,6 @@ update_bot(){
  fi
  rm -rf "$previous"
  echo 'آپدیت انجام شد. تنظیمات و دیتابیس نگه داشته شدند.'
-}
-remove_sample_plans(){
- [[ -f "$DATA/bot.sqlite" ]] || { echo 'دیتابیس پیدا نشد.'; return 1; }
- echo 'فقط بسته‌هایی با کلید، حجم و قیمت دقیقاً یکسان با ۹ بسته پیش‌فرض قدیمی حذف می‌شوند.'
- echo 'اگر خودتان بسته‌ای با همین مشخصات ساخته‌اید، آن هم حذف می‌شود. سرویس‌ها، سفارش‌ها و کیف پول دست نمی‌خورند.'
- local answer
- read -r -p 'برای تأیید حذف بسته‌های نمونه، REMOVE را وارد کنید: ' answer
- [[ "$answer" == REMOVE ]] || { echo 'لغو شد.'; return 0; }
- backup || { echo 'بکاپ ناموفق بود؛ چیزی حذف نشد.'; return 1; }
- python3 - "$DATA/bot.sqlite" <<'PY'
-import sqlite3, sys
-plans=[('p10',10,70000),('p20',20,140000),('p30',30,210000),('p40',40,280000),('p50',50,350000),('p75',75,525000),('p100',100,700000),('p125',125,875000),('p150',150,1000000)]
-with sqlite3.connect(sys.argv[1], timeout=10) as db:
-    count=sum(db.execute('DELETE FROM plans WHERE key=? AND gb=? AND price=?', p).rowcount for p in plans)
-print(f'{count} بستهٔ نمونه حذف شد.')
-PY
 }
 database_counts(){
  [[ -f "$DATA/bot.sqlite" ]] || { echo 'دیتابیس پیدا نشد.'; return 1; }
@@ -183,14 +167,14 @@ remove_webhook(){
  systemctl restart vpn-ui-telegram-bot.service
 }
 while true; do
- printf '\nمدیریت ربات VPN-UI\n1) نصب تازه\n2) وضعیت\n3) شروع\n4) توقف\n5) راه‌اندازی مجدد\n6) نمایش لاگ\n7) انتقال از وب‌هوک به سرور\n8) بکاپ دیتابیس\n9) آپدیت ربات\n10) حذف ربات\n11) حذف بسته‌های نمونه قدیمی\n12) آمار دیتابیس ربات\n0) خروج\n'
+ printf '\nمدیریت ربات VPN-UI\n1) نصب تازه\n2) وضعیت\n3) شروع\n4) توقف\n5) راه‌اندازی مجدد\n6) نمایش لاگ\n7) انتقال از وب‌هوک به سرور\n8) بکاپ دیتابیس\n9) آپدیت ربات\n10) حذف ربات\n11) آمار دیتابیس ربات\n0) خروج\n'
  read -r -p 'انتخاب: ' choice || exit 0
  case "$choice" in
   1) install_bot || echo 'نصب کامل نشد.';;
   2) systemctl --no-pager --full status vpn-ui-telegram-bot.service || true;;
   3) systemctl start vpn-ui-telegram-bot.service;; 4) systemctl stop vpn-ui-telegram-bot.service;;
   5) systemctl restart vpn-ui-telegram-bot.service;; 6) journalctl -u vpn-ui-telegram-bot.service -n 100 --no-pager;;
-  7) remove_webhook;; 8) backup;; 9) update_bot || echo 'آپدیت کامل نشد.';; 10) remove_bot || echo 'حذف کامل نشد.'; exit 0;; 11) remove_sample_plans || echo 'حذف بسته‌های نمونه ناموفق بود.';; 12) database_counts || echo 'خواندن آمار ناموفق بود.';; 0) exit 0;; *) echo 'گزینه نامعتبر';;
+  7) remove_webhook;; 8) backup;; 9) update_bot || echo 'آپدیت کامل نشد.';; 10) remove_bot || echo 'حذف کامل نشد.'; exit 0;; 11) database_counts || echo 'خواندن آمار ناموفق بود.';; 0) exit 0;; *) echo 'گزینه نامعتبر';;
  esac
  pause
 done

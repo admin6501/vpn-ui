@@ -145,3 +145,12 @@ CREATE TABLE IF NOT EXISTS wallet_review_resolutions (
  actor_id INTEGER NOT NULL,
  resolved_at TEXT NOT NULL
 );
+
+-- Telegram user directory and bot-only access control.
+CREATE TABLE IF NOT EXISTS bot_users (
+ user_id INTEGER PRIMARY KEY,
+ first_name TEXT NOT NULL DEFAULT '',
+ username TEXT NOT NULL DEFAULT '',
+ blocked INTEGER NOT NULL DEFAULT 0 CHECK(blocked IN (0,1)),
+ last_seen TEXT NOT NULL DEFAULT ''
+);
