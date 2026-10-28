@@ -6,6 +6,10 @@ import { encryptPanel, decryptPanel, panelURL, panelAccountKey, probePanel } fro
 // ساخت/تمدید/حذف سرویس مستقیم از طریق API پنل (حساب نماینده) انجام می‌شود.
 
 const NAME_RE = /^[A-Za-z]+$/;
+function randomServiceName() {
+  const letters="abcdefghijklmnopqrstuvwxyz", bytes=crypto.getRandomValues(new Uint8Array(12));
+  return "Client"+Array.from(bytes,b=>letters[b%letters.length]).join("");
+}
 const GB = 1024 ** 3;
 const MB = 1024 ** 2;
 const DAY_MS = 86400000;
@@ -38,7 +42,8 @@ const MAX_START_TEXT = 700;
 // ---------------------------------------------------------- تنظیمات قابل تغییر با /set
 // مقدار پیش‌فرض از اینجا (و wrangler.toml) می‌آید؛ هر مقداری که با /set عوض شود در دیتابیس می‌ماند.
 const META = {
-  referral_discount: ["int", "مبلغ تخفیف کد دعوت (تومان)"],
+  referral_discount: ["int", "🎁 مبلغ هدیه دعوت (تومان)"],
+  name_mode: ["name_mode", "🏷 نوع نام‌گذاری سرویس"],
   duration_days: ["int", "مدت همه بسته‌ها (روز)"],
   test_enabled: ["bool", "سرویس تست: 1 = فعال، 0 = غیرفعال"],
   test_mb: ["int", "حجم سرویس تست (مگابایت)"],
@@ -57,6 +62,7 @@ const META = {
 
 const defaults = (env) => ({
   referral_discount: "50000",
+  name_mode: "custom",
   duration_days: "30",
   test_enabled: "1",
   test_mb: "500",
@@ -144,6 +150,7 @@ async function takeDiscount(env, uid) {
 async function registerReferral(env, referrer, referred) {
   if (await first(env, "SELECT id FROM referrals WHERE referred_id=?", referred)) return false;
   const amount = num(env, "referral_discount");
+  if (!Number.isSafeInteger(amount) || amount <= 0) return false;
   await env.DB.batch([
     env.DB.prepare("INSERT INTO referrals(referrer_id,referred_id,created_at) VALUES(?,?,?)").bind(referrer, referred, now()),
     env.DB.prepare("INSERT INTO discounts(user_id,amount,created_at) VALUES(?,?,?)").bind(referrer, amount, now()),
@@ -456,7 +463,6 @@ const sendServiceCard = (env, chat_id, name, volume, dur, sub, cfg, keyboard, he
 
 const serviceKb = (id) => kb([
   [btn("🔗 کانفیگ‌ها و QR", `cfglist:${id}:0`)],
-  [btn("🔘 فعال/غیرفعال کردن کانفیگ", `cfgmanage:${id}:0`)],
   [btn("🔄 تمدید سرویس", `renew_${id}`)],
   [btn("🗑 حذف سرویس", `delsvc_${id}`)],
   [btn("🔙 بازگشت", "my_services")],
@@ -585,7 +591,7 @@ async function showAdminWallet(env, chat, userId, owner) {
   const history=await all(env,"SELECT delta,reason FROM wallet_entries WHERE user_id=? ORDER BY id DESC LIMIT 10",userId);
   const lines=history.length ? history.map(x=>`${Number(x.delta)>0?"➕":"➖"} ${toman(Math.abs(Number(x.delta)))} — ${walletReason(x.reason)}`).join("\n") : "بدون تراکنش";
   const rows=[];if(owner) rows.push([btn("➕ افزایش موجودی",`admin:wallet_add:${userId}`),btn("➖ کاهش موجودی",`admin:wallet_sub:${userId}`)]);
-  rows.push([btn("🔙 بازگشت", "admin:root")]);
+  rows.push([btn("👤 پنل کاربر", `admin:user:${userId}`),btn("🔙 مدیریت", "admin:root")]);
   return sendMsg(env,chat,`💰 <b>کیف پول کاربر</b> <code>${userId}</code>\nموجودی: <b>${toman(balance)}</b>\n\n${lines}`,kb(rows));
 }
 async function handleWalletAmount(c,msg) {
@@ -738,9 +744,10 @@ async function handleAdminCommand(c, msg) {
     if (!meta || !raw) return reply("❌ فرمت: <code>/set KEY VALUE</code>\nکلیدها را با /settings ببین.");
     const type = meta[0];
     const value = raw === "-" ? "" : raw;
-    if (type === "int" && !/^\d+$/.test(value)) return reply("❌ مقدار باید عدد صحیح باشد.");
+    if (type === "int" && (!/^\d+$/.test(value) || !Number.isSafeInteger(Number(value)))) return reply("❌ مقدار باید عدد صحیح معتبر باشد.");
     if (type === "bool" && !/^[01]$/.test(value)) return reply("❌ مقدار باید 0 یا 1 باشد.");
     if (type === "ids" && !/^\d+(,\d+)*$/.test(value)) return reply("❌ مقدار باید عدد یا چند عدد با کاما باشد (مثلا 1,2).");
+    if (type === "name_mode" && !["custom","random"].includes(value)) return reply("❌ نوع نام باید custom یا random باشد.");
     await run(env, "INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", key, value);
     return reply(`✅ <code>${key}</code> = <code>${esc(value === "" ? "(خالی)" : value)}</code>`);
   }
@@ -814,17 +821,32 @@ async function handleAdminCommand(c, msg) {
 }
 
 // دکمه‌های مدیریت فقط رابط دستورات موجود هستند؛ بررسی مجوز در هر درخواست انجام می‌شود.
+const BOT_USERS_QUERY = `WITH ids AS (SELECT user_id FROM bot_users UNION SELECT user_id FROM states UNION SELECT user_id FROM services UNION SELECT user_id FROM orders UNION SELECT user_id FROM wallet_entries UNION SELECT user_id FROM wallet_topups UNION SELECT user_id FROM wallet_payments UNION SELECT user_id FROM discounts UNION SELECT user_id FROM test_claims UNION SELECT referrer_id AS user_id FROM referrals UNION SELECT referred_id AS user_id FROM referrals)`;
+async function botUserExists(env,id) { return !!(await first(env,`${BOT_USERS_QUERY} SELECT user_id FROM ids WHERE user_id=? LIMIT 1`,id)); }
+const adminTime = value => /^\d{12,13}$/.test(String(value || "")) ? new Date(Number(value)).toLocaleString("fa-IR",{timeZone:"Asia/Tehran"}) : String(value || "—");
+const adminOrderStatus = status => ({draft:"پیش‌نویس",pending:"منتظر تأیید",approved:"تأییدشده",needs_fix:"نیازمند اصلاح",needs_review:"نیازمند بررسی",needs_review_refunded:"نیازمند بررسی؛ وجه برگشت داده شد",wallet_processing:"در حال پرداخت",wallet_failed_refunded:"ناموفق؛ وجه برگشت داده شد",wallet_review_resolved:"بررسی‌شده"}[status] || status || "—");
 const adminBack = (target = "admin:root") => kb([[btn("🔙 بازگشت", target)]]);
 const adminHomeKb = () => kb([
   [btn("⚙️ تنظیمات ربات", "admin:settings"), btn("📦 مدیریت بسته‌ها", "admin:plans")],
   [btn("👮 مدیریت ادمین‌ها", "admin:admins"), btn("📊 آمار فروش", "admin:stats")],
+  [btn("👥 لیست کاربران", "admin:users:0"),btn("🔎 جستجوی سرویس", "admin:service_search")],
   [btn("💰 مدیریت کیف پول", "admin:wallet"),btn("⚠️ سفارش‌های قابل بررسی", "admin:wallet_reviews")],
+  [btn("🎁 تنظیم هدیه دعوت", "admin:setting:referral_discount")],
+  [btn("🏷 نوع نام‌گذاری سرویس", "admin:setting:name_mode")],
   [btn("🎁 مجوز دوباره تست", "admin:resettest"), btn("🔌 بررسی اتصال پنل", "admin:panelcheck")],
+  [btn("♻️ ریست تست همه", "admin:reset_all_tests")],
   [btn("📖 راهنما", "admin:help"), btn("🏠 منوی مشتری", "main_menu")],
 ]);
 const showAdminHome = (env, chat) => sendMsg(env, chat, "🛠 <b>پنل مدیریت ربات</b>\n\nبخش موردنظر را انتخاب کنید:", adminHomeKb());
 const planKeyOK = key => /^[A-Za-z0-9_-]{1,32}$/.test(key);
 const positiveId = value => /^\d+$/.test(value) && Number.isSafeInteger(Number(value)) && Number(value) > 0;
+
+async function showAdminServiceSearch(env,chat,query,page) {
+  const rows=await all(env,"SELECT id,user_id,name,panel_email FROM services WHERE instr(lower(COALESCE(name,'')),lower(?))>0 OR instr(lower(COALESCE(panel_email,'')),lower(?))>0 ORDER BY id DESC LIMIT 11 OFFSET ?",query,query,page*10);
+  const buttons=rows.slice(0,10).map(x=>[btn(`${String(x.name || x.panel_email || "سرویس").slice(0,35)} — ${x.user_id}`,`admin:svc:${x.id}`)]);
+  const nav=[];if(page>0)nav.push(btn("◀️ قبلی",`admin:searchpage:${page-1}`));if(rows.length>10)nav.push(btn("بعدی ▶️",`admin:searchpage:${page+1}`));if(nav.length)buttons.push(nav);buttons.push([btn("🔎 جستجوی جدید","admin:service_search"),btn("🔙 مدیریت","admin:root")]);
+  return sendMsg(env,chat,`🔎 <b>نتیجه جستجوی سرویس</b>\nعبارت: <code>${esc(query)}</code>\nصفحه ${page+1}\n${rows.length ? "سرویس موردنظر را انتخاب کنید." : "سرویسی یافت نشد."}`,kb(buttons));
+}
 
 async function handleAdminUIInput(c, msg) {
   const { env, st } = c, step = st.admin_ui_step, value = msg.text.trim();
@@ -880,6 +902,11 @@ async function handleAdminUIInput(c, msg) {
     }
     delete st.admin_ui_step; return send("درخواست نامعتبر است؛ دوباره شروع کنید.");
   }
+  if (step === "service_lookup") {
+    if (!value || value.length>80 || /[\r\n]/.test(value)) return send("نام سرویس یا نام حساب پنل را تا ۸۰ نویسه در یک خط بفرستید.");
+    st.admin_service_search=value;delete st.admin_ui_step;delete st.admin_ui_key;
+    return showAdminServiceSearch(env,msg.chat.id,value,0);
+  }
   if (step === "wallet_lookup") {
     if (!positiveId(value)) return send("آیدی عددی معتبر را با اعداد انگلیسی وارد کنید.");
     delete st.admin_ui_step; delete st.admin_ui_key;
@@ -895,7 +922,7 @@ async function handleAdminUIInput(c, msg) {
   if (step === "setting") {
     const meta = META[st.admin_ui_key];
     if (!meta || !value) return send("مقدار نامعتبر است؛ دوباره وارد کنید.");
-    if (meta[0] === "int" && !/^\d+$/.test(value)) return send("مقدار باید عدد صحیح باشد.");
+    if (meta[0] === "int" && (!/^\d+$/.test(value) || !Number.isSafeInteger(Number(value)))) return send("مقدار باید عدد صحیح معتبر باشد.");
     if (meta[0] === "bool" && !/^[01]$/.test(value)) return send("مقدار باید ۰ یا ۱ (به انگلیسی) باشد.");
     if (meta[0] === "ids" && !/^\d+(,\d+)*$/.test(value)) return send("شناسه‌ها را با اعداد انگلیسی و کاما وارد کنید.");
     command = `/set ${st.admin_ui_key} ${value}`;
@@ -938,7 +965,7 @@ async function panelChoices(env) {
 async function handleAdminUICallback(c, cq, answer) {
   const { env, st } = c, uid = cq.from.id, chat = cq.message.chat.id, d = cq.data;
   const owner = env.owners.includes(uid);
-  if (d !== "admin:reset_confirm") { delete st.admin_ui_step; delete st.admin_ui_key; }
+  if (d !== "admin:reset_confirm" && d !== "admin:reset_all_confirm") { delete st.admin_ui_step; delete st.admin_ui_key; }
   if (d !== "admin:wallet_confirm") delete st.admin_wallet_change;
   delete st.admin_step; delete st.admin_order;
   const renderAdmin = (text, keyboard) => render(env, cq, text, keyboard);
@@ -949,6 +976,102 @@ async function handleAdminUICallback(c, cq, answer) {
   if (d === "admin:root") {
     delete st.admin_ui_step; delete st.admin_ui_key;
     return renderAdmin("🛠 <b>پنل مدیریت ربات</b>\n\nبخش موردنظر را انتخاب کنید:", adminHomeKb());
+  }
+  if (d === "admin:service_search") return prompt("service_lookup","","🔎 نام سرویس یا نام حساب کانفیگ در پنل را بفرستید.");
+  if (/^admin:searchpage:\d+$/.test(d)) {
+    const page=Number(d.split(":")[2]);if(!st.admin_service_search || !Number.isSafeInteger(page)||page>1000000)return answer("جستجو منقضی شده است.",true);
+    return showAdminServiceSearch(env,chat,st.admin_service_search,page);
+  }
+  if (/^admin:svc:\d+$/.test(d)) {
+    const id=Number(d.split(":")[2]);if(!Number.isSafeInteger(id)||id<=0)return answer("سرویس نامعتبر است.",true);
+    const svc=await getService(env,id);if(!svc)return answer("سرویس یافت نشد.",true);
+    let details;try { const account=await panelServiceAccount(env,svc); details=account ? liveServiceDetails(account) : "⚠️ سرویس در پنل متصل فعلی یافت نشد."; } catch { details="⚠️ وضعیت سرویس نامشخص است؛ ارتباط با پنل برقرار نشد."; }
+    return renderAdmin(`📦 <b>سرویس ${esc(String(svc.name || "—").slice(0,50))}</b>\nشناسه ربات: <code>${svc.id}</code>\nکاربر: <code>${svc.user_id}</code>\nحساب پنل: <code>${esc(String(svc.panel_email || "—").slice(0,100))}</code>\n\n${details}`,kb([[btn("🔘 وضعیت کانفیگ‌ها",`admin:sc:${svc.id}:0`)],[btn("👤 پنل کاربر",`admin:user:${svc.user_id}`)],[btn("🔙 نتایج جستجو","admin:searchpage:0"),btn("🔎 جستجوی جدید","admin:service_search")]]));
+  }
+  if (/^admin:sc:\d+:\d+$/.test(d)) {
+    const [, ,id,pageText]=d.split(":"), serviceId=Number(id), page=Number(pageText);
+    if(!Number.isSafeInteger(serviceId)||serviceId<=0||!Number.isSafeInteger(page)||page>1000000)return answer("درخواست نامعتبر است.",true);
+    const svc=await getService(env,serviceId);if(!svc)return answer("سرویس پیدا نشد.",true);
+    let state;try{state=await panelMemberships(env,svc)}catch{return renderAdmin("⚠️ دریافت وضعیت سرویس از پنل ناموفق بود یا سرویس پیدا نشد.",adminBack(`admin:svc:${serviceId}`))}
+    if(page>Math.max(0,Math.ceil(state.list.length/10)-1))return answer("صفحه پیدا نشد.",true);
+    const rows=[];
+    for(const m of state.list.slice(page*10,(page+1)*10)) {
+      if(!Number.isSafeInteger(m.id)||m.id<=0)continue;
+      if(m.enabled===null || !state.accountEnabled)rows.push([btn(`⏸ ${m.name.slice(0,35)} — وضعیت قابل تغییر نیست`,`admin:scinfo:${serviceId}`)]);
+      else rows.push([btn(`${m.enabled ? "⛔ غیرفعال‌سازی" : "✅ فعال‌سازی"} ${m.name.slice(0,35)}`,`admin:ss:${serviceId}:${m.id}:${m.enabled?0:1}`)]);
+    }
+    const nav=[];if(page>0)nav.push(btn("◀️ قبلی",`admin:sc:${serviceId}:${page-1}`));if((page+1)*10<state.list.length)nav.push(btn("بعدی ▶️",`admin:sc:${serviceId}:${page+1}`));if(nav.length)rows.push(nav);rows.push([btn("🔙 سرویس",`admin:svc:${serviceId}`)]);
+    return renderAdmin(state.accountEnabled ? "🔘 وضعیت هر کانفیگ را تغییر دهید. هر ورودی فقط همین سرویس را تغییر می‌دهد." : "⚠️ حساب در پنل خاموش است. برای فعال‌کردن حساب از پنل استفاده کنید.",kb(rows));
+  }
+  if (/^admin:scinfo:\d+$/.test(d)) return answer("وضعیت نامشخص است یا حساب در پنل خاموش است.",true);
+  if (/^admin:ss:\d+:\d+:[01]$/.test(d)) {
+    const [, ,id,inboundIdText,desired]=d.split(":"),serviceId=Number(id),inboundId=Number(inboundIdText);
+    if(!Number.isSafeInteger(serviceId)||serviceId<=0||!Number.isSafeInteger(inboundId)||inboundId<=0)return answer("درخواست نامعتبر است.",true);
+    const svc=await getService(env,serviceId);if(!svc)return answer("سرویس پیدا نشد.",true);
+    const lock=await run(env,"INSERT OR IGNORE INTO service_operations(service_id,kind,created_at) VALUES(?,?,?)",serviceId,"membership",now());
+    if(!lock.meta.changes)return answer("عملیات دیگری در جریان است.",true);
+    try{
+      const before=await panelMemberships(env,svc),member=before.list.find(m=>m.id===inboundId),wanted=desired==="1";
+      if(!before.accountEnabled||!member||member.enabled===null)return renderAdmin("⚠️ حساب یا وضعیت کانفیگ قابل تغییر نیست.",adminBack(`admin:sc:${serviceId}:0`));
+      if(member.enabled===wanted)return renderAdmin("این وضعیت قبلاً تغییر کرده است.",adminBack(`admin:sc:${serviceId}:0`));
+      const response=await panelCall(env,"POST",`/panel/api/inbounds/${inboundId}/setMembershipEnable/${encodeURIComponent(svc.panel_email)}`,new URLSearchParams({enable:String(wanted)}));
+      if(!response.success)throw new Error("panel rejected");
+      const after=await panelMemberships(env,svc),changed=after.list.find(m=>m.id===inboundId);
+      if(!changed || changed.enabled!==wanted)return renderAdmin("⚠️ تغییر در پنل تأیید نشد؛ وضعیت را بررسی کنید.",adminBack(`admin:sc:${serviceId}:0`));
+      return renderAdmin(`✅ کانفیگ «${esc(changed.name)}» ${wanted ? "فعال" : "غیرفعال"} شد.${wanted && !changed.inboundEnabled ? "\nورودی اصلی خاموش است." : ""}`,adminBack(`admin:sc:${serviceId}:0`));
+    }catch{return renderAdmin("⚠️ نتیجهٔ تغییر وضعیت مشخص نیست؛ پنل را بررسی کنید.",adminBack(`admin:sc:${serviceId}:0`))}
+    finally{await run(env,"DELETE FROM service_operations WHERE service_id=?",serviceId)}
+  }
+  if (d === "admin:reset_all_tests") {
+    st.admin_ui_step="reset_all_confirm";
+    return renderAdmin("♻️ مجوز تست همهٔ کاربران ریست شود؟ درخواست‌های در حال پردازش یا نیازمند بررسی برای جلوگیری از ساخت تکراری حفظ می‌شوند. سرویس‌های قبلی حذف نمی‌شوند.",kb([[btn("✅ تأیید ریست", "admin:reset_all_confirm")],[btn("❌ انصراف", "admin:root")]]));
+  }
+  if (d === "admin:reset_all_confirm") {
+    if(st.admin_ui_step !== "reset_all_confirm") return answer("درخواست منقضی شده است.",true);
+    delete st.admin_ui_step;
+    await run(env,"INSERT OR IGNORE INTO bot_users(user_id) SELECT user_id FROM test_claims WHERE user_id > 0");
+    const r=await run(env,"DELETE FROM test_claims WHERE COALESCE(created_at,'') NOT LIKE 'processing|%' AND COALESCE(created_at,'') NOT LIKE 'review|%'");
+    const remaining=await first(env,"SELECT COUNT(*) AS n FROM test_claims");
+    return renderAdmin(`✅ مجوز تست ${Number(r.meta.changes)} کاربر ریست شد. ${Number(remaining.n)} درخواست در حال پردازش یا نیازمند بررسی حفظ شد.`,adminBack());
+  }
+  if (/^admin:users:\d+$/.test(d)) {
+    const page=Number(d.split(":")[2]); if(!Number.isSafeInteger(page)||page<0||page>1000000)return answer("صفحه نامعتبر است.",true);
+    const users=await all(env,`${BOT_USERS_QUERY} SELECT ids.user_id, u.first_name, u.username, u.blocked FROM ids LEFT JOIN bot_users u ON u.user_id=ids.user_id WHERE ids.user_id>0 ORDER BY ids.user_id DESC LIMIT 11 OFFSET ?`,page*10);
+    const rows=users.slice(0,10).map(u=>[btn(`${u.blocked ? "⛔ " : "👤 "}${String(u.first_name || u.username || u.user_id).slice(0,30)} — ${u.user_id}`,`admin:user:${u.user_id}`)]);
+    const nav=[];if(page>0)nav.push(btn("◀️ قبلی",`admin:users:${page-1}`));if(users.length>10)nav.push(btn("بعدی ▶️",`admin:users:${page+1}`));if(nav.length)rows.push(nav);rows.push([btn("🔙 بازگشت","admin:root")]);
+    return renderAdmin(`👥 <b>کاربران ربات — صفحه ${page+1}</b>\nکاربران قدیمی بر اساس رکوردهای موجود نمایش داده می‌شوند.`,kb(rows));
+  }
+  if (/^admin:user:\d+$/.test(d)) {
+    const target=Number(d.split(":")[2]);if(!positiveId(String(target))||!await botUserExists(env,target))return answer("کاربر پیدا نشد.",true);
+    const u=await first(env,"SELECT first_name,username,blocked FROM bot_users WHERE user_id=?",target);
+    const balance=await walletBalance(env,target); const name=esc(u?.first_name || "نام ثبت نشده"), username=esc(u?.username || "—");
+    const rows=[[btn("📦 سرویس‌ها و وضعیت",`admin:us:${target}:0`),btn("🧾 همه سفارش‌ها",`admin:uo:${target}:0`)],[btn("💰 کیف پول",`admin:wallet_view:${target}`),btn("📜 تراکنش‌ها",`admin:ut:${target}:0`)]];
+    if(!env.admins.has(target)) rows.push([btn(u?.blocked ? "✅ رفع مسدودی" : "⛔ مسدود کردن",`admin:ub:${target}:${u?.blocked ? 0 : 1}`)]);
+    rows.push([btn("🔙 کاربران","admin:users:0")]);
+    return renderAdmin(`👤 <b>${name}</b>\nشناسه: <code>${target}</code>\nنام کاربری: ${username}\nدسترسی ربات: ${u?.blocked ? "مسدود" : "باز"}\nموجودی: ${toman(balance)}`,kb(rows));
+  }
+  if (/^admin:ub:\d+:[01]$/.test(d)) {
+    const [, ,id,blocked]=d.split(":"),target=Number(id);
+    if(!positiveId(id)||env.admins.has(target)||!await botUserExists(env,target))return answer("کاربر قابل تغییر نیست.",true);
+    await run(env,"INSERT INTO bot_users(user_id,blocked) VALUES(?,?) ON CONFLICT(user_id) DO UPDATE SET blocked=excluded.blocked",target,Number(blocked));
+    return renderAdmin(blocked === "1" ? "⛔ دسترسی کاربر به ربات مسدود شد. سرویس‌های VPN او تغییری نکردند." : "✅ دسترسی کاربر به ربات باز شد.",adminBack(`admin:user:${target}`));
+  }
+  if (/^admin:u[ost]:\d+:\d+$/.test(d)) {
+    const [,kind,id,pageText]=d.split(":"),target=Number(id),page=Number(pageText);
+    if(!positiveId(id)||!Number.isSafeInteger(page)||page>1000000||!await botUserExists(env,target))return answer("درخواست نامعتبر است.",true);
+    let rows, lines, title;
+    if(kind === "uo") {
+      rows=await all(env,"SELECT id,service_name,final_price,status,created_at FROM orders WHERE user_id=? ORDER BY id DESC LIMIT 11 OFFSET ?",target,page*10);
+      lines=rows.slice(0,10).map(x=>`#${x.id} — ${esc(String(x.service_name || "—").slice(0,50))} — ${toman(x.final_price || 0)} — ${esc(adminOrderStatus(x.status))} — ${esc(adminTime(x.created_at))}`); title="همه سفارش‌ها";
+    } else if(kind === "ut") {
+      rows=await all(env,"SELECT delta,reason,created_at FROM wallet_entries WHERE user_id=? ORDER BY id DESC LIMIT 11 OFFSET ?",target,page*10);
+      lines=rows.slice(0,10).map(x=>`${Number(x.delta)>0 ? "+" : "−"} ${toman(Math.abs(Number(x.delta)))} — ${walletReason(x.reason)} — ${esc(adminTime(x.created_at))}`); title="تراکنش‌های کیف پول";
+    } else {
+      rows=await all(env,"SELECT * FROM services WHERE user_id=? ORDER BY id DESC LIMIT 11 OFFSET ?",target,page*10);
+      lines=await Promise.all(rows.slice(0,10).map(async x=>{let state;try{const a=await panelServiceAccount(env,x);if(!a)state="در پنل یافت نشد";else {const used=Math.max(0,Number(a.up)||0)+Math.max(0,Number(a.down)||0),quota=Number(a.totalGB)||0,expiry=Number(a.expiryTime)||0;state=a.enable===true&&(quota<=0||used<quota)&&(expiry<=0||Date.now()<expiry)?"فعال":"غیرفعال یا منقضی"}}catch{state="وضعیت نامشخص؛ پنل در دسترس نیست"}return `#${x.id} — ${esc(String(x.name || "—").slice(0,50))} — ${state}`;}));title="سرویس‌ها و وضعیت لحظه‌ای";
+    }
+    const nav=[];if(page>0)nav.push(btn("◀️ قبلی",`admin:${kind}:${target}:${page-1}`));if(rows.length>10)nav.push(btn("بعدی ▶️",`admin:${kind}:${target}:${page+1}`));const buttons=[];if(kind === "us")for(const service of rows.slice(0,10))buttons.push([btn(`مدیریت ${String(service.name || service.id).slice(0,35)}`,`admin:svc:${service.id}`)]);if(nav.length)buttons.push(nav);buttons.push([btn("🔙 بازگشت",`admin:user:${target}`)]);
+    return renderAdmin(`<b>${title}</b> — کاربر <code>${target}</code>\nصفحه ${page+1}\n\n${lines.join("\n") || "موردی ثبت نشده است."}`,kb(buttons));
   }
   if (d === "admin:wallet_reviews") {
     const rows=await all(env,"SELECT id,user_id,final_price FROM orders WHERE status='needs_review_refunded' ORDER BY id DESC LIMIT 20");
@@ -1041,12 +1164,19 @@ async function handleAdminUICallback(c, cq, answer) {
     const key = d.slice("admin:setting:".length), meta = Object.hasOwn(META, key) ? META[key] : null;
     if (!meta) return answer("تنظیم یافت نشد.", true);
     if (key === "start_text") return prompt("setting",key,`✏️ <b>متن پیام شروع</b>\nمتن فعلی: <code>${esc(env.cfg.start_text || DEFAULT_START_TEXT)}</code>\n\nمتن جدید را بفرستید؛ برای نمایش نام کاربر از <code>{name}</code> استفاده کنید. حداکثر ${MAX_START_TEXT} نویسه؛ برای بازگشت به متن پیش‌فرض، - بفرستید.`,"admin:settings");
+    if (key === "referral_discount") return prompt("setting",key,`🎁 <b>هدیه دعوت</b>\nمقدار فعلی: ${toman(env.cfg.referral_discount)}\nمبلغ جدید را به تومان بفرستید؛ عدد 0 هدیه را غیرفعال می‌کند. این هدیه تخفیف خرید بعدی معرف است و به کیف پول اضافه نمی‌شود.`,"admin:settings");
+    if (key === "name_mode") return renderAdmin(`🏷 <b>نوع نام‌گذاری سرویس</b>\nحالت فعلی: ${env.cfg.name_mode === "random" ? "تصادفی خودکار" : "نام دلخواه مشتری"}\nاین تنظیم فقط برای خریدهای جدید است؛ نام حساب پنل همچنان پسوند یکتا دارد.`,kb([[btn("✏️ نام دلخواه مشتری","admin:namemode:custom")],[btn("🎲 نام تصادفی خودکار","admin:namemode:random")],[btn("🔙 بازگشت","admin:settings")]]));
     if (key === "test_enabled") return renderAdmin(`🎁 سرویس تست اکنون ${env.cfg.test_enabled === "1" ? "فعال" : "غیرفعال"} است.`, kb([[btn("✅ فعال", "admin:test:1"),btn("⛔ غیرفعال", "admin:test:0")],[btn("🔙 بازگشت", "admin:settings")]]));
     return prompt("setting", key, `⚙️ <b>${esc(meta[1])}</b>\nمقدار فعلی: <code>${esc(env.cfg[key] || "خالی")}</code>\n\nمقدار جدید را بفرستید.${meta[0] === "text" ? " برای پاک‌کردن مقدار، - بفرستید." : ""}`, "admin:settings");
   }
   if (/^admin:test:[01]$/.test(d)) {
     const value = d.slice(-1); await handleAdminCommand(c, {chat:{id:chat},from:cq.from,text:`/set test_enabled ${value}`});
     return showAdminHome(env, chat);
+  }
+  if (/^admin:namemode:(custom|random)$/.test(d)) {
+    const value=d.split(":")[2];
+    await run(env,"INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value","name_mode",value);
+    return renderAdmin(`✅ نوع نام‌گذاری به «${value === "random" ? "تصادفی خودکار" : "نام دلخواه مشتری"}» تغییر کرد.`,adminBack("admin:settings"));
   }
   if (d === "admin:plans") {
     delete st.admin_ui_step; delete st.admin_ui_key;
@@ -1120,6 +1250,12 @@ async function onMessage(c, msg) {
   if (text) {
     if (st.step === "wallet_amount") return handleWalletAmount(c,msg);
     if (st.step === "wallet_receipt") return handleWalletReceipt(c,msg);
+    if (st.step === "test_name") {
+      const name=text.trim();
+      if(!NAME_RE.test(name) || name.length>30) return sendMsg(env,msg.chat.id,"نام باید حداکثر ۳۰ حرف انگلیسی بدون فاصله و عدد باشد.");
+      st.test_name=name;st.step="test_name_ready";
+      return sendMsg(env,msg.chat.id,`نام سرویس تست: <b>${esc(name)}</b>\nبرای ساخت، دکمه زیر را بزنید.`,kb([[btn("✅ ساخت سرویس تست","testname:make")],[btn("🔙 بازگشت","main_menu")]]));
+    }
     if (st.step === "service_name") {
       const name = text.trim();
       if (!NAME_RE.test(name)) {
@@ -1133,6 +1269,7 @@ async function onMessage(c, msg) {
     }
     if (st.step === "receipt") return handleReceipt(c, msg);
     if (st.step === "invite_code_input") {
+      if (num(env, "referral_discount") <= 0) { delete st.step; return sendMsg(env,msg.chat.id,"هدیه دعوت فعلاً غیرفعال است.",backKb()); }
       const t = text.trim();
       if (!/^\d+$/.test(t)) return sendMsg(env, msg.chat.id, "❌ کد دعوت باید فقط عدد (آیدی عددی) باشد.");
       const ref = Number(t);
@@ -1292,6 +1429,20 @@ async function onCallback(c, cq) {
   // --- سرویس تست (هر کاربر فقط یک‌بار)
   if (d === "test_service") {
     if (env.cfg.test_enabled !== "1") return answer("سرویس تست فعلا غیرفعال است.", true);
+    const existing=await first(env,"SELECT created_at FROM test_claims WHERE user_id=?",uid);
+    if(existing) return answer(String(existing.created_at || "").startsWith("processing|") || String(existing.created_at || "").startsWith("review|") ? "درخواست تست قبلی در حال پردازش یا بررسی است." : "شما قبلاً سرویس تست دریافت کرده‌اید.",true);
+    delete st.test_name;delete st.step;
+    return render(env,cq,"🎁 نام سرویس تست را چگونه انتخاب می‌کنید؟",kb([[btn("✏️ نام دلخواه", "testname:custom")],[btn("🎲 نام تصادفی", "testname:random")],[btn("🔙 بازگشت", "main_menu")]]));
+  }
+  if (d === "testname:custom") {
+    if (env.cfg.test_enabled !== "1") return answer("سرویس تست فعلا غیرفعال است.",true);
+    st.step="test_name";delete st.test_name;
+    return render(env,cq,"✏️ نام سرویس تست را با حروف انگلیسی، بدون فاصله و عدد بفرستید؛ حداکثر ۳۰ حرف.",backKb("test_service"));
+  }
+  if (d === "testname:random" || d === "testname:make") {
+    if (env.cfg.test_enabled !== "1") return answer("سرویس تست فعلا غیرفعال است.", true);
+    if (d === "testname:make" && (st.step !== "test_name_ready" || !NAME_RE.test(st.test_name || "") || st.test_name.length>30)) return answer("ابتدا نام سرویس را انتخاب کنید.",true);
+    const testName=d === "testname:make" ? st.test_name : randomServiceName();
     const token = `processing|${hex(12)}|${now()}`;
     const claimed = await run(env, "INSERT OR IGNORE INTO test_claims(user_id,created_at) VALUES(?,?)", uid, token);
     if (!claimed.meta.changes) {
@@ -1301,11 +1452,12 @@ async function onCallback(c, cq) {
       if (state.startsWith("review|")) return answer("نتیجهٔ درخواست قبلی نیاز به بررسی دارد؛ با پشتیبانی تماس بگیرید.", true);
       return answer("شما قبلا سرویس تست دریافت کرده‌اید.", true);
     }
+    delete st.step;delete st.test_name;
     let dispatched = false, p;
     const mb = num(env, "test_mb"), days = num(env, "test_days"), label = `${mb} مگابایت`;
     try {
-      p = await panelCreate(env, { name: "test", bytes: mb * MB, days, attemptKey: `test:${uid}:${hex(8)}`, onDispatch: () => { dispatched = true; } });
-      await insertService(env, { ...p, user_id: uid, name: "Test", volume: label, duration: `${days} روزه` });
+      p = await panelCreate(env, { name: testName, bytes: mb * MB, days, attemptKey: `test:${uid}:${hex(8)}`, onDispatch: () => { dispatched = true; } });
+      await insertService(env, { ...p, user_id: uid, name: testName, volume: label, duration: `${days} روزه` });
       await run(env, "UPDATE test_claims SET created_at=? WHERE user_id=? AND created_at=?", `done|${now()}`, uid, token);
     } catch (e) {
       if (dispatched) await run(env, "UPDATE test_claims SET created_at=? WHERE user_id=? AND created_at=?", `review|${now()}`, uid, token);
@@ -1317,7 +1469,7 @@ async function onCallback(c, cq) {
     // A delivery failure must not release the claim or create a second service.
     try {
       await del();
-      const delivered = await sendServiceCard(env, chat_id, "Test", label, `${days} روزه`, p.link, null, mainMenuKb(env), "🎁 سرویس تست شما ساخته شد!");
+      const delivered = await sendServiceCard(env, chat_id, testName, label, `${days} روزه`, p.link, null, mainMenuKb(env), "🎁 سرویس تست شما ساخته شد!");
       if (!delivered.ok) throw new Error("Telegram delivery failed");
     } catch (e) {
       console.log("test notification failed", e.message);
@@ -1334,48 +1486,7 @@ async function onCallback(c, cq) {
     return render(env, cq, "🗂 <b>سرویس های من</b>\n\nسرویس مورد نظر را انتخاب کنید:", kb(rows));
   }
 
-  if (d.startsWith("cfgmanage:") || d.startsWith("cfgset:")) {
-    const parts=d.split(":"), id=Number(parts[1]);
-    if (!Number.isSafeInteger(id) || id <= 0) return answer("سرویس نامعتبر است.", true);
-    const svc=await getService(env,id);
-    if (!svc || Number(svc.user_id)!==uid) return answer("سرویس یافت نشد.", true);
-    if (parts[0] === "cfgmanage") {
-      const page=Number(parts[2]); if (!Number.isSafeInteger(page) || page < 0) return answer("صفحه نامعتبر است.",true);
-      let state; try { state=await panelMemberships(env,svc); } catch(e) { return sendMsg(env,chat_id,e.message === "سرویس در پنل پیدا نشد." ? "❌ سرویس در پنل متصل فعلی یافت نشد." : "❌ دریافت وضعیت از پنل ناموفق بود. دوباره تلاش کنید.",backKb(`svc_${id}`)); }
-      if (page > Math.max(0,Math.ceil(state.list.length/10)-1)) return answer("صفحه پیدا نشد.",true);
-      const rows=[];
-      for (const m of state.list.slice(page*10,(page+1)*10)) {
-        if (!Number.isSafeInteger(m.id) || m.id<=0) continue;
-        const name=m.name.slice(0,45);
-        if (m.enabled===null) rows.push([btn(`⚠️ ${name} — نامشخص`,`cfgnoop:${id}`)]);
-        else if (!state.accountEnabled) rows.push([btn(`⏸ ${name} — حساب خاموش است`,`cfgnoop:${id}`)]);
-        else rows.push([btn(`${m.enabled ? "⛔ غیرفعال‌سازی" : "✅ فعال‌سازی"} ${name}`,`cfgset:${id}:${m.id}:${m.enabled ? 0 : 1}`)]);
-      }
-      const nav=[]; if(page>0) nav.push(btn("◀️ قبلی",`cfgmanage:${id}:${page-1}`)); if((page+1)*10<state.list.length) nav.push(btn("بعدی ▶️",`cfgmanage:${id}:${page+1}`)); if(nav.length) rows.push(nav);
-      rows.push([btn("🔙 بازگشت",`svc_${id}`)]);
-      const text = state.accountEnabled ? "🔘 <b>وضعیت کانفیگ‌ها</b>\nدکمهٔ هر ورودی فقط دسترسی همین سرویس روی همان ورودی را تغییر می‌دهد. اگر چند لینک به یک ورودی وابسته باشند، همگی با هم تغییر می‌کنند." : "⚠️ حساب در پنل غیرفعال است؛ برای بررسی انقضا یا تمدید با پشتیبانی تماس بگیرید.";
-      return render(env,cq,text,kb(rows));
-    }
-    const inboundId=Number(parts[2]), desired=parts[3];
-    if (!Number.isSafeInteger(inboundId) || inboundId<=0 || !["0","1"].includes(desired)) return answer("درخواست نامعتبر است.",true);
-    const lock=await run(env,"INSERT OR IGNORE INTO service_operations(service_id,kind,created_at) VALUES(?,?,?)",id,"membership",now());
-    if (!lock.meta.changes) return answer("عملیات دیگری روی این سرویس در جریان است؛ بعداً دوباره تلاش کنید.",true);
-    try {
-      const before=await panelMemberships(env,svc), member=before.list.find(m=>m.id===inboundId);
-      if (!before.accountEnabled || !member || member.enabled===null) return sendMsg(env,chat_id,"⚠️ وضعیت قابل تغییر نیست؛ حساب و اشتراک را با پشتیبانی بررسی کنید.",backKb(`cfgmanage:${id}:0`));
-      const wanted=desired==="1";
-      if (member.enabled === wanted) return sendMsg(env,chat_id,"این وضعیت قبلاً تغییر کرده است؛ فهرست را دوباره ببینید.",backKb(`cfgmanage:${id}:0`));
-      const response=await panelCall(env,"POST",`/panel/api/inbounds/${inboundId}/setMembershipEnable/${encodeURIComponent(svc.panel_email)}`,new URLSearchParams({enable:String(wanted)}));
-      if (!response.success) throw new Error("پنل تغییر را رد کرد.");
-      const after=await panelMemberships(env,svc), changed=after.list.find(m=>m.id===inboundId);
-      if (!changed || changed.enabled!==wanted) return sendMsg(env,chat_id,"⚠️ تغییر در پنل تأیید نشد یا اشتراک/نماینده محدود است؛ با پشتیبانی تماس بگیرید.",backKb(`cfgmanage:${id}:0`));
-      const note = wanted ? (changed.inboundEnabled ? "\nبرقراری اتصال به اعتبار، حجم و انقضای اشتراک هم بستگی دارد." : "\nورودی اصلی در پنل خاموش است؛ ممکن است اتصال برقرار نشود.") : "";
-      return sendMsg(env,chat_id,`✅ سوییچ کانفیگ «${esc(changed.name)}» ${wanted ? "فعال" : "غیرفعال"} شد.${note}`,backKb(`cfgmanage:${id}:0`));
-    } catch {
-      return sendMsg(env,chat_id,"⚠️ نتیجهٔ تغییر وضعیت مشخص نیست؛ ابتدا وضعیت را دوباره بررسی کنید یا با پشتیبانی تماس بگیرید.",backKb(`cfgmanage:${id}:0`));
-    } finally { await run(env,"DELETE FROM service_operations WHERE service_id=?",id); }
-  }
-  if (d.startsWith("cfgnoop:")) return answer("وضعیت دقیق مشخص نیست یا حساب غیرفعال است؛ با پشتیبانی تماس بگیرید.",true);
+  if (d.startsWith("cfgmanage:") || d.startsWith("cfgset:") || d.startsWith("cfgnoop:")) return answer("مدیریت وضعیت کانفیگ فقط برای ادمین است.",true);
 
   if (d.startsWith("cfglist:") || d.startsWith("cfgtxt:") || d.startsWith("cfgqr:")) {
     const parts = d.split(":"), id = Number(parts[1]);
@@ -1475,6 +1586,10 @@ async function onCallback(c, cq) {
   if (d.startsWith("plan_")) {
     const plan = await getPlan(env, d.slice(5));
     if (!plan) return;
+    if (st.step === "receipt" && st.order_id) return answer("سفارش فعلی را تکمیل کنید یا به منوی اصلی برگردید.",true);
+    if (env.cfg.name_mode === "random") {
+      return createInvoice(c,cq.from,chat_id,randomServiceName(),plan,null,cq);
+    }
     st.plan_key = plan.key; st.step = "service_name";
     return render(env, cq,
       `📦 بسته انتخابی: <b>${esc(planLabel(plan))}</b> — ${toman(plan.price)}\n\n` +
@@ -1506,6 +1621,7 @@ async function onCallback(c, cq) {
   }
 
   if (d === "invite_code") {
+    if (num(env, "referral_discount") <= 0) return render(env,cq,"هدیه دعوت فعلاً غیرفعال است.",backKb());
     return render(env, cq,
       `🎁 <b>کد دعوت شما</b>\n\n<code>${uid}</code>\n\nاین کد (آیدی عددی شما) را برای دوستانتان بفرستید.\n` +
       `هر کسی این کد را در ربات وارد و ثبت کند، <b>${toman(num(env, "referral_discount"))} تخفیف</b> برای یک خرید به حساب شما اضافه می‌شود.\n\n💡 روی کد بزنید تا کپی شود.`,
@@ -1513,6 +1629,7 @@ async function onCallback(c, cq) {
   }
 
   if (d === "enter_invite") {
+    if (num(env, "referral_discount") <= 0) return render(env,cq,"هدیه دعوت فعلاً غیرفعال است.",backKb());
     st.step = "invite_code_input";
     return render(env, cq, "➕ <b>ثبت کد دعوت</b>\n\nآیدی عددی (کد دعوت) شخصی که معرفتان کرده را بفرستید:", backKb());
   }
@@ -1565,6 +1682,16 @@ async function handleUpdate(baseEnv, update) {
   env.owners = parseIds(baseEnv.ADMIN_ID);
   env.admins = new Set([...env.owners, ...admR.results.map((r) => Number(r.user_id))]);
 
+  const chat=update.message?.chat || update.callback_query?.message?.chat;
+  if(chat?.type === "private" && chat.id === from.id && positiveId(String(from.id))) {
+    await run(baseEnv,"INSERT INTO bot_users(user_id,first_name,username,last_seen) VALUES(?,?,?,?) ON CONFLICT(user_id) DO UPDATE SET first_name=CASE WHEN excluded.first_name='' THEN bot_users.first_name ELSE excluded.first_name END,username=excluded.username,last_seen=excluded.last_seen",from.id,String(from.first_name || "").slice(0,128),String(from.username || "").slice(0,64),String(Date.now()));
+    const access=await first(baseEnv,"SELECT blocked FROM bot_users WHERE user_id=?",from.id);
+    if(access?.blocked && !env.admins.has(from.id)) {
+      if(update.callback_query) { await tg(baseEnv,"answerCallbackQuery",{callback_query_id:update.callback_query.id,text:"دسترسی شما به ربات مسدود است.",show_alert:true}); update.callback_query._answered=true; }
+      else await sendMsg(baseEnv,chat.id,"دسترسی شما به ربات مسدود است. با پشتیبانی تماس بگیرید.");
+      return;
+    }
+  }
   const st = stR.results[0] ? JSON.parse(stR.results[0].data) : {};
   const before = JSON.stringify(st);
   const c = { env, st };

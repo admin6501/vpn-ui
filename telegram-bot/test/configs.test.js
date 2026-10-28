@@ -60,6 +60,7 @@ test('a matched service uses the currently configured subscription base',async()
 });
 test('stale management buttons cannot delete or enable an unrelated same-named service',async()=>{
  const f=fixture();f.sql.prepare("UPDATE services SET sub_id='unique' WHERE id=1").run();f.setPanelMode('mismatch');
- await f.cb(2,'cfgmanage:1:0');assert.ok(f.out.some(x=>x.body.text?.includes('سرویس در پنل متصل فعلی یافت نشد')));
+ await f.cb(2,'cfgmanage:1:0');assert.ok(f.out.some(x=>x.body.text?.includes('فقط برای ادمین')));
+ await f.cb(1,'admin:sc:1:0');assert.ok(f.out.some(x=>x.body.text?.includes('سرویس پیدا نشد')));
  await f.cb(2,'delyes_1');assert.ok(f.sql.prepare('SELECT id FROM services WHERE id=1').get());assert.equal(f.subCalls,0);
 });
