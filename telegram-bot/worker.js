@@ -52,7 +52,7 @@ const META = {
   start_text: ["text", "متن پیام شروع"],
   panel_group_ids: ["ids", "آیدی گروه‌های پنل، با کاما (مثلا 1 یا 1,2)"],
   panel_inbound_id: ["int", "آیدی اینباند پنل"],
-  sub_base_url: ["text", "آدرس پایه لینک ساب، مثلا https://panel1.arvantisgroup.ir:8000/sub/"],
+  sub_base_url: ["text", "آدرس پایه لینک ساب، مثلا https://example.com:8000/sub/"],
 };
 
 const defaults = (env) => ({
