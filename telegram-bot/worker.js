@@ -2,7 +2,7 @@ import { qrPng } from './qr.js';
 import { parseMoney, walletBalance, reserveWalletPayment, completeWalletPayment, adjustWallet, recoverWalletPayments } from './wallet.js';
 import { encryptPanel, decryptPanel, panelURL, panelAccountKey, probePanel } from './panel-config.js';
 import { applyCoupon, expireCouponReservations, cancelDraftOrder, normalizeCoupon, validCouponCode } from './coupons.js';
-import { createMessageJob, confirmMessageJob, processMessageJobs } from './messages.js';
+import { createMessageJob, confirmMessageJob, processMessageJobs, encodeMessageReference, queuedMessagePayload } from './messages.js';
 
 // ربات فروش کانفیگ | NovaRay VPN — Cloudflare Workers + D1 + اتصال به پنل vpn-ui
 // ساخت/تمدید/حذف سرویس مستقیم از طریق API پنل (حساب نماینده) انجام می‌شود.
@@ -49,6 +49,8 @@ const META = {
   test_enabled: ["bool", "سرویس تست: 1 = فعال، 0 = غیرفعال"],
   test_mb: ["int", "حجم سرویس تست (مگابایت)"],
   test_days: ["int", "مدت سرویس تست (روز)"],
+  wallet_topup_min: ["int", "💰 حداقل شارژ کیف پول (تومان)"],
+  wallet_topup_max: ["int", "💰 حداکثر شارژ کیف پول (تومان)"],
   card_number: ["text", "شماره کارت"],
   card_holder: ["text", "نام صاحب کارت"],
   support_id: ["text", "آیدی پشتیبانی (با @)"],
@@ -66,6 +68,8 @@ const defaults = (env) => ({
   test_enabled: "1",
   test_mb: "500",
   test_days: "1",
+  wallet_topup_min: "1",
+  wallet_topup_max: "0",
   test_category_id: "",
   card_number: env.CARD_NUMBER || "",
   card_holder: env.CARD_HOLDER || "",
@@ -88,6 +92,18 @@ const urlBtn = (text, url) => ({ text, url });
 const kb = (rows) => ({ inline_keyboard: rows });
 const backKb = (t = "main_menu") => kb([[btn("🔙 بازگشت", t)]]);
 const num = (env, k) => Number(env.cfg[k]);
+function topupLimitError(env,key,value) {
+  if(!["wallet_topup_min","wallet_topup_max"].includes(key))return "";
+  const n=parseMoney(value,key === "wallet_topup_max");
+  if(n===null)return key === "wallet_topup_min" ? "حداقل باید یک عدد مثبت معتبر به تومان باشد." : "حداکثر باید عدد معتبر به تومان باشد؛ ۰ یعنی بدون سقف تنظیم‌شده.";
+  const min=key === "wallet_topup_min" ? n : Number(env.cfg.wallet_topup_min);
+  const max=key === "wallet_topup_max" ? n : Number(env.cfg.wallet_topup_max);
+  return max>0 && min>max ? "حداقل شارژ نمی‌تواند از حداکثر بیشتر باشد." : "";
+}
+function topupLimitsText(env) {
+  const min=num(env,"wallet_topup_min"),max=num(env,"wallet_topup_max");
+  return `حداقل: ${toman(min)}\nحداکثر: ${max>0 ? toman(max) : "بدون سقف تنظیم‌شده"}`;
+}
 const durationText = (days) => (Number(days) === 30 ? "۱ ماهه (۳۰ روزه)" : `${days} روزه`);
 const planLabel = (p) => `${p.gb} گیگ`;
 const durationDays = (s) => {
@@ -627,6 +643,8 @@ async function showAdminWallet(env, chat, userId, owner) {
 async function handleWalletAmount(c,msg) {
   const {env,st}=c, amount=parseMoney(msg.text);
   if(amount===null) return sendMsg(env,msg.chat.id,"مبلغ معتبر را به تومان و با عدد انگلیسی بفرستید.",backKb("wallet:home"));
+  const min=num(env,"wallet_topup_min"),max=num(env,"wallet_topup_max");
+  if(amount<min || (max>0 && amount>max))return sendMsg(env,msg.chat.id,`مبلغ خارج از محدودهٔ مجاز است. دوباره وارد کنید:\n${topupLimitsText(env)}`,backKb("wallet:home"));
   if(!env.cfg.card_number || !env.cfg.card_holder) return sendMsg(env,msg.chat.id,"اطلاعات کارت شارژ تنظیم نشده است؛ با پشتیبانی تماس بگیرید.",backKb("wallet:home"));
   const row=await run(env,"INSERT INTO wallet_topups(user_id,amount,status,created_at) VALUES(?,?,'draft',?)",msg.from.id,amount,String(Date.now()));
   st.step="wallet_receipt";st.wallet_topup_id=row.meta.last_row_id;
@@ -793,6 +811,7 @@ async function handleAdminCommand(c, msg) {
     const type = meta[0];
     const value = raw === "-" ? "" : raw;
     if (type === "int" && (!/^\d+$/.test(value) || !Number.isSafeInteger(Number(value)))) return reply("❌ مقدار باید عدد صحیح معتبر باشد.");
+    const limitError=topupLimitError(env,key,value);if(limitError)return reply(`❌ ${limitError}`);
     if (type === "bool" && !/^[01]$/.test(value)) return reply("❌ مقدار باید 0 یا 1 باشد.");
     if (type === "ids" && !/^\d+(,\d+)*$/.test(value)) return reply("❌ مقدار باید عدد یا چند عدد با کاما باشد (مثلا 1,2).");
     if (type === "name_mode" && !["custom","random"].includes(value)) return reply("❌ نوع نام باید custom یا random باشد.");
@@ -922,7 +941,7 @@ async function showAdminServiceSearch(env,chat,query,page) {
 }
 
 async function handleAdminUIInput(c, msg) {
-  const { env, st } = c, step = st.admin_ui_step, value = msg.text.trim();
+  const { env, st } = c, step = st.admin_ui_step, value = (msg.text || "").trim();
   const send = text => sendMsg(env, msg.chat.id, text, adminBack());
   let command;
   if (step === "setting" && st.admin_ui_key === "start_text") {
@@ -979,6 +998,16 @@ async function handleAdminUIInput(c, msg) {
     delete st.admin_ui_step; return send("درخواست نامعتبر است؛ دوباره شروع کنید.");
   }
   if (step === "message_broadcast" || step === "message_private") {
+    if(step === "message_broadcast" && (msg.photo || msg.voice || msg.audio || msg.forward_origin || msg.forward_date)) {
+      if(msg.media_group_id)return send("آلبوم چندرسانه‌ای پشتیبانی نمی‌شود؛ هر پیام را جداگانه بفرستید.");
+      const forward=!!(msg.forward_origin || msg.forward_date);
+      const body=encodeMessageReference(msg.chat.id,msg.message_id,forward);
+      let preview;try {preview=await tg(env,forward?"forwardMessage":"copyMessage",{chat_id:msg.chat.id,from_chat_id:msg.chat.id,message_id:msg.message_id})}catch{return send("پیش‌نمایش پیام ناموفق بود؛ دوباره تلاش کنید.")}
+      if(!preview.ok)return send("این پیام قابل ارسال مجدد نیست؛ محدودیت فوروارد یا محتوای محافظت‌شده را بررسی کنید.");
+      let id;try{id=await createMessageJob(env,msg.from.id,"broadcast",null,body)}catch{return send("ساخت پیش‌نویس پیام ناموفق بود.")}
+      delete st.admin_ui_step;delete st.admin_ui_key;
+      return sendMsg(env,msg.chat.id,"📣 پیش‌نمایش پیام بالا نمایش داده شد. کاربران مسدودشده پیام را دریافت نمی‌کنند. پیام اصلی را تا پایان ارسال پاک نکنید. آیا ارسال شود؟",kb([[btn("✅ ارسال",`admin:message_send:${id}`)],[btn("❌ انصراف",`admin:message_cancel:${id}`)]]));
+    }
     if(!value || value.length>3500)return send("متن پیام باید حداکثر ۳۵۰۰ نویسه باشد.");
     const privateMessage=step === "message_private",target=privateMessage ? Number(st.admin_ui_key) : null;
     if(privateMessage && (!positiveId(String(target)) || !(await botUserExists(env,target))))return send("کاربر پیدا نشد.");
@@ -1017,6 +1046,7 @@ async function handleAdminUIInput(c, msg) {
     const meta = META[st.admin_ui_key];
     if (!meta || !value) return send("مقدار نامعتبر است؛ دوباره وارد کنید.");
     if (meta[0] === "int" && (!/^\d+$/.test(value) || !Number.isSafeInteger(Number(value)))) return send("مقدار باید عدد صحیح معتبر باشد.");
+    const limitError=topupLimitError(env,st.admin_ui_key,value);if(limitError)return send(limitError);
     if (meta[0] === "bool" && !/^[01]$/.test(value)) return send("مقدار باید ۰ یا ۱ (به انگلیسی) باشد.");
     if (meta[0] === "ids" && !/^\d+(,\d+)*$/.test(value)) return send("شناسه‌ها را با اعداد انگلیسی و کاما وارد کنید.");
     command = `/set ${st.admin_ui_key} ${value}`;
@@ -1132,7 +1162,7 @@ async function handleAdminUICallback(c, cq, answer) {
     const r=await run(env,"UPDATE bot_coupons SET deleted=1,enabled=0 WHERE id=? AND deleted=0",id);
     return renderAdmin(r.meta.changes ? "✅ کد حذف شد؛ تاریخچه حفظ شد." : "کد پیدا نشد.",adminBack("admin:coupons:0"));
   }
-  if(d === "admin:broadcast")return prompt("message_broadcast","","📣 متن پیام همگانی را بفرستید. پیش از ارسال پیش‌نمایش و تأیید نمایش داده می‌شود.");
+  if(d === "admin:broadcast")return prompt("message_broadcast","","📣 متن، عکس، پیام صوتی یا پیام فورواردشده را بفرستید. پیش از ارسال پیش‌نمایش و تأیید نمایش داده می‌شود.");
   if (/^admin:message_user:\d+$/.test(d)) {
     const id=d.split(":")[2];if(!positiveId(id)||!(await botUserExists(env,Number(id))))return answer("کاربر پیدا نشد.",true);
     return prompt("message_private",id,`✉️ متن پیام خصوصی برای کاربر <code>${id}</code> را بفرستید. پیش از ارسال تأیید می‌گیرید.`,`admin:user:${id}`);
@@ -1411,6 +1441,7 @@ async function handleAdminUICallback(c, cq, answer) {
     if (key === "channel_username" || key === "channel_link") return prompt("setting",key,`📢 <b>عضویت اجباری</b>\nبرای بررسی عضویت کاربران، ابتدا ربات را به کانال اضافه و ادمین کانال کنید. یوزرنیم یا شناسهٔ کانال و لینک عضویت را در تنظیمات جداگانه وارد کنید.\n\n${key === "channel_username" ? "یوزرنیم کانال همراه @ یا شناسهٔ عددی کانال را بفرستید." : "لینک عضویت کانال را بفرستید."}\nمقدار فعلی: <code>${esc(env.cfg[key] || "خالی")}</code>\nبرای پاک‌کردن مقدار، - بفرستید.`,"admin:settings");
     if (key === "name_mode") return renderAdmin(`🏷 <b>نوع نام‌گذاری سرویس</b>\nحالت فعلی: ${env.cfg.name_mode === "random" ? "تصادفی خودکار" : "نام دلخواه مشتری"}\nاین تنظیم برای خریدهای جدید است؛ نام دلخواه تکراری پذیرفته نمی‌شود.`,kb([[btn("✏️ نام دلخواه مشتری","admin:namemode:custom")],[btn("🎲 نام تصادفی خودکار","admin:namemode:random")],[btn("🔙 بازگشت","admin:settings")]]));
     if (key === "test_enabled") return renderAdmin(`🎁 سرویس تست اکنون ${env.cfg.test_enabled === "1" ? "فعال" : "غیرفعال"} است.`, kb([[btn("✅ فعال", "admin:test:1"),btn("⛔ غیرفعال", "admin:test:0")],[btn("🔙 بازگشت", "admin:settings")]]));
+    if (["wallet_topup_min","wallet_topup_max"].includes(key))return prompt("setting",key,`💰 <b>${esc(meta[1])}</b>\nمقدار فعلی: ${key === "wallet_topup_max" && num(env,key)===0 ? "بدون سقف تنظیم‌شده" : toman(env.cfg[key])}\n\n${topupLimitsText(env)}\n\nمبلغ جدید را به تومان و با عدد انگلیسی بفرستید.${key === "wallet_topup_max" ? " برای برداشتن سقف، 0 بفرستید." : ""}`,"admin:settings");
     return prompt("setting", key, `⚙️ <b>${esc(meta[1])}</b>\nمقدار فعلی: <code>${esc(env.cfg[key] || "خالی")}</code>\n\nمقدار جدید را بفرستید.${meta[0] === "text" ? " برای پاک‌کردن مقدار، - بفرستید." : ""}`, "admin:settings");
   }
   if (/^admin:test:[01]$/.test(d)) {
@@ -1487,7 +1518,7 @@ async function onMessage(c, msg) {
   const isAdmin = env.admins.has(uid);
   const text = msg.text;
 
-  if (text && isAdmin && ["panel_pass","message_private","message_broadcast"].includes(c.st.admin_ui_step)) return handleAdminUIInput(c, msg);
+  if (isAdmin && (c.st.admin_ui_step === "message_broadcast" || (text && ["panel_pass","message_private"].includes(c.st.admin_ui_step)))) return handleAdminUIInput(c, msg);
   if (text && text.startsWith("/start")) return handleStart(c, msg);
   if (isAdmin && text && ADMIN_CMD_RE.test(text)) return handleAdminCommand(c, msg);
   if (text && isAdmin && c.st.admin_step === "issue_message") return handleAdminText(c, msg);
@@ -1689,7 +1720,7 @@ async function onCallback(c, cq) {
     const text=rows.length ? rows.map(x=>`${Number(x.delta)>0?"➕":"➖"} ${toman(Math.abs(Number(x.delta)))} — ${esc(walletReason(x.reason))}`).join("\n") : "تراکنشی ثبت نشده است.";
     return render(env,cq,`📋 <b>۱۰ تراکنش اخیر</b>\n\n${text}`,backKb("wallet:home"));
   }
-  if (d === "wallet:topup") { st.step="wallet_amount"; return render(env,cq,"مبلغ شارژ را به تومان و با عدد انگلیسی بفرستید.",backKb("wallet:home")); }
+  if (d === "wallet:topup") { st.step="wallet_amount"; return render(env,cq,`مبلغ شارژ را به تومان و با عدد انگلیسی بفرستید.\n\n${topupLimitsText(env)}`,backKb("wallet:home")); }
   if (d.startsWith("wallet:pay:")) {
     const id=Number(d.slice("wallet:pay:".length)); if(!Number.isSafeInteger(id)||id<=0) return answer("سفارش نامعتبر است.",true);
     await expireCouponReservations(env);
@@ -2028,7 +2059,7 @@ export default {
         try { await sendMsg(env,item.userId,`⚠️ پرداخت سفارش ${item.orderId} به کیف پول برگشت و برای بررسی ارسال شد.`,backKb()); } catch {}
         for(const admin of parseIds(env.ADMIN_ID)) { try { await sendMsg(env,admin,`⚠️ پرداخت سفارش <code>${item.orderId}</code> پس از قطع عملیات برگشت خورد. احتمال انجام عملیات پنل را بررسی کنید.`); } catch {} }
       }
-      if(!env.SERVER_MODE)await processMessageJobs(env,(id,body)=>sendMsg(env,id,esc(body)));
+      if(!env.SERVER_MODE)await processMessageJobs(env,(id,body)=>{const p=queuedMessagePayload(id,body);return tg(env,p.method,p.params)});
     })());
   },
   async fetch(request, env, ctx) {

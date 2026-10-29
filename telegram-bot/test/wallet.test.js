@@ -35,6 +35,18 @@ test('top-up receipt and duplicate admin approvals credit exactly once',async()=
  await f.cb(3,'topup:approve:1');assert.equal(await walletBalance(f.env,2),0);
  await Promise.all([f.cb(1,'topup:approve:1'),f.cb(1,'topup:approve:1')]);assert.equal(await walletBalance(f.env,2),150);assert.equal(f.sql.prepare('SELECT COUNT(*) n FROM wallet_entries').get().n,1);
 });
+test('admin configures top-up limits and customers can only request amounts within them',async()=>{
+ const f=fixture();
+ await f.cb(1,'admin:settings');assert.ok(JSON.stringify(f.out.findLast(x=>x.method==='sendMessage').body.reply_markup).includes('admin:setting:wallet_topup_min'));
+ await f.cb(1,'admin:setting:wallet_topup_min');await f.message(1,'100');await f.cb(1,'admin:setting:wallet_topup_max');await f.message(1,'500');
+ await f.cb(1,'admin:setting:wallet_topup_min');await f.message(1,'600');assert.equal(f.sql.prepare("SELECT value FROM settings WHERE key='wallet_topup_min'").get().value,'100');
+ await f.cb(2,'wallet:topup');assert.match(f.out.findLast(x=>x.method==='sendMessage').body.text,/100 تومان/);assert.match(f.out.findLast(x=>x.method==='sendMessage').body.text,/500 تومان/);
+ await f.message(2,'99');await f.message(2,'501');assert.equal(f.sql.prepare('SELECT COUNT(*) n FROM wallet_topups').get().n,0);
+ await f.message(2,'100');assert.equal(f.sql.prepare('SELECT amount FROM wallet_topups').get().amount,100);
+ await f.cb(3,'wallet:topup');await f.message(3,'500');assert.equal(f.sql.prepare('SELECT amount FROM wallet_topups WHERE user_id=3').get().amount,500);
+ await f.message(1,'/set wallet_topup_max 50');assert.equal(f.sql.prepare("SELECT value FROM settings WHERE key='wallet_topup_max'").get().value,'500');
+ await f.message(1,'/set wallet_topup_max 0');await f.cb(4,'wallet:topup');assert.match(f.out.findLast(x=>x.method==='sendMessage').body.text,/بدون سقف/);await f.message(4,'1000');assert.equal(f.sql.prepare('SELECT amount FROM wallet_topups WHERE user_id=4').get().amount,1000);
+});
 test('admin adjustments are confirmed, audited and cannot overdraw',async()=>{
  const f=fixture();await f.cb(1,'admin:wallet');await f.message(1,'2');await f.cb(1,'admin:wallet_add:2');await f.message(1,'100');assert.equal(await walletBalance(f.env,2),0);await f.cb(1,'admin:wallet_confirm');assert.equal(await walletBalance(f.env,2),100);await f.cb(1,'admin:wallet_confirm');assert.equal(await walletBalance(f.env,2),100);
  await f.cb(1,'admin:wallet_sub:2');await f.message(1,'101');await f.cb(1,'admin:wallet_confirm');assert.equal(await walletBalance(f.env,2),100);

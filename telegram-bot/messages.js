@@ -3,6 +3,17 @@ const run=(env,sql,...a)=>env.DB.prepare(sql).bind(...a).run();
 const first=(env,sql,...a)=>env.DB.prepare(sql).bind(...a).first();
 const all=async(env,sql,...a)=>(await env.DB.prepare(sql).bind(...a).all()).results;
 const USER_IDS=`WITH ids AS (SELECT user_id FROM bot_users UNION SELECT user_id FROM states UNION SELECT user_id FROM services UNION SELECT user_id FROM orders UNION SELECT user_id FROM wallet_entries UNION SELECT user_id FROM wallet_topups UNION SELECT user_id FROM wallet_payments UNION SELECT user_id FROM discounts UNION SELECT user_id FROM test_claims UNION SELECT referrer_id AS user_id FROM referrals UNION SELECT referred_id AS user_id FROM referrals)`;
+const MEDIA_PREFIX='\u0000telegram-message:';
+export function encodeMessageReference(chatId,messageId,forward) {
+ if(!Number.isSafeInteger(chatId)||chatId<=0||!Number.isSafeInteger(messageId)||messageId<=0)throw Error('invalid message');
+ return MEDIA_PREFIX+JSON.stringify({chatId,messageId,forward:!!forward});
+}
+export function queuedMessagePayload(userId,body) {
+ if(!body.startsWith(MEDIA_PREFIX))return {method:'sendMessage',params:{chat_id:userId,text:body.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'),parse_mode:'HTML'}};
+ const ref=JSON.parse(body.slice(MEDIA_PREFIX.length));
+ if(!Number.isSafeInteger(ref.chatId)||ref.chatId<=0||!Number.isSafeInteger(ref.messageId)||ref.messageId<=0||typeof ref.forward!=='boolean')throw Error('invalid message reference');
+ return {method:ref.forward?'forwardMessage':'copyMessage',params:{chat_id:userId,from_chat_id:ref.chatId,message_id:ref.messageId}};
+}
 export async function createMessageJob(env,creator,audience,target,body){
  if(!Number.isSafeInteger(creator)||creator<=0||!['broadcast','private'].includes(audience)||typeof body!=='string'||!body.trim()||body.length>3500||(audience==='private'&&(!Number.isSafeInteger(target)||target<=0)))throw Error('پیام یا گیرنده معتبر نیست.');
  const result=await run(env,"INSERT INTO bot_message_jobs(creator_id,audience,target_id,body,status,created_ms) VALUES(?,?,?,?,'draft',?)",creator,audience,target||null,body,Date.now());return Number(result.meta.last_row_id);
