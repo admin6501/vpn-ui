@@ -13,6 +13,7 @@ const STEPS = [
   ['commit_destination', 'commitDestination'],
 ];
 const READ_ONLY = new Set(['snapshot_source', 'verify_destination', 'verify_active_destination']);
+const REVIEW_DELAY_MS = 10 * 60 * 1000;
 
 // Keep the original quota and the absolute expiry, rather than creating a
 // reduced-size package which a later renewal would mistakenly renew at that size.
@@ -46,7 +47,7 @@ export async function advanceMigration(journal, adapter, id) {
     const [step, method] = STEPS[index];
     if (typeof adapter[method] !== 'function') throw new Error(`unsupported migration step: ${step}`);
     if (!READ_ONLY.has(step)) {
-      const dispatched = { ...job, state: 'review', uncertain: step };
+      const dispatched = { ...job, state: 'review', uncertain: step, dispatchedAt: Date.now() };
       if (!await journal.compareAndSet(id, job, dispatched)) throw new Error('migration is already running');
       job = dispatched;
     }
@@ -58,11 +59,29 @@ export async function advanceMigration(journal, adapter, id) {
       throw new Error(`migration ${step} failed: ${error.message}`, { cause: error });
     }
     if (output === false || output == null) throw new Error(`migration ${step} was not confirmed`);
-    const next = { ...job, ...(typeof output === 'object' ? output : {}), id: job.id, serviceId: job.serviceId, state: 'ready', uncertain: null, next: index + 1 };
+    const next = { ...job, ...(typeof output === 'object' ? output : {}), id: job.id, serviceId: job.serviceId, state: 'ready', uncertain: null, dispatchedAt: null, next: index + 1 };
     // Adapters may add results, but may not overwrite the sequence controls.
     if (index === STEPS.length - 1) next.state = 'complete';
     if (!await journal.compareAndSet(id, job, next)) throw new Error('migration journal conflict');
     job = next;
   }
   return job;
+}
+
+// Reconciliation only reads external state. Its verifier must independently
+// prove either that the exact operation completed, or that it definitely did
+// not happen and no request is still in flight. Ambiguous results stay locked.
+export async function reconcileMigration(journal, adapter, id, clock = Date.now) {
+  const job = await journal.get(id);
+  if (!job || job.state !== 'review' || !Number.isSafeInteger(job.next) ||
+      !STEPS[job.next] || STEPS[job.next][0] !== job.uncertain || READ_ONLY.has(job.uncertain)) throw new Error('migration is not awaiting review');
+  if (!Number.isSafeInteger(job.dispatchedAt) || clock() - job.dispatchedAt < REVIEW_DELAY_MS) throw new Error('migration operation may still be running');
+  if (typeof adapter.reconcile !== 'function') throw new Error('migration verifier unavailable');
+  const result = await adapter.reconcile(job);
+  if (!result || !['applied', 'not_applied'].includes(result.verdict)) throw new Error('migration result remains uncertain');
+  const nextIndex = job.next + (result.verdict === 'applied' ? 1 : 0);
+  const next = { ...job, ...(result.data || {}), id: job.id, serviceId: job.serviceId,
+    state: nextIndex === STEPS.length ? 'complete' : 'ready', uncertain: null, dispatchedAt: null, next: nextIndex };
+  if (!await journal.compareAndSet(id, job, next)) throw new Error('migration journal conflict');
+  return next;
 }

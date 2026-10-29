@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { advanceMigration, migrationSnapshot } from '../migration.js';
+import { advanceMigration, reconcileMigration, migrationSnapshot } from '../migration.js';
 import { migrationJournal } from '../migration-journal.js';
 import { commitMigrationService } from '../migration-commit.js';
 import { DatabaseSync } from 'node:sqlite';
@@ -44,6 +44,32 @@ test('ambiguous creation or deletion stays locked and cannot be blindly repeated
     assert.equal(f.calls.length, count);
     if (failure === 'createDestination') assert.ok(!f.calls.includes('deleteSource'));
   }
+});
+
+test('review cannot race an active mutation and never clears ambiguous outcomes', async () => {
+  const f = fixture('deleteSource');
+  await assert.rejects(advanceMigration(f.journal, f.adapter, 7));
+  const sent = f.get().dispatchedAt;
+  const verifier = { reconcile: async () => ({ verdict:'ambiguous' }) };
+  await assert.rejects(reconcileMigration(f.journal, verifier, 7, () => sent + 1000), /still be running/);
+  await assert.rejects(reconcileMigration(f.journal, verifier, 7, () => sent + 600001), /remains uncertain/);
+  assert.equal(f.get().uncertain, 'delete_source');
+  verifier.reconcile = async () => ({ verdict:'applied' });
+  const next = await reconcileMigration(f.journal, verifier, 7, () => sent + 600001);
+  assert.equal(next.state, 'ready'); assert.equal(next.next, 8);
+  f.adapter.deleteSource = async () => { throw new Error('deletion must not repeat'); };
+  assert.equal((await advanceMigration(f.journal, f.adapter, 7)).state, 'complete');
+});
+
+test('verified no-op review retries the same stage once', async () => {
+  const f = fixture('createDestination');
+  await assert.rejects(advanceMigration(f.journal, f.adapter, 7));
+  const sent = f.get().dispatchedAt;
+  const next = await reconcileMigration(f.journal, {reconcile:async()=>({verdict:'not_applied'})}, 7, () => sent + 600001);
+  assert.equal(next.next, 2); assert.equal(next.state, 'ready');
+  f.adapter.createDestination = async () => { f.calls.push('createDestination'); return true; };
+  assert.equal((await advanceMigration(f.journal,f.adapter,7)).state,'complete');
+  assert.equal(f.calls.filter(x=>x==='createDestination').length,2);
 });
 
 test('verification failure cannot delete source and read may be retried', async () => {
