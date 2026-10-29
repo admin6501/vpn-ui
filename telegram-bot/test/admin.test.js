@@ -136,15 +136,13 @@ test('referral reward button sets amount, zero disables registration without con
  await f.callback(1,'admin:setting:referral_discount');await f.message(1,'15000');assert.equal(f.sql.prepare("SELECT value FROM settings WHERE key='referral_discount'").get().value,'15000');await f.callback(2,'enter_invite');await f.message(2,'3');assert.equal(f.sql.prepare('SELECT amount FROM discounts WHERE user_id=3').get().amount,15000);
 });
 
-test('admin selects custom or random names and random purchase skips name prompt',async()=>{
- const f=fixture();f.sql.exec("INSERT INTO plans(key,gb,price,sort) VALUES('p10',10,70000,1); INSERT INTO bot_categories(id,name,group_ids) VALUES(1,'Test','1'); INSERT INTO bot_plan_specs VALUES('p10',1,30); INSERT INTO settings(key,value) VALUES('sub_base_url','https://sub.example/sub/')");
- await f.callback(1,'admin:root');assert.ok(JSON.stringify(f.last().reply_markup).includes('admin:setting:name_mode'));
- await f.callback(5,'admin:namemode:random');assert.equal(f.sql.prepare("SELECT value FROM settings WHERE key='name_mode'").get(),undefined);
- await f.callback(1,'admin:setting:name_mode');await f.callback(1,'admin:namemode:random');assert.equal(f.sql.prepare("SELECT value FROM settings WHERE key='name_mode'").get().value,'random');
- assert.equal(f.last().reply_markup.inline_keyboard[0][0].callback_data,'admin:root');await f.callback(1,'admin:root');assert.match(f.last().text,/پنل مدیریت ربات/);
- await f.callback(2,'plan_p10');let row=f.sql.prepare('SELECT service_name FROM orders WHERE user_id=2').get();assert.match(row.service_name,/^Client[a-z]{12}$/);assert.match(f.last().text,/مبلغ قابل پرداخت/);
- await f.callback(2,'plan_p10');assert.equal(f.sql.prepare('SELECT COUNT(*) n FROM orders WHERE user_id=2').get().n,1);
- await f.callback(1,'admin:namemode:custom');assert.equal(f.last().reply_markup.inline_keyboard[0][0].callback_data,'admin:root');await f.callback(3,'plan_p10');assert.match(f.last().text,/نام.*سرویس/);assert.equal(f.sql.prepare('SELECT COUNT(*) n FROM orders WHERE user_id=3').get().n,0);await f.message(3,'MyName');assert.equal(f.sql.prepare('SELECT service_name FROM orders WHERE user_id=3').get().service_name,'MyName');
+test('customers choose custom or random names independent of old admin setting',async()=>{
+ const f=fixture();f.sql.exec("INSERT INTO plans(key,gb,price,sort) VALUES('p10',10,70000,1); INSERT INTO bot_categories(id,name,group_ids) VALUES(1,'Test','1'); INSERT INTO bot_plan_specs VALUES('p10',1,30); INSERT INTO settings(key,value) VALUES('sub_base_url','https://sub.example/sub/'),('name_mode','random')");
+ await f.callback(1,'admin:root');assert.ok(!JSON.stringify(f.last().reply_markup).includes('admin:setting:name_mode'));
+ await f.callback(2,'plan_p10');let markup=JSON.stringify(f.last().reply_markup);assert.ok(markup.includes('buyname:random'));assert.ok(markup.includes('buyname:custom'));assert.equal(f.sql.prepare('SELECT COUNT(*) n FROM orders').get().n,0);
+ await f.callback(2,'buyname:random');const row=f.sql.prepare('SELECT service_name FROM orders WHERE user_id=2').get();assert.match(row.service_name,/^Client[a-z]{12}$/);await f.callback(2,'buyname:random');assert.equal(f.sql.prepare('SELECT COUNT(*) n FROM orders WHERE user_id=2').get().n,1);
+ await f.callback(3,'plan_p10');await f.callback(3,'buyname:custom');await f.message(3,'MyName');assert.equal(f.sql.prepare('SELECT service_name FROM orders WHERE user_id=3').get().service_name,'MyName');
+ await f.callback(4,'buyname:random');assert.equal(f.sql.prepare('SELECT COUNT(*) n FROM orders WHERE user_id=4').get().n,0);
 });
 test('user profile links to safe wallet adjustment and complete ledger',async()=>{
  const f=fixture();await f.message(2,'/start');await f.callback(1,'admin:user:2');await f.callback(1,'admin:wallet_view:2');assert.ok(JSON.stringify(f.last().reply_markup).includes('admin:wallet_add:2'));
