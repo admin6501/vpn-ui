@@ -352,7 +352,7 @@ async function groupCredentials(env, groupIds=env.cfg.panel_group_ids, anchorId=
   // WireGuard, GRE and MTProto use email as id, set after email is minted.
   return { id, uuid, password, vpnUsername, auth, secret, naiveUsername,
     ...(anchorProtocol === "naive" ? { username: naiveUsername } : {}),
-    ...(anchorProtocol === "vmess" ? { security: "auto" } : {}), anchorProtocol, anchorId:anchor };
+    ...(anchorProtocol === "vmess" ? { security: "auto" } : {}), anchorProtocol, anchorId:anchor, memberIds:inboundIds };
 
 }
 
@@ -367,6 +367,7 @@ async function panelCreate(env, { name, bytes, days, attemptKey, onDispatch, gro
   delete credentials.anchorProtocol;
   const inboundId = credentials.anchorId;
   delete credentials.anchorId;
+  delete credentials.memberIds;
   if (attemptKey) {
     const identity=await currentPanelIdentity(env);
     await env.DB.batch([env.DB.prepare("INSERT INTO provision_attempts(attempt_key,email,sub_id,inbound_id,created_at) VALUES(?,?,?,?,?)").bind(attemptKey,email,subId,inboundId,now()),env.DB.prepare("INSERT INTO settings(key,value) VALUES(?,?)").bind(`attempt_panel:${attemptKey}`,identity)]);
@@ -398,10 +399,12 @@ async function prepareMigrationDestination(env, { name, snapshot, renewalDuratio
   const credentials = await groupCredentials(env, groupIds, 0);
   if (['wg-c','awg','wireguard','gre','mtproto'].includes(credentials.anchorProtocol)) credentials.id = name;
   const inboundId = credentials.anchorId;
+  const memberIds = credentials.memberIds;
   delete credentials.anchorProtocol;
   delete credentials.anchorId;
+  delete credentials.memberIds;
   const subId = b64url(18);
-  return { email: name, inboundId, subId, groupIds: parseIds(groupIds), link: subLink(env, subId),
+  return { email: name, inboundId, memberIds, subId, groupIds: parseIds(groupIds), link: subLink(env, subId),
     client: { ...credentials, email: name, enable: false, subId, totalGB: snapshot.quota,
       expiryTime: snapshot.expiry, renewalDuration, limitIp: 0, reset: 0 } };
 }
@@ -430,6 +433,20 @@ async function importMigrationUsage(env, prepared, snapshot, onDispatch) {
   return true;
 }
 
+async function verifyMigrationDestination(env, prepared, snapshot, enabled) {
+  const account = await panelAccount(env, prepared.email);
+  const response = await panelCall(env, 'GET', `/panel/api/inbounds/getClientTraffics/${encodeURIComponent(prepared.email)}`);
+  const traffic = response.success && response.obj;
+  const members = Array.isArray(account?.memberships) ? account.memberships.map(m => Number(m.inboundId)) : [];
+  if (!account || !traffic || account.email.toLowerCase() !== prepared.email.toLowerCase() || account.subId !== prepared.subId ||
+      account.enable !== enabled || traffic.enable !== enabled || account.totalGB !== snapshot.quota || account.expiryTime !== snapshot.expiry ||
+      account.up !== snapshot.upload || account.down !== snapshot.download || traffic.up !== snapshot.upload || traffic.down !== snapshot.download || traffic.allTime !== snapshot.allTime ||
+      !Array.isArray(prepared.memberIds) || members.length !== prepared.memberIds.length || new Set(members).size !== members.length || prepared.memberIds.some(id => !members.includes(id))) {
+    throw new Error('وضعیت، عضویت‌ها یا مصرف سرویس مقصد تأیید نشد');
+  }
+  return true;
+}
+
 // This reads a consistent pair of database records. It does not prove that
 // active core sessions have stopped or that pending counters have been flushed.
 async function readMigrationSnapshot(env, svc) {
@@ -439,6 +456,23 @@ async function readMigrationSnapshot(env, svc) {
   const response = await panelCall(source, 'GET', `/panel/api/inbounds/getClientTraffics/${encodeURIComponent(svc.panel_email)}`);
   if (!response.success || !response.obj) throw new Error('خواندن مصرف مبدأ ناموفق بود');
   return migrationSnapshot(account, response.obj, svc.panel_email, svc.sub_id);
+}
+
+// This changes the database admission flag only. It is not a core-session
+// barrier and must not be used alone as proof that final usage has landed.
+async function setMigrationAdmission(env, svc, enabled, onDispatch) {
+  if (typeof enabled !== 'boolean') throw new Error('وضعیت نامعتبر است');
+  const target = await panelForService(env, svc);
+  const account = await panelServiceAccount(env, svc);
+  if (!account || !Array.isArray(account.memberships) || !account.memberships.length) throw new Error('ورودی‌های سرویس یافت نشدند');
+  const ids = account.memberships.map(m => Number(m.inboundId));
+  if (ids.some(id => !Number.isSafeInteger(id) || id <= 0) || new Set(ids).size !== ids.length) throw new Error('ورودی‌های سرویس نامعتبرند');
+  const data = {op: enabled ? 'enable' : 'disable', targets: ids.map(inboundId => ({inboundId, email:svc.panel_email}))};
+  const response = await panelCall(target, 'POST', '/panel/api/inbounds/bulkUpdateClients', new URLSearchParams({data:JSON.stringify(data)}), onDispatch);
+  if (!response.success) throw new Error('تغییر وضعیت سرویس تأیید نشد');
+  const after = await panelServiceAccount(env, svc);
+  if (!after || after.enable !== enabled || !Array.isArray(after.memberships) || after.memberships.length !== ids.length || ids.some(id => !after.memberships.some(m => Number(m.inboundId) === id))) throw new Error('وضعیت سرویس بعد از تغییر تأیید نشد');
+  return true;
 }
 
 // تمدید: مصرف صفر می‌شود و مدت از الان شروع می‌شود (مدت ثبت‌شده هنگام ساخت)
@@ -2433,7 +2467,7 @@ async function runSubscriptionPolicies(base,{signal}={}) {
     }
   } finally {await run(env,"DELETE FROM settings WHERE key='subscription_policy_lease' AND value=?",lease);}
 }
-export { groupCredentials, panelCreate, prepareMigrationDestination, createMigrationDestination, importMigrationUsage, readMigrationSnapshot, panelRenew, panelDelete, panelAccount, panelServiceAccount, panelMemberships, liveServiceDetails, panelCall, handleUpdate, subscriptionLinks, configName, linkFingerprint, runSubscriptionPolicies };
+export { groupCredentials, panelCreate, prepareMigrationDestination, createMigrationDestination, importMigrationUsage, verifyMigrationDestination, readMigrationSnapshot, setMigrationAdmission, panelRenew, panelDelete, panelAccount, panelServiceAccount, panelMemberships, liveServiceDetails, panelCall, handleUpdate, subscriptionLinks, configName, linkFingerprint, runSubscriptionPolicies };
 
 export default {
   async scheduled(event, env, ctx) {
