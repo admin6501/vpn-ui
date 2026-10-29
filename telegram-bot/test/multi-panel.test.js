@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {DatabaseSync} from 'node:sqlite';
 import {readFileSync} from 'node:fs';
-import {handleUpdate,runSubscriptionPolicies,prepareMigrationDestination,createMigrationDestination,importMigrationUsage} from '../worker.js';
+import {handleUpdate,runSubscriptionPolicies,prepareMigrationDestination,createMigrationDestination,importMigrationUsage,readMigrationSnapshot} from '../worker.js';
 import {encryptPanel,panelAccountKey} from '../panel-config.js';
 function fixture(){
  const sql=new DatabaseSync(':memory:');sql.exec(readFileSync(new URL('../schema.sql',import.meta.url),'utf8'));
@@ -21,6 +21,7 @@ function fixture(){
   if(p.endsWith('/clients/list'))return Response.json({success:true,obj:{rows:accounts[target],total:accounts[target].length}});
   if(p.endsWith('/addClient')){const form=new URLSearchParams(opt.body),c=JSON.parse(form.get('settings')).clients[0];actions.push([target,'add',c.email]);accounts[target].push({...c,up:0,down:0,memberships:[{inboundId:inbound,enable:true}]});return Response.json({success:true})}
   if(p.includes('/migrationImportUsage/')){const email=decodeURIComponent(p.split('/').at(-1)),a=accounts[target].find(x=>x.email===email),v=JSON.parse(opt.body);if(!a||a.enable)return Response.json({success:false});Object.assign(a,{up:v.upload,down:v.download,allTime:v.allTime});return Response.json({success:true})}
+  if(p.includes('/getClientTraffics/')){const email=decodeURIComponent(p.split('/').at(-1)),a=accounts[target].find(x=>x.email===email);return Response.json({success:!!a,obj:a})}
   if(p.includes('/renewClient/')){actions.push([target,'renew']);return Response.json({success:true})}
   if(p.includes('/delClientByEmail/')){actions.push([target,'delete']);const email=decodeURIComponent(p.split('/').at(-1));accounts[target]=accounts[target].filter(a=>a.email!==email);return Response.json({success:true})}
   throw Error('unexpected '+u.href);
@@ -38,6 +39,7 @@ test('migration destination keeps original quota and deadline and starts disable
  assert.equal(prepared.client.enable,false);assert.equal(prepared.client.totalGB,1000);assert.equal(prepared.client.expiryTime,123456);assert.equal(prepared.client.renewalDuration,86400000);
  await createMigrationDestination(f.env,prepared);assert.equal(f.accounts().one[0].subId,prepared.subId);assert.equal(f.accounts().one[0].enable,false);
  await importMigrationUsage(f.env,prepared,{upload:100,download:200,allTime:500});assert.equal(f.accounts().one[0].down,200);assert.equal(f.accounts().one[0].allTime,500);
+ const snapshot=await readMigrationSnapshot(f.env,{panel_email:'Alice',sub_id:prepared.subId});assert.equal(snapshot.allTime,500);assert.equal(snapshot.quota,1000);
  await assert.rejects(prepareMigrationDestination(f.env,{name:'Alice',snapshot:{quota:1000,expiry:123456},renewalDuration:86400000,groupIds:'1'}),/از قبل/);
 });
 test('two same-named groups keep purchase, subscription, renewal and deletion on their own panel',async()=>{

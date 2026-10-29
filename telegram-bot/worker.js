@@ -3,6 +3,7 @@ import { parseMoney, walletBalance, reserveWalletPayment, completeWalletPayment,
 import { encryptPanel, decryptPanel, panelURL, panelAccountKey, probePanel } from './panel-config.js';
 import { applyCoupon, expireCouponReservations, cancelDraftOrder, normalizeCoupon, validCouponCode } from './coupons.js';
 import { createMessageJob, confirmMessageJob, processMessageJobs, encodeMessageReference, queuedMessagePayload } from './messages.js';
+import { migrationSnapshot } from './migration.js';
 
 // ربات فروش کانفیگ | NovaRay VPN — Cloudflare Workers + D1 + اتصال به پنل vpn-ui
 // ساخت/تمدید/حذف سرویس مستقیم از طریق API پنل (حساب نماینده) انجام می‌شود.
@@ -427,6 +428,17 @@ async function importMigrationUsage(env, prepared, snapshot, onDispatch) {
     { upload: snapshot.upload, download: snapshot.download, allTime: snapshot.allTime }, onDispatch);
   if (!result.success) throw new Error('ثبت مصرف در مقصد تأیید نشد: ' + (result.msg || 'خطای نامشخص'));
   return true;
+}
+
+// This reads a consistent pair of database records. It does not prove that
+// active core sessions have stopped or that pending counters have been flushed.
+async function readMigrationSnapshot(env, svc) {
+  const source = await panelForService(env, svc);
+  const account = await panelServiceAccount(env, svc);
+  if (!account) throw new Error('سرویس مبدأ یافت نشد');
+  const response = await panelCall(source, 'GET', `/panel/api/inbounds/getClientTraffics/${encodeURIComponent(svc.panel_email)}`);
+  if (!response.success || !response.obj) throw new Error('خواندن مصرف مبدأ ناموفق بود');
+  return migrationSnapshot(account, response.obj, svc.panel_email, svc.sub_id);
 }
 
 // تمدید: مصرف صفر می‌شود و مدت از الان شروع می‌شود (مدت ثبت‌شده هنگام ساخت)
@@ -2421,7 +2433,7 @@ async function runSubscriptionPolicies(base,{signal}={}) {
     }
   } finally {await run(env,"DELETE FROM settings WHERE key='subscription_policy_lease' AND value=?",lease);}
 }
-export { groupCredentials, panelCreate, prepareMigrationDestination, createMigrationDestination, importMigrationUsage, panelRenew, panelDelete, panelAccount, panelServiceAccount, panelMemberships, liveServiceDetails, panelCall, handleUpdate, subscriptionLinks, configName, linkFingerprint, runSubscriptionPolicies };
+export { groupCredentials, panelCreate, prepareMigrationDestination, createMigrationDestination, importMigrationUsage, readMigrationSnapshot, panelRenew, panelDelete, panelAccount, panelServiceAccount, panelMemberships, liveServiceDetails, panelCall, handleUpdate, subscriptionLinks, configName, linkFingerprint, runSubscriptionPolicies };
 
 export default {
   async scheduled(event, env, ctx) {

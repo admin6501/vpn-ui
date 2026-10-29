@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { advanceMigration, migrationSnapshot } from '../migration.js';
 import { migrationJournal } from '../migration-journal.js';
+import { commitMigrationService } from '../migration-commit.js';
 import { DatabaseSync } from 'node:sqlite';
 import { readFileSync } from 'node:fs';
 
@@ -95,9 +96,36 @@ test('concurrent starts dispatch only one source freeze', async () => {
 
 test('snapshot keeps full original quota and absolute deadline, including unlimited quota', () => {
   const account = { email: 'Alice', subId: 'secret', enable: false, up: 10, down: 20, allTime: 50, totalGB: 100, expiryTime: 1234 };
-  assert.deepEqual(migrationSnapshot(account, 'alice', 'secret'), { upload: 10, download: 20, allTime: 50, quota: 100, expiry: 1234 });
-  assert.equal(migrationSnapshot({ ...account, totalGB: 0, expiryTime: 0 }, 'alice', 'secret').quota, 0);
+  const traffic = {email:'Alice', enable:false,up:10,down:20,allTime:50};
+  assert.deepEqual(migrationSnapshot(account, traffic, 'alice', 'secret'), { upload: 10, download: 20, allTime: 50, quota: 100, expiry: 1234 });
+  assert.equal(migrationSnapshot({ ...account, totalGB: 0, expiryTime: 0 }, traffic, 'alice', 'secret').quota, 0);
   for (const bad of [{ ...account, enable: true }, { ...account, subId: 'wrong' }, { ...account, up: -1 }, { ...account, expiryTime: -1 }]) {
-    assert.throws(() => migrationSnapshot(bad, 'alice', 'secret'));
+    assert.throws(() => migrationSnapshot(bad, traffic, 'alice', 'secret'));
   }
+  assert.throws(() => migrationSnapshot(account, {...traffic,down:21}, 'alice', 'secret'), /inconsistent/);
+  assert.throws(() => migrationSnapshot(account, {...traffic,allTime:undefined}, 'alice', 'secret'), /lifetime/);
+});
+
+test('service commit changes link and panel together and rejects pending renewals', async () => {
+  const sql = new DatabaseSync(':memory:'); sql.exec(readFileSync(new URL('../schema.sql', import.meta.url), 'utf8'));
+  const prep = (q, args = []) => ({ bind(...a) { return prep(q, a); }, execute() { const r = sql.prepare(q).run(...args); return { meta: { changes: Number(r.changes) } }; } });
+  const db = { prepare: q => prep(q), async batch(ss) { sql.exec('BEGIN'); try { const r = ss.map(x => x.execute()); sql.exec('COMMIT'); return r; } catch (e) { sql.exec('ROLLBACK'); throw e; } } };
+  const job = { id:'12345678-1234-1234-1234-123456789abc',serviceId:1,state:'review',uncertain:'commit_destination',
+    source:{ email:'Alice',subId:'old',panelMapping:'source' },
+    destination:{email:'Alice',subId:'new',panelIdentity:'dest',inboundId:4,link:'https://destination.example/sub/new'} };
+  sql.exec("INSERT INTO services(id,user_id,panel_email,sub_id,sub_link) VALUES(1,2,'Alice','old','https://source.example/sub/old')");
+  sql.prepare('INSERT INTO service_operations VALUES(?,?,?)').run(1,`migration:${job.id}`,'now');
+  sql.prepare('INSERT INTO settings VALUES(?,?)').run(`migration:${job.id}`,JSON.stringify(job));
+  sql.prepare('INSERT INTO settings VALUES(?,?)').run('service_panel:1','source');
+  sql.exec("INSERT INTO orders(id,user_id,renew_service_id,status) VALUES(1,2,1,'pending')");
+  await assert.rejects(commitMigrationService(db,job),/pending renewal/);
+  assert.equal(sql.prepare('SELECT sub_id FROM services WHERE id=1').get().sub_id,'old');
+  assert.equal(sql.prepare("SELECT value FROM settings WHERE key='service_panel:1'").get().value,'source');
+  sql.exec("UPDATE orders SET status='cancelled'");
+  await commitMigrationService(db,job);
+  assert.equal(sql.prepare('SELECT sub_id FROM services WHERE id=1').get().sub_id,'new');
+  assert.equal(sql.prepare("SELECT value FROM settings WHERE key='service_panel:1'").get().value,'dest');
+  await assert.rejects(commitMigrationService(db,job),/requires review/);
+  assert.equal(sql.prepare("SELECT value FROM settings WHERE key='service_panel:1'").get().value,'dest');
+  sql.close();
 });

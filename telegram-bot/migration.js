@@ -16,7 +16,7 @@ const READ_ONLY = new Set(['snapshot_source', 'verify_destination', 'verify_acti
 
 // Keep the original quota and the absolute expiry, rather than creating a
 // reduced-size package which a later renewal would mistakenly renew at that size.
-export function migrationSnapshot(account, expectedEmail, expectedSubId) {
+export function migrationSnapshot(account, traffic, expectedEmail, expectedSubId) {
   if (!account || account.enable !== false || !expectedEmail || !expectedSubId ||
       String(account.email || '').trim().toLowerCase() !== String(expectedEmail).trim().toLowerCase() ||
       String(account.subId || '') !== String(expectedSubId)) throw new Error('source identity or frozen status is invalid');
@@ -26,7 +26,9 @@ export function migrationSnapshot(account, expectedEmail, expectedSubId) {
   // A negative expiry encodes first-use semantics, not an absolute deadline.
   // Do not guess how to transfer it.
   if (account.expiryTime < 0) throw new Error('first-use expiry requires review');
-  const lifetime = account.allTime == null ? account.up + account.down : account.allTime;
+  if (!traffic || String(traffic.email || '').trim().toLowerCase() !== String(expectedEmail).trim().toLowerCase() ||
+      traffic.enable !== false || traffic.up !== account.up || traffic.down !== account.down) throw new Error('source traffic snapshot is inconsistent');
+  const lifetime = traffic.allTime;
   if (!Number.isSafeInteger(lifetime) || lifetime < 0) throw new Error('invalid source lifetime');
   return { upload: account.up, download: account.down, allTime: Math.max(lifetime, account.up + account.down), quota: account.totalGB, expiry: account.expiryTime };
 }
