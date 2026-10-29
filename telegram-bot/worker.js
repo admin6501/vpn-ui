@@ -60,6 +60,11 @@ const META = {
   test_days: ["int", "مدت سرویس تست (روز)"],
   wallet_topup_min: ["int", "💰 حداقل شارژ کیف پول (تومان)"],
   wallet_topup_max: ["int", "💰 حداکثر شارژ کیف پول (تومان)"],
+  alerts_enabled: ["bool", "🔔 هشدار باقی‌مانده اشتراک"],
+  alerts_days: ["int", "⏳ هشدار چند روز مانده"],
+  alerts_gb: ["number", "📦 هشدار چند گیگ مانده"],
+  auto_delete_enabled: ["bool", "🗑 حذف خودکار اشتراک منقضی"],
+  auto_delete_days: ["int", "📅 حذف چند روز پس از انقضا"],
   card_number: ["text", "شماره کارت"],
   card_holder: ["text", "نام صاحب کارت"],
   support_id: ["text", "آیدی پشتیبانی (با @)"],
@@ -79,6 +84,11 @@ const defaults = (env) => ({
   test_days: "1",
   wallet_topup_min: "1",
   wallet_topup_max: "0",
+  alerts_enabled: "0",
+  alerts_days: "1",
+  alerts_gb: "1",
+  auto_delete_enabled: "0",
+  auto_delete_days: "7",
   test_category_id: "",
   card_number: env.CARD_NUMBER || "",
   card_holder: env.CARD_HOLDER || "",
@@ -109,6 +119,11 @@ function topupLimitError(env,key,value) {
   const max=key === "wallet_topup_max" ? n : Number(env.cfg.wallet_topup_max);
   return max>0 && min>max ? "حداقل شارژ نمی‌تواند از حداکثر بیشتر باشد." : "";
 }
+function policySettingError(key,value) {
+  if(key==='alerts_gb' && (!/^\d+(?:\.\d{1,3})?$/.test(value) || Number(value)>1000000))return 'حجم را با عدد انگلیسی از ۰ تا ۱۰۰۰۰۰۰ گیگ وارد کنید؛ ۰ هشدار حجم را خاموش می‌کند.';
+  if(['alerts_days','auto_delete_days'].includes(key) && (!/^\d+$/.test(value) || !Number.isSafeInteger(Number(value)) || Number(value)>36500))return 'تعداد روز باید عددی بین ۰ تا ۳۶۵۰۰ باشد.';
+  return '';
+}
 function topupLimitsText(env) {
   const min=num(env,"wallet_topup_min"),max=num(env,"wallet_topup_max");
   return `حداقل: ${toman(min)}\nحداکثر: ${max>0 ? toman(max) : "بدون سقف تنظیم‌شده"}`;
@@ -129,6 +144,7 @@ const hex = (n) => Array.from(crypto.getRandomValues(new Uint8Array(n)), (b) => 
 async function tg(env, method, params = {}) {
   const r = await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/${method}`, {
     method: "POST",
+    ...(env.policySignal ? {signal:AbortSignal.any([env.policySignal,AbortSignal.timeout(15000)])} : {}),
     headers: { "content-type": "application/json" },
     body: JSON.stringify(params),
   });
@@ -210,6 +226,7 @@ async function panelLogin(env, identity) {
   }
   const r = await fetch(`${panelBase(env)}/login`, {
     method: "POST", redirect: "error",
+    ...(env.policySignal ? {signal:AbortSignal.any([env.policySignal,AbortSignal.timeout(15000)])} : {}),
     headers: { "content-type": "application/x-www-form-urlencoded", "X-Requested-With": "XMLHttpRequest" },
     body: new URLSearchParams({ username: env.PANEL_USER, password: env.PANEL_PASS }).toString(),
   });
@@ -234,7 +251,7 @@ async function panelCall(env, method, path, form, onDispatch) {
     let body;
     if (form) { headers["content-type"] = "application/x-www-form-urlencoded"; body = form.toString(); }
     if (onDispatch) onDispatch();
-    const r = await fetch(panelBase(env) + path, { method, headers, body, redirect:"error" });
+    const r = await fetch(panelBase(env) + path, { method, headers, body, redirect:"error",...(env.policySignal ? {signal:AbortSignal.any([env.policySignal,AbortSignal.timeout(15000)])} : {}) });
     const text = await r.text();
     if (r.status === 401 || r.status === 404 || text.trimStart().startsWith("<")) { panelCookie = null; if (method !== "GET") throw new Error("نشست نامعتبر یا نتیجه عملیات نامشخص است؛ پیش از تکرار دستی بررسی کنید"); continue; }
     if (r.status === 403) throw new Error("دسترسی حساب نماینده در پنل کافی نیست (نقش/گروه/اعتبار را بررسی کنید)");
@@ -383,9 +400,10 @@ async function panelMemberships(env, svc) {
   return {accountEnabled:account.enable === true, list};
 }
 
-async function panelDelete(env, svc) {
+async function panelDelete(env, svc, opts = {}) {
   let account = await panelServiceAccount(env, svc);
   if (!account || !Array.isArray(account.memberships) || !account.memberships.length) throw new Error("عضویت‌های سرویس مشخص نیست؛ حذف دستی لازم است");
+  if(opts.expectedExpiry !== undefined && Number(account.expiryTime)!==opts.expectedExpiry)throw new Error('تاریخ انقضای سرویس تغییر کرده است');
   const ids = [...new Set(account.memberships.map(m => Number(m.inboundId)))];
   if (ids.some(id => !Number.isSafeInteger(id) || id <= 0) || ids.length !== account.memberships.length) throw new Error("فهرست ورودی‌های سرویس نامعتبر است");
   if (ids.length > 1) {
@@ -394,10 +412,12 @@ async function panelDelete(env, svc) {
   }
   for (let n = 0; n < ids.length; n++) {
     const id = ids[n];
+    if(opts.beforeDelete)await opts.beforeDelete();
     const result = await panelCall(env, "POST", `/panel/api/inbounds/${id}/delClientByEmail/${encodeURIComponent(svc.panel_email)}`);
     if (!result.success) throw new Error(`حذف ورودی ${id} رد شد؛ وضعیت سایر ورودی‌ها را بررسی کنید`);
     account = await panelAccount(env, svc.panel_email);
     if (n < ids.length - 1) {
+      if(opts.expectedExpiry !== undefined && Number(account?.expiryTime)!==opts.expectedExpiry)throw new Error('تاریخ انقضای سرویس تغییر کرده است');
       if (!account || !Array.isArray(account.memberships) || account.memberships.some(m => Number(m.inboundId) === id) || !ids.slice(n + 1).every(next => account.memberships.some(m => Number(m.inboundId) === next)))
         throw new Error("وضعیت حذف ناقص یا نامشخص است؛ بررسی دستی لازم است");
     } else if (account) throw new Error("پنل حذف کامل را تأیید نکرد؛ وضعیت را بررسی کنید");
@@ -826,6 +846,7 @@ async function handleAdminCommand(c, msg) {
     const value = raw === "-" ? "" : raw;
     if (type === "int" && (!/^\d+$/.test(value) || !Number.isSafeInteger(Number(value)))) return reply("❌ مقدار باید عدد صحیح معتبر باشد.");
     const limitError=topupLimitError(env,key,value);if(limitError)return reply(`❌ ${limitError}`);
+    const policyError=policySettingError(key,value);if(policyError)return reply(`❌ ${policyError}`);
     if (type === "bool" && !/^[01]$/.test(value)) return reply("❌ مقدار باید 0 یا 1 باشد.");
     if (type === "ids" && !/^\d+(,\d+)*$/.test(value)) return reply("❌ مقدار باید عدد یا چند عدد با کاما باشد (مثلا 1,2).");
     if (type === "name_mode" && !["custom","random"].includes(value)) return reply("❌ نوع نام باید custom یا random باشد.");
@@ -1084,6 +1105,7 @@ async function handleAdminUIInput(c, msg) {
     if (!meta || !value) return send("مقدار نامعتبر است؛ دوباره وارد کنید.");
     if (meta[0] === "int" && (!/^\d+$/.test(value) || !Number.isSafeInteger(Number(value)))) return send("مقدار باید عدد صحیح معتبر باشد.");
     const limitError=topupLimitError(env,st.admin_ui_key,value);if(limitError)return send(limitError);
+    const policyError=policySettingError(st.admin_ui_key,value);if(policyError)return send(policyError);
     if (meta[0] === "bool" && !/^[01]$/.test(value)) return send("مقدار باید ۰ یا ۱ (به انگلیسی) باشد.");
     if (meta[0] === "ids" && !/^\d+(,\d+)*$/.test(value)) return send("شناسه‌ها را با اعداد انگلیسی و کاما وارد کنید.");
     command = `/set ${st.admin_ui_key} ${value}`;
@@ -1257,7 +1279,19 @@ async function handleAdminUICallback(c, cq, answer) {
     const id=Number(d.split(":")[2]);if(!Number.isSafeInteger(id)||id<=0)return answer("سرویس نامعتبر است.",true);
     const svc=await getService(env,id);if(!svc)return answer("سرویس یافت نشد.",true);
     let details;try { const account=await panelServiceAccount(env,svc); details=account ? liveServiceDetails(account) : "⚠️ سرویس در پنل متصل فعلی یافت نشد."; } catch { details="⚠️ وضعیت سرویس نامشخص است؛ ارتباط با پنل برقرار نشد."; }
-    return renderAdmin(`📦 <b>سرویس ${esc(String(svc.name || "—").slice(0,50))}</b>\nشناسه ربات: <code>${svc.id}</code>\nکاربر: <code>${svc.user_id}</code>\nحساب پنل: <code>${esc(String(svc.panel_email || "—").slice(0,100))}</code>\n\n${details}`,kb([[btn("🔘 وضعیت کانفیگ‌ها",`admin:sc:${svc.id}:0`)],[btn("🗑 حذف سرویس",`admin:svcdelete:${svc.id}`)],[btn("👤 پنل کاربر",`admin:user:${svc.user_id}`)],[btn("🔙 نتایج جستجو","admin:searchpage:0"),btn("🔎 جستجوی جدید","admin:service_search")]]));
+    const operation=await first(env,'SELECT kind FROM service_operations WHERE service_id=?',id);const review=operation?.kind==='auto_delete_review';
+    const buttons=[[btn("🔘 وضعیت کانفیگ‌ها",`admin:sc:${svc.id}:0`)],[btn("🗑 حذف سرویس",`admin:svcdelete:${svc.id}`)]];
+    if(review)buttons.push([btn('⚠️ بررسی توقف حذف خودکار',`admin:autodelreview:${id}`)]);
+    buttons.push([btn("👤 پنل کاربر",`admin:user:${svc.user_id}`)],[btn("🔙 نتایج جستجو","admin:searchpage:0"),btn("🔎 جستجوی جدید","admin:service_search")]);
+    return renderAdmin(`📦 <b>سرویس ${esc(String(svc.name || "—").slice(0,50))}</b>\nشناسه ربات: <code>${svc.id}</code>\nکاربر: <code>${svc.user_id}</code>\nحساب پنل: <code>${esc(String(svc.panel_email || "—").slice(0,100))}</code>\n\n${details}${review?'\n⚠️ حذف خودکار نیاز به بررسی دارد.':''}`,kb(buttons));
+  }
+  if (/^admin:autodelreview:\d+$/.test(d)) {
+    const id=Number(d.split(':')[2]),lock=await first(env,"SELECT kind FROM service_operations WHERE service_id=? AND kind='auto_delete_review'",id);if(!lock)return answer('عملیات نیازمند بررسی پیدا نشد.',true);
+    return renderAdmin('⚠️ ممکن است فقط بخشی از سرویس در پنل حذف شده باشد. پس از بررسی و اصلاح دستی پنل و سفارش‌ها، می‌توانید توقف را بردارید. در صورت فعال بودن حذف خودکار ممکن است دوباره تلاش شود.',kb([[btn('✅ بررسی کردم؛ رفع توقف',`admin:autodelrelease:${id}`)],[btn('🔙 بازگشت',`admin:svc:${id}`)]]));
+  }
+  if (/^admin:autodelrelease:\d+$/.test(d)) {
+    const id=Number(d.split(':')[2]);const result=await run(env,"DELETE FROM service_operations WHERE service_id=? AND kind='auto_delete_review'",id);
+    return renderAdmin(result.meta.changes?'✅ توقف بررسی برداشته شد.':'عملیات پیدا نشد.',adminBack(`admin:svc:${id}`));
   }
   if (/^admin:svcdelete:\d+$/.test(d)) {
     const id=Number(d.split(":")[2]),svc=await getService(env,id);if(!svc)return answer("سرویس یافت نشد.",true);
@@ -1497,12 +1531,22 @@ async function handleAdminUICallback(c, cq, answer) {
     if (key === "referral_discount") return prompt("setting",key,`🎁 <b>هدیه دعوت</b>\nمقدار فعلی: ${toman(env.cfg.referral_discount)}\nمبلغ جدید را به تومان بفرستید؛ عدد 0 هدیه را غیرفعال می‌کند. این هدیه تخفیف خرید بعدی معرف است و به کیف پول اضافه نمی‌شود.`,"admin:settings");
     if (key === "channel_username" || key === "channel_link") return prompt("setting",key,`📢 <b>عضویت اجباری</b>\nبرای بررسی عضویت کاربران، ابتدا ربات را به کانال اضافه و ادمین کانال کنید. یوزرنیم یا شناسهٔ کانال و لینک عضویت را در تنظیمات جداگانه وارد کنید.\n\n${key === "channel_username" ? "یوزرنیم کانال همراه @ یا شناسهٔ عددی کانال را بفرستید." : "لینک عضویت کانال را بفرستید."}\nمقدار فعلی: <code>${esc(env.cfg[key] || "خالی")}</code>\nبرای پاک‌کردن مقدار، - بفرستید.`,"admin:settings");
     if (key === "test_enabled") return renderAdmin(`🎁 سرویس تست اکنون ${env.cfg.test_enabled === "1" ? "فعال" : "غیرفعال"} است.`, kb([[btn("✅ فعال", "admin:test:1"),btn("⛔ غیرفعال", "admin:test:0")],[btn("🔙 بازگشت", "admin:settings")]]));
+    if (key === 'alerts_enabled' || key === 'auto_delete_enabled') {
+      const deletion=key==='auto_delete_enabled';
+      return renderAdmin(`${deletion?'🗑 حذف خودکار اشتراک‌های منقضی':'🔔 هشدار اشتراک'} اکنون ${env.cfg[key]==='1'?'فعال':'خاموش'} است.\n${deletion?'پس از تعداد روز تنظیم‌شده از تاریخ انقضا، سرویس واجد شرایط از پنل و ربات حذف می‌شود؛ سفارش در حال بررسی از حذف جلوگیری می‌کند.':'به مشتری نزدیک انقضا یا پایان حجم پیام ارسال می‌شود.'}`,kb([[btn('✅ فعال',`admin:policy:${key}:1`),btn('⛔ خاموش',`admin:policy:${key}:0`)],[btn('🔙 بازگشت','admin:settings')]]));
+    }
+    if (['alerts_days','alerts_gb','auto_delete_days'].includes(key))return prompt('setting',key,`⚙️ <b>${esc(meta[1])}</b>\nمقدار فعلی: <code>${esc(env.cfg[key])}</code>\nمقدار جدید را با عدد انگلیسی بفرستید.${key==='alerts_days'||key==='alerts_gb'?' عدد ۰ این نوع هشدار را خاموش می‌کند.':''}${key==='auto_delete_days'?' عدد ۰ یعنی پس از پایان تاریخ بدون مهلت اضافه.':''}`,'admin:settings');
     if (["wallet_topup_min","wallet_topup_max"].includes(key))return prompt("setting",key,`💰 <b>${esc(meta[1])}</b>\nمقدار فعلی: ${key === "wallet_topup_max" && num(env,key)===0 ? "بدون سقف تنظیم‌شده" : toman(env.cfg[key])}\n\n${topupLimitsText(env)}\n\nمبلغ جدید را به تومان و با عدد انگلیسی بفرستید.${key === "wallet_topup_max" ? " برای برداشتن سقف، 0 بفرستید." : ""}`,"admin:settings");
     return prompt("setting", key, `⚙️ <b>${esc(meta[1])}</b>\nمقدار فعلی: <code>${esc(env.cfg[key] || "خالی")}</code>\n\nمقدار جدید را بفرستید.${meta[0] === "text" ? " برای پاک‌کردن مقدار، - بفرستید." : ""}`, "admin:settings");
   }
   if (/^admin:test:[01]$/.test(d)) {
     const value = d.slice(-1); await handleAdminCommand(c, {chat:{id:chat},from:cq.from,text:`/set test_enabled ${value}`});
     return showAdminHome(env, chat);
+  }
+  if (/^admin:policy:(alerts_enabled|auto_delete_enabled):[01]$/.test(d)) {
+    const [, ,key,value]=d.split(':');
+    await run(env,'INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value',key,value);
+    return renderAdmin(value==='1'?'✅ فعال شد.':'⛔ خاموش شد.',adminBack('admin:settings'));
   }
   if (/^admin:namemode:(custom|random)$/.test(d)) {
     return answer("انتخاب نام اکنون هنگام خرید در اختیار مشتری است.",true);
@@ -2105,7 +2149,96 @@ async function handleUpdate(baseEnv, update) {
   }
 }
 
-export { groupCredentials, panelCreate, panelRenew, panelDelete, panelAccount, panelServiceAccount, panelMemberships, liveServiceDetails, panelCall, handleUpdate, subscriptionLinks, configName, linkFingerprint };
+async function backgroundEnv(base) {
+  const rows=await all(base,'SELECT key,value FROM settings');const env=Object.create(base);env.cfg=defaults(base);
+  for(const r of rows)if(Object.hasOwn(env.cfg,r.key))env.cfg[r.key]=String(r.value ?? '');
+  env.panelStoredIdentity=rows.find(r=>r.key==='panel_identity_v1')?.value || '';
+  const saved=rows.find(r=>r.key==='panel_credentials_v1');
+  if(saved){try{const p=await decryptPanel(base.BOT_TOKEN,saved.value);env.PANEL_URL=panelURL(p.url);env.PANEL_USER=p.user;env.PANEL_PASS=p.pass;if(!p.user||!p.pass)throw Error()}catch{env.PANEL_URL='';env.PANEL_USER='';env.PANEL_PASS='';}}
+  env.admins=new Set([...parseIds(base.ADMIN_ID),...(await all(base,'SELECT user_id FROM admins')).map(r=>Number(r.user_id))]);
+  return env;
+}
+async function automatedDelete(env,svc) {
+  const lock=await run(env,"INSERT OR IGNORE INTO service_operations(service_id,kind,created_at) VALUES(?,?,?)",svc.id,'auto_delete_running',String(Date.now()));
+  if(!lock.meta.changes)return;
+  let dispatched=false,finished=false;
+  try {
+    const enabled=await first(env,"SELECT value FROM settings WHERE key='auto_delete_enabled'");if(enabled?.value!=='1')return;
+    const grace=await first(env,"SELECT value FROM settings WHERE key='auto_delete_days'");const days=Number(grace?.value ?? defaults(env).auto_delete_days);
+    const fresh=await panelServiceAccount(env,svc);const expiry=Number(fresh?.expiryTime);
+    if(!fresh || !svc.sub_id || String(fresh.subId || '')!==String(svc.sub_id) || !Number.isSafeInteger(expiry) || expiry<=0 || !Number.isSafeInteger(days) || days<0 || expiry+days*DAY_MS>Date.now())return;
+    const matches=await first(env,"SELECT COUNT(*) AS n FROM services WHERE lower(trim(panel_email))=lower(trim(?)) AND sub_id=?",svc.panel_email,svc.sub_id);if(Number(matches.n)!==1)return;
+    const orders=await all(env,"SELECT o.id,o.status FROM orders o WHERE o.user_id=? AND (o.renew_service_id=? OR EXISTS(SELECT 1 FROM provision_attempts p WHERE p.sub_id=? AND p.email=? AND p.attempt_key LIKE 'order:'||o.id||':%'))",svc.user_id,svc.id,svc.sub_id,svc.panel_email);
+    if(orders.some(o=>!['approved','rejected','cancelled'].includes(o.status)))return;
+    if(env.policySignal?.aborted)return;
+    dispatched=true;await panelDelete(env,svc,{expectedExpiry:expiry,beforeDelete:async()=>{
+      if(env.policySignal?.aborted)throw Error('متوقف شد');
+      const active=await first(env,"SELECT value FROM settings WHERE key='auto_delete_enabled'");if(active?.value!=='1')throw Error('حذف خودکار خاموش شده است');
+      const currentGrace=await first(env,"SELECT value FROM settings WHERE key='auto_delete_days'");const liveDays=Number(currentGrace?.value ?? defaults(env).auto_delete_days);
+      if(!Number.isSafeInteger(liveDays)||liveDays<0||expiry+liveDays*DAY_MS>Date.now())throw Error('مهلت حذف تغییر کرده است');
+      const pending=await first(env,"SELECT COUNT(*) n FROM orders o WHERE o.user_id=? AND (o.renew_service_id=? OR EXISTS(SELECT 1 FROM provision_attempts p WHERE p.sub_id=? AND p.email=? AND p.attempt_key LIKE 'order:'||o.id||':%')) AND o.status NOT IN ('approved','rejected','cancelled')",svc.user_id,svc.id,svc.sub_id,svc.panel_email);
+      if(Number(pending.n))throw Error('سفارش مرتبط در حال بررسی است');
+    }});
+    const changes=orders.map(o=>env.DB.prepare("INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").bind(`hidden_order:${o.id}`,'1'));
+    changes.push(env.DB.prepare('DELETE FROM services WHERE id=? AND user_id=?').bind(svc.id,svc.user_id));
+    await env.DB.batch(changes);finished=true;
+  } catch(e) {
+    if(dispatched){await run(env,"UPDATE service_operations SET kind='auto_delete_review' WHERE service_id=? AND kind='auto_delete_running'",svc.id);for(const id of env.admins){try{await sendMsg(env,id,`⚠️ حذف خودکار سرویس <code>${svc.id}</code> کامل تأیید نشد؛ وضعیت آن را در پنل و ربات بررسی کنید. تا بررسی، عملیات مجدد روی سرویس متوقف است.`)}catch{}}}
+    console.log('automatic deletion needs review',svc.id,String(e.message).slice(0,100));
+  } finally {if(!dispatched || finished)await run(env,'DELETE FROM service_operations WHERE service_id=? AND kind=?',svc.id,'auto_delete_running');}
+}
+async function notifyService(env,svc,account) {
+  if(env.policySignal?.aborted)return;
+  const expiry=Number(account.expiryTime),quota=Number(account.totalGB),used=Number(account.up)+Number(account.down),time=Date.now();
+  if(account.enable!==true || !Number.isFinite(used) || used<0 || !Number.isFinite(quota) || quota<0 || !Number.isFinite(expiry))return;
+  const key=`alert_state:${svc.id}`,row=await first(env,'SELECT value FROM settings WHERE key=?',key);let state={};try{state=JSON.parse(row?.value || '{}')}catch{}
+  if(state.subId!==svc.sub_id)state={};
+  if(state.expiry!==expiry)state.timeSent=false;
+  if(Number.isFinite(state.lastUsed) && used<state.lastUsed && (state.lastUsed-used>=MB || used===0))state.volumeSent=false;
+  state.subId=svc.sub_id;state.expiry=expiry;state.lastUsed=used;
+  const days=num(env,'alerts_days'),gb=num(env,'alerts_gb');
+  const timeDue=days>0 && expiry>time && expiry-time<=days*DAY_MS && !state.timeSent;
+  const volumeDue=gb>0 && quota>0 && used<quota && quota-used<=gb*GB && !state.volumeSent;
+  if(!timeDue && !volumeDue){await run(env,'INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value',key,JSON.stringify(state));return;}
+  const enabled=await first(env,"SELECT value FROM settings WHERE key='alerts_enabled'");if(enabled?.value!=='1')return;
+  const previous={...state};if(timeDue)state.timeSent=true;if(volumeDue)state.volumeSent=true;
+  await run(env,'INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value',key,JSON.stringify(state));
+  const parts=[`🔔 <b>هشدار سرویس ${esc(svc.name || '')}</b>`];
+  if(timeDue)parts.push(`⏳ زمان باقی‌مانده: حدود ${Math.max(1,Math.ceil((expiry-time)/3600000))} ساعت`);
+  if(volumeDue)parts.push(`📦 حجم باقی‌مانده: ${formatBytes(quota-used)}`);
+  try{const result=await sendMsg(env,svc.user_id,parts.join('\n'),kb([[btn('🗂 مشاهده سرویس',`svc_${svc.id}`)]]));if(!result.ok)await run(env,'UPDATE settings SET value=? WHERE key=? AND value=?',JSON.stringify(previous),key,JSON.stringify(state));}catch{console.log('subscription alert delivery uncertain',svc.id)}
+  if(!env.policySignal?.aborted)await new Promise(resolve=>setTimeout(resolve,45));
+}
+async function runSubscriptionPolicies(base,{signal}={}) {
+  const env=await backgroundEnv(base);env.policySignal=signal;if(signal?.aborted)return;
+  await run(env,"UPDATE service_operations SET kind='auto_delete_review' WHERE kind='auto_delete_running' AND CAST(created_at AS INTEGER)<? AND NOT EXISTS(SELECT 1 FROM settings WHERE key='subscription_policy_lease' AND CAST(value AS INTEGER)>?)",Date.now()-21600000,Date.now());
+  if(env.cfg.alerts_enabled!=='1' && env.cfg.auto_delete_enabled!=='1')return;
+  if(!env.PANEL_URL || !env.PANEL_USER || !env.PANEL_PASS)return;
+  let lease=`${Date.now()+21600000}|${hex(8)}`;
+  const acquired=await run(env,"INSERT INTO settings(key,value) VALUES('subscription_policy_lease',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value WHERE CAST(settings.value AS INTEGER)<?",lease,Date.now());
+  if(!acquired.meta.changes)return;
+  try {
+    const cursor=await first(env,"SELECT value FROM settings WHERE key='subscription_policy_page'");let page=Number(cursor?.value || 1);if(!Number.isSafeInteger(page)||page<1||page>100000)page=1;
+    const response=await panelCall(env,'GET',`/panel/api/clients/list?page=${page}&size=500`);
+    if(!response.success || !Array.isArray(response.obj?.rows))throw Error('reading panel accounts failed');
+    for(const account of response.obj.rows){
+      if(signal?.aborted)break;
+      const renewed=`${Date.now()+21600000}|${hex(8)}`;
+      const heartbeat=await run(env,"UPDATE settings SET value=? WHERE key='subscription_policy_lease' AND value=?",renewed,lease);
+      if(!heartbeat.meta.changes)throw Error('subscription policy lease expired');lease=renewed;
+      if(!account.email || !account.subId)continue;
+      const services=await all(env,"SELECT s.*,COALESCE(u.blocked,0) AS bot_blocked FROM services s LEFT JOIN bot_users u ON u.user_id=s.user_id WHERE lower(trim(s.panel_email))=lower(trim(?)) AND s.sub_id=?",account.email,account.subId);
+      for(const svc of services){
+        if(signal?.aborted)break;
+        if(env.cfg.auto_delete_enabled==='1' && Number(account.expiryTime)>0 && Number(account.expiryTime)+num(env,'auto_delete_days')*DAY_MS<=Date.now()){await automatedDelete(env,svc);continue;}
+        if(env.cfg.alerts_enabled==='1' && !svc.bot_blocked)await notifyService(env,svc,account);
+      }
+    }
+    const next=response.obj.rows.length<500 || page*500>=Number(response.obj.total || 0) ? 1 : page+1;
+    await run(env,"INSERT INTO settings(key,value) VALUES('subscription_policy_page',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",String(next));
+  } finally {await run(env,"DELETE FROM settings WHERE key='subscription_policy_lease' AND value=?",lease);}
+}
+export { groupCredentials, panelCreate, panelRenew, panelDelete, panelAccount, panelServiceAccount, panelMemberships, liveServiceDetails, panelCall, handleUpdate, subscriptionLinks, configName, linkFingerprint, runSubscriptionPolicies };
 
 export default {
   async scheduled(event, env, ctx) {
@@ -2117,6 +2250,7 @@ export default {
         for(const admin of parseIds(env.ADMIN_ID)) { try { await sendMsg(env,admin,`⚠️ پرداخت سفارش <code>${item.orderId}</code> پس از قطع عملیات برگشت خورد. احتمال انجام عملیات پنل را بررسی کنید.`); } catch {} }
       }
       if(!env.SERVER_MODE)await processMessageJobs(env,(id,body)=>{const p=queuedMessagePayload(id,body);return tg(env,p.method,p.params)});
+      if(!env.SERVER_MODE)await runSubscriptionPolicies(env);
     })());
   },
   async fetch(request, env, ctx) {
