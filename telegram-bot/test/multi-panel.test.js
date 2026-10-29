@@ -69,3 +69,23 @@ test('trial creation also uses its category panel and subscription base',async()
  f.sql.prepare("INSERT INTO bot_categories(id,name,group_ids,panel_identity) VALUES(1,'Test','1',?)").run(two);f.sql.exec("INSERT INTO settings(key,value) VALUES('test_category_id','1'),('test_enabled','1')");
  await f.cb(4,'test_service');await f.cb(4,'testcat:1:0');await f.cb(4,'testname:custom');await f.msg(4,'Trial');await f.cb(4,'testname:make');assert.deepEqual(f.actions[0],['two','add','Trial']);assert.match(f.sql.prepare('SELECT sub_link FROM services WHERE user_id=4').get().sub_link,/^https:\/\/sub-two\.example/);
 });
+test('panel manager shows status and groups, supports HTTP and keeps bindings when address changes',async()=>{
+ const f=fixture();await f.cb(1,'admin:multipanel_add');await f.msg(1,'پنل ۲');await f.msg(1,'http://panel-two.example/base');await f.msg(1,'rep');await f.msg(1,'pass');await f.msg(1,'http://sub-two.example/sub/');
+ const row=f.sql.prepare("SELECT key FROM settings WHERE key LIKE 'extra_panel:%'").get(),slot=row.key.split(':')[1],old=await panelAccountKey('http://panel-two.example/base','rep');
+ f.sql.prepare("INSERT INTO bot_categories(id,name,group_ids,panel_identity) VALUES(1,'Test','1',?)").run(old);await f.cb(1,`admin:multipanel:${slot}`);assert.match(f.last().text,/متصل/);assert.match(f.last().text,/تعداد گروه‌ها: 1/);assert.ok(JSON.stringify(f.last().reply_markup).includes(`admin:mpurl:${slot}`));
+ await f.cb(1,`admin:mpurl:${slot}`);await f.msg(1,'https://panel-two.example/base');const identity=await panelAccountKey('https://panel-two.example/base','rep');assert.equal(f.sql.prepare('SELECT panel_identity FROM bot_categories WHERE id=1').get().panel_identity,identity);
+ await f.cb(1,`admin:multipanel:${slot}`);assert.match(f.last().text,/https:\/\/panel-two/);await f.cb(1,'admin:settings');assert.ok(!JSON.stringify(f.last().reply_markup).includes('admin:setting:sub_base_url'));
+});
+test('panel deletion is refused while services or active orders are bound to it',async()=>{
+ const f=fixture(),two=await panelAccountKey('https://panel-two.example/base','rep');f.sql.prepare('INSERT INTO settings(key,value) VALUES(?,?)').run('extra_panel:p123456789abc',await encryptPanel('token',{name:'پنل ۲',url:'https://panel-two.example/base',user:'rep',pass:'pass',sub:'https://sub-two.example/sub/'}));
+ f.sql.prepare("INSERT INTO orders(id,user_id,status) VALUES(1,2,'pending')").run();f.sql.prepare("INSERT INTO bot_order_routes(order_id,group_ids,anchor_id,panel_identity) VALUES(1,'1',0,?)").run(two);
+ await f.cb(1,'admin:mpdeleteyes:p123456789abc');assert.ok(f.sql.prepare("SELECT value FROM settings WHERE key='extra_panel:p123456789abc'").get());
+ f.sql.exec("UPDATE orders SET status='approved'; INSERT INTO services(id,user_id,name,panel_email,sub_id) VALUES(1,2,'Alice','Alice','sid')");f.sql.prepare("INSERT INTO settings(key,value) VALUES('service_panel:1',?)").run(two);
+ await f.cb(1,'admin:mpdeleteyes:p123456789abc');assert.ok(f.sql.prepare("SELECT value FROM settings WHERE key='extra_panel:p123456789abc'").get());
+ f.sql.exec('DELETE FROM services');await f.cb(1,'admin:mpdeleteyes:p123456789abc');assert.equal(f.sql.prepare("SELECT value FROM settings WHERE key='extra_panel:p123456789abc'").get(),undefined);
+});
+test('main panel uses the same manager and removal keeps it disabled despite environment defaults',async()=>{
+ const f=fixture();await f.cb(1,'admin:multipanels');assert.ok(JSON.stringify(f.last().reply_markup).includes('admin:multipanel:main'));
+ await f.cb(1,'admin:multipanel:main');assert.match(f.last().text,/تعداد گروه‌ها: 1/);assert.ok(JSON.stringify(f.last().reply_markup).includes('admin:mpdelete:main'));
+ await f.cb(1,'admin:mpdeleteyes:main');assert.equal(f.sql.prepare("SELECT value FROM settings WHERE key='panel_main_disabled'").get().value,'1');await f.cb(1,'admin:multipanels');assert.ok(!JSON.stringify(f.last().reply_markup).includes('admin:multipanel:main'));
+});

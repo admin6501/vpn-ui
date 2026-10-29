@@ -37,7 +37,8 @@ test('list, link and QR buttons use subscription data and preserve owner isolati
 test('empty subscriptions and response errors do not fabricate configs',async()=>{
  const f=fixture();f.setLinks([]);await f.cb(2,'cfglist:1:0');assert.ok(f.out.some(x=>x.body.text?.includes('کانفیگ تکی فعالی')));
  assert.equal((await subscriptionLinks({sub_link:'https://sub.example/sub/unique'})).length,0);
- await assert.rejects(subscriptionLinks({sub_link:'http://sub.example/sub/unique'}),/امن/);
+ assert.equal((await subscriptionLinks({sub_link:'http://sub.example/sub/unique'})).length,0);
+ await assert.rejects(subscriptionLinks({sub_link:'ftp://sub.example/sub/unique'}),/معتبر/);
 });
 test('legacy service with an existing individual config and no sub remains usable',async()=>{
  assert.deepEqual(await subscriptionLinks({config_link:content}),[content]);

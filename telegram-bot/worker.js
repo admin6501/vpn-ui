@@ -72,7 +72,6 @@ const META = {
   channel_link: ["text", "لینک کانال"],
   main_menu_image_url: ["text", "لینک عکس منوی اصلی (برای خالی کردن: -)"],
   start_text: ["text", "متن پیام شروع"],
-  sub_base_url: ["text", "آدرس پایه لینک ساب، مثلا https://example.com:8000/sub/"],
 };
 
 const defaults = (env) => ({
@@ -210,6 +209,15 @@ async function relatedServiceOrders(env,svc) {
   const main=root.PANEL_URL && root.PANEL_USER ? await currentPanelIdentity(root) : '';
   return all(root,"SELECT o.id,o.status FROM orders o WHERE o.user_id=? AND (o.renew_service_id=? OR EXISTS(SELECT 1 FROM provision_attempts p LEFT JOIN bot_order_routes r ON r.order_id=o.id WHERE p.sub_id=? AND p.email=? AND p.attempt_key LIKE 'order:'||o.id||':%' AND (r.panel_identity=? OR (COALESCE(r.panel_identity,'')='' AND ?=1))))",svc.user_id,svc.id,svc.sub_id,svc.panel_email,identity,identity===main?1:0);
 }
+async function panelRemovalBlocker(env,panel) {
+  const entries=await all(env,'SELECT * FROM services');
+  for(const svc of entries){if(!svc.panel_email || !svc.sub_id)return 'هویت بعضی سرویس‌ها نامشخص است؛ ابتدا آن‌ها را بررسی کنید.';try{const owner=await panelForService(env,svc);if(await currentPanelIdentity(owner)===panel.identity)return 'این پنل سرویس ثبت‌شده دارد؛ ابتدا سرویس‌ها را منتقل یا حذف کنید.'}catch{return 'هویت بعضی سرویس‌ها نامشخص است؛ ابتدا آن‌ها را بررسی کنید.'}}
+  const main=panel.slot==='main'?1:0;
+  const active=await first(env,"SELECT COUNT(*) n FROM orders o LEFT JOIN bot_order_routes r ON r.order_id=o.id WHERE (r.order_id IS NULL OR r.panel_identity=? OR (?=1 AND r.panel_identity='')) AND o.status NOT IN ('approved','rejected','cancelled','wallet_failed_refunded','wallet_review_resolved')",panel.identity,main);
+  if(Number(active.n))return 'این پنل سفارش فعال یا نیازمند بررسی دارد.';
+  const ops=await first(env,'SELECT COUNT(*) n FROM service_operations');if(Number(ops.n))return 'عملیات سرویس در جریان یا نیازمند بررسی است.';
+  return '';
+}
 async function assertCategory(env,category) {
   if (!category || Number(category.active ?? category.category_active)!==1 || !parseIds(category.group_ids).length) throw new Error("دسته‌بندی بسته تنظیم نشده یا غیرفعال است");
   const target=await panelForIdentity(env,category.panel_identity);
@@ -257,7 +265,7 @@ async function panelLogin(env, identity) {
   }
   const r = await fetch(`${panelBase(env)}/login`, {
     method: "POST", redirect: "error",
-    ...(env.policySignal ? {signal:AbortSignal.any([env.policySignal,AbortSignal.timeout(15000)])} : {}),
+    signal:env.policySignal ? AbortSignal.any([env.policySignal,AbortSignal.timeout(15000)]) : AbortSignal.timeout(15000),
     headers: { "content-type": "application/x-www-form-urlencoded", "X-Requested-With": "XMLHttpRequest" },
     body: new URLSearchParams({ username: env.PANEL_USER, password: env.PANEL_PASS }).toString(),
   });
@@ -282,7 +290,7 @@ async function panelCall(env, method, path, form, onDispatch) {
     let body;
     if (form) { headers["content-type"] = "application/x-www-form-urlencoded"; body = form.toString(); }
     if (onDispatch) onDispatch();
-    const r = await fetch(panelBase(env) + path, { method, headers, body, redirect:"error",...(env.policySignal ? {signal:AbortSignal.any([env.policySignal,AbortSignal.timeout(15000)])} : {}) });
+    const r = await fetch(panelBase(env) + path, { method, headers, body, redirect:"error",signal:env.policySignal ? AbortSignal.any([env.policySignal,AbortSignal.timeout(15000)]) : AbortSignal.timeout(15000) });
     const text = await r.text();
     if (r.status === 401 || r.status === 404 || text.trimStart().startsWith("<")) { panelCookie = null; if (method !== "GET") throw new Error("نشست نامعتبر یا نتیجه عملیات نامشخص است؛ پیش از تکرار دستی بررسی کنید"); continue; }
     if (r.status === 403) throw new Error("دسترسی حساب نماینده در پنل کافی نیست (نقش/گروه/اعتبار را بررسی کنید)");
@@ -298,7 +306,7 @@ function subLink(env, subId) {
 }
 
 function assertPanelReady(env) {
-  if (!/^https:\/\//i.test(env.PANEL_URL || "") || !/^https:\/\//i.test(env.cfg.sub_base_url || "")) throw new Error("آدرس پنل و ساب باید HTTPS باشند");
+  try{panelURL(env.PANEL_URL || '');panelURL(env.cfg.sub_base_url || '')}catch{throw new Error('آدرس پنل و ساب باید HTTP یا HTTPS معتبر باشند')}
   if (!env.cfg.sub_base_url) throw new Error("تنظیم sub_base_url خالی است (/set sub_base_url ...)");
 }
 
@@ -590,7 +598,7 @@ async function subscriptionLinks(svc) {
     throw new Error("لینک اشتراک این سرویس ثبت نشده است.");
   }
   const url = new URL(svc.sub_link);
-  if (url.protocol !== "https:" || url.username || url.password || url.hash) throw new Error("آدرس اشتراک معتبر و امن نیست.");
+  if (!['http:','https:'].includes(url.protocol) || url.username || url.password || url.hash) throw new Error("آدرس اشتراک معتبر نیست.");
   url.pathname = url.pathname.replace(/\/+$/, "") + "/raw";
   const r = await fetch(url.toString(), { headers: {Accept:"text/plain", "User-Agent":"VPN-UI-Telegram-Bot/1.0"}, redirect:"error", signal:AbortSignal.timeout(15000) });
   if (!r.ok || !r.body) throw new Error(`دریافت اشتراک ناموفق بود (HTTP ${r.status}).`);
@@ -660,9 +668,10 @@ async function createInvoice(c, user, chat_id, name, plan, renewId, cq) {
   const days = Number(plan.days);
   if (!Number.isSafeInteger(days) || days <= 0 || days>36500 || !Number.isSafeInteger(Date.now()+days*DAY_MS)) throw new Error("مدت سرویس مشخص نیست؛ با پشتیبانی تماس بگیرید");
   const r = await run(env,
-    "INSERT INTO orders(user_id,username,service_name,volume,price,discount,final_price,duration,renew_service_id,gb,days,created_at,status) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+    "INSERT INTO orders(user_id,username,service_name,volume,price,discount,final_price,duration,renew_service_id,gb,days,created_at,status) SELECT ?,?,?,?,?,?,?,?,?,?,?,?,? WHERE EXISTS(SELECT 1 FROM bot_plan_specs s JOIN plans p ON p.key=s.plan_key JOIN bot_categories c ON c.id=s.category_id WHERE s.plan_key=? AND c.id=? AND c.active=1 AND c.group_ids=? AND COALESCE(c.panel_identity,'')=? AND s.days=? AND p.gb=? AND p.price=?)",
     user.id, user.username || "-", name, planLabel(plan), plan.price, 0, plan.price, durationText(days),
-    renewId || null, plan.gb, days, now(), "draft");
+    renewId || null, plan.gb, days, now(), "draft",plan.key,plan.category_id,plan.group_ids,plan.panel_identity || '',days,plan.gb,plan.price);
+  if(!r.meta.changes)throw new Error('بسته یا پنل تغییر کرده است؛ دوباره انتخاب کنید');
   const orderId = r.meta.last_row_id;
   await run(env,"INSERT INTO bot_order_routes(order_id,group_ids,anchor_id,panel_identity) VALUES(?,?,0,?)",orderId,plan.group_ids,identity);
   await reserveReferral(env,orderId,user.id);
@@ -1052,12 +1061,24 @@ async function handleAdminUIInput(c, msg) {
   }
   if(step.startsWith('mpedit_')) {
     if(!env.owners.includes(msg.from.id))return send('فقط ادمین اصلی اجازه دارد.');
-    const slot=st.admin_ui_key;if(!/^p[0-9a-f]{12}$/.test(slot))return send('پنل نامعتبر است.');const row=await first(env,'SELECT value FROM settings WHERE key=?',`extra_panel:${slot}`);let draft;try{draft=await decryptPanel(env.BOT_TOKEN,row.value)}catch{return send('اطلاعات پنل قابل خواندن نیست.')}
+    const slot=st.admin_ui_key;if(!/^(main|p[0-9a-f]{12})$/.test(slot))return send('پنل نامعتبر است.');const panel=(await listBotPanels(env)).find(p=>p.slot===slot);if(!panel)return send('پنل پیدا نشد.');
+    const row=slot==='main'?await first(env,'SELECT value FROM settings WHERE key=?','panel_credentials_v1'):await first(env,'SELECT value FROM settings WHERE key=?',`extra_panel:${slot}`);let draft;try{draft=row?await decryptPanel(env.BOT_TOKEN,row.value):{url:panel.env.PANEL_URL,user:panel.env.PANEL_USER,pass:panel.env.PANEL_PASS,name:panel.name,sub:panel.env.cfg.sub_base_url}}catch{return send('اطلاعات پنل قابل خواندن نیست.')}
     if(step==='mpedit_name'){if(!value||value.length>30||/[\r\n]/.test(value))return send('نام پنل معتبر نیست.');if((await listBotPanels(env)).some(p=>p.slot!==slot&&p.name.toLowerCase()===value.toLowerCase()))return send('این نام قبلاً ثبت شده است.');draft.name=value;}
-    else if(step==='mpedit_sub'){try{draft.sub=panelURL(value)}catch{return send('آدرس پایه اشتراک باید HTTPS معتبر باشد.')}}
+    else if(step==='mpedit_sub'){try{draft.sub=panelURL(value)}catch{return send('آدرس پایه اشتراک باید HTTP یا HTTPS معتبر باشد.')}}
+    else if(step==='mpedit_url'){try{draft.url=panelURL(value)}catch{return send('آدرس پنل معتبر نیست.')}}
+    else if(step==='mpedit_user'){if(!value||value.length>256||/[\r\n]/.test(value))return send('نام کاربری معتبر نیست.');draft.user=value;}
     else if(step==='mpedit_pass'){if(!value||value.length>512||/[\r\n]/.test(value))return send('رمز نامعتبر است.');try{await tg(env,'deleteMessage',{chat_id:msg.chat.id,message_id:msg.message_id})}catch{};draft.pass=value;try{await probePanel(draft)}catch(e){return send(`اتصال ناموفق بود: ${esc(e.message)}`)}}
     else return send('درخواست نامعتبر است.');
-    await run(env,"UPDATE settings SET value=? WHERE key=?",await encryptPanel(env.BOT_TOKEN,draft),`extra_panel:${slot}`);delete st.admin_ui_step;delete st.admin_ui_key;return sendMsg(env,msg.chat.id,'✅ اطلاعات پنل ذخیره شد.',adminBack(`admin:multipanel:${slot}`));
+    if(step==='mpedit_url'||step==='mpedit_user'){
+      try{await probePanel(draft)}catch(e){return send(`اتصال ناموفق بود: ${esc(e.message)}`)}
+      const newId=await panelAccountKey(draft.url,draft.user);if((await listBotPanels(env)).some(p=>p.slot!==slot && p.identity===newId))return send('این حساب قبلاً به ربات وصل است.');
+      const inflight=await first(env,"SELECT COUNT(*) AS n FROM orders o LEFT JOIN bot_order_routes r ON r.order_id=o.id WHERE (r.order_id IS NULL OR r.panel_identity=? OR (?=1 AND r.panel_identity='')) AND o.status NOT IN ('approved','rejected','cancelled','wallet_failed_refunded','wallet_review_resolved')",panel.identity,slot==='main'?1:0);const ops=await first(env,'SELECT COUNT(*) AS n FROM service_operations');if(Number(inflight.n)||Number(ops.n))return send('سفارش فعال یا عملیات سرویس در جریان است؛ ابتدا تعیین تکلیف کنید.');
+      const bindings=[env.DB.prepare("UPDATE bot_categories SET panel_identity=? WHERE panel_identity=? OR (?=1 AND panel_identity='')").bind(newId,panel.identity,slot==='main'?1:0),env.DB.prepare("UPDATE bot_order_routes SET panel_identity=? WHERE panel_identity=? OR (?=1 AND panel_identity='')").bind(newId,panel.identity,slot==='main'?1:0),env.DB.prepare("UPDATE settings SET value=? WHERE (key LIKE 'service_panel:%' OR key LIKE 'attempt_panel:%') AND value=?").bind(newId,panel.identity)];
+      if(slot==='main')bindings.push(env.DB.prepare("INSERT INTO settings(key,value) VALUES('panel_identity_v1',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").bind(newId));
+      bindings.push(env.DB.prepare("INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").bind(slot==='main'?'panel_credentials_v1':`extra_panel:${slot}`,await encryptPanel(env.BOT_TOKEN,draft)));await env.DB.batch(bindings);
+    } else if(slot==='main' && step==='mpedit_sub')await run(env,"INSERT INTO settings(key,value) VALUES('sub_base_url',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",draft.sub+'/');
+    else await run(env,"INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",slot==='main'?'panel_credentials_v1':`extra_panel:${slot}`,await encryptPanel(env.BOT_TOKEN,draft));
+    delete st.admin_ui_step;delete st.admin_ui_key;return sendMsg(env,msg.chat.id,'✅ اطلاعات پنل ذخیره شد.',adminBack(`admin:multipanel:${slot}`));
   }
   if(step.startsWith('mp_')) {
     if(!env.owners.includes(msg.from.id))return send('فقط ادمین اصلی اجازه تنظیم پنل را دارد.');
@@ -1065,20 +1086,20 @@ async function handleAdminUIInput(c, msg) {
     if(step==='mp_name'){
       if(!value || value.length>30 || /[\r\n]/.test(value))return send('نام پنل باید یک خط و حداکثر ۳۰ نویسه باشد.');
       const existing=await listBotPanels(env);if(existing.some(p=>p.name.toLowerCase()===value.toLowerCase()))return send('این نام قبلاً ثبت شده است.');
-      await run(env,"INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",draftKey,await encryptPanel(env.BOT_TOKEN,{name:value,expires:Date.now()+1800000}));st.admin_ui_step='mp_url';return sendMsg(env,msg.chat.id,'آدرس HTTPS پنل، همراه مسیر آن را بفرستید.',adminBack('admin:settings'));
+      await run(env,"INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",draftKey,await encryptPanel(env.BOT_TOKEN,{name:value,expires:Date.now()+1800000}));st.admin_ui_step='mp_url';return sendMsg(env,msg.chat.id,'آدرس HTTP یا HTTPS پنل، همراه مسیر آن را بفرستید.',adminBack('admin:settings'));
     }
     const row=await first(env,'SELECT value FROM settings WHERE key=?',draftKey);let draft;try{draft=await decryptPanel(env.BOT_TOKEN,row.value)}catch{}if(!draft || Date.now()>draft.expires)return send('درخواست منقضی شد؛ دوباره شروع کنید.');
-    if(step==='mp_url'){try{draft.url=panelURL(value)}catch{return send('آدرس HTTPS پنل معتبر نیست.')}st.admin_ui_step='mp_user';}
+    if(step==='mp_url'){try{draft.url=panelURL(value)}catch{return send('آدرس HTTP یا HTTPS پنل معتبر نیست.')}st.admin_ui_step='mp_user';}
     else if(step==='mp_user'){if(!value||value.length>256||/[\r\n]/.test(value))return send('نام کاربری نامعتبر است.');draft.user=value;st.admin_ui_step='mp_pass';}
     else if(step==='mp_pass'){if(!value||value.length>512||/[\r\n]/.test(value))return send('رمز نامعتبر است.');draft.pass=value;try{await tg(env,'deleteMessage',{chat_id:msg.chat.id,message_id:msg.message_id})}catch{};try{await probePanel(draft)}catch(e){return send(`اتصال ناموفق بود: ${esc(e.message)}`)}st.admin_ui_step='mp_sub';}
     else if(step==='mp_sub'){
-      try{draft.sub=panelURL(value)}catch{return send('آدرس پایه اشتراک باید HTTPS معتبر باشد.')}
+      try{draft.sub=panelURL(value)}catch{return send('آدرس پایه اشتراک باید HTTP یا HTTPS معتبر باشد.')}
       const identity=await panelAccountKey(draft.url,draft.user),panels=await listBotPanels(env);if(panels.some(p=>p.identity===identity))return send('این حساب پنل قبلاً اضافه شده است.');
       const slot='p'+hex(6);delete draft.expires;await env.DB.batch([env.DB.prepare("INSERT INTO settings(key,value) VALUES(?,?)").bind(`extra_panel:${slot}`,await encryptPanel(env.BOT_TOKEN,draft)),env.DB.prepare('DELETE FROM settings WHERE key=?').bind(draftKey)]);delete st.admin_ui_step;delete st.admin_ui_key;
       return sendMsg(env,msg.chat.id,`✅ پنل «${esc(draft.name)}» اضافه شد.`,adminBack('admin:settings'));
     } else return send('درخواست نامعتبر است.');
     await run(env,"INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",draftKey,await encryptPanel(env.BOT_TOKEN,draft));
-    const prompts={mp_user:'نام کاربری پنل را بفرستید.',mp_pass:'رمز پنل را بفرستید.',mp_sub:'آدرس پایه HTTPS لینک اشتراک این پنل را بفرستید.'};return sendMsg(env,msg.chat.id,prompts[st.admin_ui_step],adminBack('admin:settings'));
+    const prompts={mp_user:'نام کاربری پنل را بفرستید.',mp_pass:'رمز پنل را بفرستید.',mp_sub:'آدرس پایه HTTP یا HTTPS اشتراک این پنل را بفرستید.'};return sendMsg(env,msg.chat.id,prompts[st.admin_ui_step],adminBack('admin:settings'));
   }
   if (step.startsWith("panel_")) {
     if (!env.owners.includes(msg.from.id)) { delete st.admin_ui_step; return send("فقط ادمین اصلی اجازه دارد."); }
@@ -1086,14 +1107,14 @@ async function handleAdminUIInput(c, msg) {
     // Try to remove the original message, but never claim Telegram erased it.
     try { await tg(env,"deleteMessage",{chat_id:msg.chat.id,message_id:msg.message_id}); } catch {}
     if (step === "panel_sub") {
-      let url; try { url=panelURL(value); } catch { return send("آدرس ساب باید یک آدرس HTTPS معتبر باشد."); }
+      let url; try { url=panelURL(value); } catch { return send("آدرس ساب باید یک آدرس HTTP یا HTTPS معتبر باشد."); }
       await run(env,"INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value","sub_base_url",url+"/");
       delete st.admin_ui_step; delete st.admin_ui_key;
       await sendMsg(env,msg.chat.id,"✅ آدرس ساب ذخیره شد؛ تنظیم اتصال پنل کامل است."); return showAdminHome(env,msg.chat.id);
     }
     let draft;
     if (step === "panel_url") {
-      let url; try { url=panelURL(value); } catch { return send("آدرس پنل باید HTTPS و بدون پارامتر باشد؛ دوباره بفرستید."); }
+      let url; try { url=panelURL(value); } catch { return send("آدرس پنل باید HTTP یا HTTPS و بدون پارامتر باشد؛ دوباره بفرستید."); }
       draft={url,expires:Date.now()+30*60*1000};
       await run(env,"INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",draftKey,await encryptPanel(env.BOT_TOKEN,draft));
       st.admin_ui_step="panel_user"; return sendMsg(env,msg.chat.id,"نام کاربری حساب نمایندهٔ پنل را بفرستید.",adminBack("admin:settings"));
@@ -1115,7 +1136,7 @@ async function handleAdminUIInput(c, msg) {
 
       const config={url:draft.url,user:draft.user,pass};
       try { await probePanel(config); } catch(e) { return send(`❌ اتصال تأیید نشد: ${esc(e.message)}\nرمز را دوباره بفرستید یا از تنظیمات شروع کنید.`); }
-      const queries=[env.DB.prepare("INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").bind("panel_credentials_v1",await encryptPanel(env.BOT_TOKEN,config)),env.DB.prepare("INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").bind("panel_identity_v1",newIdentity),env.DB.prepare("DELETE FROM settings WHERE key=?").bind(draftKey)];
+      const queries=[env.DB.prepare("INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").bind("panel_credentials_v1",await encryptPanel(env.BOT_TOKEN,config)),env.DB.prepare("INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").bind("panel_identity_v1",newIdentity),env.DB.prepare("DELETE FROM settings WHERE key=?").bind(draftKey),env.DB.prepare("DELETE FROM settings WHERE key='panel_main_disabled'")];
       if(changingAccount) {
         for(const key of ["panel_group_ids","panel_inbound_id","sub_base_url"]) queries.push(env.DB.prepare("INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").bind(key,""));
         const previousIdentity=env.panelStoredIdentity || (env.PANEL_URL && env.PANEL_USER ? await currentPanelIdentity(env) : '');
@@ -1123,7 +1144,7 @@ async function handleAdminUIInput(c, msg) {
       }
       await env.DB.batch(queries); panelCookie=null;panelCookieKey="";
       st.admin_ui_step="panel_sub"; delete st.admin_ui_key;
-      return sendMsg(env,msg.chat.id,"✅ اتصال پنل ذخیره شد. آدرس پایه HTTPS اشتراک را بفرستید؛ بعداً برای هر دسته‌بندی گروه پنل را انتخاب می‌کنید.",adminBack("admin:settings"));
+      return sendMsg(env,msg.chat.id,"✅ اتصال پنل ذخیره شد. آدرس پایه HTTP یا HTTPS اشتراک را بفرستید؛ بعداً برای هر دسته‌بندی گروه پنل را انتخاب می‌کنید.",adminBack("admin:settings"));
     }
     delete st.admin_ui_step; return send("درخواست نامعتبر است؛ دوباره شروع کنید.");
   }
@@ -1589,16 +1610,37 @@ async function handleAdminUICallback(c, cq, answer) {
   if(d==='admin:multipanel_add'){if(!owner)return answer('فقط ادمین اصلی اجازه دارد.',true);return prompt('mp_name','','برای پنل جدید یک نام بفرستید؛ مثلاً پنل ۲.','admin:settings');}
   if(d==='admin:multipanels' || /^admin:multipanels:\d+$/.test(d)) {
     if(!owner)return answer('فقط ادمین اصلی اجازه دارد.',true);const page=Number(d.split(':')[2] || 0);if(!Number.isSafeInteger(page)||page>1000000)return answer('صفحه نامعتبر است.',true);const panels=await listBotPanels(env);
-    const rows=panels.slice(page*10,page*10+10).map(p=>[btn(p.name,p.slot==='main'?'admin:panelsetup':`admin:multipanel:${p.slot}`)]),nav=[];if(page>0)nav.push(btn('◀️ قبلی',`admin:multipanels:${page-1}`));if((page+1)*10<panels.length)nav.push(btn('بعدی ▶️',`admin:multipanels:${page+1}`));if(nav.length)rows.push(nav);rows.push([btn('➕ افزودن پنل','admin:multipanel_add')],[btn('🔙 تنظیمات','admin:settings')]);
+    const rows=panels.slice(page*10,page*10+10).map(p=>[btn(p.name,`admin:multipanel:${p.slot}`)]),nav=[];if(page>0)nav.push(btn('◀️ قبلی',`admin:multipanels:${page-1}`));if((page+1)*10<panels.length)nav.push(btn('بعدی ▶️',`admin:multipanels:${page+1}`));if(nav.length)rows.push(nav);rows.push([btn('➕ افزودن پنل','admin:multipanel_add')],[btn('🔙 تنظیمات','admin:settings')]);
     return renderAdmin(panels.length?'🖥 پنل‌های متصل:':'پنلی متصل نشده است.',kb(rows));
   }
-  if (/^admin:multipanel:p[0-9a-f]{12}$/.test(d)) {
+  if (/^admin:multipanel:(?:main|p[0-9a-f]{12})$/.test(d)) {
     if(!owner)return answer('فقط ادمین اصلی اجازه دارد.',true);const slot=d.split(':')[2],panel=(await listBotPanels(env)).find(p=>p.slot===slot);if(!panel)return answer('پنل پیدا نشد.',true);
-    return renderAdmin(`🖥 <b>${esc(panel.name)}</b>\nآدرس: <code>${esc(panel.env.PANEL_URL)}</code>\nنام کاربری: <code>${esc(panel.env.PANEL_USER)}</code>\nآدرس ساب: <code>${esc(panel.env.cfg.sub_base_url)}</code>`,kb([[btn('✏️ نام',`admin:mpname:${slot}`),btn('🔑 رمز',`admin:mppass:${slot}`)],[btn('🔗 آدرس ساب',`admin:mpsub:${slot}`)],[btn('🔙 پنل‌ها','admin:multipanels')]]));
+    const choices=await panelChoices(panel.env),state=choices ? '✅ متصل' : '⚠️ اتصال یا دسترسی ناموفق';
+    const buttons=[[btn('🌐 آدرس پنل',`admin:mpurl:${slot}`),btn('👤 نام کاربری',`admin:mpuser:${slot}`)],[btn('🔑 رمز عبور',`admin:mppass:${slot}`),btn('🔗 آدرس ساب',`admin:mpsub:${slot}`)]];
+    if(slot!=='main')buttons.push([btn('✏️ نام پنل',`admin:mpname:${slot}`)]);buttons.push([btn('🗑 حذف پنل',`admin:mpdelete:${slot}`)],[btn('🔙 پنل‌ها','admin:multipanels')]);
+    const httpNotice=/^http:\/\//i.test(panel.env.PANEL_URL)?'\n⚠️ اتصال HTTP رمز عبور و اطلاعات را رمزگذاری نمی‌کند.':'';
+    return renderAdmin(`🖥 <b>${esc(panel.name)}</b>\nوضعیت: ${state}\nتعداد گروه‌ها: ${choices ? choices.groups.length : 'نامشخص'}\nآدرس: <code>${esc(panel.env.PANEL_URL)}</code>\nنام کاربری: <code>${esc(panel.env.PANEL_USER)}</code>\nآدرس ساب: <code>${esc(panel.env.cfg.sub_base_url)}</code>${httpNotice}`,kb(buttons));
   }
-  if (/^admin:mp(name|pass|sub):p[0-9a-f]{12}$/.test(d)) {
+  if (/^admin:mp(name|pass|sub|url|user):(?:main|p[0-9a-f]{12})$/.test(d)) {
     if(!owner)return answer('فقط ادمین اصلی اجازه دارد.',true);const [,action,slot]=d.split(':');if(!(await listBotPanels(env)).some(p=>p.slot===slot))return answer('پنل پیدا نشد.',true);
-    return prompt(`mpedit_${action.slice(2)}`,slot,action==='mpname'?'نام جدید پنل را بفرستید.':action==='mppass'?'رمز جدید پنل را بفرستید.':'آدرس پایه HTTPS اشتراک را بفرستید.',`admin:multipanel:${slot}`);
+    const messages={mpname:'نام جدید پنل را بفرستید.',mppass:'رمز جدید پنل را بفرستید.',mpsub:'آدرس پایه HTTP یا HTTPS اشتراک را بفرستید.',mpurl:'آدرس HTTP یا HTTPS پنل را بفرستید.',mpuser:'نام کاربری پنل را بفرستید.'};
+    return prompt(`mpedit_${action.slice(2)}`,slot,messages[action],`admin:multipanel:${slot}`);
+  }
+  if (/^admin:mpdelete:(?:main|p[0-9a-f]{12})$/.test(d)) {
+    if(!owner)return answer('فقط ادمین اصلی اجازه دارد.',true);const slot=d.split(':')[2],panel=(await listBotPanels(env)).find(p=>p.slot===slot);if(!panel)return answer('پنل پیدا نشد.',true);
+    const reason=await panelRemovalBlocker(env,panel);if(reason)return answer(reason,true);
+    return renderAdmin(`حذف اتصال «${esc(panel.name)}» از ربات تأیید شود؟ دسته‌بندی‌های متصل به آن غیرفعال می‌شوند.`,kb([[btn('✅ تأیید حذف',`admin:mpdeleteyes:${slot}`)],[btn('❌ انصراف',`admin:multipanel:${slot}`)]]));
+  }
+  if (/^admin:mpdeleteyes:(?:main|p[0-9a-f]{12})$/.test(d)) {
+    if(!owner)return answer('فقط ادمین اصلی اجازه دارد.',true);const slot=d.split(':')[2],panel=(await listBotPanels(env)).find(p=>p.slot===slot);if(!panel)return answer('پنل پیدا نشد.',true);
+    const reason=await panelRemovalBlocker(env,panel);if(reason)return answer(reason,true);
+    const guard="NOT EXISTS(SELECT 1 FROM orders o LEFT JOIN bot_order_routes r ON r.order_id=o.id WHERE (r.order_id IS NULL OR r.panel_identity=? OR (?=1 AND r.panel_identity='')) AND o.status NOT IN ('approved','rejected','cancelled','wallet_failed_refunded','wallet_review_resolved')) AND NOT EXISTS(SELECT 1 FROM service_operations)";
+    const isMain=slot==='main'?1:0,key=slot==='main'?'panel_main_disabled':`extra_panel:${slot}`;
+    const remove=slot==='main'?env.DB.prepare(`INSERT INTO settings(key,value) SELECT 'panel_main_disabled','1' WHERE ${guard} ON CONFLICT(key) DO UPDATE SET value='1'`).bind(panel.identity,isMain):env.DB.prepare(`DELETE FROM settings WHERE key=? AND ${guard}`).bind(key,panel.identity,isMain);
+    const disabled=slot==='main'?"EXISTS(SELECT 1 FROM settings WHERE key=? AND value='1')":"NOT EXISTS(SELECT 1 FROM settings WHERE key=?)";
+    const result=await env.DB.batch([remove,env.DB.prepare(`UPDATE bot_categories SET active=0 WHERE (panel_identity=? OR (?=1 AND panel_identity='')) AND ${disabled}`).bind(panel.identity,isMain,key)]);
+    if(!result[0]?.meta?.changes)return answer('سفارش یا عملیاتی هم‌زمان شروع شد؛ دوباره بررسی کنید.',true);
+    return renderAdmin('✅ اتصال پنل از ربات حذف شد.',adminBack('admin:multipanels'));
   }
   if (/^admin:testcategories:\d+$/.test(d)) {
     const page=Number(d.split(":")[2]);if(!Number.isSafeInteger(page)||page>1000000)return answer("صفحه نامعتبر است.",true);
@@ -1613,7 +1655,7 @@ async function handleAdminUICallback(c, cq, answer) {
   if (d === "admin:panelsetup") {
     if (!owner) return answer("فقط ادمین اصلی اجازه تنظیم اتصال پنل را دارد.", true);
     await run(env, "DELETE FROM settings WHERE key=?", `panel_draft:${uid}`);
-    return prompt("panel_url", "", "➕ آدرس کامل HTTPS پنل شامل پورت و مسیر پنل را بفرستید.\nمثال: <code>https://panel.example.com:2053/SECRET_PATH</code>", "admin:settings");
+    return prompt("panel_url", "", "➕ آدرس کامل HTTP یا HTTPS پنل شامل پورت و مسیر پنل را بفرستید.\nمثال: <code>https://panel.example.com:2053/SECRET_PATH</code>", "admin:settings");
   }
   if (d.startsWith("admin:setting:")) {
     const key = d.slice("admin:setting:".length), meta = Object.hasOwn(META, key) ? META[key] : null;
@@ -2039,7 +2081,7 @@ async function onCallback(c, cq) {
       }
       const nav=[]; if(page>0) nav.push(btn("◀️ قبلی",`cfglist:${id}:${page-1}`));
       if((page+1)*10<links.length) nav.push(btn("بعدی ▶️",`cfglist:${id}:${page+1}`)); if(nav.length) rows.push(nav);
-      const subUrl = (()=>{try {const u=new URL(actualSvc.sub_link); return u.protocol === 'https:' ? u.toString() : null;} catch{return null;}})();
+      const subUrl = (()=>{try {const u=new URL(actualSvc.sub_link); return ['http:','https:'].includes(u.protocol) ? u.toString() : null;} catch{return null;}})();
       if(subUrl) rows.push([urlBtn("🌐 صفحهٔ اشتراک و فایل‌ها",subUrl)]);
       rows.push([btn("🔙 بازگشت",`svc_${id}`)]);
       const message = links.length ? `🔗 <b>کانفیگ‌های قابل استفاده</b> (${links.length})\nبرای دریافت لینک یا QR هر مورد، دکمه‌اش را بزنید.` : "کانفیگ تکی فعالی در خروجی ساب موجود نیست. برای فایل‌های تنظیمات و جزئیات، صفحهٔ اشتراک را بررسی کنید.";
@@ -2211,6 +2253,7 @@ async function handleUpdate(baseEnv, update) {
       if (typeof p.user !== "string" || !p.user || typeof p.pass !== "string" || !p.pass) throw new Error();
     } catch { env.PANEL_URL=""; env.PANEL_USER=""; env.PANEL_PASS=""; }
   }
+  if(setR.results.find(r=>r.key==='panel_main_disabled')?.value==='1'){env.PANEL_URL='';env.PANEL_USER='';env.PANEL_PASS='';env.panelStoredIdentity='';}
   env.actor = from.id;
   env.owners = parseIds(baseEnv.ADMIN_ID);
   env.admins = new Set([...env.owners, ...admR.results.map((r) => Number(r.user_id))]);
@@ -2245,6 +2288,7 @@ async function backgroundEnv(base) {
   env.panelStoredIdentity=rows.find(r=>r.key==='panel_identity_v1')?.value || '';
   const saved=rows.find(r=>r.key==='panel_credentials_v1');
   if(saved){try{const p=await decryptPanel(base.BOT_TOKEN,saved.value);env.PANEL_URL=panelURL(p.url);env.PANEL_USER=p.user;env.PANEL_PASS=p.pass;if(!p.user||!p.pass)throw Error()}catch{env.PANEL_URL='';env.PANEL_USER='';env.PANEL_PASS='';}}
+  if(rows.find(r=>r.key==='panel_main_disabled')?.value==='1'){env.PANEL_URL='';env.PANEL_USER='';env.PANEL_PASS='';env.panelStoredIdentity='';}
   env.admins=new Set([...parseIds(base.ADMIN_ID),...(await all(base,'SELECT user_id FROM admins')).map(r=>Number(r.user_id))]);
   return env;
 }
