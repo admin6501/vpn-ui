@@ -4,6 +4,7 @@ import { dirname } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import worker, { handleUpdate } from './worker.js';
 import { migratePlanModel } from './plan-migration.mjs';
+import { processMessageJobs } from './messages.js';
 
 const config=JSON.parse(readFileSync(process.env.BOT_CONFIG || '/etc/vpn-ui-bot/config.json','utf8'));
 if (!/^\d+:[A-Za-z0-9_-]+$/.test(config.BOT_TOKEN) || !/^\d+(,\d+)*$/.test(config.ADMIN_ID)) throw Error('Invalid bot token or admin ID');
@@ -26,7 +27,7 @@ class Statement {
  execute(){const s=db.prepare(this.sql); if(s.columns().length) return {results:s.all(...this.args),meta:{changes:0}}; const r=s.run(...this.args);return {results:[],meta:{changes:Number(r.changes),last_row_id:Number(r.lastInsertRowid)}}}
 }
 const DB={prepare(sql){return new Statement(sql)},async batch(statements){db.exec('BEGIN IMMEDIATE');try {const results=statements.map(s=>s.execute());db.exec('COMMIT');return results}catch(e){db.exec('ROLLBACK');throw e}}};
-const env={...config,DB};
+const env={...config,DB,SERVER_MODE:true};
 let stopping=false;
 const shutdown=new AbortController();
 const stop=()=>{stopping=true;shutdown.abort()};
@@ -38,6 +39,14 @@ async function telegram(method, data={}){
 const info=await telegram('getWebhookInfo');
 if(info.url) throw Error('A Telegram webhook is active. Remove it explicitly before using server polling.');
 console.log('Bot started using long polling.');
+let messageTask=null;
+const textEscape=s=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+const sendQueued=async(userId,body,signal)=>{
+ const response=await fetch(`https://api.telegram.org/bot${config.BOT_TOKEN}/sendMessage`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({chat_id:userId,text:textEscape(body),parse_mode:'HTML'}),signal:AbortSignal.any([signal,AbortSignal.timeout(10000)])});
+ return response.json();
+};
+const tickMessages=()=>{if(stopping||messageTask)return;messageTask=processMessageJobs(env,sendQueued,{signal:shutdown.signal}).catch(e=>console.error('Message queue error:',e.message)).finally(()=>{messageTask=null})};
+const messageTimer=setInterval(tickMessages,5000);messageTimer.unref();tickMessages();
 let nextRecovery=0;
 while(!stopping){
  try {
@@ -51,4 +60,4 @@ while(!stopping){
   }
  }catch(e){if(!stopping){console.error('Polling/recovery error:',e.message);await delay(5000,undefined,{signal:shutdown.signal}).catch(()=>{})}}
 }
-db.close();console.log('Bot stopped.');
+clearInterval(messageTimer);if(messageTask)await messageTask;db.close();console.log('Bot stopped.');

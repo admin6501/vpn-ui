@@ -14,7 +14,7 @@ export async function walletBalance(env, userId) {
 export async function reserveWalletPayment(env, orderId, userId) {
   const now=String(Date.now());
   const results=await env.DB.batch([
-    env.DB.prepare("UPDATE orders SET status='wallet_processing' WHERE id=? AND user_id=? AND status='draft' AND NOT EXISTS(SELECT 1 FROM orders o2 WHERE o2.user_id=orders.user_id AND o2.status IN ('wallet_processing','needs_review_refunded'))").bind(orderId,userId),
+    env.DB.prepare("UPDATE orders SET status='wallet_processing' WHERE id=? AND user_id=? AND status='draft' AND NOT EXISTS(SELECT 1 FROM orders o2 WHERE o2.user_id=orders.user_id AND o2.status IN ('wallet_processing','needs_review_refunded')) AND NOT EXISTS(SELECT 1 FROM bot_coupon_uses u WHERE u.order_id=orders.id AND u.state='reserved' AND u.expires_ms<=?)").bind(orderId,userId,Number(now)),
     env.DB.prepare("INSERT INTO wallet_payments(order_id,user_id,amount,state,created_at) SELECT id,user_id,final_price,'processing',? FROM orders WHERE id=? AND user_id=? AND status='wallet_processing'").bind(now,orderId,userId),
   ]);
   return Number(results[0]?.meta?.changes)>=1 && Number(results[1]?.meta?.changes)>=1;
@@ -25,6 +25,7 @@ export async function completeWalletPayment(env, orderId, state, beforeDispatch=
   const result=await env.DB.batch([
     env.DB.prepare("UPDATE wallet_payments SET state=? WHERE order_id=? AND state='processing'").bind(state,orderId),
     env.DB.prepare("UPDATE orders SET status=? WHERE id=? AND status='wallet_processing' AND EXISTS(SELECT 1 FROM wallet_payments WHERE order_id=? AND state=?)").bind(orderStatus,orderId,orderId,state),
+    env.DB.prepare("UPDATE bot_coupon_uses SET state=? WHERE order_id=? AND state='reserved' AND EXISTS(SELECT 1 FROM wallet_payments WHERE order_id=? AND state=?)").bind(state==='settled'?'consumed':'released',orderId,orderId,state),
   ]);
   return Number(result[0]?.meta?.changes)>=1 && Number(result[1]?.meta?.changes)>=1;
 }

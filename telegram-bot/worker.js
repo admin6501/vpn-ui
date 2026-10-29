@@ -1,6 +1,8 @@
 import { qrPng } from './qr.js';
 import { parseMoney, walletBalance, reserveWalletPayment, completeWalletPayment, adjustWallet, recoverWalletPayments } from './wallet.js';
 import { encryptPanel, decryptPanel, panelURL, panelAccountKey, probePanel } from './panel-config.js';
+import { applyCoupon, expireCouponReservations, cancelDraftOrder, normalizeCoupon, validCouponCode } from './coupons.js';
+import { createMessageJob, confirmMessageJob, processMessageJobs } from './messages.js';
 
 // ربات فروش کانفیگ | NovaRay VPN — Cloudflare Workers + D1 + اتصال به پنل vpn-ui
 // ساخت/تمدید/حذف سرویس مستقیم از طریق API پنل (حساب نماینده) انجام می‌شود.
@@ -144,17 +146,14 @@ async function assertCategory(env,category) {
 const getOrder = (env, id) => first(env, "SELECT * FROM orders WHERE id=?", id);
 const setOrderStatus = (env, id, s) => run(env, "UPDATE orders SET status=? WHERE id=?", s, id);
 const claimOrder = async (env, id, from, to) =>
-  (await run(env, "UPDATE orders SET status=? WHERE id=? AND status=?", to, id, from)).meta.changes > 0;
+  (await run(env, "UPDATE orders SET status=? WHERE id=? AND status=? AND (? NOT IN ('draft','needs_fix') OR NOT EXISTS(SELECT 1 FROM bot_coupon_uses u WHERE u.order_id=orders.id AND u.state='reserved' AND u.expires_ms<=?))", to, id, from, from,Date.now())).meta.changes > 0;
 const getService = (env, id) => first(env, "SELECT * FROM services WHERE id=?", id);
 const getUserServices = (env, uid) => all(env, "SELECT * FROM services WHERE user_id=? ORDER BY id DESC", uid);
 const latestNeedsFix = (env, uid) =>
   first(env, "SELECT * FROM orders WHERE user_id=? AND status='needs_fix' ORDER BY id DESC LIMIT 1", uid);
 
-async function takeDiscount(env, uid) {
-  const row = await first(env, "SELECT * FROM discounts WHERE user_id=? AND used=0 ORDER BY id LIMIT 1", uid);
-  if (!row) return 0;
-  const r = await run(env, "UPDATE discounts SET used=1 WHERE id=? AND used=0", row.id);
-  return r.meta.changes ? row.amount : 0;
+async function reserveReferral(env,orderId,uid) {
+  return run(env,"INSERT INTO bot_order_referrals(order_id,discount_id,user_id,amount,state) SELECT o.id,d.id,d.user_id,MIN(d.amount,o.final_price),'reserved' FROM discounts d JOIN orders o ON o.id=? AND o.user_id=d.user_id WHERE d.user_id=? AND d.used=0 AND d.amount>0 AND o.status='draft' AND o.final_price>0 ORDER BY d.id LIMIT 1",orderId,uid);
 }
 
 async function registerReferral(env, referrer, referred) {
@@ -568,6 +567,10 @@ function invoiceText(env, o) {
   );
   return L.join("\n");
 }
+const invoiceKb=(id,hasCoupon=false)=>kb([
+  ...(!hasCoupon ? [[btn("🎟 کد تخفیف",`coupon:enter:${id}`)]] : []),
+  [btn("💰 پرداخت از کیف پول",`wallet:pay:${id}`)],[btn("🔙 انصراف و منوی اصلی","main_menu")],
+]);
 
 async function createInvoice(c, user, chat_id, name, plan, renewId, cq) {
   const { env, st } = c;
@@ -575,18 +578,17 @@ async function createInvoice(c, user, chat_id, name, plan, renewId, cq) {
   if(!renewId) {assertPanelReady(env);await groupCredentials(env,plan.group_ids,0)}
   const days = Number(plan.days);
   if (!Number.isSafeInteger(days) || days <= 0 || days>36500 || !Number.isSafeInteger(Date.now()+days*DAY_MS)) throw new Error("مدت سرویس مشخص نیست؛ با پشتیبانی تماس بگیرید");
-  const discount = await takeDiscount(env, user.id);
-  const final = Math.max(plan.price - discount, 0);
   const r = await run(env,
     "INSERT INTO orders(user_id,username,service_name,volume,price,discount,final_price,duration,renew_service_id,gb,days,created_at,status) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
-    user.id, user.username || "-", name, planLabel(plan), plan.price, discount, final, durationText(days),
+    user.id, user.username || "-", name, planLabel(plan), plan.price, 0, plan.price, durationText(days),
     renewId || null, plan.gb, days, now(), "draft");
   const orderId = r.meta.last_row_id;
   await run(env,"INSERT INTO bot_order_routes(order_id,group_ids,anchor_id,panel_identity) VALUES(?,?,0,?)",orderId,plan.group_ids,identity);
+  await reserveReferral(env,orderId,user.id);
   st.step = "receipt"; st.order_id = orderId; delete st.renew_service_id;
   const order = await getOrder(env, orderId);
   if (cq) { try { await tg(env, "deleteMessage", { chat_id, message_id: cq.message.message_id }); } catch {} }
-  await sendMsg(env, chat_id, invoiceText(env, order), kb([[btn("💰 پرداخت از کیف پول", `wallet:pay:${orderId}`)],[btn("🔙 بازگشت", "main_menu")]]));
+  await sendMsg(env, chat_id, invoiceText(env, order), invoiceKb(orderId));
 }
 
 // ---------------------------------------------------------- تحویل سفارش (ساخت/تمدید در پنل)
@@ -663,6 +665,7 @@ async function handleWalletReceipt(c,msg) {
 // ---------------------------------------------------------- هندلرهای کاربر
 async function handleStart(c, msg) {
   const { env } = c;
+  if(c.st.order_id)await cancelDraftOrder(env,Number(c.st.order_id),msg.from.id);
   c.st = {};
   if (env.admins.has(msg.from.id) || await isMember(env, msg.from.id)) {
     await sendMainMenu(env, msg.chat.id, startGreeting(env,msg.from.first_name));
@@ -675,13 +678,33 @@ async function handleStart(c, msg) {
 
 async function handleReceipt(c, msg) {
   const { env, st } = c;
-  const order = st.order_id ? await getOrder(env, st.order_id) : null;
+  await expireCouponReservations(env);
+  let order = st.order_id ? await getOrder(env, st.order_id) : null;
   if (!order) {
     await sendMsg(env, msg.chat.id, "❌ سفارش یافت نشد. دوباره از منو اقدام کنید.");
     c.st = {};
     return;
   }
   const u = msg.from;
+  const expiredReceipt=async()=>{
+    const use=await first(env,"SELECT id,amount FROM bot_coupon_uses WHERE order_id=? AND user_id=? AND state='released' ORDER BY id DESC LIMIT 1",order.id,u.id);
+    if(!use)return false;
+    const current=await getOrder(env,order.id),originalFinal=Math.max(0,Number(current?.final_price || 0)-Number(use.amount || 0));
+    let delivered=0;
+    for(const adminId of env.admins){try{const copy=await tg(env,"copyMessage",{chat_id:adminId,from_chat_id:msg.chat.id,message_id:msg.message_id});if(copy.ok){const note=await sendMsg(env,adminId,`⚠️ فیش سفارش <code>${order.id}</code> پس از پایان مهلت کد تخفیف رسید. مبلغ فاکتور قبلی: ${toman(originalFinal)}. سفارش اجرا نشده و سهمیه تخفیف آزاد شده؛ مبلغ و وضعیت را دستی بررسی کنید.`);if(note.ok)delivered++}}catch{}}
+    delete st.step;delete st.order_id;
+    await sendMsg(env,msg.chat.id,delivered ? "⚠️ مهلت کد تمام شده و سفارش اجرا نشده است. فیش برای بررسی به مدیریت ارسال شد؛ دوباره پرداخت نکنید." : "⚠️ مهلت کد تمام شده و سفارش اجرا نشده است. ارسال فیش به مدیریت ناموفق بود؛ دوباره پرداخت نکنید و با پشتیبانی تماس بگیرید.",backKb());
+    return true;
+  };
+  if(Number(order.user_id) === Number(u.id) && order.status==='cancelled' && await expiredReceipt())return;
+  if (Number(order.user_id) !== Number(u.id) || !["draft", "needs_fix"].includes(order.status) || !(await claimOrder(env, order.id, order.status, "pending"))) {
+    await expireCouponReservations(env);
+    const current=await getOrder(env,order.id);
+    if(Number(order.user_id) === Number(u.id) && current?.status==='cancelled' && await expiredReceipt())return;
+    delete st.step; delete st.order_id; return sendMsg(env, msg.chat.id, "این سفارش قبلاً ثبت یا بررسی شده است.");
+  }
+  order=await getOrder(env,order.id);
+  if(!order || order.status!=="pending")return sendMsg(env,msg.chat.id,"وضعیت سفارش تغییر کرده است؛ با پشتیبانی تماس بگیرید.",backKb());
   const caption =
     "🧾 <b>فیش جدید</b>\n\n" +
     `🆔 سفارش: <code>${order.id}</code>\n` +
@@ -693,9 +716,6 @@ async function handleReceipt(c, msg) {
     (order.discount ? `🎁 تخفیف: -${toman(order.discount)}\n` : "") +
     `✅ مبلغ نهایی: <b>${toman(order.final_price)}</b>` +
     (order.renew_service_id ? "\n🔄 نوع: تمدید سرویس" : "");
-  if (Number(order.user_id) !== Number(u.id) || !["draft", "needs_fix"].includes(order.status) || !(await claimOrder(env, order.id, order.status, "pending"))) {
-    delete st.step; delete st.order_id; return sendMsg(env, msg.chat.id, "این سفارش قبلاً ثبت یا بررسی شده است.");
-  }
   // Only acknowledge a receipt when at least one admin receives both the
   // receipt and actionable order details. A failed Telegram call is not success.
   let delivered = 0;
@@ -704,7 +724,7 @@ async function handleReceipt(c, msg) {
       const copy = await tg(env, "copyMessage", { chat_id: adminId, from_chat_id: msg.chat.id, message_id: msg.message_id });
       if (!copy.ok) continue;
       const notification = await sendMsg(env, adminId, caption,
-        kb([[btn("✅ تایید", `approve_${order.id}`), btn("⚠️ ایراد در فیش", `issue_${order.id}`)]]));
+        kb([[btn("✅ تایید", `approve_${order.id}`), btn("⚠️ ایراد در فیش", `issue_${order.id}`)],[btn("❌ رد سفارش",`reject_order:${order.id}`)]]));
       if (notification.ok) delivered++;
     } catch (e) { console.log("receipt delivery failed", e.message); }
   }
@@ -881,14 +901,16 @@ async function botUserIdentity(env,id,cached) {
 }
 const adminTime = value => /^\d{12,13}$/.test(String(value || "")) ? new Date(Number(value)).toLocaleString("fa-IR",{timeZone:"Asia/Tehran"}) : String(value || "—");
 const adminOrderStatus = status => ({draft:"پیش‌نویس",pending:"منتظر تأیید",approved:"تأییدشده",needs_fix:"نیازمند اصلاح",needs_review:"نیازمند بررسی",needs_review_refunded:"نیازمند بررسی؛ وجه برگشت داده شد",wallet_processing:"در حال پرداخت",wallet_failed_refunded:"ناموفق؛ وجه برگشت داده شد",wallet_review_resolved:"بررسی‌شده"}[status] || status || "—");
+const messageJobStatus = status => ({draft:"پیش‌نویس",building:"در حال آماده‌سازی",queued:"در صف ارسال",done:"پایان‌یافته",cancelled:"متوقف‌شده"}[status] || "نامشخص");
 const adminBack = (target = "admin:root") => kb([[btn("🔙 بازگشت", target)]]);
 const adminHomeKb = () => kb([
   [btn("⚙️ تنظیمات ربات", "admin:settings"), btn("📦 مدیریت بسته‌ها", "admin:plans")],
   [btn("🗂 مدیریت دسته‌بندی‌ها", "admin:categories")],
   [btn("👮 مدیریت ادمین‌ها", "admin:admins"), btn("📊 آمار فروش", "admin:stats")],
   [btn("👥 لیست کاربران", "admin:users:0"),btn("🔎 جستجوی سرویس", "admin:service_search")],
+  [btn("📣 پیام همگانی", "admin:broadcast"),btn("📨 وضعیت پیام‌ها", "admin:messages:0")],
   [btn("💰 مدیریت کیف پول", "admin:wallet"),btn("⚠️ سفارش‌های قابل بررسی", "admin:wallet_reviews")],
-  [btn("🎁 تنظیم هدیه دعوت", "admin:setting:referral_discount")],
+  [btn("🎁 تنظیم هدیه دعوت", "admin:setting:referral_discount"),btn("🎟 مدیریت کد تخفیف", "admin:coupons:0")],
   [btn("🏷 نوع نام‌گذاری سرویس", "admin:setting:name_mode")],
   [btn("🎁 مجوز دوباره تست", "admin:resettest"), btn("🔌 بررسی اتصال پنل", "admin:panelcheck")],
   [btn("♻️ ریست تست همه", "admin:reset_all_tests")],
@@ -961,6 +983,24 @@ async function handleAdminUIInput(c, msg) {
       return sendMsg(env,msg.chat.id,"✅ اتصال پنل ذخیره شد. آدرس پایه HTTPS اشتراک را بفرستید؛ بعداً برای هر دسته‌بندی گروه پنل را انتخاب می‌کنید.",adminBack("admin:settings"));
     }
     delete st.admin_ui_step; return send("درخواست نامعتبر است؛ دوباره شروع کنید.");
+  }
+  if (step === "message_broadcast" || step === "message_private") {
+    if(!value || value.length>3500)return send("متن پیام باید حداکثر ۳۵۰۰ نویسه باشد.");
+    const privateMessage=step === "message_private",target=privateMessage ? Number(st.admin_ui_key) : null;
+    if(privateMessage && (!positiveId(String(target)) || !(await botUserExists(env,target))))return send("کاربر پیدا نشد.");
+    let id;try{id=await createMessageJob(env,msg.from.id,privateMessage ? "private" : "broadcast",target,value)}catch{return send("ساخت پیش‌نویس پیام ناموفق بود.")}
+    delete st.admin_ui_step;delete st.admin_ui_key;
+    return sendMsg(env,msg.chat.id,`📝 <b>پیش‌نمایش پیام ${privateMessage ? `به کاربر <code>${target}</code>` : "همگانی"}</b>\n\n${esc(value)}\n\n${privateMessage ? "" : "کاربران مسدودشده از دریافت همگانی مستثنا هستند.\n"}آیا ارسال شود؟`,kb([[btn("✅ ارسال",`admin:message_send:${id}`)],[btn("❌ انصراف",`admin:message_cancel:${id}`)]]));
+  }
+  if (step === "coupon_create") {
+    const parts=value.split(/\s+/),kind=st.admin_ui_key,code=normalizeCoupon(parts[0]);
+    if(parts.length!==5 || !validCouponCode(code) || !["percent","fixed"].includes(kind) || parts.slice(1).some(x=>!/^\d+$/.test(x)||!Number.isSafeInteger(Number(x))) ) return send("فرمت: کد، مقدار، تعداد کل، تعداد هر کاربر، اعتبار روز. برای محدودیت نامحدود عدد 0 بفرستید. مثال: SALE25 25 100 1 30");
+    const [amount,total,perUser,days]=parts.slice(1).map(Number);
+    if(amount<=0 || amount>9000000000000000 || (kind==="percent" && amount>100) || total>1000000000 || perUser>1000000000 || days>36500) return send("مقادیر نامعتبرند؛ درصد باید ۱ تا ۱۰۰ و سایر محدودیت‌ها در بازهٔ معتبر باشند.");
+    const now=Date.now(),expiry=days ? now+days*DAY_MS : null;
+    try{await run(env,"INSERT INTO bot_coupons(code,kind,value,created_ms,expires_ms,total_limit,user_limit) VALUES(?,?,?,?,?,?,?)",code,kind,amount,now,expiry,total || null,perUser || null)}catch{return send("ثبت نشد؛ ممکن است این کد قبلاً وجود داشته باشد.")}
+    delete st.admin_ui_step;delete st.admin_ui_key;
+    return sendMsg(env,msg.chat.id,`✅ کد <code>${esc(code)}</code> ساخته شد.`,adminBack("admin:coupons:0"));
   }
   if (step === "service_lookup") {
     if (!value || value.length>80 || /[\r\n]/.test(value)) return send("نام سرویس یا نام حساب پنل را تا ۸۰ نویسه در یک خط بفرستید.");
@@ -1057,6 +1097,69 @@ async function handleAdminUICallback(c, cq, answer) {
     delete st.admin_ui_step; delete st.admin_ui_key;
     return renderAdmin("🛠 <b>پنل مدیریت ربات</b>\n\nبخش موردنظر را انتخاب کنید:", adminHomeKb());
   }
+  if (/^admin:coupons:\d+$/.test(d)) {
+    const page=Number(d.split(":")[2]);if(!Number.isSafeInteger(page)||page>1000000)return answer("صفحه نامعتبر است.",true);
+    await expireCouponReservations(env);
+    const codes=await all(env,"SELECT id,code,enabled,expires_ms FROM bot_coupons WHERE deleted=0 ORDER BY id DESC LIMIT 11 OFFSET ?",page*10);
+    const rows=codes.slice(0,10).map(x=>[btn(`${!x.enabled ? "⛔" : x.expires_ms && Number(x.expires_ms)<=Date.now() ? "⌛" : "✅"} ${x.code}`,`admin:coupon:${x.id}`)]),nav=[];
+    if(page>0)nav.push(btn("◀️ قبلی",`admin:coupons:${page-1}`));if(codes.length>10)nav.push(btn("بعدی ▶️",`admin:coupons:${page+1}`));if(nav.length)rows.push(nav);rows.push([btn("➕ ساخت کد", "admin:coupon_new")],[btn("🔙 مدیریت", "admin:root")]);
+    return renderAdmin("🎟 <b>کدهای تخفیف</b>",kb(rows));
+  }
+  if(d === "admin:coupon_new")return renderAdmin("نوع تخفیف را انتخاب کنید:",kb([[btn("٪ درصدی","admin:coupon_type:percent"),btn("💵 مبلغی","admin:coupon_type:fixed")],[btn("🔙 بازگشت","admin:coupons:0")]]));
+  if (/^admin:coupon_type:(percent|fixed)$/.test(d)) {
+    const kind=d.split(":")[2];return prompt("coupon_create",kind,`🎟 <b>ساخت کد ${kind === "percent" ? "درصدی" : "مبلغی"}</b>\nپنج مقدار با فاصله و عدد انگلیسی بفرستید:\nکد، ${kind === "percent" ? "درصد (۱ تا ۱۰۰)" : "مبلغ تومان"}، تعداد کل، تعداد هر کاربر، اعتبار به روز.\nبرای هریک از سه محدودیت، 0 یعنی نامحدود.\nمثال: <code>SALE25 25 100 1 30</code>`,"admin:coupons:0");
+  }
+  if (/^admin:coupon:\d+$/.test(d)) {
+    const id=Number(d.split(":")[2]);if(!positiveId(String(id)))return answer("کد نامعتبر است.",true);
+    await expireCouponReservations(env);
+    const c=await first(env,"SELECT * FROM bot_coupons WHERE id=? AND deleted=0",id);if(!c)return answer("کد پیدا نشد.",true);
+    const usage=await first(env,"SELECT COUNT(CASE WHEN state='consumed' THEN 1 END) AS used,COUNT(CASE WHEN state='reserved' THEN 1 END) AS reserved FROM bot_coupon_uses WHERE coupon_id=?",id);
+    const exp=c.expires_ms ? new Date(Number(c.expires_ms)).toLocaleString("fa-IR",{timeZone:"Asia/Tehran"}) : "نامحدود";
+    return renderAdmin(`🎟 <b>${esc(c.code)}</b>\nتخفیف: ${c.kind === "percent" ? `${c.value}٪` : toman(c.value)}\nوضعیت: ${!c.enabled ? "غیرفعال" : c.expires_ms && Number(c.expires_ms)<=Date.now() ? "منقضی" : "فعال"}\nاعتبار تا: ${esc(exp)}\nسقف کل: ${c.total_limit ?? "نامحدود"}\nسقف هر کاربر: ${c.user_limit ?? "نامحدود"}\nمصرف موفق: ${usage.used}؛ رزروشده: ${usage.reserved}`,kb([[btn(c.enabled ? "⛔ غیرفعال‌سازی" : "✅ فعال‌سازی",`admin:coupon_toggle:${id}`)],[btn("🗑 حذف کد",`admin:coupon_delete:${id}`)],[btn("🔙 کدها","admin:coupons:0")]]));
+  }
+  if (/^admin:coupon_toggle:\d+$/.test(d)) {
+    const id=Number(d.split(":")[2]);if(!positiveId(String(id)))return answer("کد نامعتبر است.",true);
+    const r=await run(env,"UPDATE bot_coupons SET enabled=1-enabled WHERE id=? AND deleted=0",id);if(!r.meta.changes)return answer("کد پیدا نشد.",true);
+    return renderAdmin("✅ وضعیت کد تغییر کرد. رزروهای قبلی تا پایان مهلت یا تعیین تکلیف سفارش معتبرند.",adminBack(`admin:coupon:${id}`));
+  }
+  if (/^admin:coupon_delete:\d+$/.test(d)) {
+    const id=Number(d.split(":")[2]),c=await first(env,"SELECT code FROM bot_coupons WHERE id=? AND deleted=0",id);if(!c)return answer("کد پیدا نشد.",true);
+    return renderAdmin(`کد <code>${esc(c.code)}</code> حذف شود؟ رزروها و تاریخچه سفارش‌های قبلی حفظ می‌شوند.`,kb([[btn("✅ تأیید",`admin:coupon_delete_yes:${id}`)],[btn("❌ انصراف",`admin:coupon:${id}`)]]));
+  }
+  if (/^admin:coupon_delete_yes:\d+$/.test(d)) {
+    const id=Number(d.split(":")[2]);if(!positiveId(String(id)))return answer("کد نامعتبر است.",true);
+    const r=await run(env,"UPDATE bot_coupons SET deleted=1,enabled=0 WHERE id=? AND deleted=0",id);
+    return renderAdmin(r.meta.changes ? "✅ کد حذف شد؛ تاریخچه حفظ شد." : "کد پیدا نشد.",adminBack("admin:coupons:0"));
+  }
+  if(d === "admin:broadcast")return prompt("message_broadcast","","📣 متن پیام همگانی را بفرستید. پیش از ارسال پیش‌نمایش و تأیید نمایش داده می‌شود.");
+  if (/^admin:message_user:\d+$/.test(d)) {
+    const id=d.split(":")[2];if(!positiveId(id)||!(await botUserExists(env,Number(id))))return answer("کاربر پیدا نشد.",true);
+    return prompt("message_private",id,`✉️ متن پیام خصوصی برای کاربر <code>${id}</code> را بفرستید. پیش از ارسال تأیید می‌گیرید.`,`admin:user:${id}`);
+  }
+  if (/^admin:messages:\d+$/.test(d)) {
+    const page=Number(d.split(":")[2]);if(!Number.isSafeInteger(page)||page>1000000)return answer("صفحه نامعتبر است.",true);
+    const jobs=await all(env,"SELECT id,audience,status FROM bot_message_jobs ORDER BY id DESC LIMIT 11 OFFSET ?",page*10);
+    const rows=jobs.slice(0,10).map(j=>[btn(`#${j.id} ${j.audience==='broadcast'?'همگانی':'خصوصی'} — ${messageJobStatus(j.status)}`,`admin:message_job:${j.id}`)]),nav=[];
+    if(page>0)nav.push(btn("◀️ قبلی",`admin:messages:${page-1}`));if(jobs.length>10)nav.push(btn("بعدی ▶️",`admin:messages:${page+1}`));if(nav.length)rows.push(nav);rows.push([btn("🔙 مدیریت","admin:root")]);
+    return renderAdmin("📨 <b>وضعیت پیام‌ها</b>",kb(rows));
+  }
+  if (/^admin:message_job:\d+$/.test(d)) {
+    const id=Number(d.split(":")[2]);if(!positiveId(String(id)))return answer("شناسه نامعتبر است.",true);
+    const job=await first(env,"SELECT * FROM bot_message_jobs WHERE id=?",id);if(!job)return answer("پیام پیدا نشد.",true);
+    const counts=await first(env,"SELECT COUNT(CASE WHEN status='sent' THEN 1 END) sent,COUNT(CASE WHEN status='failed' THEN 1 END) failed,COUNT(CASE WHEN status='uncertain' THEN 1 END) uncertain,COUNT(CASE WHEN status IN ('pending','sending') THEN 1 END) waiting FROM bot_message_targets WHERE job_id=?",id);
+    const rows=[];if(["draft","queued"].includes(job.status))rows.push([btn("⛔ توقف ارسال",`admin:message_cancel:${id}`)]);rows.push([btn("🔙 پیام‌ها","admin:messages:0")]);
+    return renderAdmin(`📨 پیام <code>${id}</code> — ${job.audience==='broadcast'?'همگانی':'خصوصی'}\nوضعیت: ${messageJobStatus(job.status)}\nموفق: ${counts.sent}، ناموفق: ${counts.failed}، نامشخص: ${counts.uncertain}، در انتظار: ${counts.waiting}`,kb(rows));
+  }
+  if (/^admin:message_send:\d+$/.test(d)) {
+    const id=Number(d.split(":")[2]);if(!positiveId(String(id)))return answer("شناسه نامعتبر است.",true);
+    const ok=await confirmMessageJob(env,id,uid);if(!ok)return answer("پیام قبلاً تأیید شده یا متعلق به شما نیست.",true);
+    return renderAdmin("✅ پیام در صف ارسال قرار گرفت. وضعیت موفق، ناموفق و نامشخص را در «وضعیت پیام‌ها» ببینید.",adminBack(`admin:message_job:${id}`));
+  }
+  if (/^admin:message_cancel:\d+$/.test(d)) {
+    const id=Number(d.split(":")[2]);if(!positiveId(String(id)))return answer("شناسه نامعتبر است.",true);
+    const r=await run(env,"UPDATE bot_message_jobs SET status='cancelled',finished_ms=? WHERE id=? AND status IN ('draft','queued')",Date.now(),id);
+    return renderAdmin(r.meta.changes ? "ارسال متوقف شد؛ پیامی که همان لحظه در حال ارسال بوده ممکن است رسیده باشد." : "ارسال قبلاً تمام یا متوقف شده است.",adminBack("admin:messages:0"));
+  }
   if (d === "admin:service_search") return prompt("service_lookup","","🔎 نام سرویس یا نام حساب کانفیگ در پنل را بفرستید.");
   if (/^admin:searchpage:\d+$/.test(d)) {
     const page=Number(d.split(":")[2]);if(!st.admin_service_search || !Number.isSafeInteger(page)||page>1000000)return answer("جستجو منقضی شده است.",true);
@@ -1126,7 +1229,7 @@ async function handleAdminUICallback(c, cq, answer) {
     const target=Number(d.split(":")[2]);if(!positiveId(String(target))||!await botUserExists(env,target))return answer("کاربر پیدا نشد.",true);
     const u=await botUserIdentity(env,target);
     const balance=await walletBalance(env,target); const name=esc(u?.first_name || "نام در دسترس نیست"), username=esc(u?.username ? "@"+String(u.username).replace(/^@/,"") : "ثبت نشده یا در دسترس نیست");
-    const rows=[[btn("📦 سرویس‌ها و وضعیت",`admin:us:${target}:0`),btn("🧾 همه سفارش‌ها",`admin:uo:${target}:0`)],[btn("💰 کیف پول",`admin:wallet_view:${target}`),btn("📜 تراکنش‌ها",`admin:ut:${target}:0`)]];
+    const rows=[[btn("📦 سرویس‌ها و وضعیت",`admin:us:${target}:0`),btn("🧾 همه سفارش‌ها",`admin:uo:${target}:0`)],[btn("💰 کیف پول",`admin:wallet_view:${target}`),btn("📜 تراکنش‌ها",`admin:ut:${target}:0`)],[btn("✉️ پیام خصوصی",`admin:message_user:${target}`)]];
     if(!env.admins.has(target)) rows.push([btn(u?.blocked ? "✅ رفع مسدودی" : "⛔ مسدود کردن",`admin:ub:${target}:${u?.blocked ? 0 : 1}`)]);
     rows.push([btn("🔙 کاربران","admin:users:0")]);
     return renderAdmin(`👤 <b>${name}</b>\nشناسه: <code>${target}</code>\nنام کاربری: ${username}${u.usernameFromOrder ? " (از سفارش قدیمی؛ ممکن است تغییر کرده باشد)" : ""}\nدسترسی ربات: ${u?.blocked ? "مسدود" : "باز"}\nموجودی: ${toman(balance)}`,kb(rows));
@@ -1193,6 +1296,9 @@ async function handleAdminUICallback(c, cq, answer) {
     delete st.admin_wallet_change;
     try { await adjustWallet(env,change.userId,change.delta,uid,`admin:${change.nonce}`); }
     catch(e) { return sendMsg(env,chat, String(e.message).includes("WALLET_INSUFFICIENT") ? "❌ موجودی برای کسر کافی نیست." : "❌ تغییر موجودی انجام نشد یا قبلاً ثبت شده است؛ موجودی را بررسی کنید.",adminBack()); }
+    let notified=false;
+    try {const balance=await walletBalance(env,change.userId), result=await sendMsg(env,change.userId,`💰 موجودی کیف پول شما ${toman(Math.abs(change.delta))} ${change.delta>0 ? "افزایش" : "کاهش"} یافت.\nموجودی فعلی: <b>${toman(balance)}</b>`,backKb("wallet:home"));notified=!!result?.ok;}catch{}
+    if(!notified)await sendMsg(env,chat,"⚠️ تغییر موجودی ثبت شد، اما ارسال اعلان به کاربر ناموفق بود.",adminBack());
     return showAdminWallet(env,chat,change.userId,true);
   }
   if (d === "admin:categories" || /^admin:categories:\d+$/.test(d)) {
@@ -1271,6 +1377,7 @@ async function handleAdminUICallback(c, cq, answer) {
     if (!meta) return answer("تنظیم یافت نشد.", true);
     if (key === "start_text") return prompt("setting",key,`✏️ <b>متن پیام شروع</b>\nمتن فعلی: <code>${esc(env.cfg.start_text || DEFAULT_START_TEXT)}</code>\n\nمتن جدید را بفرستید؛ برای نمایش نام کاربر از <code>{name}</code> استفاده کنید. حداکثر ${MAX_START_TEXT} نویسه؛ برای بازگشت به متن پیش‌فرض، - بفرستید.`,"admin:settings");
     if (key === "referral_discount") return prompt("setting",key,`🎁 <b>هدیه دعوت</b>\nمقدار فعلی: ${toman(env.cfg.referral_discount)}\nمبلغ جدید را به تومان بفرستید؛ عدد 0 هدیه را غیرفعال می‌کند. این هدیه تخفیف خرید بعدی معرف است و به کیف پول اضافه نمی‌شود.`,"admin:settings");
+    if (key === "channel_username" || key === "channel_link") return prompt("setting",key,`📢 <b>عضویت اجباری</b>\nبرای بررسی عضویت کاربران، ابتدا ربات را به کانال اضافه و ادمین کانال کنید. یوزرنیم یا شناسهٔ کانال و لینک عضویت را در تنظیمات جداگانه وارد کنید.\n\n${key === "channel_username" ? "یوزرنیم کانال همراه @ یا شناسهٔ عددی کانال را بفرستید." : "لینک عضویت کانال را بفرستید."}\nمقدار فعلی: <code>${esc(env.cfg[key] || "خالی")}</code>\nبرای پاک‌کردن مقدار، - بفرستید.`,"admin:settings");
     if (key === "name_mode") return renderAdmin(`🏷 <b>نوع نام‌گذاری سرویس</b>\nحالت فعلی: ${env.cfg.name_mode === "random" ? "تصادفی خودکار" : "نام دلخواه مشتری"}\nاین تنظیم فقط برای خریدهای جدید است؛ نام حساب پنل همچنان پسوند یکتا دارد.`,kb([[btn("✏️ نام دلخواه مشتری","admin:namemode:custom")],[btn("🎲 نام تصادفی خودکار","admin:namemode:random")],[btn("🔙 بازگشت","admin:settings")]]));
     if (key === "test_enabled") return renderAdmin(`🎁 سرویس تست اکنون ${env.cfg.test_enabled === "1" ? "فعال" : "غیرفعال"} است.`, kb([[btn("✅ فعال", "admin:test:1"),btn("⛔ غیرفعال", "admin:test:0")],[btn("🔙 بازگشت", "admin:settings")]]));
     return prompt("setting", key, `⚙️ <b>${esc(meta[1])}</b>\nمقدار فعلی: <code>${esc(env.cfg[key] || "خالی")}</code>\n\nمقدار جدید را بفرستید.${meta[0] === "text" ? " برای پاک‌کردن مقدار، - بفرستید." : ""}`, "admin:settings");
@@ -1349,7 +1456,7 @@ async function onMessage(c, msg) {
   const isAdmin = env.admins.has(uid);
   const text = msg.text;
 
-  if (text && isAdmin && c.st.admin_ui_step === "panel_pass") return handleAdminUIInput(c, msg);
+  if (text && isAdmin && ["panel_pass","message_private","message_broadcast"].includes(c.st.admin_ui_step)) return handleAdminUIInput(c, msg);
   if (text && text.startsWith("/start")) return handleStart(c, msg);
   if (isAdmin && text && ADMIN_CMD_RE.test(text)) return handleAdminCommand(c, msg);
   if (text && isAdmin && c.st.admin_step === "issue_message") return handleAdminText(c, msg);
@@ -1358,6 +1465,14 @@ async function onMessage(c, msg) {
 
   const st = c.st;
   if (text) {
+    if (st.step === "coupon_code") {
+      const id=Number(st.order_id);if(!Number.isSafeInteger(id)||id<=0){delete st.step;return sendMsg(env,msg.chat.id,"سفارش پیدا نشد.",backKb())}
+      try {
+        const applied=await applyCoupon(env,id,uid,text);
+        st.step="receipt";const order=await getOrder(env,id);
+        return sendMsg(env,msg.chat.id,`${invoiceText(env,order)}\n\n🎟 کد ${esc(applied.code)} اعمال شد. این فاکتور تا ۳۰ دقیقه یا پایان اعتبار کد، هرکدام زودتر، رزرو است؛ پیش از پایان مهلت پرداخت و فیش را ارسال کنید.`,invoiceKb(id,true));
+      } catch(e) {return sendMsg(env,msg.chat.id,`❌ ${esc(e.message)}\nدوباره کد بفرستید یا با دکمهٔ زیر انصراف دهید.`,backKb())}
+    }
     if (st.step === "wallet_amount") return handleWalletAmount(c,msg);
     if (st.step === "wallet_receipt") return handleWalletReceipt(c,msg);
     if (st.step === "test_name") {
@@ -1445,6 +1560,17 @@ async function onCallback(c, cq) {
     return answer("❌ هنوز عضو کانال نشده‌اید! اگر همین الان عضو شدید، چند ثانیه صبر کنید و دوباره بزنید.", true);
   }
 
+  if (/^reject_order:\d+$/.test(d) || /^reject_order_yes:\d+$/.test(d)) {
+    if(!isAdmin)return answer("دسترسی ندارید.",true);
+    const [action,idText]=d.split(":"),id=Number(idText);if(!positiveId(idText))return answer("شناسه نامعتبر است.",true);
+    const order=await getOrder(env,id);if(!order||order.status!=='pending')return answer("سفارش در انتظار تأیید نیست.",true);
+    if(action==='reject_order')return render(env,cq,`سفارش <code>${id}</code> رد شود؟ اگر مبلغی واریز شده، بازگشت آن باید جداگانه بررسی شود.`,kb([[btn("✅ تأیید رد",`reject_order_yes:${id}`)],[btn("❌ انصراف","admin:root")]]));
+    const results=await env.DB.batch([env.DB.prepare("UPDATE orders SET status='rejected' WHERE id=? AND status='pending'").bind(id),env.DB.prepare("UPDATE bot_coupon_uses SET state='released' WHERE order_id=? AND state='reserved' AND EXISTS(SELECT 1 FROM orders WHERE id=? AND status='rejected')").bind(id,id)]);
+    if(!results[0]?.meta?.changes)return answer("سفارش قبلاً بررسی شده است.",true);
+    try{await sendMsg(env,order.user_id,"❌ سفارش شما رد شد. اگر وجهی پرداخت کرده‌اید، برای پیگیری با پشتیبانی تماس بگیرید.",backKb())}catch{}
+    return render(env,cq,"✅ سفارش رد و سهمیهٔ کد تخفیف آزاد شد. وضعیت وجه را جداگانه بررسی کنید.",adminBack());
+  }
+
   // --- بخش ادمین: تایید یا ایراد فیش
   if (d.startsWith("approve_") || d.startsWith("issue_")) {
     if (!isAdmin) return answer("دسترسی ندارید!", true);
@@ -1472,7 +1598,8 @@ async function onCallback(c, cq) {
     let dispatched = false, res;
     try {
       res = await fulfillOrder(env, order, () => { dispatched = true; });
-      await setOrderStatus(env, orderId, "approved");
+      const committed=await env.DB.batch([env.DB.prepare("UPDATE orders SET status='approved' WHERE id=? AND status='processing'").bind(orderId),env.DB.prepare("UPDATE bot_coupon_uses SET state='consumed' WHERE order_id=? AND state='reserved' AND EXISTS(SELECT 1 FROM orders WHERE id=? AND status='approved')").bind(orderId,orderId)]);
+      if(committed[0]?.meta && !committed[0].meta.changes)throw Error("ثبت وضعیت سفارش تأیید نشد");
     } catch (e) {
       // A failure before the write is sent is safe to retry. After dispatch,
       // even success:false can be a partial write: never replay automatically.
@@ -1497,7 +1624,18 @@ async function onCallback(c, cq) {
 
   if (!isAdmin && d !== "main_menu" && !(await isMember(env, uid))) return answer("ابتدا در کانال عضو شوید و /start را بزنید.", true);
 
+  if (/^coupon:enter:\d+$/.test(d)) {
+    const id=Number(d.split(":")[2]);if(!positiveId(String(id)))return answer("سفارش نامعتبر است.",true);
+    await expireCouponReservations(env);
+    const order=await getOrder(env,id);if(!order || Number(order.user_id)!==uid || order.status!=='draft')return answer("سفارش منقضی شده یا قابل ویرایش نیست.",true);
+    const applied=await first(env,"SELECT id FROM bot_coupon_uses WHERE order_id=? AND state IN ('reserved','consumed')",id);
+    if(applied)return answer("برای این سفارش قبلاً کد تخفیف ثبت شده است.",true);
+    st.order_id=id;st.step="coupon_code";
+    return render(env,cq,"🎟 کد تخفیف را بفرستید. کد روی مبلغ باقی‌مانده پس از هدیهٔ دعوت حساب می‌شود و رزرو آن حداکثر ۳۰ دقیقه معتبر است.",backKb());
+  }
+
   if (d === "wallet:home") {
+    if(st.order_id)await cancelDraftOrder(env,Number(st.order_id),uid);
     delete st.step; delete st.order_id; delete st.wallet_topup_id;
     const balance=await walletBalance(env,uid);
     return render(env,cq,`💰 <b>کیف پول</b>\nموجودی: <b>${toman(balance)}</b>`,kb([[btn("➕ شارژ کیف پول", "wallet:topup")],[btn("📋 گردش کیف پول", "wallet:history")],[btn("🔙 بازگشت", "main_menu")]]));
@@ -1510,6 +1648,7 @@ async function onCallback(c, cq) {
   if (d === "wallet:topup") { st.step="wallet_amount"; return render(env,cq,"مبلغ شارژ را به تومان و با عدد انگلیسی بفرستید.",backKb("wallet:home")); }
   if (d.startsWith("wallet:pay:")) {
     const id=Number(d.slice("wallet:pay:".length)); if(!Number.isSafeInteger(id)||id<=0) return answer("سفارش نامعتبر است.",true);
+    await expireCouponReservations(env);
     const order=await getOrder(env,id); if(!order || Number(order.user_id)!==uid || order.status!=="draft") return answer("سفارش قابل پرداخت نیست.",true);
     if(parseMoney(order.final_price,true)===null) return answer("مبلغ سفارش معتبر نیست؛ با پشتیبانی تماس بگیرید.",true);
     try { if(!(await reserveWalletPayment(env,id,uid))) return answer("سفارش قابل پرداخت نیست یا یک پرداخت دیگر نیاز به بررسی دارد.",true); }
@@ -1535,7 +1674,7 @@ async function onCallback(c, cq) {
     return;
   }
 
-  if (d === "main_menu") { delete st.step; delete st.test_category; delete st.test_name; delete st.admin_ui_step; delete st.admin_ui_key; delete st.admin_step; delete st.admin_order; delete st.admin_wallet_change; delete st.wallet_topup_id; await del(); return sendMainMenu(env, chat_id); }
+  if (d === "main_menu") { if(st.order_id)await cancelDraftOrder(env,Number(st.order_id),uid); delete st.order_id;delete st.step; delete st.test_category; delete st.test_name; delete st.admin_ui_step; delete st.admin_ui_key; delete st.admin_step; delete st.admin_order; delete st.admin_wallet_change; delete st.wallet_topup_id; await del(); return sendMainMenu(env, chat_id); }
 
   // --- سرویس تست (هر کاربر فقط یک‌بار)
   if (d === "test_service") {
@@ -1836,11 +1975,13 @@ export { groupCredentials, panelCreate, panelRenew, panelDelete, panelAccount, p
 export default {
   async scheduled(event, env, ctx) {
     ctx.waitUntil((async()=>{
+      await expireCouponReservations(env);
       const recovered=await recoverWalletPayments(env);
       for(const item of recovered) {
         try { await sendMsg(env,item.userId,`⚠️ پرداخت سفارش ${item.orderId} به کیف پول برگشت و برای بررسی ارسال شد.`,backKb()); } catch {}
         for(const admin of parseIds(env.ADMIN_ID)) { try { await sendMsg(env,admin,`⚠️ پرداخت سفارش <code>${item.orderId}</code> پس از قطع عملیات برگشت خورد. احتمال انجام عملیات پنل را بررسی کنید.`); } catch {} }
       }
+      if(!env.SERVER_MODE)await processMessageJobs(env,(id,body)=>sendMsg(env,id,esc(body)));
     })());
   },
   async fetch(request, env, ctx) {

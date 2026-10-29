@@ -35,3 +35,13 @@ test('shutdown interrupts long polling promptly',()=>{
   assert.equal(result.status,0,result.stderr);assert.ok(Date.now()-started<2500);assert.match(result.stdout,/Bot stopped/);
  }finally{rmSync(dir,{recursive:true,force:true})}
 });
+
+test('server dispatches a queued private message while long polling is waiting',()=>{
+ const dir=mkdtempSync(join(tmpdir(),'bot-message-'));try{
+  const config=join(dir,'config.json'), database=join(dir,'db.sqlite'), calls=join(dir,'calls');writeFileSync(config,JSON.stringify({BOT_TOKEN:'123:FakeToken',ADMIN_ID:'123'}));
+  const db=new DatabaseSync(database);db.exec(readFileSync(new URL('../schema.sql',import.meta.url),'utf8'));db.exec("INSERT INTO bot_message_jobs(id,creator_id,audience,target_id,body,status,created_ms) VALUES(1,123,'private',42,'hello','queued',1); INSERT INTO bot_message_targets(job_id,user_id,status) VALUES(1,42,'pending')");db.close();
+  writeFileSync(join(dir,'mock.mjs'),`import {appendFileSync} from 'node:fs';globalThis.fetch=async(url,opt)=>{const method=new URL(url).pathname.split('/').pop();if(method==='getWebhookInfo')return Response.json({ok:true,result:{url:''}});if(method==='sendMessage'){appendFileSync(process.env.CALLS,JSON.parse(opt.body).chat_id+'\\n');return Response.json({ok:true,result:{message_id:1}})}if(method==='getUpdates'){setTimeout(()=>process.kill(process.pid,'SIGTERM'),400);return new Promise((resolve,reject)=>{const hold=setInterval(()=>{},1000);opt.signal.addEventListener('abort',()=>{clearInterval(hold);reject(Error('aborted'))},{once:true})})}throw Error('unexpected '+method)};`);
+  const result=spawnSync(process.execPath,['--import',join(dir,'mock.mjs'),'server.mjs'],{cwd:new URL('..',import.meta.url),env:{...process.env,BOT_CONFIG:config,BOT_DATABASE:database,CALLS:calls},encoding:'utf8',timeout:4000});assert.equal(result.status,0,result.stderr);
+  const after=new DatabaseSync(database);assert.equal(after.prepare('SELECT status FROM bot_message_targets WHERE user_id=42').get().status,'sent');assert.equal(after.prepare('SELECT status FROM bot_message_jobs WHERE id=1').get().status,'done');after.close();assert.match(readFileSync(calls,'utf8'),/^42$/m);
+ }finally{rmSync(dir,{recursive:true,force:true})}
+});
