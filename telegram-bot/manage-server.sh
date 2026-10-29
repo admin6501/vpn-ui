@@ -21,7 +21,7 @@ install_bot(){
  tar -xJf "$tmp/node.tar.xz" --strip-components=1 -C /opt/vpn-ui-bot-node
  rm -rf "$tmp"
  chmod 700 "$CONF" "$DATA"
- cp "$HERE"/{worker.js,qr.js,panel-config.js,wallet.js,server.mjs,plan-migration.mjs,schema.sql,package.json,package-lock.json,manage-server.sh} "$APP/"
+ cp "$HERE"/{worker.js,qr.js,panel-config.js,wallet.js,coupons.js,messages.js,server.mjs,plan-migration.mjs,schema.sql,package.json,package-lock.json,manage-server.sh} "$APP/"
  chmod 700 "$APP/manage-server.sh"
  ln -sfn "$APP/manage-server.sh" /usr/local/bin/vpn-ui-bot
  (cd "$APP"; PATH="/opt/vpn-ui-bot-node/bin:$PATH" npm ci --omit=dev --no-audit --no-fund)
@@ -100,17 +100,17 @@ update_bot()(
    echo 'دریافت نسخه جدید ناموفق بود؛ ربات تغییر نکرد.'; rm -rf "$tmp" "$stage"; return 1
  fi
  local source="$tmp/vpn-ui-main/telegram-bot"
- # The reviewed schema change adds an empty user directory and removes seed plans.
+ # The reviewed schema change adds the reviewed bot user, plan and discount-code tables.
  # Other schema changes still require an explicit migration.
  if ! cmp -s "$APP/schema.sql" "$source/schema.sql"; then
    local old_hash new_hash
    old_hash=$(sha256sum "$APP/schema.sql" | awk '{print $1}')
    new_hash=$(sha256sum "$source/schema.sql" | awk '{print $1}')
-   if [[ ( "$old_hash" != 586bc5f4900800bf85250e193800c338a7f0f4e46228b956f4c60116b6f2c1ae && "$old_hash" != 6f8ec662b729ec101df2e2dd968515a07f96e6c67cd5874dd32399752f7cb956 && "$old_hash" != 0c48c78842130427ad196612565634c87cf74f6b22c5c31d5fa8331c1296ea05 ) || "$new_hash" != c3507019edd74397a9ccba37a9f835bf6c91c71b3ba27283954db9c93228ebda ]]; then
+   if [[ ( "$old_hash" != 586bc5f4900800bf85250e193800c338a7f0f4e46228b956f4c60116b6f2c1ae && "$old_hash" != 6f8ec662b729ec101df2e2dd968515a07f96e6c67cd5874dd32399752f7cb956 && "$old_hash" != 0c48c78842130427ad196612565634c87cf74f6b22c5c31d5fa8331c1296ea05 && "$old_hash" != c3507019edd74397a9ccba37a9f835bf6c91c71b3ba27283954db9c93228ebda ) || "$new_hash" != fcf4503c510e1ff9897b7002b1f75396b03fa389e5f7a43db04675c346c95b04 ]]; then
      echo 'ساختار دیتابیس نسخه جدید تغییر کرده است؛ آپدیت متوقف شد و به روش مهاجرت نیاز دارد.'; rm -rf "$tmp" "$stage"; return 1
    fi
  fi
- if ! cp "$source"/{worker.js,qr.js,panel-config.js,wallet.js,server.mjs,plan-migration.mjs,schema.sql,package.json,package-lock.json,manage-server.sh} "$stage/" ||
+ if ! cp "$source"/{worker.js,qr.js,panel-config.js,wallet.js,coupons.js,messages.js,server.mjs,plan-migration.mjs,schema.sql,package.json,package-lock.json,manage-server.sh} "$stage/" ||
     ! (cd "$stage" && PATH="/opt/vpn-ui-bot-node/bin:$PATH" npm ci --omit=dev --no-audit --no-fund && "$NODE" --check server.mjs && "$NODE" --check worker.js && bash -n manage-server.sh); then
    echo 'آماده‌سازی ناموفق بود؛ ربات تغییر نکرد.'; rm -rf "$tmp" "$stage"; return 1
  fi

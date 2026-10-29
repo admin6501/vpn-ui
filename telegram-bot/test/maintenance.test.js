@@ -9,7 +9,7 @@ function fixture(schemaChanged=false) {
  const dir=mkdtempSync(join(tmpdir(),'bot-menu-'));
  const app=join(dir,'app'), data=join(dir,'data'), conf=join(dir,'conf'), bin=join(dir,'bin'), repo=join(dir,'vpn-ui-main/telegram-bot');
  for(const p of [app,data,conf,bin,repo]) mkdirSync(p,{recursive:true});
- const files=['worker.js','qr.js','panel-config.js','wallet.js','server.mjs','plan-migration.mjs','schema.sql','package.json','package-lock.json','manage-server.sh'];
+ const files=['worker.js','qr.js','panel-config.js','wallet.js','coupons.js','messages.js','server.mjs','plan-migration.mjs','schema.sql','package.json','package-lock.json','manage-server.sh'];
  for(const file of files){copyFileSync(resolve(file),join(repo,file));copyFileSync(resolve(file),join(app,file));}
  writeFileSync(join(app,'worker.js'),'// old version\n');
  if(schemaChanged)writeFileSync(join(app,'schema.sql'),'-- old schema\n');
@@ -57,4 +57,8 @@ test('interrupted update during stop or startup restores code and restarts servi
 
 test('updater accepts the previous user-directory schema and preserves the database',()=>{
  const f=fixture();try{copyFileSync(resolve('test/fixtures/user-directory-schema.sql'),join(f.app,'schema.sql'));const result=f.run('9\n\n0\n');assert.equal(result.status,0,result.stderr);assert.match(result.stdout,/آپدیت انجام شد/);const db=new DatabaseSync(join(f.data,'bot.sqlite'));assert.equal(db.prepare('SELECT v FROM keepme').get().v,42);db.close()}finally{rmSync(f.dir,{recursive:true,force:true})}
+});
+
+test('updater accepts category-era schema and preserves the database',()=>{
+ const f=fixture();try{copyFileSync(resolve('test/fixtures/category-schema.sql'),join(f.app,'schema.sql'));const result=f.run('9\n\n0\n');assert.equal(result.status,0,result.stderr);assert.match(result.stdout,/آپدیت انجام شد/);const db=new DatabaseSync(join(f.data,'bot.sqlite'));assert.equal(db.prepare('SELECT v FROM keepme').get().v,42);db.close()}finally{rmSync(f.dir,{recursive:true,force:true})}
 });

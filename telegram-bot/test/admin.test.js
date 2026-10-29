@@ -159,3 +159,7 @@ test('unavailable legacy identity falls back to historical order username withou
  await f.callback(1,'admin:user:777');assert.match(f.last().text,/نام در دسترس نیست/);assert.match(f.last().text,/@legacy_user/);assert.match(f.last().text,/ممکن است تغییر کرده باشد/);
  f.chats.set(777,{id:999,type:'private',first_name:'Wrong',username:'wrong'});await f.callback(1,'admin:user:777');assert.doesNotMatch(f.last().text,/Wrong|@wrong/);
 });
+
+test('forced channel settings explain bot must be a channel administrator',async()=>{
+ const f=fixture();await f.callback(1,'admin:setting:channel_username');assert.match(f.last().text,/ربات را به کانال اضافه و ادمین کانال کنید/);await f.callback(1,'admin:setting:channel_link');assert.match(f.last().text,/ادمین کانال/);
+});
