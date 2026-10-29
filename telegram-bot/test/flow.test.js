@@ -18,14 +18,15 @@ test('full purchase and duplicate approval produce one panel user', async()=>{
   if(p.endsWith('/login'))return new Response(JSON.stringify({success:true}),{headers:{'set-cookie':'vpn-ui=example'}});
   if(p.endsWith('/clients/groups'))return new Response(JSON.stringify({success:true,obj:[{id:1,inboundIds:[3,4]}]}));
   if(p.endsWith('/clients/assignable'))return new Response(JSON.stringify({success:true,obj:[{inboundId:3,protocol:'vless'},{inboundId:4,protocol:'shadowsocks',method:'aes-128-gcm'}]}));
+  if(p.endsWith('/clients/list'))return Response.json({success:true,obj:{rows:[],total:0}});
   if(p.endsWith('/addClient')) {creates++;return new Response(JSON.stringify({success:true}));}
   throw Error('Unexpected route '+p);
  };
- const env={DB,BOT_TOKEN:'token',WEBHOOK_SECRET:'secret',ADMIN_ID:'1',PANEL_URL:'https://panel.example/base',PANEL_USER:'reseller',PANEL_PASS:'password',CHANNEL_USERNAME:'@channel'};
+ const env={DB,BOT_TOKEN:'token',WEBHOOK_SECRET:'secret',ADMIN_ID:'1',PANEL_URL:'https://panel.example/base',PANEL_USER:'reseller',PANEL_PASS:'password',CHANNEL_USERNAME:'@channel',CARD_NUMBER:'123',CARD_HOLDER:'owner'};
  let id=0; async function update(data){let tasks=[];const req=new Request('https://worker.example/webhook',{method:'POST',headers:{'X-Telegram-Bot-Api-Secret-Token':'secret'},body:JSON.stringify({update_id:++id,...data})});assert.equal((await worker.fetch(req,env,{waitUntil:p=>tasks.push(p)})).status,200);await Promise.all(tasks)}
  const message=text=>({message:{from:{id:2,first_name:'Client'},chat:{id:2,type:'private'},message_id:++id,text}});
  const cb=(data,uid=2)=>({callback_query:{id:`cb${++id}`,from:{id:uid},message:{chat:{id:uid,type:'private'},message_id:33},data}});
- await update(message('/start'));await update(cb('buy'));await update(cb('buycat:1:0'));await update(cb('plan_p10'));await update(message('Amir'));await update(message('receipt'));
+ await update(message('/start'));await update(cb('buy'));await update(cb('buycat:1:0'));await update(cb('plan_p10'));await update(message('Amir'));await update(cb('card:pay:1'));await update({message:{from:{id:2},chat:{id:2,type:'private'},message_id:++id,photo:[{file_id:'receipt'}]}});
  const order=sql.prepare('SELECT * FROM orders').get();assert.equal(order.status,'pending');
  await update(cb(`approve_${order.id}`,1));await update(cb(`approve_${order.id}`,1));
  assert.equal(creates,1);assert.equal(sql.prepare('SELECT status FROM orders').get().status,'approved');assert.equal(sql.prepare('SELECT COUNT(*) n FROM services').get().n,1);

@@ -278,7 +278,8 @@ async function panelCreate(env, { name, bytes, days, attemptKey, onDispatch, gro
   if (!Number.isSafeInteger(bytes) || bytes <= 0 || !Number.isSafeInteger(days) || days <= 0 || !Number.isSafeInteger(Date.now() + days * DAY_MS)) throw new Error("حجم یا مدت بسته معتبر نیست");
   const credentials = await groupCredentials(env,groupIds,anchorId);
   const subId = b64url(18);
-  const email = `${name}_${hex(8)}`;
+  const email = name;
+  if(await panelAccount(env,email)) throw new Error("این نام قبلاً در پنل ثبت شده است؛ نام دیگری انتخاب کنید");
   if (["wg-c", "awg", "wireguard", "gre", "mtproto"].includes(credentials.anchorProtocol)) credentials.id = email;
   delete credentials.anchorProtocol;
   const inboundId = credentials.anchorId;
@@ -557,20 +558,12 @@ function invoiceText(env, o) {
   L.push(`💰 مبلغ بسته: ${toman(o.price)}`);
   if (o.discount) L.push(`🎁 تخفیف: -${toman(o.discount)}`);
   L.push(`✅ مبلغ قابل پرداخت: <b>${toman(o.final_price)}</b>`);
-  L.push(
-    "\n➖➖➖➖➖➖➖➖➖",
-    `💳 شماره کارت:\n<code>${esc(env.cfg.card_number)}</code>`,
-    `👤 به نام: <b>${esc(env.cfg.card_holder)}</b>`,
-    "➖➖➖➖➖➖➖➖➖\n",
-    "📝 <b>توضیحات:</b>",
-    "پس از واریز حتما فیش را همینجا ارسال کنید و منتظر تایید ادمین بمانید.",
-    "به محض تایید، سرویس شما به‌صورت خودکار ساخته می‌شود ✅",
-  );
+  L.push("\nروش پرداخت را انتخاب کنید:");
   return L.join("\n");
 }
 const invoiceKb=(id,hasCoupon=false)=>kb([
   ...(!hasCoupon ? [[btn("🎟 کد تخفیف",`coupon:enter:${id}`)]] : []),
-  [btn("💰 پرداخت از کیف پول",`wallet:pay:${id}`)],[btn("🔙 انصراف و منوی اصلی","main_menu")],
+  [btn("💳 کارت به کارت",`card:pay:${id}`)],[btn("💰 پرداخت از کیف پول",`wallet:pay:${id}`)],[btn("🔙 انصراف و منوی اصلی","main_menu")],
 ]);
 
 async function createInvoice(c, user, chat_id, name, plan, renewId, cq) {
@@ -586,7 +579,7 @@ async function createInvoice(c, user, chat_id, name, plan, renewId, cq) {
   const orderId = r.meta.last_row_id;
   await run(env,"INSERT INTO bot_order_routes(order_id,group_ids,anchor_id,panel_identity) VALUES(?,?,0,?)",orderId,plan.group_ids,identity);
   await reserveReferral(env,orderId,user.id);
-  st.step = "receipt"; st.order_id = orderId; delete st.renew_service_id;
+  st.step = "payment_choice"; st.order_id = orderId; delete st.renew_service_id;
   const order = await getOrder(env, orderId);
   if (cq) { try { await tg(env, "deleteMessage", { chat_id, message_id: cq.message.message_id }); } catch {} }
   await sendMsg(env, chat_id, invoiceText(env, order), invoiceKb(orderId));
@@ -1177,7 +1170,26 @@ async function handleAdminUICallback(c, cq, answer) {
     const id=Number(d.split(":")[2]);if(!Number.isSafeInteger(id)||id<=0)return answer("سرویس نامعتبر است.",true);
     const svc=await getService(env,id);if(!svc)return answer("سرویس یافت نشد.",true);
     let details;try { const account=await panelServiceAccount(env,svc); details=account ? liveServiceDetails(account) : "⚠️ سرویس در پنل متصل فعلی یافت نشد."; } catch { details="⚠️ وضعیت سرویس نامشخص است؛ ارتباط با پنل برقرار نشد."; }
-    return renderAdmin(`📦 <b>سرویس ${esc(String(svc.name || "—").slice(0,50))}</b>\nشناسه ربات: <code>${svc.id}</code>\nکاربر: <code>${svc.user_id}</code>\nحساب پنل: <code>${esc(String(svc.panel_email || "—").slice(0,100))}</code>\n\n${details}`,kb([[btn("🔘 وضعیت کانفیگ‌ها",`admin:sc:${svc.id}:0`)],[btn("👤 پنل کاربر",`admin:user:${svc.user_id}`)],[btn("🔙 نتایج جستجو","admin:searchpage:0"),btn("🔎 جستجوی جدید","admin:service_search")]]));
+    return renderAdmin(`📦 <b>سرویس ${esc(String(svc.name || "—").slice(0,50))}</b>\nشناسه ربات: <code>${svc.id}</code>\nکاربر: <code>${svc.user_id}</code>\nحساب پنل: <code>${esc(String(svc.panel_email || "—").slice(0,100))}</code>\n\n${details}`,kb([[btn("🔘 وضعیت کانفیگ‌ها",`admin:sc:${svc.id}:0`)],[btn("🗑 حذف سرویس",`admin:svcdelete:${svc.id}`)],[btn("👤 پنل کاربر",`admin:user:${svc.user_id}`)],[btn("🔙 نتایج جستجو","admin:searchpage:0"),btn("🔎 جستجوی جدید","admin:service_search")]]));
+  }
+  if (/^admin:svcdelete:\d+$/.test(d)) {
+    const id=Number(d.split(":")[2]),svc=await getService(env,id);if(!svc)return answer("سرویس یافت نشد.",true);
+    return renderAdmin(`🗑 سرویس «${esc(svc.name)}» از پنل و ربات حذف شود؟ سفارش‌های مرتبط از فهرست پنهان می‌شوند و سوابق مالی برای محاسبه تخفیف و کیف پول نگهداری می‌شوند.`,kb([[btn("✅ تأیید حذف",`admin:svcdeleteconfirm:${id}`)],[btn("❌ انصراف",`admin:svc:${id}`)]]));
+  }
+  if (/^admin:svcdeleteconfirm:\d+$/.test(d)) {
+    const id=Number(d.split(":")[2]),svc=await getService(env,id);if(!svc)return answer("سرویس یافت نشد.",true);
+    const lock=await run(env,"INSERT OR IGNORE INTO service_operations(service_id,kind,created_at) VALUES(?,?,?)",id,"delete",now());
+    if(!lock.meta.changes)return answer("عملیات دیگری روی سرویس در جریان است.",true);
+    try {
+      const orders=await all(env,"SELECT o.id,o.status FROM orders o WHERE o.user_id=? AND (o.renew_service_id=? OR EXISTS(SELECT 1 FROM provision_attempts p WHERE p.sub_id=? AND p.email=? AND p.attempt_key LIKE 'order:'||o.id||':%'))",svc.user_id,id,svc.sub_id,svc.panel_email);
+      if(orders.some(o=>!["approved","rejected","cancelled"].includes(o.status)))throw new Error("سفارش مرتبط در حال بررسی است؛ ابتدا وضعیت آن را مشخص کنید.");
+      await panelDelete(env,svc);
+      const statements=orders.map(o=>env.DB.prepare("INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").bind(`hidden_order:${o.id}`,"1"));
+      statements.push(env.DB.prepare("DELETE FROM services WHERE id=? AND user_id=?").bind(id,svc.user_id));
+      await env.DB.batch(statements);
+      return renderAdmin("✅ حذف سرویس از پنل تأیید شد و سرویس از ربات حذف شد. سفارش‌های قابل شناسایی از فهرست پنهان شدند؛ سوابق مالی حفظ شده است.",adminBack("admin:service_search"));
+    } catch(e) {return renderAdmin(`⚠️ حذف کامل تأیید نشد: ${esc(String(e.message).slice(0,200))}؛ پیش از تکرار، پنل را بررسی کنید.`,adminBack(`admin:svc:${id}`));}
+    finally {await run(env,"DELETE FROM service_operations WHERE service_id=?",id);}
   }
   if (/^admin:sc:\d+:\d+$/.test(d)) {
     const [, ,id,pageText]=d.split(":"), serviceId=Number(id), page=Number(pageText);
@@ -1253,7 +1265,7 @@ async function handleAdminUICallback(c, cq, answer) {
     if(!positiveId(id)||!Number.isSafeInteger(page)||page>1000000||!await botUserExists(env,target))return answer("درخواست نامعتبر است.",true);
     let rows, lines, title;
     if(kind === "uo") {
-      rows=await all(env,"SELECT id,service_name,final_price,status,created_at FROM orders WHERE user_id=? ORDER BY id DESC LIMIT 11 OFFSET ?",target,page*10);
+      rows=await all(env,"SELECT id,service_name,final_price,status,created_at FROM orders WHERE user_id=? AND NOT EXISTS(SELECT 1 FROM settings WHERE key='hidden_order:'||orders.id) ORDER BY id DESC LIMIT 11 OFFSET ?",target,page*10);
       lines=rows.slice(0,10).map(x=>`#${x.id} — ${esc(String(x.service_name || "—").slice(0,50))} — ${toman(x.final_price || 0)} — ${esc(adminOrderStatus(x.status))} — ${esc(adminTime(x.created_at))}`); title="همه سفارش‌ها";
     } else if(kind === "ut") {
       rows=await all(env,"SELECT delta,reason,created_at FROM wallet_entries WHERE user_id=? ORDER BY id DESC LIMIT 11 OFFSET ?",target,page*10);
@@ -1397,7 +1409,7 @@ async function handleAdminUICallback(c, cq, answer) {
     if (key === "start_text") return prompt("setting",key,`✏️ <b>متن پیام شروع</b>\nمتن فعلی: <code>${esc(env.cfg.start_text || DEFAULT_START_TEXT)}</code>\n\nمتن جدید را بفرستید؛ برای نمایش نام کاربر از <code>{name}</code> استفاده کنید. حداکثر ${MAX_START_TEXT} نویسه؛ برای بازگشت به متن پیش‌فرض، - بفرستید.`,"admin:settings");
     if (key === "referral_discount") return prompt("setting",key,`🎁 <b>هدیه دعوت</b>\nمقدار فعلی: ${toman(env.cfg.referral_discount)}\nمبلغ جدید را به تومان بفرستید؛ عدد 0 هدیه را غیرفعال می‌کند. این هدیه تخفیف خرید بعدی معرف است و به کیف پول اضافه نمی‌شود.`,"admin:settings");
     if (key === "channel_username" || key === "channel_link") return prompt("setting",key,`📢 <b>عضویت اجباری</b>\nبرای بررسی عضویت کاربران، ابتدا ربات را به کانال اضافه و ادمین کانال کنید. یوزرنیم یا شناسهٔ کانال و لینک عضویت را در تنظیمات جداگانه وارد کنید.\n\n${key === "channel_username" ? "یوزرنیم کانال همراه @ یا شناسهٔ عددی کانال را بفرستید." : "لینک عضویت کانال را بفرستید."}\nمقدار فعلی: <code>${esc(env.cfg[key] || "خالی")}</code>\nبرای پاک‌کردن مقدار، - بفرستید.`,"admin:settings");
-    if (key === "name_mode") return renderAdmin(`🏷 <b>نوع نام‌گذاری سرویس</b>\nحالت فعلی: ${env.cfg.name_mode === "random" ? "تصادفی خودکار" : "نام دلخواه مشتری"}\nاین تنظیم فقط برای خریدهای جدید است؛ نام حساب پنل همچنان پسوند یکتا دارد.`,kb([[btn("✏️ نام دلخواه مشتری","admin:namemode:custom")],[btn("🎲 نام تصادفی خودکار","admin:namemode:random")],[btn("🔙 بازگشت","admin:settings")]]));
+    if (key === "name_mode") return renderAdmin(`🏷 <b>نوع نام‌گذاری سرویس</b>\nحالت فعلی: ${env.cfg.name_mode === "random" ? "تصادفی خودکار" : "نام دلخواه مشتری"}\nاین تنظیم برای خریدهای جدید است؛ نام دلخواه تکراری پذیرفته نمی‌شود.`,kb([[btn("✏️ نام دلخواه مشتری","admin:namemode:custom")],[btn("🎲 نام تصادفی خودکار","admin:namemode:random")],[btn("🔙 بازگشت","admin:settings")]]));
     if (key === "test_enabled") return renderAdmin(`🎁 سرویس تست اکنون ${env.cfg.test_enabled === "1" ? "فعال" : "غیرفعال"} است.`, kb([[btn("✅ فعال", "admin:test:1"),btn("⛔ غیرفعال", "admin:test:0")],[btn("🔙 بازگشت", "admin:settings")]]));
     return prompt("setting", key, `⚙️ <b>${esc(meta[1])}</b>\nمقدار فعلی: <code>${esc(env.cfg[key] || "خالی")}</code>\n\nمقدار جدید را بفرستید.${meta[0] === "text" ? " برای پاک‌کردن مقدار، - بفرستید." : ""}`, "admin:settings");
   }
@@ -1488,7 +1500,7 @@ async function onMessage(c, msg) {
       const id=Number(st.order_id);if(!Number.isSafeInteger(id)||id<=0){delete st.step;return sendMsg(env,msg.chat.id,"سفارش پیدا نشد.",backKb())}
       try {
         const applied=await applyCoupon(env,id,uid,text);
-        st.step="receipt";const order=await getOrder(env,id);
+        st.step="payment_choice";const order=await getOrder(env,id);
         return sendMsg(env,msg.chat.id,`${invoiceText(env,order)}\n\n🎟 کد ${esc(applied.code)} اعمال شد. این فاکتور تا ۳۰ دقیقه یا پایان اعتبار کد، هرکدام زودتر، رزرو است؛ پیش از پایان مهلت پرداخت و فیش را ارسال کنید.`,invoiceKb(id,true));
       } catch(e) {return sendMsg(env,msg.chat.id,`❌ ${esc(e.message)}\nدوباره کد بفرستید یا با دکمهٔ زیر انصراف دهید.`,backKb())}
     }
@@ -1497,6 +1509,7 @@ async function onMessage(c, msg) {
     if (st.step === "test_name") {
       const name=text.trim();
       if(!NAME_RE.test(name) || name.length>30) return sendMsg(env,msg.chat.id,"نام باید حداکثر ۳۰ حرف انگلیسی بدون فاصله و عدد باشد.");
+      try {if(await panelAccount(env,name))return sendMsg(env,msg.chat.id,"این نام قبلاً ثبت شده است؛ نام دیگری وارد کنید.");} catch {return sendMsg(env,msg.chat.id,"بررسی نام در پنل ناموفق بود؛ دوباره تلاش کنید.");}
       st.test_name=name;st.step="test_name_ready";
       return sendMsg(env,msg.chat.id,`نام سرویس تست: <b>${esc(name)}</b>\nبرای ساخت، دکمه زیر را بزنید.`,kb([[btn("✅ ساخت سرویس تست","testname:make")],[btn("🔙 بازگشت","main_menu")]]));
     }
@@ -1507,12 +1520,14 @@ async function onMessage(c, msg) {
           "❌ نام نامعتبر است.\n\n⚠️ فقط حروف انگلیسی (A-Z) مجاز است، بدون فاصله و بدون هیچ علامتی.\n<i>مثال درست: Amir  یا  Mobile</i>");
       }
       if (name.length > 30) return sendMsg(env, msg.chat.id, "❌ نام سرویس خیلی طولانی است. کوتاه‌تر بنویسید.");
+      try {if(await panelAccount(env,name))return sendMsg(env,msg.chat.id,"این نام قبلاً ثبت شده است؛ نام دیگری وارد کنید.");} catch {return sendMsg(env,msg.chat.id,"بررسی نام در پنل ناموفق بود؛ دوباره تلاش کنید.");}
       const plan = await getPlan(env, st.plan_key);
       if (!plan) { c.st = {}; return sendMsg(env, msg.chat.id, "❌ بسته یافت نشد، دوباره از منو اقدام کنید."); }
       try { await assertCategory(env,plan);await groupCredentials(env,plan.group_ids,0);return await createInvoice(c, msg.from, msg.chat.id, name, plan, null, null); }
       catch(e) { return sendMsg(env,msg.chat.id,`❌ بسته در دسترس نیست: ${esc(String(e.message).slice(0,160))}`,backKb("buy")); }
     }
-    if (st.step === "receipt") return handleReceipt(c, msg);
+    if (st.step === "receipt") return sendMsg(env,msg.chat.id,"لطفاً عکس رسید واریز را ارسال کنید.");
+    if (st.step === "payment_choice") return sendMsg(env,msg.chat.id,"ابتدا روش پرداخت را با دکمهٔ فاکتور انتخاب کنید.");
     if (st.step === "invite_code_input") {
       if (num(env, "referral_discount") <= 0) { delete st.step; return sendMsg(env,msg.chat.id,"هدیه دعوت فعلاً غیرفعال است.",backKb()); }
       const t = text.trim();
@@ -1533,7 +1548,8 @@ async function onMessage(c, msg) {
   // عکس / فایل
   if (msg.photo || msg.document) {
     if (st.step === "wallet_receipt") return handleWalletReceipt(c,msg);
-    if (st.step === "receipt") return handleReceipt(c, msg);
+    if (st.step === "receipt") { if(!msg.photo)return sendMsg(env,msg.chat.id,"لطفاً عکس رسید واریز را ارسال کنید.");return handleReceipt(c, msg); }
+    if (st.step === "payment_choice") return sendMsg(env,msg.chat.id,"ابتدا روش پرداخت را با دکمهٔ فاکتور انتخاب کنید.");
     const fix = await latestNeedsFix(env, uid);
     if (fix) { st.step = "receipt"; st.order_id = fix.id; return handleReceipt(c, msg); }
     return sendMsg(env, msg.chat.id, "برای خرید از منوی زیر اقدام کنید 👇", mainMenuKb(env));
@@ -1651,6 +1667,15 @@ async function onCallback(c, cq) {
     if(applied)return answer("برای این سفارش قبلاً کد تخفیف ثبت شده است.",true);
     st.order_id=id;st.step="coupon_code";
     return render(env,cq,"🎟 کد تخفیف را بفرستید. کد روی مبلغ باقی‌مانده پس از هدیهٔ دعوت حساب می‌شود و رزرو آن حداکثر ۳۰ دقیقه معتبر است.",backKb());
+  }
+
+  if (/^card:pay:\d+$/.test(d)) {
+    const id=Number(d.split(":")[2]);if(!positiveId(String(id)))return answer("سفارش نامعتبر است.",true);
+    await expireCouponReservations(env);
+    const order=await getOrder(env,id);if(!order || Number(order.user_id)!==uid || order.status!=="draft")return answer("سفارش قابل پرداخت نیست.",true);
+    if(!env.cfg.card_number || !env.cfg.card_holder)return answer("اطلاعات کارت هنوز تنظیم نشده است؛ با پشتیبانی تماس بگیرید.",true);
+    st.order_id=id;st.step="receipt";
+    return render(env,cq,`💳 <b>پرداخت کارت به کارت</b>\n\nشماره کارت: <code>${esc(env.cfg.card_number)}</code>\nبه نام: <b>${esc(env.cfg.card_holder)}</b>\nمبلغ: <b>${toman(order.final_price)}</b>\n\nپس از واریز، عکس رسید را همین‌جا بفرستید تا ادمین بررسی کند.`,backKb("main_menu"));
   }
 
   if (d === "wallet:home") {
@@ -1874,7 +1899,7 @@ async function onCallback(c, cq) {
     const plan = await getPlan(env, d.slice(5));
     if (!plan) return;
     try {await assertCategory(env,plan);await groupCredentials(env,plan.group_ids,0)} catch(e) { return answer(`بسته در دسترس نیست: ${String(e.message).slice(0,120)}`,true); }
-    if (st.step === "receipt" && st.order_id) return answer("سفارش فعلی را تکمیل کنید یا به منوی اصلی برگردید.",true);
+    if (["receipt","payment_choice"].includes(st.step) && st.order_id) return answer("سفارش فعلی را تکمیل کنید یا به منوی اصلی برگردید.",true);
     if (env.cfg.name_mode === "random") {
       return createInvoice(c,cq.from,chat_id,randomServiceName(),plan,null,cq);
     }

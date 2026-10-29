@@ -15,13 +15,15 @@ function fixture(){
   if(p.endsWith('/login'))return new Response(JSON.stringify({success:true}),{headers:{'set-cookie':'vpn-ui=test'}});
   if(p.endsWith('/clients/groups')) {if(stage==='preflight')throw Error('network down');return new Response(JSON.stringify({success:true,obj:[{id:1,inboundIds:[3]}]}));}
   if(p.endsWith('/clients/assignable'))return new Response(JSON.stringify({success:true,obj:[{inboundId:3,protocol:'vless'}]}));
+  if(p.endsWith('/clients/list'))return Response.json({success:true,obj:{rows:[],total:0}});
   if(p.endsWith('/addClient')){calls++;if(stage==='ambiguous')throw Error('connection lost');if(stage==='rejected')return new Response(JSON.stringify({success:false,msg:'no capacity'}));return new Response(JSON.stringify({success:true}));}
   throw Error('unexpected '+p);
  };
  async function emit(data){const tasks=[];let req=new Request('https://worker.example/webhook',{method:'POST',headers:{'X-Telegram-Bot-Api-Secret-Token':'secret'},body:JSON.stringify({update_id:++seq,...data})});assert.equal((await worker.fetch(req,env,{waitUntil:p=>tasks.push(p)})).status,200);await Promise.all(tasks)}
  const message=(uid,text)=>emit({message:{from:{id:uid,first_name:'A'},chat:{id:uid,type:'private'},message_id:6,text}});
+ const photo=uid=>emit({message:{from:{id:uid},chat:{id:uid,type:'private'},message_id:6,photo:[{file_id:'receipt'}]}});
  const cb=(uid,data)=>emit({callback_query:{id:'cb'+ ++seq,from:{id:uid},message:{chat:{id:uid,type:'private'},message_id:6},data}});
- return {sql,cb,message,output,setStage(v){stage=v},get calls(){return calls}};
+ return {sql,cb,message,photo,output,setStage(v){stage=v},get calls(){return calls}};
 }
 
 test('trial preflight failure releases the claim and next attempt can succeed exactly once',async()=>{
@@ -48,8 +50,8 @@ test('paid order preflight error remains retryable but post-dispatch error requi
 test('receipt delivery failure is not falsely acknowledged and resending works',async()=>{
  const f=fixture();f.sql.prepare("INSERT INTO orders(user_id,username,service_name,volume,price,final_price,duration,gb,days,status) VALUES(2,'u','A','10 گیگ',10,10,'30 روزه',10,30,'draft')").run();
  f.sql.prepare('INSERT OR REPLACE INTO states(user_id,data) VALUES(?,?)').run(2,JSON.stringify({step:'receipt',order_id:1}));
- f.setStage('receiptfail');await f.message(2,'receipt');assert.equal(f.sql.prepare('SELECT status FROM orders WHERE id=1').get().status,'needs_fix');assert.ok(f.output.some(x=>x.body.text?.includes('ارسال فیش به ادمین ناموفق')));
- f.setStage('good');await f.message(2,'receipt');assert.equal(f.sql.prepare('SELECT status FROM orders WHERE id=1').get().status,'pending');assert.ok(f.output.some(x=>x.body.text?.includes('فیش شما دریافت شد')));
+ f.setStage('receiptfail');await f.photo(2);assert.equal(f.sql.prepare('SELECT status FROM orders WHERE id=1').get().status,'needs_fix');assert.ok(f.output.some(x=>x.body.text?.includes('ارسال فیش به ادمین ناموفق')));
+ f.setStage('good');await f.photo(2);assert.equal(f.sql.prepare('SELECT status FROM orders WHERE id=1').get().status,'pending');assert.ok(f.output.some(x=>x.body.text?.includes('فیش شما دریافت شد')));
 });
 
 test('concurrent trial callbacks allow only one create',async()=>{
