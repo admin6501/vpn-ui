@@ -68,7 +68,143 @@ dst=sqlite3.connect(sys.argv[2]);src.backup(dst);dst.close();src.close()
 PY
  then rm -f "$out"; return 1; fi
  chmod 600 "$out" || return 1
+ BACKUP_PATH="$out"
  echo "بکاپ: $out"
+}
+restore_backup()(
+ [[ -f "$DATA/bot.sqlite" && -f "$CONF/config.json" ]] || { echo 'نصب ربات پیدا نشد.'; return 1; }
+ local source stage='' answer was_running=0 replaced=0 committed=0 previous=''
+ read -r -p 'مسیر کامل فایل بکاپ دیتابیس ربات: ' source
+ [[ -f "$source" && -r "$source" ]] || { echo 'فایل بکاپ قابل خواندن نیست.'; return 1; }
+ stage=$(mktemp "$DATA/.restore-XXXXXX.sqlite") || return 1
+ cleanup_restore(){
+   local code=$?; trap - EXIT INT TERM HUP
+   if (( replaced && !committed )); then
+     if ! systemctl stop vpn-ui-telegram-bot.service; then
+       echo 'توقف سرویس برای بازگردانی ناموفق بود؛ دیتابیس را دستی بررسی کنید.' >&2
+       [[ -z "$stage" || ! -f "$stage" ]] || rm -f -- "$stage"
+       return 1
+     fi
+     rm -f "$DATA/bot.sqlite-wal" "$DATA/bot.sqlite-shm"
+     if [[ -n "$previous" && -f "$previous" ]]; then
+       cp -- "$previous" "$DATA/bot.sqlite" && chmod 600 "$DATA/bot.sqlite" || echo 'بازگرداندن دیتابیس قبلی ناموفق بود؛ بکاپ قبلی را بررسی کنید.' >&2
+     fi
+   fi
+   if (( was_running && !committed )); then systemctl start vpn-ui-telegram-bot.service || echo 'راه‌اندازی دوباره ربات ناموفق بود.' >&2; fi
+   [[ -z "$stage" || ! -f "$stage" ]] || rm -f -- "$stage"
+   return "$code"
+ }
+ trap cleanup_restore EXIT
+ trap 'exit 130' INT; trap 'exit 143' TERM; trap 'exit 129' HUP
+ if ! python3 - "$source" "$stage" <<'PY'
+import sqlite3,sys
+from pathlib import Path
+try:
+    src=sqlite3.connect(Path(sys.argv[1]).resolve().as_uri()+'?mode=ro',uri=True,timeout=10)
+    src.execute('PRAGMA trusted_schema=OFF')
+    dst=sqlite3.connect(sys.argv[2]);src.backup(dst);src.close()
+    dst.execute('PRAGMA trusted_schema=OFF')
+    if dst.execute('PRAGMA integrity_check').fetchall()!=[('ok',)]: raise ValueError('integrity')
+    required={'settings':{'key','value'},'services':{'id','user_id','name','panel_email','sub_id'},'orders':{'id','user_id','status','service_name'},'plans':{'key','gb','price'},'test_claims':{'user_id','created_at'}}
+    for name,columns in required.items():
+        actual={r[1] for r in dst.execute('PRAGMA table_info("'+name+'")')}
+        if not columns.issubset(actual): raise ValueError('schema')
+    dst.close()
+except Exception:
+    print('فایل سالم یا بکاپ سازگار دیتابیس ربات نیست.',file=sys.stderr);sys.exit(1)
+PY
+ then return 1; fi
+ echo 'ریستور دیتابیس فعلی ربات را جایگزین می‌کند؛ سرویس‌های پنل یا پرداخت‌های بیرونی به عقب برنمی‌گردند.'
+ echo 'تنظیمات و توکن فعلی حفظ می‌شود؛ اتصال رمزگذاری‌شده پنل ممکن است با توکن ربات دیگری باز نشود.'
+ read -r -p 'برای تأیید RESTORE را وارد کنید: ' answer
+ [[ "$answer" == RESTORE ]] || { echo 'ریستور لغو شد.'; return 0; }
+ if systemctl is-active --quiet vpn-ui-telegram-bot.service; then
+   was_running=1
+   if ! systemctl stop vpn-ui-telegram-bot.service; then echo 'توقف ربات ناموفق بود.'; return 1; fi
+ fi
+ if ! backup; then echo 'بکاپ قبل از ریستور ناموفق بود.'; return 1; fi
+ previous="$BACKUP_PATH"
+ replaced=1
+ rm -f "$DATA/bot.sqlite-wal" "$DATA/bot.sqlite-shm"
+ chmod 600 "$stage" && mv -f -- "$stage" "$DATA/bot.sqlite" || return 1
+ if (( was_running )); then
+   if ! systemctl start vpn-ui-telegram-bot.service || { sleep 2; ! systemctl is-active --quiet vpn-ui-telegram-bot.service; }; then
+     echo 'ربات پس از ریستور بالا نیامد؛ دیتابیس قبلی برگردانده می‌شود.'; return 1
+   fi
+ fi
+ committed=1
+ echo "ریستور انجام شد. بکاپ دیتابیس قبل از ریستور: $previous"
+)
+automatic_backup()(
+ [[ -f "$DATA/bot.sqlite" && -f "$CONF/config.json" ]] || { echo 'دیتابیس یا تنظیمات ربات پیدا نشد.'; return 1; }
+ local snapshot; snapshot=$(mktemp "$DATA/.telegram-backup-XXXXXX.sqlite") || return 1
+ trap 'rm -f -- "$snapshot"' EXIT
+ chmod 600 "$snapshot"
+ python3 - "$DATA/bot.sqlite" "$snapshot" "$CONF/config.json" <<'PY'
+import json,os,re,sqlite3,sys,urllib.request,uuid
+from pathlib import Path
+try:
+    src=sqlite3.connect(Path(sys.argv[1]).resolve().as_uri()+'?mode=ro',uri=True,timeout=10)
+    dst=sqlite3.connect(sys.argv[2]);src.backup(dst);dst.close();src.close()
+    cfg=json.loads(Path(sys.argv[3]).read_text());token=cfg['BOT_TOKEN'];admins=str(cfg['ADMIN_ID'])
+    if not re.fullmatch(r'\d+:[A-Za-z0-9_-]+',token) or not re.fullmatch(r'\d+(,\d+)*',admins): raise ValueError('config')
+    data=Path(sys.argv[2]).read_bytes()
+    if len(data)>50_000_000:
+        print('دیتابیس بیش از سقف ارسال فایل تلگرام است.',file=sys.stderr);sys.exit(1)
+    failed=[]
+    for admin in dict.fromkeys(admins.split(',')):
+        boundary='----vpnui'+uuid.uuid4().hex
+        body=(f'--{boundary}\r\nContent-Disposition: form-data; name="chat_id"\r\n\r\n{admin}\r\n--{boundary}\r\nContent-Disposition: form-data; name="document"; filename="vpn-ui-bot-backup.sqlite"\r\nContent-Type: application/octet-stream\r\n\r\n'.encode()+data+f'\r\n--{boundary}--\r\n'.encode())
+        try:
+            request=urllib.request.Request('https://api.telegram.org/bot'+token+'/sendDocument',data=body,headers={'Content-Type':'multipart/form-data; boundary='+boundary})
+            with urllib.request.urlopen(request,timeout=45) as response: result=json.load(response)
+            if not result.get('ok'): failed.append(admin)
+        except Exception: failed.append(admin)
+    if failed: print('ارسال بکاپ به بعضی ادمین‌ها ناموفق بود؛ مطمئن شوید ربات را استارت کرده‌اند.',file=sys.stderr);sys.exit(1)
+    print('بکاپ برای ادمین‌های اصلی ارسال شد.')
+except Exception:
+    print('ساخت یا ارسال بکاپ خودکار ناموفق بود؛ دیتابیس، تنظیمات و اتصال تلگرام را بررسی کنید.',file=sys.stderr);sys.exit(1)
+PY
+)
+configure_auto_backup(){
+ [[ -f "$CONF/config.json" && -f "$DATA/bot.sqlite" ]] || { echo 'ابتدا ربات را نصب کنید.'; return 1; }
+ local choice interval unit seconds
+ echo '1) فعال‌سازی یا تغییر فاصله  2) غیرفعال‌سازی  3) وضعیت  4) ارسال آزمایشی همین حالا  0) بازگشت'
+ read -r -p 'انتخاب: ' choice
+ case "$choice" in
+  1)
+   read -r -p 'عدد فاصله بکاپ: ' interval
+   [[ "$interval" =~ ^[0-9]{1,6}$ ]] && (( 10#$interval > 0 )) || { echo 'فاصله باید عدد مثبت باشد.'; return 1; }
+   read -r -p 'واحد: 1 دقیقه، 2 ساعت: ' unit
+   case "$unit" in 1) seconds=$((10#$interval*60));; 2) seconds=$((10#$interval*3600));; *) echo 'واحد نامعتبر.'; return 1;; esac
+   (( seconds <= 2592000 )) || { echo 'حداکثر فاصله ۳۰ روز است.'; return 1; }
+   [[ -x "$APP/manage-server.sh" ]] || { echo 'اسکریپت مدیریت نصب نشده است.'; return 1; }
+   cat > /etc/systemd/system/vpn-ui-bot-backup.service <<UNIT
+[Unit]
+Description=VPN-UI bot database backup to Telegram
+Wants=network-online.target
+After=network-online.target
+[Service]
+Type=oneshot
+ExecStart=$APP/manage-server.sh --auto-backup
+UNIT
+   cat > /etc/systemd/system/vpn-ui-bot-backup.timer <<UNIT
+[Unit]
+Description=Schedule VPN-UI bot backups
+[Timer]
+OnActiveSec=${seconds}s
+OnUnitActiveSec=${seconds}s
+Unit=vpn-ui-bot-backup.service
+[Install]
+WantedBy=timers.target
+UNIT
+   systemctl daemon-reload && systemctl enable vpn-ui-bot-backup.timer && systemctl restart vpn-ui-bot-backup.timer || { echo 'فعال‌سازی زمان‌بندی ناموفق بود.'; return 1; }
+   echo 'بکاپ خودکار فعال شد. ادمین‌های اصلی باید قبلاً ربات را /start کرده باشند.';;
+  2) systemctl disable --now vpn-ui-bot-backup.timer || return 1; echo 'بکاپ خودکار غیرفعال شد.';;
+  3) systemctl --no-pager --full status vpn-ui-bot-backup.timer || true;;
+  4) automatic_backup;;
+  0) return 0;; *) echo 'گزینه نامعتبر'; return 1;;
+ esac
 }
 update_bot()(
  [[ -f "$CONF/config.json" && -f "$DATA/bot.sqlite" && -x "$NODE" && -d "$APP" ]] || { echo 'نصب کامل ربات پیدا نشد.'; return 1; }
@@ -169,6 +305,8 @@ remove_bot(){
    echo 'توقف سرویس ناموفق بود؛ حذف لغو شد.'; return 1
  fi
  systemctl disable vpn-ui-telegram-bot.service 2>/dev/null || true
+ systemctl disable --now vpn-ui-bot-backup.timer 2>/dev/null || true
+ rm -f /etc/systemd/system/vpn-ui-bot-backup.timer /etc/systemd/system/vpn-ui-bot-backup.service
  rm -f /etc/systemd/system/vpn-ui-telegram-bot.service
  systemctl daemon-reload
  if [[ "$(readlink /usr/local/bin/vpn-ui-bot 2>/dev/null || true)" == "$APP/manage-server.sh" ]]; then rm -f /usr/local/bin/vpn-ui-bot; fi
@@ -186,15 +324,17 @@ remove_webhook(){
  "$NODE" --input-type=module -e 'import {readFileSync} from "node:fs";const {BOT_TOKEN}=JSON.parse(readFileSync("/etc/vpn-ui-bot/config.json"));const r=await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/deleteWebhook`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({drop_pending_updates:false})});const o=await r.json();if(!o.ok)throw Error(o.description);console.log("وب‌هوک حذف شد.")'
  systemctl restart vpn-ui-telegram-bot.service
 }
+if [[ "${1:-}" == --auto-backup ]]; then automatic_backup; exit $?; fi
 while true; do
- printf '\nمدیریت ربات VPN-UI\n1) نصب تازه\n2) وضعیت\n3) شروع\n4) توقف\n5) راه‌اندازی مجدد\n6) نمایش لاگ\n7) انتقال از وب‌هوک به سرور\n8) بکاپ دیتابیس\n9) آپدیت ربات\n10) حذف ربات\n11) آمار دیتابیس ربات\n0) خروج\n'
+ printf '\nمدیریت ربات VPN-UI\n1) نصب تازه\n2) وضعیت\n3) شروع\n4) توقف\n5) راه‌اندازی مجدد\n6) نمایش لاگ\n7) انتقال از وب‌هوک به سرور\n8) بکاپ دیتابیس\n9) آپدیت ربات\n10) حذف ربات\n11) آمار دیتابیس ربات\n12) ریستور بکاپ\n13) بکاپ خودکار تلگرام\n0) خروج\n'
  read -r -p 'انتخاب: ' choice || exit 0
  case "$choice" in
   1) install_bot || echo 'نصب کامل نشد.';;
   2) systemctl --no-pager --full status vpn-ui-telegram-bot.service || true;;
   3) systemctl start vpn-ui-telegram-bot.service;; 4) systemctl stop vpn-ui-telegram-bot.service;;
   5) systemctl restart vpn-ui-telegram-bot.service;; 6) journalctl -u vpn-ui-telegram-bot.service -n 100 --no-pager;;
-  7) remove_webhook;; 8) backup;; 9) update_bot || echo 'آپدیت کامل نشد.';; 10) remove_bot || echo 'حذف کامل نشد.'; exit 0;; 11) database_counts || echo 'خواندن آمار ناموفق بود.';; 0) exit 0;; *) echo 'گزینه نامعتبر';;
+  7) remove_webhook;; 8) backup;; 9) update_bot || echo 'آپدیت کامل نشد.';; 10) remove_bot || echo 'حذف کامل نشد.'; exit 0;; 11) database_counts || echo 'خواندن آمار ناموفق بود.';;
+  12) restore_backup || echo 'ریستور کامل نشد.';; 13) configure_auto_backup || echo 'تنظیم بکاپ خودکار کامل نشد.';; 0) exit 0;; *) echo 'گزینه نامعتبر';;
  esac
  pause
 done

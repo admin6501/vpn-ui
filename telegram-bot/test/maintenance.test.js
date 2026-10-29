@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, copyFileSync, rmSync, existsSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, copyFileSync, rmSync, existsSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -18,13 +18,49 @@ function fixture(schemaChanged=false) {
  const fake=(name,body)=>writeFileSync(join(bin,name),'#!/usr/bin/env bash\n'+body+'\n',{mode:0o755});
  fake('curl','cp "$MOCK_ARCHIVE" "${@: -1}"');fake('npm','exit 0');fake('systemctl','echo "$*" >> "$MOCK_LOG"; if [[ "${MOCK_INTERRUPT_ON:-}" == "$1" && ! -e "$MOCK_LOG.interrupted" ]]; then touch "$MOCK_LOG.interrupted"; kill -TERM "$PPID"; exit 0; fi; if [[ "${MOCK_FAIL_START:-}" == 1 && "$1" == start && ! -e "$MOCK_LOG.failed" ]]; then touch "$MOCK_LOG.failed"; exit 1; fi; exit 0');
  let script=readFileSync('manage-server.sh','utf8');
- script=script.replace('APP=/opt/vpn-ui-telegram-bot',`APP=${app}`).replace('CONF=/etc/vpn-ui-bot',`CONF=${conf}`).replace('DATA=/var/lib/vpn-ui-bot',`DATA=${data}`).replace('NODE=/opt/vpn-ui-bot-node/bin/node',`NODE=${process.execPath}`).replace('[[ $EUID == 0 ]]', '[[ 1 == 1 ]]').replaceAll('/opt/.vpn-ui-bot-stage.',`${dir}/.stage.`).replaceAll('/opt/vpn-ui-bot-node',`${dir}/runtime`).replaceAll('/etc/systemd/system/vpn-ui-telegram-bot.service',`${dir}/service`).replaceAll('/usr/local/bin/vpn-ui-bot',`${dir}/link`);
+ script=script.replace('APP=/opt/vpn-ui-telegram-bot',`APP=${app}`).replace('CONF=/etc/vpn-ui-bot',`CONF=${conf}`).replace('DATA=/var/lib/vpn-ui-bot',`DATA=${data}`).replace('NODE=/opt/vpn-ui-bot-node/bin/node',`NODE=${process.execPath}`).replace('[[ $EUID == 0 ]]', '[[ 1 == 1 ]]').replaceAll('/opt/.vpn-ui-bot-stage.',`${dir}/.stage.`).replaceAll('/opt/vpn-ui-bot-node',`${dir}/runtime`).replaceAll('/etc/systemd/system/vpn-ui-telegram-bot.service',`${dir}/service`).replaceAll('/etc/systemd/system/vpn-ui-bot-backup.service',`${dir}/backup.service`).replaceAll('/etc/systemd/system/vpn-ui-bot-backup.timer',`${dir}/backup.timer`).replaceAll('/usr/local/bin/vpn-ui-bot',`${dir}/link`);
  const menu=join(dir,'menu.sh');writeFileSync(menu,script);
  const run=(input,extra={})=>spawnSync('bash',[menu],{input,encoding:'utf8',timeout:20000,env:{...process.env,PATH:`${bin}:${process.env.PATH}`,MOCK_ARCHIVE:join(dir,'repo.tar.gz'),MOCK_LOG:join(dir,'calls'),...extra}});
- return {dir,app,data,conf,run};
+ const runAuto=(extra={})=>spawnSync('bash',[menu,'--auto-backup'],{encoding:'utf8',timeout:20000,env:{...process.env,PATH:`${bin}:${process.env.PATH}`,MOCK_LOG:join(dir,'calls'),...extra}});
+ return {dir,app,data,conf,run,runAuto};
 }
 test('update preserves database and creates backup before replacing code',()=>{
  const f=fixture();try{const result=f.run('9\n\n0\n');assert.equal(result.status,0,result.stderr);assert.match(result.stdout,/آپدیت انجام شد/);assert.match(readFileSync(join(f.app,'worker.js'),'utf8'),/export default/);const db=new DatabaseSync(join(f.data,'bot.sqlite'));assert.equal(db.prepare('SELECT v FROM keepme').get().v,42);db.close();assert.ok(existsSync(join(f.data,'backups')))}finally{rmSync(f.dir,{recursive:true,force:true})}
+});
+test('restore validates input, saves existing database, and restores service data',()=>{
+ const f=fixture();try{
+  const source=join(f.dir,'saved.sqlite'),db=new DatabaseSync(source);db.exec(readFileSync('schema.sql','utf8'));db.exec("INSERT INTO services(user_id,name) VALUES(123,'restored')");db.close();
+  const result=f.run(`12\n${source}\nRESTORE\n\n0\n`);assert.equal(result.status,0,result.stderr);assert.match(result.stdout,/ریستور انجام شد/);
+  const live=new DatabaseSync(join(f.data,'bot.sqlite'));assert.equal(live.prepare('SELECT name FROM services').get().name,'restored');live.close();
+  const files=readdirSync(join(f.data,'backups'));assert.equal(files.length,1);const old=new DatabaseSync(join(f.data,'backups',files[0]));assert.equal(old.prepare('SELECT v FROM keepme').get().v,42);old.close();
+ }finally{rmSync(f.dir,{recursive:true,force:true})}
+});
+test('restore rejects incompatible database without stopping service or changing data',()=>{
+ const f=fixture();try{const source=join(f.dir,'invalid.sqlite');writeFileSync(source,'not a database');const result=f.run(`12\n${source}\n\n0\n`);assert.match(result.stderr,/بکاپ سازگار/);assert.ok(!existsSync(join(f.dir,'calls')));const db=new DatabaseSync(join(f.data,'bot.sqlite'));assert.equal(db.prepare('SELECT v FROM keepme').get().v,42);db.close()}finally{rmSync(f.dir,{recursive:true,force:true})}
+});
+test('failed restart after restore rolls back the original database',()=>{
+ const f=fixture();try{const source=join(f.dir,'saved.sqlite'),db=new DatabaseSync(source);db.exec(readFileSync('schema.sql','utf8'));db.close();const result=f.run(`12\n${source}\nRESTORE\n\n0\n`,{MOCK_FAIL_START:'1'});assert.match(result.stdout,/دیتابیس قبلی برگردانده/);const live=new DatabaseSync(join(f.data,'bot.sqlite'));assert.equal(live.prepare('SELECT v FROM keepme').get().v,42);live.close()}finally{rmSync(f.dir,{recursive:true,force:true})}
+});
+test('interrupted restore does not lose the original database and restarts the bot',()=>{
+ const f=fixture();try{const source=join(f.dir,'saved.sqlite'),db=new DatabaseSync(source);db.exec(readFileSync('schema.sql','utf8'));db.close();f.run(`12\n${source}\nRESTORE\n\n0\n`,{MOCK_INTERRUPT_ON:'stop'});const live=new DatabaseSync(join(f.data,'bot.sqlite'));assert.equal(live.prepare('SELECT v FROM keepme').get().v,42);live.close();assert.match(readFileSync(join(f.dir,'calls'),'utf8'),/start vpn-ui-telegram-bot.service/)}finally{rmSync(f.dir,{recursive:true,force:true})}
+});
+test('backup schedule accepts minutes or hours and can be disabled',()=>{
+ const f=fixture();try{let result=f.run('13\n1\n2\n2\n\n0\n');assert.match(result.stdout,/بکاپ خودکار فعال شد/);assert.match(readFileSync(join(f.dir,'backup.timer'),'utf8'),/OnUnitActiveSec=7200s/);assert.match(readFileSync(join(f.dir,'backup.service'),'utf8'),/--auto-backup/);result=f.run('13\n2\n\n0\n');assert.match(result.stdout,/غیرفعال شد/);assert.match(readFileSync(join(f.dir,'calls'),'utf8'),/disable --now vpn-ui-bot-backup.timer/)}finally{rmSync(f.dir,{recursive:true,force:true})}
+});
+test('automatic backup sends a SQLite snapshot to configured owner IDs and cleans its temporary file',()=>{
+ const f=fixture();try{
+  writeFileSync(join(f.conf,'config.json'),JSON.stringify({BOT_TOKEN:'123:secret_token',ADMIN_ID:'11,22'}));
+  writeFileSync(join(f.dir,'sitecustomize.py'),`import io,os,urllib.request\ndef mock(request,timeout):\n    with open(os.environ['MOCK_REQUESTS'],'ab') as f: f.write(request.data+b'\\nEND-REQUEST\\n')\n    return io.BytesIO(b'{"ok":true}')\nurllib.request.urlopen=mock\n`);
+  const result=f.runAuto({PYTHONPATH:f.dir,MOCK_REQUESTS:join(f.dir,'requests')});assert.equal(result.status,0,result.stderr);assert.match(result.stdout,/ارسال شد/);assert.doesNotMatch(result.stdout+result.stderr,/secret_token/);
+  const data=readFileSync(join(f.dir,'requests'));assert.ok(data.includes(Buffer.from('SQLite format 3')));assert.ok(data.includes(Buffer.from('\r\n\r\n11\r\n')));assert.ok(data.includes(Buffer.from('\r\n\r\n22\r\n')));assert.ok(!readdirSync(f.data).some(x=>x.startsWith('.telegram-backup-')));
+ }finally{rmSync(f.dir,{recursive:true,force:true})}
+});
+test('automatic backup reports Telegram failure and removes the temporary snapshot',()=>{
+ const f=fixture();try{
+  writeFileSync(join(f.conf,'config.json'),JSON.stringify({BOT_TOKEN:'123:secret_token',ADMIN_ID:'11'}));
+  writeFileSync(join(f.dir,'sitecustomize.py'),`import urllib.request\ndef mock(request,timeout): raise OSError('connection failed')\nurllib.request.urlopen=mock\n`);
+  const result=f.runAuto({PYTHONPATH:f.dir});assert.notEqual(result.status,0);assert.match(result.stderr,/ناموفق/);assert.doesNotMatch(result.stderr,/secret_token/);assert.ok(!readdirSync(f.data).some(x=>x.startsWith('.telegram-backup-')));
+ }finally{rmSync(f.dir,{recursive:true,force:true})}
 });
 test('update stops before replacing code if schema differs',()=>{
  const f=fixture(true);try{const result=f.run('9\n\n0\n');assert.equal(result.status,0,result.stderr);assert.match(result.stdout,/ساختار دیتابیس/);assert.equal(readFileSync(join(f.app,'worker.js'),'utf8'),'// old version\n')}finally{rmSync(f.dir,{recursive:true,force:true})}
