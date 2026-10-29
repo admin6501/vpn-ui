@@ -147,3 +147,7 @@ test('concurrent invoice creation reserves a referral reward at most once',async
  const f=fixture();await category(f,'A',1);await plan(f,'a10',100,10,14,1);f.sql.exec("INSERT INTO discounts(user_id,amount,used,created_at) VALUES(2,40,0,'today')");await f.cb(2,'plan_a10');await Promise.all([f.message(2,'Alice'),f.message(2,'Bob')]);
  assert.equal(f.sql.prepare("SELECT COUNT(*) n FROM bot_order_referrals WHERE state='reserved'").get().n,1);assert.equal(f.sql.prepare('SELECT SUM(discount) n FROM orders').get().n,40);assert.equal(f.sql.prepare('SELECT used FROM discounts').get().used,1);
 });
+test('concurrent random name selections create at most one invoice',async()=>{
+ const f=fixture();await category(f,'A',1);await plan(f,'a10',100,10,14,1);await f.cb(2,'plan_a10');await Promise.all([f.cb(2,'buyname:random'),f.cb(2,'buyname:random')]);
+ assert.equal(f.sql.prepare('SELECT COUNT(*) n FROM orders WHERE user_id=2').get().n,1);
+});

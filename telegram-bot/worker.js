@@ -55,7 +55,6 @@ async function storeApp(env,key,app) {
 // مقدار پیش‌فرض از اینجا (و wrangler.toml) می‌آید؛ هر مقداری که با /set عوض شود در دیتابیس می‌ماند.
 const META = {
   referral_discount: ["int", "🎁 مبلغ هدیه دعوت (تومان)"],
-  name_mode: ["name_mode", "🏷 نوع نام‌گذاری سرویس"],
   test_enabled: ["bool", "سرویس تست: 1 = فعال، 0 = غیرفعال"],
   test_mb: ["int", "حجم سرویس تست (مگابایت)"],
   test_days: ["int", "مدت سرویس تست (روز)"],
@@ -610,6 +609,11 @@ async function createInvoice(c, user, chat_id, name, plan, renewId, cq) {
   if (cq) { try { await tg(env, "deleteMessage", { chat_id, message_id: cq.message.message_id }); } catch {} }
   await sendMsg(env, chat_id, invoiceText(env, order), invoiceKb(orderId));
 }
+async function claimPurchaseChoice(env,st,uid) {
+  if(!st.purchase_choice)return false;
+  const result=await run(env,"UPDATE settings SET value=? WHERE key=? AND value=?",`used:${st.purchase_choice}`,`purchase_choice:${uid}`,st.purchase_choice);
+  return !!result.meta.changes;
+}
 
 // ---------------------------------------------------------- تحویل سفارش (ساخت/تمدید در پنل)
 async function fulfillOrder(env, order, onDispatch) {
@@ -935,7 +939,6 @@ const adminHomeKb = () => kb([
   [btn("💰 مدیریت کیف پول", "admin:wallet"),btn("⚠️ سفارش‌های قابل بررسی", "admin:wallet_reviews")],
   [btn("🎁 تنظیم هدیه دعوت", "admin:setting:referral_discount"),btn("🎟 مدیریت کد تخفیف", "admin:coupons:0")],
   [btn("📲 مدیریت اپلیکیشن‌ها", "admin:apps")],
-  [btn("🏷 نوع نام‌گذاری سرویس", "admin:setting:name_mode")],
   [btn("🎁 مجوز دوباره تست", "admin:resettest"), btn("🔌 بررسی اتصال پنل", "admin:panelcheck")],
   [btn("♻️ ریست تست همه", "admin:reset_all_tests")],
   [btn("🏠 منوی مشتری", "main_menu")],
@@ -1493,7 +1496,6 @@ async function handleAdminUICallback(c, cq, answer) {
     if (key === "start_text") return prompt("setting",key,`✏️ <b>متن پیام شروع</b>\nمتن فعلی: <code>${esc(env.cfg.start_text || DEFAULT_START_TEXT)}</code>\n\nمتن جدید را بفرستید؛ برای نمایش نام کاربر از <code>{name}</code> استفاده کنید. حداکثر ${MAX_START_TEXT} نویسه؛ برای بازگشت به متن پیش‌فرض، - بفرستید.`,"admin:settings");
     if (key === "referral_discount") return prompt("setting",key,`🎁 <b>هدیه دعوت</b>\nمقدار فعلی: ${toman(env.cfg.referral_discount)}\nمبلغ جدید را به تومان بفرستید؛ عدد 0 هدیه را غیرفعال می‌کند. این هدیه تخفیف خرید بعدی معرف است و به کیف پول اضافه نمی‌شود.`,"admin:settings");
     if (key === "channel_username" || key === "channel_link") return prompt("setting",key,`📢 <b>عضویت اجباری</b>\nبرای بررسی عضویت کاربران، ابتدا ربات را به کانال اضافه و ادمین کانال کنید. یوزرنیم یا شناسهٔ کانال و لینک عضویت را در تنظیمات جداگانه وارد کنید.\n\n${key === "channel_username" ? "یوزرنیم کانال همراه @ یا شناسهٔ عددی کانال را بفرستید." : "لینک عضویت کانال را بفرستید."}\nمقدار فعلی: <code>${esc(env.cfg[key] || "خالی")}</code>\nبرای پاک‌کردن مقدار، - بفرستید.`,"admin:settings");
-    if (key === "name_mode") return renderAdmin(`🏷 <b>نوع نام‌گذاری سرویس</b>\nحالت فعلی: ${env.cfg.name_mode === "random" ? "تصادفی خودکار" : "نام دلخواه مشتری"}\nاین تنظیم برای خریدهای جدید است؛ نام دلخواه تکراری پذیرفته نمی‌شود.`,kb([[btn("✏️ نام دلخواه مشتری","admin:namemode:custom")],[btn("🎲 نام تصادفی خودکار","admin:namemode:random")],[btn("🔙 بازگشت","admin:settings")]]));
     if (key === "test_enabled") return renderAdmin(`🎁 سرویس تست اکنون ${env.cfg.test_enabled === "1" ? "فعال" : "غیرفعال"} است.`, kb([[btn("✅ فعال", "admin:test:1"),btn("⛔ غیرفعال", "admin:test:0")],[btn("🔙 بازگشت", "admin:settings")]]));
     if (["wallet_topup_min","wallet_topup_max"].includes(key))return prompt("setting",key,`💰 <b>${esc(meta[1])}</b>\nمقدار فعلی: ${key === "wallet_topup_max" && num(env,key)===0 ? "بدون سقف تنظیم‌شده" : toman(env.cfg[key])}\n\n${topupLimitsText(env)}\n\nمبلغ جدید را به تومان و با عدد انگلیسی بفرستید.${key === "wallet_topup_max" ? " برای برداشتن سقف، 0 بفرستید." : ""}`,"admin:settings");
     return prompt("setting", key, `⚙️ <b>${esc(meta[1])}</b>\nمقدار فعلی: <code>${esc(env.cfg[key] || "خالی")}</code>\n\nمقدار جدید را بفرستید.${meta[0] === "text" ? " برای پاک‌کردن مقدار، - بفرستید." : ""}`, "admin:settings");
@@ -1503,9 +1505,7 @@ async function handleAdminUICallback(c, cq, answer) {
     return showAdminHome(env, chat);
   }
   if (/^admin:namemode:(custom|random)$/.test(d)) {
-    const value=d.split(":")[2];
-    await run(env,"INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value","name_mode",value);
-    return renderAdmin(`✅ نوع نام‌گذاری به «${value === "random" ? "تصادفی خودکار" : "نام دلخواه مشتری"}» تغییر کرد.`,adminBack("admin:root"));
+    return answer("انتخاب نام اکنون هنگام خرید در اختیار مشتری است.",true);
   }
   if (d === "admin:plans") {
     delete st.admin_ui_step; delete st.admin_ui_key;
@@ -1598,7 +1598,7 @@ async function onMessage(c, msg) {
       st.test_name=name;st.step="test_name_ready";
       return sendMsg(env,msg.chat.id,`نام سرویس تست: <b>${esc(name)}</b>\nبرای ساخت، دکمه زیر را بزنید.`,kb([[btn("✅ ساخت سرویس تست","testname:make")],[btn("🔙 بازگشت","main_menu")]]));
     }
-    if (st.step === "service_name") {
+    if (st.step === "service_name" || st.step === "purchase_name_choice") {
       const name = text.trim();
       if (!NAME_RE.test(name)) {
         return sendMsg(env, msg.chat.id,
@@ -1608,7 +1608,7 @@ async function onMessage(c, msg) {
       try {if(await panelAccount(env,name))return sendMsg(env,msg.chat.id,"این نام قبلاً ثبت شده است؛ نام دیگری وارد کنید.");} catch {return sendMsg(env,msg.chat.id,"بررسی نام در پنل ناموفق بود؛ دوباره تلاش کنید.");}
       const plan = await getPlan(env, st.plan_key);
       if (!plan) { c.st = {}; return sendMsg(env, msg.chat.id, "❌ بسته یافت نشد، دوباره از منو اقدام کنید."); }
-      try { await assertCategory(env,plan);await groupCredentials(env,plan.group_ids,0);return await createInvoice(c, msg.from, msg.chat.id, name, plan, null, null); }
+      try { await assertCategory(env,plan);await groupCredentials(env,plan.group_ids,0);if(!(await claimPurchaseChoice(env,st,uid)))return sendMsg(env,msg.chat.id,"این درخواست قبلاً ثبت شده یا منقضی است؛ بسته را دوباره انتخاب کنید.",backKb("buy"));return await createInvoice(c, msg.from, msg.chat.id, name, plan, null, null); }
       catch(e) { return sendMsg(env,msg.chat.id,`❌ بسته در دسترس نیست: ${esc(String(e.message).slice(0,160))}`,backKb("buy")); }
     }
     if (st.step === "receipt") return sendMsg(env,msg.chat.id,"لطفاً عکس رسید واریز را ارسال کنید.");
@@ -1803,7 +1803,7 @@ async function onCallback(c, cq) {
     return;
   }
 
-  if (d === "main_menu") { if(st.order_id)await cancelDraftOrder(env,Number(st.order_id),uid); delete st.order_id;delete st.step; delete st.test_category; delete st.test_name; delete st.admin_ui_step; delete st.admin_ui_key; delete st.admin_step; delete st.admin_order; delete st.admin_wallet_change; delete st.wallet_topup_id; await del(); return sendMainMenu(env, chat_id); }
+  if (d === "main_menu") { if(st.order_id)await cancelDraftOrder(env,Number(st.order_id),uid); delete st.order_id;delete st.step; delete st.plan_key;delete st.purchase_choice; delete st.test_category; delete st.test_name; delete st.admin_ui_step; delete st.admin_ui_key; delete st.admin_step; delete st.admin_order; delete st.admin_wallet_change; delete st.wallet_topup_id; await del(); return sendMainMenu(env, chat_id); }
 
   // --- سرویس تست (هر کاربر فقط یک‌بار)
   if (d === "test_service") {
@@ -1965,7 +1965,7 @@ async function onCallback(c, cq) {
     return render(env, cq, "✅ سرویس حذف شد.\n\n🗂 <b>سرویس های من</b>", kb(rows));
   }
 
-  if (d === "buy") { delete st.renew_service_id;return showCustomerCategories(env,cq,"buy"); }
+  if (d === "buy") { delete st.renew_service_id;if(['purchase_name_choice','service_name'].includes(st.step)){delete st.step;delete st.plan_key;delete st.purchase_choice;}return showCustomerCategories(env,cq,"buy"); }
   if (/^(buy|test)cats:\d+$/.test(d)) {
     const [type,pageText]=d.split(":"),page=Number(pageText);if(!Number.isSafeInteger(page)||page>1000000)return answer("صفحه نامعتبر است.",true);
     if(type==="testcats")return answer("برای دریافت تست دوباره وارد منوی سرویس تست شوید.",true);
@@ -1985,15 +1985,16 @@ async function onCallback(c, cq) {
     if (!plan) return;
     try {await assertCategory(env,plan);await groupCredentials(env,plan.group_ids,0)} catch(e) { return answer(`بسته در دسترس نیست: ${String(e.message).slice(0,120)}`,true); }
     if (["receipt","payment_choice"].includes(st.step) && st.order_id) return answer("سفارش فعلی را تکمیل کنید یا به منوی اصلی برگردید.",true);
-    if (env.cfg.name_mode === "random") {
-      return createInvoice(c,cq.from,chat_id,randomServiceName(),plan,null,cq);
-    }
-    st.plan_key = plan.key; st.step = "service_name";
-    return render(env, cq,
-      `📦 بسته انتخابی: <b>${esc(planLabel(plan))}</b> — ${toman(plan.price)}\n\n` +
-      "✏️ حالا یک <b>نام</b> برای سرویس خود بفرستید.\n\n⚠️ <b>قوانین نام‌گذاری:</b>\n" +
-      "• فقط حروف انگلیسی (A-Z)\n• بدون فاصله\n• استفاده از عدد و علامت (!,@,_,- و ...) ممنوع\n\n" +
-      "<i>مثال درست: Amir  یا  Mobile</i>", backKb("buy"));
+    st.plan_key = plan.key; st.step = "purchase_name_choice";st.purchase_choice=hex(12);
+    await run(env,"INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",`purchase_choice:${uid}`,st.purchase_choice);
+    return render(env,cq,`📦 بسته انتخابی: <b>${esc(planLabel(plan))}</b> — ${toman(plan.price)}\n\nنام سرویس را چگونه انتخاب می‌کنید؟`,kb([[btn("✏️ نام دلخواه","buyname:custom")],[btn("🎲 نام تصادفی","buyname:random")],[btn("🔙 بازگشت","buy")]]));
+  }
+  if (d === 'buyname:custom' || d === 'buyname:random') {
+    if(st.step !== 'purchase_name_choice' || !st.plan_key)return answer('ابتدا بسته را دوباره انتخاب کنید.',true);
+    const plan=await getPlan(env,st.plan_key);if(!plan)return answer('بسته پیدا نشد؛ دوباره انتخاب کنید.',true);
+    try {await assertCategory(env,plan);await groupCredentials(env,plan.group_ids,0)}catch{return answer('بسته در دسترس نیست؛ دوباره انتخاب کنید.',true)}
+    if(d === 'buyname:random'){if(!(await claimPurchaseChoice(env,st,uid)))return answer('این درخواست قبلاً ثبت شده یا منقضی است.',true);return createInvoice(c,cq.from,chat_id,randomServiceName(),plan,null,cq);}
+    st.step='service_name';return render(env,cq,'✏️ نام دلخواه را با حروف انگلیسی، بدون فاصله، عدد و علامت بفرستید؛ حداکثر ۳۰ حرف.\nمثال: Amir',backKb('buy'));
   }
 
   if (d.startsWith("renew_")) {
