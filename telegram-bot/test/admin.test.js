@@ -52,6 +52,20 @@ test('admin menu exposes every section, settings edit and toggle',async()=>{
  await f.callback(1,'admin:stats');assert.ok(f.output.some(x=>x.body.text?.includes('مجموع فروش')));
 });
 
+test('admin manages default and custom download apps with safe links and customer visibility',async()=>{
+ const f=fixture();await f.callback(1,'admin:root');assert.ok(JSON.stringify(f.last().reply_markup).includes('admin:apps'));
+ await f.callback(1,'admin:apps');assert.ok(JSON.stringify(f.last().reply_markup).includes('admin:app:v2box'));
+ await f.callback(2,'admin:apptoggle:v2box');await f.callback(2,'apps_menu');assert.ok(JSON.stringify(f.last().reply_markup).includes('app_v2box'));
+ await f.callback(1,'admin:applinks:v2box');await f.message(1,'App | javascript:alert(1)');assert.equal(f.sql.prepare("SELECT value FROM settings WHERE key='bot_app:v2box'").get(),undefined);
+ await f.message(1,'Android | https://example.com/android\niOS | https://example.com/ios');await f.callback(2,'app_v2box');assert.ok(JSON.stringify(f.last().reply_markup).includes('https://example.com/android'));
+ await f.callback(1,'admin:apptoggle:v2box');await f.callback(2,'apps_menu');assert.ok(!JSON.stringify(f.last().reply_markup).includes('app_v2box'));
+ await f.callback(1,'admin:apptoggle:v2box');await f.callback(1,'admin:appadd');await f.message(1,'New App');await f.message(1,'راهنمای <امن>');await f.message(1,'دانلود | https://example.com/new');
+ const item=f.sql.prepare("SELECT key FROM settings WHERE key LIKE 'bot_app:a%' AND key!='bot_app:v2box'").get();assert.ok(item);const key=item.key.slice(8);
+ await f.callback(2,'apps_menu');assert.ok(JSON.stringify(f.last().reply_markup).includes(`app_${key}`));await f.callback(2,`app_${key}`);assert.match(f.last().text,/&lt;امن&gt;/);
+ await f.callback(1,`admin:appdelete:${key}`);assert.equal(JSON.parse(f.sql.prepare('SELECT value FROM settings WHERE key=?').get(item.key).value).deleted,undefined);
+ await f.callback(1,`admin:appconfirm:${key}`);await f.callback(2,'apps_menu');assert.ok(!JSON.stringify(f.last().reply_markup).includes(`app_${key}`));
+});
+
 test('buttons create, change and confirm deletion of plans',async()=>{
  const f=fixture();f.sql.exec("INSERT INTO bot_categories(id,name,group_ids) VALUES(1,'Test','1')");await f.callback(1,'admin:plan_add');await f.message(1,'p3 12345 3 30');await f.callback(1,'admin:planpick:1');assert.equal(f.sql.prepare("SELECT price FROM plans WHERE key='p3'").get().price,12345);
  await f.callback(1,'admin:price:p3');await f.message(1,'50000');assert.equal(f.sql.prepare("SELECT price FROM plans WHERE key='p3'").get().price,50000);
