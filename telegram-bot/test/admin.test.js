@@ -52,6 +52,21 @@ test('admin menu exposes every section, settings edit and toggle',async()=>{
  await f.callback(1,'admin:stats');assert.ok(f.output.some(x=>x.body.text?.includes('مجموع فروش')));
 });
 
+test('subscription warnings and expired-service deletion settings are admin controlled',async()=>{
+ const f=fixture();await f.callback(1,'admin:settings');const markup=JSON.stringify(f.last().reply_markup);for(const key of ['alerts_enabled','alerts_days','alerts_gb','auto_delete_enabled','auto_delete_days'])assert.ok(markup.includes(`admin:setting:${key}`));
+ await f.callback(2,'admin:policy:auto_delete_enabled:1');assert.equal(f.sql.prepare("SELECT value FROM settings WHERE key='auto_delete_enabled'").get(),undefined);
+ await f.callback(1,'admin:policy:alerts_enabled:1');await f.callback(1,'admin:policy:auto_delete_enabled:1');await f.callback(1,'admin:setting:alerts_gb');await f.message(1,'0.5');await f.callback(1,'admin:setting:auto_delete_days');await f.message(1,'3');
+ for(const [key,value] of [['alerts_enabled','1'],['auto_delete_enabled','1'],['alerts_gb','0.5'],['auto_delete_days','3']])assert.equal(f.sql.prepare('SELECT value FROM settings WHERE key=?').get(key).value,value);
+ await f.callback(1,'admin:setting:auto_delete_days');await f.message(1,'-1');assert.equal(f.sql.prepare("SELECT value FROM settings WHERE key='auto_delete_days'").get().value,'3');
+});
+test('only a completed review lock can be released after admin confirmation',async()=>{
+ const f=fixture();f.sql.exec("INSERT INTO services(id,user_id,name,panel_email,sub_id) VALUES(1,2,'A','active','s1'); INSERT INTO service_operations(service_id,kind,created_at) VALUES(1,'auto_delete_running','0')");
+ await f.callback(1,'admin:autodelrelease:1');assert.equal(f.sql.prepare('SELECT kind FROM service_operations').get().kind,'auto_delete_running');
+ f.sql.exec("UPDATE service_operations SET kind='auto_delete_review'");await f.callback(1,'admin:svc:1');assert.ok(JSON.stringify(f.last().reply_markup).includes('admin:autodelreview:1'));
+ await f.callback(2,'admin:autodelrelease:1');assert.equal(f.sql.prepare('SELECT kind FROM service_operations').get().kind,'auto_delete_review');
+ await f.callback(1,'admin:autodelreview:1');assert.ok(JSON.stringify(f.last().reply_markup).includes('admin:autodelrelease:1'));await f.callback(1,'admin:autodelrelease:1');assert.equal(f.sql.prepare('SELECT * FROM service_operations').get(),undefined);
+});
+
 test('admin manages default and custom download apps with safe links and customer visibility',async()=>{
  const f=fixture();await f.callback(1,'admin:root');assert.ok(JSON.stringify(f.last().reply_markup).includes('admin:apps'));
  await f.callback(1,'admin:apps');assert.ok(JSON.stringify(f.last().reply_markup).includes('admin:app:v2box'));
