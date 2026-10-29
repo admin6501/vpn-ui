@@ -288,7 +288,8 @@ async function panelCall(env, method, path, form, onDispatch) {
     const cookie = panelCookie && panelCookieKey === identity ? panelCookie : await panelLogin(env, identity);
     const headers = { cookie, "X-Requested-With": "XMLHttpRequest" };
     let body;
-    if (form) { headers["content-type"] = "application/x-www-form-urlencoded"; body = form.toString(); }
+    if (form instanceof URLSearchParams) { headers["content-type"] = "application/x-www-form-urlencoded"; body = form.toString(); }
+    else if (form) { headers["content-type"] = "application/json"; body = JSON.stringify(form); }
     if (onDispatch) onDispatch();
     const r = await fetch(panelBase(env) + path, { method, headers, body, redirect:"error",signal:env.policySignal ? AbortSignal.any([env.policySignal,AbortSignal.timeout(15000)]) : AbortSignal.timeout(15000) });
     const text = await r.text();
@@ -383,6 +384,49 @@ async function panelCreate(env, { name, bytes, days, attemptKey, onDispatch, gro
   const j = await panelCall(env, "POST", "/panel/api/inbounds/addClient", form, onDispatch);
   if (!j.success) throw new Error("پنل رد کرد: " + (j.msg || JSON.stringify(j)));
   return { email, inboundId, subId, link: subLink(env, subId), bytes };
+}
+
+// Prepare the exact identity before dispatch so a lost reply can be reconciled
+// without inventing another subscription or overwriting an existing account.
+async function prepareMigrationDestination(env, { name, snapshot, renewalDuration, groupIds }) {
+  assertPanelReady(env);
+  if (!name || !snapshot || !Number.isSafeInteger(snapshot.quota) || snapshot.quota < 0 ||
+      !Number.isSafeInteger(snapshot.expiry) || snapshot.expiry < 0 ||
+      !Number.isSafeInteger(renewalDuration) || renewalDuration < 0) throw new Error('سهمیه یا تاریخ انتقال نامعتبر است');
+  if (await panelAccount(env, name)) throw new Error('این نام از قبل در پنل مقصد وجود دارد');
+  const credentials = await groupCredentials(env, groupIds, 0);
+  if (['wg-c','awg','wireguard','gre','mtproto'].includes(credentials.anchorProtocol)) credentials.id = name;
+  const inboundId = credentials.anchorId;
+  delete credentials.anchorProtocol;
+  delete credentials.anchorId;
+  const subId = b64url(18);
+  return { email: name, inboundId, subId, groupIds: parseIds(groupIds), link: subLink(env, subId),
+    client: { ...credentials, email: name, enable: false, subId, totalGB: snapshot.quota,
+      expiryTime: snapshot.expiry, renewalDuration, limitIp: 0, reset: 0 } };
+}
+
+async function createMigrationDestination(env, prepared, onDispatch) {
+  if (!prepared || !prepared.email || !prepared.subId || prepared.client?.enable !== false ||
+      prepared.client.email !== prepared.email || prepared.client.subId !== prepared.subId ||
+      !Number.isSafeInteger(prepared.inboundId) || prepared.inboundId <= 0 ||
+      !Array.isArray(prepared.groupIds) || !prepared.groupIds.length) throw new Error('مشخصات مقصد نامعتبر است');
+  const form = new URLSearchParams();
+  form.set('id', String(prepared.inboundId));
+  for (const id of prepared.groupIds) form.append('groupIds', String(id));
+  form.set('settings', JSON.stringify({ clients: [prepared.client] }));
+  const result = await panelCall(env, 'POST', '/panel/api/inbounds/addClient', form, onDispatch);
+  if (!result.success) throw new Error('پنل مقصد درخواست را رد کرد: ' + (result.msg || 'خطای نامشخص'));
+  return true;
+}
+
+async function importMigrationUsage(env, prepared, snapshot, onDispatch) {
+  if (!prepared?.email || !snapshot || !Number.isSafeInteger(snapshot.upload) || snapshot.upload < 0 ||
+      !Number.isSafeInteger(snapshot.download) || snapshot.download < 0 ||
+      !Number.isSafeInteger(snapshot.allTime) || snapshot.allTime < 0) throw new Error('مصرف انتقال نامعتبر است');
+  const result = await panelCall(env, 'POST', `/panel/api/inbounds/migrationImportUsage/${encodeURIComponent(prepared.email)}`,
+    { upload: snapshot.upload, download: snapshot.download, allTime: snapshot.allTime }, onDispatch);
+  if (!result.success) throw new Error('ثبت مصرف در مقصد تأیید نشد: ' + (result.msg || 'خطای نامشخص'));
+  return true;
 }
 
 // تمدید: مصرف صفر می‌شود و مدت از الان شروع می‌شود (مدت ثبت‌شده هنگام ساخت)
@@ -2377,7 +2421,7 @@ async function runSubscriptionPolicies(base,{signal}={}) {
     }
   } finally {await run(env,"DELETE FROM settings WHERE key='subscription_policy_lease' AND value=?",lease);}
 }
-export { groupCredentials, panelCreate, panelRenew, panelDelete, panelAccount, panelServiceAccount, panelMemberships, liveServiceDetails, panelCall, handleUpdate, subscriptionLinks, configName, linkFingerprint, runSubscriptionPolicies };
+export { groupCredentials, panelCreate, prepareMigrationDestination, createMigrationDestination, importMigrationUsage, panelRenew, panelDelete, panelAccount, panelServiceAccount, panelMemberships, liveServiceDetails, panelCall, handleUpdate, subscriptionLinks, configName, linkFingerprint, runSubscriptionPolicies };
 
 export default {
   async scheduled(event, env, ctx) {
