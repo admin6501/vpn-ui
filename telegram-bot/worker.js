@@ -66,6 +66,7 @@ const defaults = (env) => ({
   test_enabled: "1",
   test_mb: "500",
   test_days: "1",
+  test_category_id: "",
   card_number: env.CARD_NUMBER || "",
   card_holder: env.CARD_HOLDER || "",
   support_id: env.SUPPORT_ID || "",
@@ -1072,6 +1073,13 @@ async function showPlanCategoryChoices(env,chat,page) {
   const nav=[];if(page>0)nav.push(btn("◀️ قبلی",`admin:planchoices:${page-1}`));if(cats.length>10)nav.push(btn("بعدی ▶️",`admin:planchoices:${page+1}`));if(nav.length)rows.push(nav);rows.push([btn("🔙 مدیریت بسته‌ها","admin:plans")]);
   return sendMsg(env,chat,cats.length ? "دسته‌بندی بسته را انتخاب کنید:" : "دسته‌بندی فعالی نیست؛ ابتدا دسته‌بندی بسازید.",kb(rows));
 }
+async function showTestCategoryChoices(env,cq,page) {
+  const cats=await all(env,"SELECT id,name FROM bot_categories WHERE active=1 ORDER BY id DESC LIMIT 11 OFFSET ?",page*10);
+  const rows=cats.slice(0,10).map(x=>[btn(`${Number(env.cfg.test_category_id)===x.id ? '✅ ' : ''}${String(x.name).slice(0,40)}`,`admin:testcategory:${x.id}`)]);
+  const nav=[];if(page>0)nav.push(btn("◀️ قبلی",`admin:testcategories:${page-1}`));if(cats.length>10)nav.push(btn("بعدی ▶️",`admin:testcategories:${page+1}`));if(nav.length)rows.push(nav);
+  rows.push([btn("🔙 تنظیمات", "admin:settings")]);
+  return render(env,cq,cats.length ? "🎁 دسته‌بندی سرویس تست را انتخاب کنید:" : "دسته‌بندی فعالی وجود ندارد؛ ابتدا یک دسته‌بندی بسازید.",kb(rows));
+}
 async function showCategoryGroupChoices(env,chat,page) {
   const choices=await panelChoices(env);if(!choices)return sendMsg(env,chat,"خواندن گروه‌ها از پنل ناموفق بود.",adminBack("admin:categories"));
   const groups=choices.groups.filter(g=>positiveId(String(g.id)) && Array.isArray(g.inboundIds) && g.inboundIds.length>0 && g.inboundIds.every(id=>choices.inbounds.some(i=>Number(i.inboundId)===Number(id))));
@@ -1363,9 +1371,20 @@ async function handleAdminUICallback(c, cq, answer) {
     delete st.admin_ui_step; delete st.admin_ui_key;
     const rows = [];
     if (owner) rows.push([btn("➕ افزودن یا تنظیم اتصال پنل", "admin:panelsetup")]);
+    rows.push([btn("🎁 دسته‌بندی سرویس تست", "admin:testcategories:0")]);
     rows.push(...Object.entries(META).map(([key, [, label]]) => [btn(label, `admin:setting:${key}`)]));
     rows.push([btn("🔙 بازگشت", "admin:root")]);
     return renderAdmin("⚙️ <b>تنظیمات</b>\nبرای دیدن و تغییر هر گزینه آن را انتخاب کنید:", kb(rows));
+  }
+  if (/^admin:testcategories:\d+$/.test(d)) {
+    const page=Number(d.split(":")[2]);if(!Number.isSafeInteger(page)||page>1000000)return answer("صفحه نامعتبر است.",true);
+    return showTestCategoryChoices(env,cq,page);
+  }
+  if (/^admin:testcategory:\d+$/.test(d)) {
+    const id=Number(d.split(":")[2]),cat=await getCategory(env,id);
+    try { await assertCategory(env,cat);await groupCredentials(env,cat.group_ids,0); } catch(e) { return answer(`دسته‌بندی قابل استفاده نیست: ${String(e.message).slice(0,120)}`,true); }
+    await run(env,"INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value","test_category_id",String(id));
+    return renderAdmin(`✅ دسته‌بندی «${esc(cat.name)}» برای سرویس تست انتخاب شد.`,adminBack("admin:settings"));
   }
   if (d === "admin:panelsetup") {
     if (!owner) return answer("فقط ادمین اصلی اجازه تنظیم اتصال پنل را دارد.", true);
@@ -1682,11 +1701,14 @@ async function onCallback(c, cq) {
     const existing=await first(env,"SELECT created_at FROM test_claims WHERE user_id=?",uid);
     if(existing) return answer(String(existing.created_at || "").startsWith("processing|") || String(existing.created_at || "").startsWith("review|") ? "درخواست تست قبلی در حال پردازش یا بررسی است." : "شما قبلاً سرویس تست دریافت کرده‌اید.",true);
     delete st.test_name;delete st.step;delete st.test_category;
-    return showCustomerCategories(env,cq,"test");
+    const id=Number(env.cfg.test_category_id),cat=await getCategory(env,id);
+    try {if(!Number.isSafeInteger(id)||id<=0)throw Error();await assertCategory(env,cat);await groupCredentials(env,cat.group_ids,0)} catch {return render(env,cq,"سرویس تست فعلاً آماده نیست؛ با پشتیبانی تماس بگیرید.",backKb());}
+    return render(env,cq,"🎁 دسته‌بندی سرویس تست را انتخاب کنید:",kb([[btn(String(cat.name).slice(0,45),`testcat:${id}:0`)],[btn("🔙 بازگشت","main_menu")]]));
   }
   if (/^testcat:\d+:\d+$/.test(d)) {
     if(env.cfg.test_enabled!=="1")return answer("سرویس تست فعلا غیرفعال است.",true);
     const id=Number(d.split(":")[1]),cat=await getCategory(env,id);
+    if(!id || id!==Number(env.cfg.test_category_id))return answer("دسته‌بندی تست تغییر کرده است؛ دوباره تلاش کنید.",true);
     try {await assertCategory(env,cat);await groupCredentials(env,cat.group_ids,0)} catch {return answer("این دسته‌بندی فعلاً در دسترس نیست.",true)}
     st.test_category=id;delete st.test_name;delete st.step;
     return render(env,cq,`🎁 دسته‌بندی «${esc(cat.name)}» انتخاب شد. نام سرویس تست را چگونه انتخاب می‌کنید؟`,kb([[btn("✏️ نام دلخواه", "testname:custom")],[btn("🎲 نام تصادفی", "testname:random")],[btn("🔙 دسته‌بندی‌ها", "test_service")]]));
@@ -1700,7 +1722,7 @@ async function onCallback(c, cq) {
     if (env.cfg.test_enabled !== "1") return answer("سرویس تست فعلا غیرفعال است.", true);
     if (d === "testname:make" && (st.step !== "test_name_ready" || !NAME_RE.test(st.test_name || "") || st.test_name.length>30)) return answer("ابتدا نام سرویس را انتخاب کنید.",true);
     const cat=await getCategory(env,Number(st.test_category));
-    try{await assertCategory(env,cat)}catch{return answer("دسته‌بندی تست را دوباره انتخاب کنید.",true)}
+    try{if(!Number(st.test_category)||Number(st.test_category)!==Number(env.cfg.test_category_id))throw Error();await assertCategory(env,cat)}catch{return answer("دسته‌بندی تست را دوباره انتخاب کنید.",true)}
     const testName=d === "testname:make" ? st.test_name : randomServiceName();
     const token = `processing|${hex(12)}|${now()}`;
     const claimed = await run(env, "INSERT OR IGNORE INTO test_claims(user_id,created_at) VALUES(?,?)", uid, token);
@@ -1836,7 +1858,7 @@ async function onCallback(c, cq) {
   if (d === "buy") { delete st.renew_service_id;return showCustomerCategories(env,cq,"buy"); }
   if (/^(buy|test)cats:\d+$/.test(d)) {
     const [type,pageText]=d.split(":"),page=Number(pageText);if(!Number.isSafeInteger(page)||page>1000000)return answer("صفحه نامعتبر است.",true);
-    if(type==="testcats" && env.cfg.test_enabled!=="1")return answer("سرویس تست فعلا غیرفعال است.",true);
+    if(type==="testcats")return answer("برای دریافت تست دوباره وارد منوی سرویس تست شوید.",true);
     return showCustomerCategories(env,cq,type==="testcats"?"test":"buy",page);
   }
   if (/^buycat:\d+:\d+$/.test(d)) {
