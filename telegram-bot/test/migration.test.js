@@ -107,6 +107,17 @@ test('persistent journal locks the service and only releases completed jobs', as
   sql.close();
 });
 
+test('a pending renewal blocks acquiring a migration lock', async () => {
+  const sql = new DatabaseSync(':memory:'); sql.exec(readFileSync(new URL('../schema.sql', import.meta.url), 'utf8'));
+  sql.exec("INSERT INTO services(id,user_id,name) VALUES(1,2,'alice'); INSERT INTO orders(id,user_id,renew_service_id,status) VALUES(1,2,1,'pending')");
+  const prep=(q,a=[])=>({bind(...x){return prep(q,x)},execute(){const r=sql.prepare(q).run(...a);return {meta:{changes:Number(r.changes)}}}});
+  const db={prepare:q=>prep(q),async batch(ss){sql.exec('BEGIN');try{const r=ss.map(s=>s.execute());sql.exec('COMMIT');return r}catch(e){sql.exec('ROLLBACK');throw e}}};
+  await assert.rejects(migrationJournal(db).create('12345678-1234-1234-1234-123456789abc',1,{}),/unavailable/);
+  assert.equal(sql.prepare('SELECT COUNT(*) n FROM service_operations').get().n,0);
+  assert.equal(sql.prepare("SELECT COUNT(*) n FROM settings WHERE key LIKE 'migration:%'").get().n,0);
+  sql.close();
+});
+
 test('concurrent starts dispatch only one source freeze', async () => {
   const f = fixture();
   let release;

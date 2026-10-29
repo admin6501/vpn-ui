@@ -8,7 +8,7 @@ export function migrationJournal(db) {
       const job = { ...payload, id, serviceId, state: 'ready', next: 0, uncertain: null };
       const lockKind = `migration:${id}`;
       const result = await db.batch([
-        db.prepare('INSERT INTO service_operations(service_id,kind,created_at) SELECT id,?,? FROM services WHERE id=?').bind(lockKind, new Date().toISOString(), serviceId),
+        db.prepare("INSERT INTO service_operations(service_id,kind,created_at) SELECT id,?,? FROM services WHERE id=? AND NOT EXISTS(SELECT 1 FROM orders WHERE renew_service_id=services.id AND status NOT IN ('approved','rejected','cancelled','wallet_failed_refunded','wallet_review_resolved'))").bind(lockKind, new Date().toISOString(), serviceId),
         db.prepare('INSERT INTO settings(key,value) SELECT ?,? WHERE EXISTS(SELECT 1 FROM service_operations WHERE service_id=? AND kind=?)').bind(key(id), JSON.stringify(job), serviceId, lockKind),
       ]);
       if (!result[0].meta.changes || !result[1].meta.changes) throw new Error('service not found or unavailable');

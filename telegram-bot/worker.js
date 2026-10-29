@@ -3,8 +3,9 @@ import { parseMoney, walletBalance, reserveWalletPayment, completeWalletPayment,
 import { encryptPanel, decryptPanel, panelURL, panelAccountKey, probePanel } from './panel-config.js';
 import { applyCoupon, expireCouponReservations, cancelDraftOrder, normalizeCoupon, validCouponCode } from './coupons.js';
 import { createMessageJob, confirmMessageJob, processMessageJobs, encodeMessageReference, queuedMessagePayload } from './messages.js';
-import { migrationSnapshot } from './migration.js';
+import { migrationSnapshot, advanceMigration } from './migration.js';
 import { commitMigrationService } from './migration-commit.js';
+import { migrationJournal } from './migration-journal.js';
 
 // ربات فروش کانفیگ | NovaRay VPN — Cloudflare Workers + D1 + اتصال به پنل vpn-ui
 // ساخت/تمدید/حذف سرویس مستقیم از طریق API پنل (حساب نماینده) انجام می‌شود.
@@ -67,6 +68,7 @@ const META = {
   alerts_gb: ["number", "📦 هشدار چند گیگ مانده"],
   auto_delete_enabled: ["bool", "🗑 حذف خودکار اشتراک منقضی"],
   auto_delete_days: ["int", "📅 حذف چند روز پس از انقضا"],
+  location_change_enabled: ["bool", "🌍 تغییر لوکیشن توسط مشتری"],
   card_number: ["text", "شماره کارت"],
   card_holder: ["text", "نام صاحب کارت"],
   support_id: ["text", "آیدی پشتیبانی (با @)"],
@@ -90,6 +92,7 @@ const defaults = (env) => ({
   alerts_gb: "1",
   auto_delete_enabled: "0",
   auto_delete_days: "7",
+  location_change_enabled: "0",
   test_category_id: "",
   card_number: env.CARD_NUMBER || "",
   card_holder: env.CARD_HOLDER || "",
@@ -721,9 +724,10 @@ function serviceCaption(name, volume, dur, sub, cfg, header) {
 const sendServiceCard = (env, chat_id, name, volume, dur, sub, cfg, keyboard, header) =>
   sendMsg(env, chat_id, serviceCaption(name, volume, dur, sub, cfg, header), keyboard);
 
-const serviceKb = (id) => kb([
+const serviceKb = (id, env) => kb([
   [btn("🔗 کانفیگ‌ها و QR", `cfglist:${id}:0`)],
   [btn("🔄 تمدید سرویس", `renew_${id}`)],
+  ...(env?.cfg?.location_change_enabled === '1' ? [[btn('🌍 تغییر لوکیشن',`loc:list:${id}`)]] : []),
   [btn("🗑 حذف سرویس", `delsvc_${id}`)],
   [btn("🔙 بازگشت", "my_services")],
 ]);
@@ -807,9 +811,9 @@ async function createInvoice(c, user, chat_id, name, plan, renewId, cq) {
   const days = Number(plan.days);
   if (!Number.isSafeInteger(days) || days <= 0 || days>36500 || !Number.isSafeInteger(Date.now()+days*DAY_MS)) throw new Error("مدت سرویس مشخص نیست؛ با پشتیبانی تماس بگیرید");
   const r = await run(env,
-    "INSERT INTO orders(user_id,username,service_name,volume,price,discount,final_price,duration,renew_service_id,gb,days,created_at,status) SELECT ?,?,?,?,?,?,?,?,?,?,?,?,? WHERE EXISTS(SELECT 1 FROM bot_plan_specs s JOIN plans p ON p.key=s.plan_key JOIN bot_categories c ON c.id=s.category_id WHERE s.plan_key=? AND c.id=? AND c.active=1 AND c.group_ids=? AND COALESCE(c.panel_identity,'')=? AND s.days=? AND p.gb=? AND p.price=?)",
+    "INSERT INTO orders(user_id,username,service_name,volume,price,discount,final_price,duration,renew_service_id,gb,days,created_at,status) SELECT ?,?,?,?,?,?,?,?,?,?,?,?,? WHERE EXISTS(SELECT 1 FROM bot_plan_specs s JOIN plans p ON p.key=s.plan_key JOIN bot_categories c ON c.id=s.category_id WHERE s.plan_key=? AND c.id=? AND c.active=1 AND c.group_ids=? AND COALESCE(c.panel_identity,'')=? AND s.days=? AND p.gb=? AND p.price=?) AND (? IS NULL OR NOT EXISTS(SELECT 1 FROM service_operations WHERE service_id=?))",
     user.id, user.username || "-", name, planLabel(plan), plan.price, 0, plan.price, durationText(days),
-    renewId || null, plan.gb, days, now(), "draft",plan.key,plan.category_id,plan.group_ids,plan.panel_identity || '',days,plan.gb,plan.price);
+    renewId || null, plan.gb, days, now(), "draft",plan.key,plan.category_id,plan.group_ids,plan.panel_identity || '',days,plan.gb,plan.price,renewId || null,renewId || null);
   if(!r.meta.changes)throw new Error('بسته یا پنل تغییر کرده است؛ دوباره انتخاب کنید');
   const orderId = r.meta.last_row_id;
   await run(env,"INSERT INTO bot_order_routes(order_id,group_ids,anchor_id,panel_identity) VALUES(?,?,0,?)",orderId,plan.group_ids,identity);
@@ -1514,7 +1518,7 @@ async function handleAdminUICallback(c, cq, answer) {
     const svc=await getService(env,id);if(!svc)return answer("سرویس یافت نشد.",true);
     let details;try { const account=await panelServiceAccount(env,svc); details=account ? liveServiceDetails(account) : "⚠️ سرویس در پنل متصل فعلی یافت نشد."; } catch { details="⚠️ وضعیت سرویس نامشخص است؛ ارتباط با پنل برقرار نشد."; }
     const operation=await first(env,'SELECT kind FROM service_operations WHERE service_id=?',id);const review=operation?.kind==='auto_delete_review';
-    const buttons=[[btn("🔘 وضعیت کانفیگ‌ها",`admin:sc:${svc.id}:0`)],[btn("🗑 حذف سرویس",`admin:svcdelete:${svc.id}`)]];
+    const buttons=[[btn("🔘 وضعیت کانفیگ‌ها",`admin:sc:${svc.id}:0`)],[btn('🌍 انتقال سرویس',`loc:list:${svc.id}`)],[btn("🗑 حذف سرویس",`admin:svcdelete:${svc.id}`)]];
     if(review)buttons.push([btn('⚠️ بررسی توقف حذف خودکار',`admin:autodelreview:${id}`)]);
     buttons.push([btn("👤 پنل کاربر",`admin:user:${svc.user_id}`)],[btn("🔙 نتایج جستجو","admin:searchpage:0"),btn("🔎 جستجوی جدید","admin:service_search")]);
     return renderAdmin(`📦 <b>سرویس ${esc(String(svc.name || "—").slice(0,50))}</b>\nشناسه ربات: <code>${svc.id}</code>\nکاربر: <code>${svc.user_id}</code>\nحساب پنل: <code>${esc(String(svc.panel_email || "—").slice(0,100))}</code>\n\n${details}${review?'\n⚠️ حذف خودکار نیاز به بررسی دارد.':''}`,kb(buttons));
@@ -1803,6 +1807,7 @@ async function handleAdminUICallback(c, cq, answer) {
     if (key === "referral_discount") return prompt("setting",key,`🎁 <b>هدیه دعوت</b>\nمقدار فعلی: ${toman(env.cfg.referral_discount)}\nمبلغ جدید را به تومان بفرستید؛ عدد 0 هدیه را غیرفعال می‌کند. این هدیه تخفیف خرید بعدی معرف است و به کیف پول اضافه نمی‌شود.`,"admin:settings");
     if (key === "channel_username" || key === "channel_link") return prompt("setting",key,`📢 <b>عضویت اجباری</b>\nبرای بررسی عضویت کاربران، ابتدا ربات را به کانال اضافه و ادمین کانال کنید. یوزرنیم یا شناسهٔ کانال و لینک عضویت را در تنظیمات جداگانه وارد کنید.\n\n${key === "channel_username" ? "یوزرنیم کانال همراه @ یا شناسهٔ عددی کانال را بفرستید." : "لینک عضویت کانال را بفرستید."}\nمقدار فعلی: <code>${esc(env.cfg[key] || "خالی")}</code>\nبرای پاک‌کردن مقدار، - بفرستید.`,"admin:settings");
     if (key === "test_enabled") return renderAdmin(`🎁 سرویس تست اکنون ${env.cfg.test_enabled === "1" ? "فعال" : "غیرفعال"} است.`, kb([[btn("✅ فعال", "admin:test:1"),btn("⛔ غیرفعال", "admin:test:0")],[btn("🔙 بازگشت", "admin:settings")]]));
+    if (key === 'location_change_enabled') return renderAdmin(`🌍 تغییر لوکیشن مشتری اکنون ${env.cfg[key]==='1'?'فعال':'خاموش'} است.`,kb([[btn('✅ فعال',`admin:policy:${key}:1`),btn('⛔ خاموش',`admin:policy:${key}:0`)],[btn('🔙 بازگشت','admin:settings')]]));
     if (key === 'alerts_enabled' || key === 'auto_delete_enabled') {
       const deletion=key==='auto_delete_enabled';
       return renderAdmin(`${deletion?'🗑 حذف خودکار اشتراک‌های منقضی':'🔔 هشدار اشتراک'} اکنون ${env.cfg[key]==='1'?'فعال':'خاموش'} است.\n${deletion?'پس از تعداد روز تنظیم‌شده از تاریخ انقضا، سرویس واجد شرایط از پنل و ربات حذف می‌شود؛ سفارش در حال بررسی از حذف جلوگیری می‌کند.':'به مشتری نزدیک انقضا یا پایان حجم پیام ارسال می‌شود.'}`,kb([[btn('✅ فعال',`admin:policy:${key}:1`),btn('⛔ خاموش',`admin:policy:${key}:0`)],[btn('🔙 بازگشت','admin:settings')]]));
@@ -1815,7 +1820,7 @@ async function handleAdminUICallback(c, cq, answer) {
     const value = d.slice(-1); await handleAdminCommand(c, {chat:{id:chat},from:cq.from,text:`/set test_enabled ${value}`});
     return showAdminHome(env, chat);
   }
-  if (/^admin:policy:(alerts_enabled|auto_delete_enabled):[01]$/.test(d)) {
+  if (/^admin:policy:(alerts_enabled|auto_delete_enabled|location_change_enabled):[01]$/.test(d)) {
     const [, ,key,value]=d.split(':');
     await run(env,'INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value',key,value);
     return renderAdmin(value==='1'?'✅ فعال شد.':'⛔ خاموش شد.',adminBack('admin:settings'));
@@ -1965,6 +1970,42 @@ async function onCallback(c, cq) {
   const isAdmin = env.admins.has(uid);
   const answer = (text, alert = false) => { if (cq._answered) return; cq._answered = true; return tg(env, "answerCallbackQuery", { callback_query_id: cq.id, text, show_alert: alert }); };
   const del = () => tg(env, "deleteMessage", { chat_id, message_id: cq.message.message_id });
+
+  if (/^loc:(list|choose|go):\d+(?::\d+)?$/.test(d)) {
+    const [, action, idText, extraText] = d.split(':'), id = Number(idText), extra = Number(extraText || 0);
+    const svc = await getService(env,id);
+    if (!svc || (!isAdmin && (Number(svc.user_id) !== uid || env.cfg.location_change_enabled !== '1'))) return answer('دسترسی یا سرویس پیدا نشد.',true);
+    let sourceIdentity;
+    try { sourceIdentity=await currentPanelIdentity(await panelForService(env,svc)); } catch { return answer('پنل مبدأ در دسترس نیست.',true); }
+    if (action === 'list') {
+      if (!Number.isSafeInteger(extra) || extra < 0 || extra > 1000000) return answer('صفحه نامعتبر است.',true);
+      const panels=await listBotPanels(env), cats=await all(env,'SELECT * FROM bot_categories WHERE active=1 ORDER BY id');
+      const choices=cats.map(cat=>({cat,panel:panels.find(p=>p.identity===cat.panel_identity) || (!cat.panel_identity ? panels.find(p=>p.slot==='main') : null)})).filter(x=>x.panel && x.panel.identity!==sourceIdentity);
+      const rows=choices.slice(extra*10,extra*10+10).map(({cat,panel})=>[btn(`${cat.name} — ${panel.name}`,`loc:choose:${id}:${cat.id}`)]),nav=[];
+      if(extra>0)nav.push(btn('◀️ قبلی',`loc:list:${id}:${extra-1}`));if((extra+1)*10<choices.length)nav.push(btn('بعدی ▶️',`loc:list:${id}:${extra+1}`));if(nav.length)rows.push(nav);rows.push([btn('🔙 بازگشت',isAdmin?`admin:svc:${id}`:`svc_${id}`)]);
+      return render(env,cq,choices.length?'🌍 دسته‌بندی و پنل مقصد را انتخاب کنید.':'پنل مقصد با دسته‌بندی فعال پیدا نشد.',kb(rows));
+    }
+    const cat=await getCategory(env,extra);
+    let target;
+    try { target=await panelForIdentity(env,await assertCategory(env,cat));if(await currentPanelIdentity(target)===sourceIdentity)throw Error('پنل مقصد با مبدأ یکسان است'); }
+    catch { return answer('دسته‌بندی مقصد در دسترس نیست.',true); }
+    if(action==='choose') return render(env,cq,`🌍 سرویس «${esc(svc.name)}» به «${esc(cat.name)}» منتقل و پس از تأیید مقصد از پنل قبلی حذف شود؟\n\nمصرف ثبت‌شده و زمان پایان حفظ می‌شود. مصرف ثبت‌نشدهٔ لحظهٔ انتقال ممکن است اختلاف داشته باشد و سقف این اختلاف تضمین‌شده نیست.`,kb([[btn('✅ تأیید انتقال',`loc:go:${id}:${cat.id}`)],[btn('❌ انصراف',`loc:list:${id}`)]]));
+    try {
+      const account=await panelServiceAccount(env,svc);
+      if(!account || account.enable!==true || !Number.isSafeInteger(account.expiryTime) || account.expiryTime<0 || (account.expiryTime>0 && account.expiryTime<=Date.now()) || (Number(account.totalGB)>0 && Number(account.up)+Number(account.down)>=Number(account.totalGB))) throw Error('فقط سرویس فعال و دارای زمان و حجم باقی‌مانده قابل انتقال است');
+      if((await relatedServiceOrders(env,svc)).some(o=>!['approved','rejected','cancelled','wallet_failed_refunded','wallet_review_resolved'].includes(o.status)))throw Error('سفارش مرتبط در انتظار است');
+      await groupCredentials(target,cat.group_ids,0);assertPanelReady(target);
+      if(await panelAccount(target,svc.panel_email))throw Error('نام سرویس در پنل مقصد از قبل وجود دارد');
+      const capability=await panelCall(target,'GET','/panel/api/inbounds/migrationCapability');if(!capability.success || capability.obj?.usageImport!==true)throw Error('پنل مقصد باید به نسخهٔ پشتیبان انتقال به‌روزرسانی شود');
+      const oldMapping=await first(env,'SELECT value FROM settings WHERE key=?',`service_panel:${id}`);
+      const journal=migrationJournal(env.DB), jobId=crypto.randomUUID();
+      await journal.create(jobId,id,{source:{email:svc.panel_email,subId:svc.sub_id,panelMapping:oldMapping?.value ?? null},destinationPanelIdentity:await currentPanelIdentity(target),destinationGroupIds:cat.group_ids,renewalDuration:Number(account.renewalDuration)||durationDays(svc.duration)*DAY_MS});
+      await answer('انتقال شروع شد.');
+      await advanceMigration(journal,migrationPanelAdapter(env,(job,s)=>bestEffortMigrationBarrier(env,job,s)),jobId);
+      await journal.releaseComplete(jobId);
+      return render(env,cq,'✅ انتقال تأیید شد و سرویس از پنل مبدأ حذف شد. لینک جدید در «سرویس‌های من» قرار دارد.',backKb(isAdmin?`admin:svc:${id}`:`svc_${id}`));
+    } catch(e) { return render(env,cq,`⚠️ انتقال کامل تأیید نشد: ${esc(String(e.message).slice(0,180))}؛ تا بررسی، دوباره تلاش نکنید.`,backKb(isAdmin?`admin:svc:${id}`:`svc_${id}`)); }
+  }
 
   if (d.startsWith("topup:")) {
     if(!isAdmin) return answer("دسترسی ندارید.",true);
@@ -2247,7 +2288,7 @@ async function onCallback(c, cq) {
     catch { return sendMsg(env, chat_id, "⚠️ بررسی سرویس در پنل ناموفق بود؛ بعداً دوباره تلاش کنید.", backKb("my_services")); }
     if (!account) return render(env, cq, "❌ سرویس در پنل متصل فعلی یافت نشد.", backKb("my_services"));
     await del();
-    return sendServiceCard(env, chat_id, s.name, s.volume, s.duration, currentServiceLink(env,s,account), s.config_link, serviceKb(id), liveServiceDetails(account));
+    return sendServiceCard(env, chat_id, s.name, s.volume, s.duration, currentServiceLink(env,s,account), s.config_link, serviceKb(id,env), liveServiceDetails(account));
   }
 
   if (d.startsWith("delsvc_")) {

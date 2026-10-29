@@ -129,6 +129,7 @@ func (a *InboundController) initRouter(g *gin.RouterGroup) {
 	g.POST("/lastOnline", read, a.lastOnline)
 	g.POST("/updateClientTraffic/:email", requirePerm(model.PermEditClient), ownsClient, a.updateClientTraffic)
 	g.POST("/migrationImportUsage/:email", requirePerm(model.PermEditClient), ownsClient, a.migrationImportUsage)
+	g.GET("/migrationCapability", requirePerm(model.PermEditClient), func(c *gin.Context) { jsonObj(c, gin.H{"usageImport": true}, nil) })
 	g.GET("/multiDeleteCapability", read, func(c *gin.Context) { jsonObj(c, gin.H{"preservesSharedTraffic": true}, nil) })
 	g.POST("/:id/delClientByEmail/:email", requirePerm(model.PermDeleteClient), owns, a.delInboundClientByEmail)
 	g.GET("/:id/ovpn/:proto", read, owns, a.downloadOvpn)

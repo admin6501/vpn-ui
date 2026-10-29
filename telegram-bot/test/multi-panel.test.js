@@ -24,6 +24,7 @@ function fixture(){
   if(p.endsWith('/addClient')){const form=new URLSearchParams(opt.body),c=JSON.parse(form.get('settings')).clients[0];actions.push([target,'add',c.email]);accounts[target].push({...c,up:0,down:0,memberships:[{inboundId:inbound,enable:true}]});return Response.json({success:true})}
   if(p.includes('/migrationImportUsage/')){const email=decodeURIComponent(p.split('/').at(-1)),a=accounts[target].find(x=>x.email===email),v=JSON.parse(opt.body);if(!a||a.enable)return Response.json({success:false});Object.assign(a,{up:v.upload,down:v.download,allTime:v.allTime});return Response.json({success:true})}
   if(p.includes('/getClientTraffics/')){const email=decodeURIComponent(p.split('/').at(-1)),a=accounts[target].find(x=>x.email===email);return Response.json({success:!!a,obj:a})}
+  if(p.endsWith('/migrationCapability'))return Response.json({success:true,obj:{usageImport:true}})
   if(p.endsWith('/bulkUpdateClients')){const data=JSON.parse(new URLSearchParams(opt.body).get('data'));for(const t of data.targets){const a=accounts[target].find(x=>x.email===t.email && x.memberships.some(m=>m.inboundId===t.inboundId));if(a)a.enable=data.op==='enable'}return Response.json({success:true,obj:{applied:data.targets.length}})}
   if(p.includes('/renewClient/')){actions.push([target,'renew']);return Response.json({success:true})}
   if(p.includes('/delClientByEmail/')){actions.push([target,'delete']);const email=decodeURIComponent(p.split('/').at(-1));accounts[target]=accounts[target].filter(a=>a.email!==email);return Response.json({success:true})}
@@ -73,6 +74,20 @@ test('migration refuses to change source without a session and traffic barrier',
  await journal.create(id,1,{source:{email:'Alice',subId:'old',panelMapping:null}});
  await assert.rejects(advanceMigration(journal,migrationPanelAdapter(f.env),id),/پشتیبانی نمی‌شود/);
  assert.equal(f.accounts().one[0].enable,true);assert.equal((await journal.get(id)).state,'review');
+});
+
+test('customer location button respects the setting and moves only that customer service',async()=>{
+ const f=fixture(),target=await panelAccountKey('https://panel-two.example/base','rep');
+ f.sql.prepare('INSERT INTO settings(key,value) VALUES(?,?)').run('extra_panel:p123456789abc',await encryptPanel('token',{name:'پنل ۲',url:'https://panel-two.example/base',user:'rep',pass:'pass',sub:'https://sub-two.example/sub/'}));
+ f.sql.prepare('INSERT INTO bot_categories(id,name,group_ids,panel_identity) VALUES(1,?,?,?)').run('Germany','1',target);
+ f.sql.exec("INSERT INTO services(id,user_id,name,panel_email,sub_id,duration,volume_bytes) VALUES(1,2,'Alice','Alice','old','30 روزه',1000)");
+ f.accounts().one.push({email:'Alice',subId:'old',enable:true,up:100,down:200,allTime:500,totalGB:1000,expiryTime:Date.now()+86400000,renewalDuration:86400000,memberships:[{inboundId:3,enable:true}]});
+ await f.cb(2,'loc:go:1:1');assert.equal(f.accounts().one.length,1);assert.equal(f.accounts().two.length,0);
+ f.sql.exec("INSERT INTO settings(key,value) VALUES('location_change_enabled','1')");
+ await f.cb(3,'loc:go:1:1');assert.equal(f.accounts().one.length,1);
+ await f.cb(2,'loc:list:1');assert.ok(JSON.stringify(f.last().reply_markup).includes('loc:choose:1:1'));
+ await f.cb(2,'loc:choose:1:1');assert.match(f.last().text,/اختلاف/);
+ await f.cb(2,'loc:go:1:1');assert.equal(f.accounts().one.length,0);assert.equal(f.accounts().two.length,1);assert.equal(f.sql.prepare('SELECT sub_id FROM services WHERE id=1').get().sub_id,f.accounts().two[0].subId);
 });
 test('two same-named groups keep purchase, subscription, renewal and deletion on their own panel',async()=>{
  const f=fixture();await f.cb(1,'admin:multipanel_add');await f.msg(1,'پنل ۲');await f.msg(1,'https://panel-two.example/base');await f.msg(1,'rep');await f.msg(1,'pass');await f.msg(1,'https://sub-two.example/sub/');
