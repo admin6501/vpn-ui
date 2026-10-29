@@ -4,6 +4,7 @@ import { encryptPanel, decryptPanel, panelURL, panelAccountKey, probePanel } fro
 import { applyCoupon, expireCouponReservations, cancelDraftOrder, normalizeCoupon, validCouponCode } from './coupons.js';
 import { createMessageJob, confirmMessageJob, processMessageJobs, encodeMessageReference, queuedMessagePayload } from './messages.js';
 import { migrationSnapshot } from './migration.js';
+import { commitMigrationService } from './migration-commit.js';
 
 // ربات فروش کانفیگ | NovaRay VPN — Cloudflare Workers + D1 + اتصال به پنل vpn-ui
 // ساخت/تمدید/حذف سرویس مستقیم از طریق API پنل (حساب نماینده) انجام می‌شود.
@@ -473,6 +474,44 @@ async function setMigrationAdmission(env, svc, enabled, onDispatch) {
   const after = await panelServiceAccount(env, svc);
   if (!after || after.enable !== enabled || !Array.isArray(after.memberships) || after.memberships.length !== ids.length || ids.some(id => !after.memberships.some(m => Number(m.inboundId) === id))) throw new Error('وضعیت سرویس بعد از تغییر تأیید نشد');
   return true;
+}
+
+// The freeze barrier is deliberately mandatory: a database switch alone does
+// not prove the core has closed sessions and flushed the last traffic counters.
+// Until a protocol-aware barrier exists this adapter refuses to run.
+function migrationPanelAdapter(env, freezeBarrier) {
+  const sourceService = async job => {
+    const svc = await getService(env, job.serviceId);
+    if (!svc || svc.panel_email !== job.source.email || svc.sub_id !== job.source.subId) throw new Error('سرویس مبدأ تغییر کرده است');
+    return svc;
+  };
+  const destination = job => panelForIdentity(env, job.destinationPanelIdentity);
+  return {
+    async freezeSource(job) {
+      if (typeof freezeBarrier !== 'function') throw new Error('توقف و ثبت نهایی مصرف هسته پشتیبانی نمی‌شود');
+      const svc = await sourceService(job);
+      await setMigrationAdmission(env, svc, false);
+      if (await freezeBarrier(job, svc) !== true) throw new Error('توقف کامل اتصال و ثبت آخرین مصرف تأیید نشد');
+      return true;
+    },
+    async snapshotSource(job) {
+      const svc = await sourceService(job);
+      const snapshot = await readMigrationSnapshot(env, svc);
+      const target = await destination(job);
+      const prepared = await prepareMigrationDestination(target, {name:svc.panel_email, snapshot,
+        renewalDuration:job.renewalDuration, groupIds:job.destinationGroupIds});
+      return { snapshot, destination:{...prepared, panelIdentity:job.destinationPanelIdentity} };
+    },
+    async createDestination(job) { return createMigrationDestination(await destination(job), job.destination); },
+    async importUsage(job) { return importMigrationUsage(await destination(job), job.destination, job.snapshot); },
+    async verifyDestination(job) { return verifyMigrationDestination(await destination(job), job.destination, job.snapshot, false); },
+    async activateDestination(job) {
+      return setMigrationAdmission(await destination(job), {panel_email:job.destination.email, sub_id:job.destination.subId}, true);
+    },
+    async verifyActiveDestination(job) { return verifyMigrationDestination(await destination(job), job.destination, job.snapshot, true); },
+    async deleteSource(job) { await panelDelete(env, await sourceService(job)); return true; },
+    async commitDestination(job) { return commitMigrationService(env.DB, job); },
+  };
 }
 
 // تمدید: مصرف صفر می‌شود و مدت از الان شروع می‌شود (مدت ثبت‌شده هنگام ساخت)
@@ -2467,7 +2506,7 @@ async function runSubscriptionPolicies(base,{signal}={}) {
     }
   } finally {await run(env,"DELETE FROM settings WHERE key='subscription_policy_lease' AND value=?",lease);}
 }
-export { groupCredentials, panelCreate, prepareMigrationDestination, createMigrationDestination, importMigrationUsage, verifyMigrationDestination, readMigrationSnapshot, setMigrationAdmission, panelRenew, panelDelete, panelAccount, panelServiceAccount, panelMemberships, liveServiceDetails, panelCall, handleUpdate, subscriptionLinks, configName, linkFingerprint, runSubscriptionPolicies };
+export { groupCredentials, panelCreate, prepareMigrationDestination, createMigrationDestination, importMigrationUsage, verifyMigrationDestination, readMigrationSnapshot, setMigrationAdmission, migrationPanelAdapter, panelRenew, panelDelete, panelAccount, panelServiceAccount, panelMemberships, liveServiceDetails, panelCall, handleUpdate, subscriptionLinks, configName, linkFingerprint, runSubscriptionPolicies };
 
 export default {
   async scheduled(event, env, ctx) {

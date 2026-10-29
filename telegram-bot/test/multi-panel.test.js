@@ -2,8 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {DatabaseSync} from 'node:sqlite';
 import {readFileSync} from 'node:fs';
-import {handleUpdate,runSubscriptionPolicies,prepareMigrationDestination,createMigrationDestination,importMigrationUsage,verifyMigrationDestination,readMigrationSnapshot,setMigrationAdmission} from '../worker.js';
+import {handleUpdate,runSubscriptionPolicies,prepareMigrationDestination,createMigrationDestination,importMigrationUsage,verifyMigrationDestination,readMigrationSnapshot,setMigrationAdmission,migrationPanelAdapter} from '../worker.js';
 import {encryptPanel,panelAccountKey} from '../panel-config.js';
+import {migrationJournal} from '../migration-journal.js';
+import {advanceMigration} from '../migration.js';
 function fixture(){
  const sql=new DatabaseSync(':memory:');sql.exec(readFileSync(new URL('../schema.sql',import.meta.url),'utf8'));
  const prep=(q,a=[])=>({bind(...x){return prep(q,x)},execute(){const s=sql.prepare(q);if(s.columns().length)return {results:s.all(...a),meta:{changes:0}};const r=s.run(...a);return {results:[],meta:{changes:Number(r.changes),last_row_id:Number(r.lastInsertRowid)}}},async run(){return this.execute()},async all(){return this.execute()},async first(){return sql.prepare(q).get(...a)??null}});
@@ -46,6 +48,31 @@ test('migration destination keeps original quota and deadline and starts disable
  await setMigrationAdmission(f.env,{panel_email:'Alice',sub_id:prepared.subId},true);assert.equal(f.accounts().one[0].enable,true);
  await setMigrationAdmission(f.env,{panel_email:'Alice',sub_id:prepared.subId},false);assert.equal(f.accounts().one[0].enable,false);
  await assert.rejects(prepareMigrationDestination(f.env,{name:'Alice',snapshot:{quota:1000,expiry:123456},renewalDuration:86400000,groupIds:'1'}),/از قبل/);
+});
+
+test('migration adapter preserves counters and deletes only the source after destination verification',async()=>{
+ const f=fixture();f.env.cfg={sub_base_url:'https://sub-one.example/sub/'};
+ const target=await panelAccountKey('https://panel-two.example/base','rep');
+ f.sql.prepare('INSERT INTO settings(key,value) VALUES(?,?)').run('extra_panel:p123456789abc',await encryptPanel('token',{name:'پنل ۲',url:'https://panel-two.example/base',user:'rep',pass:'pass',sub:'https://sub-two.example/sub/'}));
+ f.sql.exec("INSERT INTO services(id,user_id,name,panel_email,sub_id) VALUES(1,2,'Alice','Alice','old')");
+ f.accounts().one.push({email:'Alice',subId:'old',enable:true,up:100,down:200,allTime:500,totalGB:1000,expiryTime:123456,memberships:[{inboundId:3,enable:true}]});
+ const journal=migrationJournal(f.env.DB),id='12345678-1234-1234-1234-123456789abc';
+ await journal.create(id,1,{source:{email:'Alice',subId:'old',panelMapping:null},destinationPanelIdentity:target,destinationGroupIds:'1',renewalDuration:86400000});
+ const done=await advanceMigration(journal,migrationPanelAdapter(f.env,async()=>true),id);
+ assert.equal(done.state,'complete');assert.equal(f.accounts().one.length,0);assert.equal(f.accounts().two.length,1);
+ assert.equal(f.accounts().two[0].down,200);assert.equal(f.accounts().two[0].totalGB,1000);assert.equal(f.accounts().two[0].expiryTime,123456);
+ assert.equal(f.sql.prepare('SELECT sub_id FROM services WHERE id=1').get().sub_id,f.accounts().two[0].subId);
+ assert.equal(f.sql.prepare("SELECT value FROM settings WHERE key='service_panel:1'").get().value,target);
+});
+
+test('migration refuses to change source without a session and traffic barrier',async()=>{
+ const f=fixture();f.env.cfg={sub_base_url:'https://sub-one.example/sub/'};
+ f.sql.exec("INSERT INTO services(id,user_id,name,panel_email,sub_id) VALUES(1,2,'Alice','Alice','old')");
+ f.accounts().one.push({email:'Alice',subId:'old',enable:true,up:0,down:0,totalGB:1000,expiryTime:0,memberships:[{inboundId:3,enable:true}]});
+ const journal=migrationJournal(f.env.DB),id='12345678-1234-1234-1234-123456789abc';
+ await journal.create(id,1,{source:{email:'Alice',subId:'old',panelMapping:null}});
+ await assert.rejects(advanceMigration(journal,migrationPanelAdapter(f.env),id),/پشتیبانی نمی‌شود/);
+ assert.equal(f.accounts().one[0].enable,true);assert.equal((await journal.get(id)).state,'review');
 });
 test('two same-named groups keep purchase, subscription, renewal and deletion on their own panel',async()=>{
  const f=fixture();await f.cb(1,'admin:multipanel_add');await f.msg(1,'پنل ۲');await f.msg(1,'https://panel-two.example/base');await f.msg(1,'rep');await f.msg(1,'pass');await f.msg(1,'https://sub-two.example/sub/');
