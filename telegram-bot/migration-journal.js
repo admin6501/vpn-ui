@@ -5,7 +5,7 @@ export function migrationJournal(db) {
   return {
     async create(id, serviceId, payload) {
       if (!/^[0-9a-f-]{36}$/.test(id) || !Number.isSafeInteger(serviceId) || serviceId <= 0) throw new Error('invalid migration identity');
-      const job = { ...payload, id, serviceId, state: 'ready', next: 0, uncertain: null };
+      const job = { ...payload, id, serviceId, state: 'ready', next: 0, uncertain: null, lastCompletedAt: Date.now() };
       const lockKind = `migration:${id}`;
       const result = await db.batch([
         db.prepare("INSERT INTO service_operations(service_id,kind,created_at) SELECT id,?,? FROM services WHERE id=? AND NOT EXISTS(SELECT 1 FROM orders WHERE renew_service_id=services.id AND status NOT IN ('approved','rejected','cancelled','wallet_failed_refunded','wallet_review_resolved'))").bind(lockKind, new Date().toISOString(), serviceId),

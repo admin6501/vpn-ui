@@ -24,9 +24,7 @@ export function migrationSnapshot(account, traffic, expectedEmail, expectedSubId
   const fields = ['up', 'down', 'totalGB', 'expiryTime'];
   for (const key of fields) if (!Number.isSafeInteger(account[key]) || (key !== 'expiryTime' && account[key] < 0)) throw new Error(`invalid source ${key}`);
   if (!Number.isSafeInteger(account.up + account.down)) throw new Error('invalid source usage');
-  // A negative expiry encodes first-use semantics, not an absolute deadline.
-  // Do not guess how to transfer it.
-  if (account.expiryTime < 0) throw new Error('first-use expiry requires review');
+  // A negative value encodes first-use semantics and must be preserved verbatim.
   if (!traffic || String(traffic.email || '').trim().toLowerCase() !== String(expectedEmail).trim().toLowerCase() ||
       traffic.enable !== false || traffic.up !== account.up || traffic.down !== account.down) throw new Error('source traffic snapshot is inconsistent');
   const lifetime = traffic.allTime;
@@ -59,7 +57,7 @@ export async function advanceMigration(journal, adapter, id) {
       throw new Error(`migration ${step} failed: ${error.message}`, { cause: error });
     }
     if (output === false || output == null) throw new Error(`migration ${step} was not confirmed`);
-    const next = { ...job, ...(typeof output === 'object' ? output : {}), id: job.id, serviceId: job.serviceId, state: 'ready', uncertain: null, dispatchedAt: null, next: index + 1 };
+    const next = { ...job, ...(typeof output === 'object' ? output : {}), id: job.id, serviceId: job.serviceId, state: 'ready', uncertain: null, dispatchedAt: null, lastCompletedAt: Date.now(), next: index + 1 };
     // Adapters may add results, but may not overwrite the sequence controls.
     if (index === STEPS.length - 1) next.state = 'complete';
     if (!await journal.compareAndSet(id, job, next)) throw new Error('migration journal conflict');
@@ -81,7 +79,7 @@ export async function reconcileMigration(journal, adapter, id, clock = Date.now)
   if (!result || !['applied', 'not_applied'].includes(result.verdict)) throw new Error('migration result remains uncertain');
   const nextIndex = job.next + (result.verdict === 'applied' ? 1 : 0);
   const next = { ...job, ...(result.data || {}), id: job.id, serviceId: job.serviceId,
-    state: nextIndex === STEPS.length ? 'complete' : 'ready', uncertain: null, dispatchedAt: null, next: nextIndex };
+    state: nextIndex === STEPS.length ? 'complete' : 'ready', uncertain: null, dispatchedAt: null, lastCompletedAt: clock(), next: nextIndex };
   if (!await journal.compareAndSet(id, job, next)) throw new Error('migration journal conflict');
   return next;
 }

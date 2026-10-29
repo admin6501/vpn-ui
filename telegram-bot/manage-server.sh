@@ -21,7 +21,7 @@ install_bot(){
  tar -xJf "$tmp/node.tar.xz" --strip-components=1 -C /opt/vpn-ui-bot-node
  rm -rf "$tmp"
  chmod 700 "$CONF" "$DATA"
- cp "$HERE"/{worker.js,qr.js,panel-config.js,wallet.js,coupons.js,messages.js,server.mjs,plan-migration.mjs,schema.sql,package.json,package-lock.json,manage-server.sh} "$APP/"
+ cp "$HERE"/{worker.js,qr.js,panel-config.js,wallet.js,coupons.js,messages.js,migration.js,migration-journal.js,migration-commit.js,bulk-migration.js,server.mjs,plan-migration.mjs,schema.sql,package.json,package-lock.json,manage-server.sh} "$APP/"
  chmod 700 "$APP/manage-server.sh"
  ln -sfn "$APP/manage-server.sh" /usr/local/bin/vpn-ui-bot
  (cd "$APP"; PATH="/opt/vpn-ui-bot-node/bin:$PATH" npm ci --omit=dev --no-audit --no-fund)
@@ -246,7 +246,7 @@ update_bot()(
      echo 'ساختار دیتابیس نسخه جدید تغییر کرده است؛ آپدیت متوقف شد و به روش مهاجرت نیاز دارد.'; rm -rf "$tmp" "$stage"; return 1
    fi
  fi
- if ! cp "$source"/{worker.js,qr.js,panel-config.js,wallet.js,coupons.js,messages.js,server.mjs,plan-migration.mjs,schema.sql,package.json,package-lock.json,manage-server.sh} "$stage/" ||
+ if ! cp "$source"/{worker.js,qr.js,panel-config.js,wallet.js,coupons.js,messages.js,migration.js,migration-journal.js,migration-commit.js,bulk-migration.js,server.mjs,plan-migration.mjs,schema.sql,package.json,package-lock.json,manage-server.sh} "$stage/" ||
     ! (cd "$stage" && PATH="/opt/vpn-ui-bot-node/bin:$PATH" npm ci --omit=dev --no-audit --no-fund && "$NODE" --check server.mjs && "$NODE" --check worker.js && bash -n manage-server.sh); then
    echo 'آماده‌سازی ناموفق بود؛ ربات تغییر نکرد.'; rm -rf "$tmp" "$stage"; return 1
  fi
@@ -325,6 +325,7 @@ remove_webhook(){
  systemctl restart vpn-ui-telegram-bot.service
 }
 if [[ "${1:-}" == --auto-backup ]]; then automatic_backup; exit $?; fi
+if [[ "${1:-}" == --update ]]; then update_bot; exit $?; fi
 while true; do
  printf '\nمدیریت ربات VPN-UI\n1) نصب تازه\n2) وضعیت\n3) شروع\n4) توقف\n5) راه‌اندازی مجدد\n6) نمایش لاگ\n7) انتقال از وب‌هوک به سرور\n8) بکاپ دیتابیس\n9) آپدیت ربات\n10) حذف ربات\n11) آمار دیتابیس ربات\n12) ریستور بکاپ\n13) بکاپ خودکار تلگرام\n0) خروج\n'
  read -r -p 'انتخاب: ' choice || exit 0

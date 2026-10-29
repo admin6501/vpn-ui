@@ -9,7 +9,7 @@ function fixture(schemaChanged=false) {
  const dir=mkdtempSync(join(tmpdir(),'bot-menu-'));
  const app=join(dir,'app'), data=join(dir,'data'), conf=join(dir,'conf'), bin=join(dir,'bin'), repo=join(dir,'vpn-ui-main/telegram-bot');
  for(const p of [app,data,conf,bin,repo]) mkdirSync(p,{recursive:true});
- const files=['worker.js','qr.js','panel-config.js','wallet.js','coupons.js','messages.js','server.mjs','plan-migration.mjs','schema.sql','package.json','package-lock.json','manage-server.sh'];
+ const files=['worker.js','qr.js','panel-config.js','wallet.js','coupons.js','messages.js','migration.js','migration-journal.js','migration-commit.js','bulk-migration.js','server.mjs','plan-migration.mjs','schema.sql','package.json','package-lock.json','manage-server.sh'];
  for(const file of files){copyFileSync(resolve(file),join(repo,file));copyFileSync(resolve(file),join(app,file));}
  writeFileSync(join(app,'worker.js'),'// old version\n');
  if(schemaChanged)writeFileSync(join(app,'schema.sql'),'-- old schema\n');

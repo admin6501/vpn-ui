@@ -6,6 +6,7 @@ import { createMessageJob, confirmMessageJob, processMessageJobs, encodeMessageR
 import { migrationSnapshot, advanceMigration } from './migration.js';
 import { commitMigrationService } from './migration-commit.js';
 import { migrationJournal } from './migration-journal.js';
+import { bulkMigrationQueue } from './bulk-migration.js';
 
 // ربات فروش کانفیگ | NovaRay VPN — Cloudflare Workers + D1 + اتصال به پنل vpn-ui
 // ساخت/تمدید/حذف سرویس مستقیم از طریق API پنل (حساب نماینده) انجام می‌شود.
@@ -397,7 +398,7 @@ async function panelCreate(env, { name, bytes, days, attemptKey, onDispatch, gro
 async function prepareMigrationDestination(env, { name, snapshot, renewalDuration, groupIds }) {
   assertPanelReady(env);
   if (!name || !snapshot || !Number.isSafeInteger(snapshot.quota) || snapshot.quota < 0 ||
-      !Number.isSafeInteger(snapshot.expiry) || snapshot.expiry < 0 ||
+      !Number.isSafeInteger(snapshot.expiry) ||
       !Number.isSafeInteger(renewalDuration) || renewalDuration < 0) throw new Error('سهمیه یا تاریخ انتقال نامعتبر است');
   if (await panelAccount(env, name)) throw new Error('این نام از قبل در پنل مقصد وجود دارد');
   const credentials = await groupCredentials(env, groupIds, 0);
@@ -519,12 +520,34 @@ function migrationPanelAdapter(env, freezeBarrier) {
     async importUsage(job) { return importMigrationUsage(await destination(job), job.destination, job.snapshot); },
     async verifyDestination(job) { return verifyMigrationDestination(await destination(job), job.destination, job.snapshot, false); },
     async activateDestination(job) {
+      if (!job.sourceEnabled) return true;
       return setMigrationAdmission(await destination(job), {panel_email:job.destination.email, sub_id:job.destination.subId}, true);
     },
-    async verifyActiveDestination(job) { return verifyMigrationDestination(await destination(job), job.destination, job.snapshot, true); },
+    async verifyActiveDestination(job) { return verifyMigrationDestination(await destination(job), job.destination, job.snapshot, !!job.sourceEnabled); },
     async deleteSource(job) { await panelDelete(env, await sourceService(job)); return true; },
     async commitDestination(job) { return commitMigrationService(env.DB, job); },
   };
+}
+
+async function migrateService(env, svc, cat, expectedSource, onStarted) {
+  const sourceIdentity=await currentPanelIdentity(await panelForService(env,svc));
+  if(expectedSource && sourceIdentity!==expectedSource)throw Error('پنل مبدأ سرویس تغییر کرده است');
+  const target=await panelForIdentity(env,await assertCategory(env,cat));
+  if(await currentPanelIdentity(target)===sourceIdentity)throw Error('پنل مقصد با مبدأ یکسان است');
+  const account=await panelServiceAccount(env,svc);
+  if(!account || typeof account.enable!=='boolean' || !Number.isSafeInteger(account.expiryTime) || !Number.isSafeInteger(account.totalGB) || account.totalGB<0 || !Number.isSafeInteger(account.up) || account.up<0 || !Number.isSafeInteger(account.down) || account.down<0 || !Number.isSafeInteger(account.up+account.down)) throw Error('وضعیت یا مصرف سرویس مبدأ معتبر نیست');
+  const sourceEnabled=account.enable && !(account.expiryTime>0 && account.expiryTime<=Date.now()) && !(account.totalGB>0 && account.up+account.down>=account.totalGB);
+  if((await relatedServiceOrders(env,svc)).some(o=>!['approved','rejected','cancelled','wallet_failed_refunded','wallet_review_resolved'].includes(o.status)))throw Error('سفارش مرتبط در انتظار است');
+  await groupCredentials(target,cat.group_ids,0);assertPanelReady(target);
+  if(await panelAccount(target,svc.panel_email))throw Error('نام سرویس در پنل مقصد از قبل وجود دارد');
+  const capability=await panelCall(target,'GET','/panel/api/inbounds/migrationCapability');if(!capability.success || capability.obj?.usageImport!==true)throw Error('پنل مقصد باید به نسخهٔ پشتیبان انتقال به‌روزرسانی شود');
+  const oldMapping=await first(env,'SELECT value FROM settings WHERE key=?',`service_panel:${svc.id}`);
+  const journal=migrationJournal(env.DB), jobId=crypto.randomUUID();
+  await journal.create(jobId,svc.id,{source:{email:svc.panel_email,subId:svc.sub_id,panelMapping:oldMapping?.value ?? null},sourceEnabled,destinationPanelIdentity:await currentPanelIdentity(target),destinationGroupIds:cat.group_ids,renewalDuration:Number(account.renewalDuration)||durationDays(svc.duration)*DAY_MS});
+  if(onStarted)await onStarted();
+  await advanceMigration(journal,migrationPanelAdapter(env,(job,s)=>bestEffortMigrationBarrier(env,job,s)),jobId);
+  await journal.releaseComplete(jobId);
+  return true;
 }
 
 // تمدید: مصرف صفر می‌شود و مدت از الان شروع می‌شود (مدت ثبت‌شده هنگام ساخت)
@@ -1517,11 +1540,30 @@ async function handleAdminUICallback(c, cq, answer) {
     const id=Number(d.split(":")[2]);if(!Number.isSafeInteger(id)||id<=0)return answer("سرویس نامعتبر است.",true);
     const svc=await getService(env,id);if(!svc)return answer("سرویس یافت نشد.",true);
     let details;try { const account=await panelServiceAccount(env,svc); details=account ? liveServiceDetails(account) : "⚠️ سرویس در پنل متصل فعلی یافت نشد."; } catch { details="⚠️ وضعیت سرویس نامشخص است؛ ارتباط با پنل برقرار نشد."; }
-    const operation=await first(env,'SELECT kind FROM service_operations WHERE service_id=?',id);const review=operation?.kind==='auto_delete_review';
+    const operation=await first(env,'SELECT kind FROM service_operations WHERE service_id=?',id);const review=operation?.kind==='auto_delete_review',migrationReview=operation?.kind?.startsWith('migration:');
     const buttons=[[btn("🔘 وضعیت کانفیگ‌ها",`admin:sc:${svc.id}:0`)],[btn('🌍 انتقال سرویس',`loc:list:${svc.id}`)],[btn("🗑 حذف سرویس",`admin:svcdelete:${svc.id}`)]];
     if(review)buttons.push([btn('⚠️ بررسی توقف حذف خودکار',`admin:autodelreview:${id}`)]);
+    if(migrationReview)buttons.push([btn('⚠️ بررسی انتقال',`admin:migrationreview:${id}`)]);
     buttons.push([btn("👤 پنل کاربر",`admin:user:${svc.user_id}`)],[btn("🔙 نتایج جستجو","admin:searchpage:0"),btn("🔎 جستجوی جدید","admin:service_search")]);
     return renderAdmin(`📦 <b>سرویس ${esc(String(svc.name || "—").slice(0,50))}</b>\nشناسه ربات: <code>${svc.id}</code>\nکاربر: <code>${svc.user_id}</code>\nحساب پنل: <code>${esc(String(svc.panel_email || "—").slice(0,100))}</code>\n\n${details}${review?'\n⚠️ حذف خودکار نیاز به بررسی دارد.':''}`,kb(buttons));
+  }
+  if (/^admin:migrationreview:\d+$/.test(d)) {
+    const id=Number(d.split(':')[2]),lock=await first(env,'SELECT kind FROM service_operations WHERE service_id=?',id);
+    if(!lock?.kind?.startsWith('migration:'))return answer('انتقال نیازمند بررسی پیدا نشد.',true);
+    const job=await migrationJournal(env.DB).get(lock.kind.slice('migration:'.length));
+    if(!job)return answer('سوابق انتقال یافت نشد؛ بررسی دستی لازم است.',true);
+    return renderAdmin(`⚠️ مرحلهٔ انتقال: <code>${esc(job.uncertain || job.state)}</code>\nابتدا سرویس و مصرف را در هر دو پنل و لینک ثبت‌شده در ربات دستی بررسی و اصلاح کنید. رفع توقف، انتقال را تکمیل یا برگشت نمی‌دهد.`,kb([[btn('✅ بررسی و اصلاح دستی انجام شد',`admin:migrationrelease:${id}`)],[btn('🔙 بازگشت',`admin:svc:${id}`)]]));
+  }
+  if (/^admin:migrationrelease:\d+$/.test(d)) {
+    if(!owner)return answer('فقط ادمین اصلی اجازه دارد.',true);
+    const id=Number(d.split(':')[2]),lock=await first(env,'SELECT kind FROM service_operations WHERE service_id=?',id);if(!lock?.kind?.startsWith('migration:'))return answer('انتقال پیدا نشد.',true);
+    const journal=migrationJournal(env.DB),job=await journal.get(lock.kind.slice('migration:'.length));
+    if(job?.state==='complete'){await journal.releaseComplete(job.id);return renderAdmin('انتقال تکمیل شده بود و قفل آن برداشته شد.',adminBack(`admin:svc:${id}`));}
+    const last=job?.dispatchedAt ?? job?.lastCompletedAt;
+    if(!job || !['review','ready'].includes(job.state) || !Number.isSafeInteger(last) || Date.now()-last<600000)return answer('عملیات ممکن است هنوز در حال اجرا باشد؛ حداقل ده دقیقه صبر کنید.',true);
+    const changed=await journal.compareAndSet(job.id,job,{...job,state:'manual_closed'});if(!changed)return answer('وضعیت انتقال تغییر کرد؛ دوباره بررسی کنید.',true);
+    await run(env,'DELETE FROM service_operations WHERE service_id=? AND kind=?',id,lock.kind);
+    return renderAdmin('توقف برداشته شد؛ وضعیت پنل و ربات همان است که پس از بررسی دستی ثبت کرده‌اید.',adminBack(`admin:svc:${id}`));
   }
   if (/^admin:autodelreview:\d+$/.test(d)) {
     const id=Number(d.split(':')[2]),lock=await first(env,"SELECT kind FROM service_operations WHERE service_id=? AND kind='auto_delete_review'",id);if(!lock)return answer('عملیات نیازمند بررسی پیدا نشد.',true);
@@ -1760,7 +1802,7 @@ async function handleAdminUICallback(c, cq, answer) {
     if(!owner)return answer('فقط ادمین اصلی اجازه دارد.',true);const slot=d.split(':')[2],panel=(await listBotPanels(env)).find(p=>p.slot===slot);if(!panel)return answer('پنل پیدا نشد.',true);
     const choices=await panelChoices(panel.env),state=choices ? '✅ متصل' : '⚠️ اتصال یا دسترسی ناموفق';
     const buttons=[[btn('🌐 آدرس پنل',`admin:mpurl:${slot}`),btn('👤 نام کاربری',`admin:mpuser:${slot}`)],[btn('🔑 رمز عبور',`admin:mppass:${slot}`),btn('🔗 آدرس ساب',`admin:mpsub:${slot}`)]];
-    if(slot!=='main')buttons.push([btn('✏️ نام پنل',`admin:mpname:${slot}`)]);buttons.push([btn('🗑 حذف پنل',`admin:mpdelete:${slot}`)],[btn('🔙 پنل‌ها','admin:multipanels')]);
+    if(slot!=='main')buttons.push([btn('✏️ نام پنل',`admin:mpname:${slot}`)]);buttons.push([btn('🌍 انتقال گروهی سرویس‌ها',`bulk:start:${slot}`)],[btn('📋 وضعیت انتقال‌ها','bulk:history:0')],[btn('🗑 حذف پنل',`admin:mpdelete:${slot}`)],[btn('🔙 پنل‌ها','admin:multipanels')]);
     const httpNotice=/^http:\/\//i.test(panel.env.PANEL_URL)?'\n⚠️ اتصال HTTP رمز عبور و اطلاعات را رمزگذاری نمی‌کند.':'';
     return renderAdmin(`🖥 <b>${esc(panel.name)}</b>\nوضعیت: ${state}\nتعداد گروه‌ها: ${choices ? choices.groups.length : 'نامشخص'}\nآدرس: <code>${esc(panel.env.PANEL_URL)}</code>\nنام کاربری: <code>${esc(panel.env.PANEL_USER)}</code>\nآدرس ساب: <code>${esc(panel.env.cfg.sub_base_url)}</code>${httpNotice}`,kb(buttons));
   }
@@ -1971,6 +2013,62 @@ async function onCallback(c, cq) {
   const answer = (text, alert = false) => { if (cq._answered) return; cq._answered = true; return tg(env, "answerCallbackQuery", { callback_query_id: cq.id, text, show_alert: alert }); };
   const del = () => tg(env, "deleteMessage", { chat_id, message_id: cq.message.message_id });
 
+  if (d.startsWith('bulk:')) {
+    if(!env.owners.includes(uid))return answer('فقط ادمین اصلی اجازه دارد.',true);
+    const parts=d.split(':'),action=parts[1],queue=bulkMigrationQueue(env.DB);
+    if(action==='history'){
+      const page=Number(parts[2]);if(!Number.isSafeInteger(page)||page<0||page>1000000)return answer('صفحه نامعتبر است.',true);
+      const jobs=await all(env,"SELECT key,value FROM settings WHERE key LIKE 'bulk_migration:%' ORDER BY CAST(json_extract(value,'$.createdAt') AS INTEGER) DESC LIMIT 11 OFFSET ?",page*10);
+      const rows=jobs.slice(0,10).map(row=>{const j=JSON.parse(row.value);return [btn(`انتقال ${j.items.length} سرویس — ${j.items.filter(x=>x.status==='done').length} موفق`,`bulk:status:${j.id}`)]}),nav=[];
+      if(page>0)nav.push(btn('◀️ قبلی',`bulk:history:${page-1}`));if(jobs.length>10)nav.push(btn('بعدی ▶️',`bulk:history:${page+1}`));if(nav.length)rows.push(nav);rows.push([btn('🔙 پنل‌ها','admin:multipanels')]);
+      return render(env,cq,jobs.length?'📋 انتقال‌های گروهی':'انتقال گروهی ثبت نشده است.',kb(rows));
+    }
+    if(action==='status'){
+      const job=await queue.get(parts[2]);if(!job)return answer('انتقال پیدا نشد.',true);
+      const counts={pending:0,running:0,done:0,review:0};for(const item of job.items)if(Object.hasOwn(counts,item.status))counts[item.status]++;
+      const review=job.items.filter(x=>x.status==='review').slice(0,20).map(x=>`#${x.serviceId}`).join('، ');
+      const reviewButtons=job.items.filter(x=>x.status==='review').slice(0,10).map(x=>[btn(`⚠️ بررسی سرویس ${x.serviceId}`,`admin:svc:${x.serviceId}`)]);
+      return render(env,cq,`🌍 انتقال گروهی\nموفق: ${counts.done}، در انتظار: ${counts.pending}، در حال اجرا: ${counts.running}، نیازمند بررسی: ${counts.review}${review?`\nشناسه‌های نیازمند بررسی: ${review}`:''}`,kb([...reviewButtons,[btn('🔄 تازه‌سازی',`bulk:status:${job.id}`)],[btn('🔙 پنل‌ها','admin:multipanels')]]));
+    }
+    if(action==='start'){
+      const panel=(await listBotPanels(env)).find(x=>x.slot===parts[2]);if(!panel)return answer('پنل پیدا نشد.',true);
+      st.bulkDraft={source:panel.identity,slot:panel.slot,selected:[],expires:Date.now()+1800000};
+    }
+    const draft=st.bulkDraft;if(!draft || Date.now()>draft.expires)return answer('انتخاب منقضی شد؛ از پنل مبدأ دوباره شروع کنید.',true);
+    const sourceServices=async()=>{const result=[],unresolved=[];for(const s of await all(env,'SELECT * FROM services ORDER BY id DESC')){try{if(await currentPanelIdentity(await panelForService(env,s))===draft.source)result.push(s)}catch{unresolved.push(s.id)}}return {result,unresolved}};
+    if(action==='start'||action==='list'||action==='toggle'||action==='all'){
+      const {result,unresolved}=await sourceServices();let page=action==='list'?Number(parts[2]):action==='toggle'?Number(parts[3]):0;
+      if(!Number.isSafeInteger(page)||page<0||page>1000000)return answer('صفحه نامعتبر است.',true);
+      const valid=new Set(result.map(s=>s.id));draft.selected=draft.selected.filter(id=>valid.has(id));
+      if(action==='toggle'){const id=Number(parts[2]);if(!valid.has(id))return answer('سرویس پیدا نشد.',true);draft.selected=draft.selected.includes(id)?draft.selected.filter(x=>x!==id):[...draft.selected,id];}
+      if(action==='all'){if(unresolved.length)return answer('پنل بعضی سرویس‌ها نامشخص است؛ ابتدا آنها را بررسی کنید.',true);if(result.length>10000)return answer('تعداد سرویس‌ها بیش از سقف انتقال گروهی است.',true);draft.selected=result.map(s=>s.id);}
+      const selected=new Set(draft.selected),rows=result.slice(page*10,page*10+10).map(s=>[btn(`${selected.has(s.id)?'☑️':'⬜'} ${s.name} #${s.id}`,`bulk:toggle:${s.id}:${page}`)]),nav=[];
+      if(page>0)nav.push(btn('◀️ قبلی',`bulk:list:${page-1}`));if((page+1)*10<result.length)nav.push(btn('بعدی ▶️',`bulk:list:${page+1}`));if(nav.length)rows.push(nav);
+      rows.push([btn('✅ انتخاب همه','bulk:all'),btn('🌍 انتخاب مقصد','bulk:destpage:0')],[btn('🔙 بازگشت',`admin:multipanel:${draft.slot}`)]);
+      return render(env,cq,`سرویس‌های پنل مبدأ را انتخاب کنید. انتخاب‌شده: ${draft.selected.length}${unresolved.length?`\n⚠️ پنل ${unresolved.length} سرویس نامشخص است.`:''}`,kb(rows));
+    }
+    if(action==='destpage'){
+      if(!draft.selected.length)return answer('ابتدا سرویس انتخاب کنید.',true);const page=Number(parts[2]);if(!Number.isSafeInteger(page)||page<0||page>1000000)return answer('صفحه نامعتبر است.',true);
+      const panels=await listBotPanels(env),cats=await all(env,'SELECT * FROM bot_categories WHERE active=1 ORDER BY id');
+      const choices=cats.map(cat=>({cat,panel:panels.find(p=>p.identity===cat.panel_identity)||(!cat.panel_identity?panels.find(p=>p.slot==='main'):null)})).filter(x=>x.panel&&x.panel.identity!==draft.source);
+      const rows=choices.slice(page*10,page*10+10).map(({cat,panel})=>[btn(`${cat.name} — ${panel.name}`,`bulk:dest:${cat.id}`)]),nav=[];
+      if(page>0)nav.push(btn('◀️ قبلی',`bulk:destpage:${page-1}`));if((page+1)*10<choices.length)nav.push(btn('بعدی ▶️',`bulk:destpage:${page+1}`));if(nav.length)rows.push(nav);rows.push([btn('🔙 انتخاب سرویس','bulk:list:0')]);
+      return render(env,cq,choices.length?'دسته‌بندی مقصد را انتخاب کنید.':'دسته‌بندی مقصد پیدا نشد.',kb(rows));
+    }
+    if(action==='dest'){
+      const cat=await getCategory(env,Number(parts[2]));try{const target=await panelForIdentity(env,await assertCategory(env,cat));if(await currentPanelIdentity(target)===draft.source)throw Error()}catch{return answer('مقصد در دسترس نیست.',true)}
+      draft.categoryId=cat.id;draft.destination={panelIdentity:cat.panel_identity,groupIds:cat.group_ids};
+      return render(env,cq,`انتقال ${draft.selected.length} سرویس به «${esc(cat.name)}» تأیید شود؟ هر سرویس بعد از تأیید مقصد از مبدأ حذف می‌شود. اختلاف مصرف ثبت‌نشده سقف تضمین‌شده ندارد.`,kb([[btn('✅ تأیید انتقال','bulk:confirm')],[btn('❌ انصراف','bulk:destpage:0')]]));
+    }
+    if(action==='confirm'){
+      const cat=await getCategory(env,draft.categoryId);if(!cat || cat.panel_identity!==draft.destination?.panelIdentity || cat.group_ids!==draft.destination?.groupIds || !draft.selected.length)return answer('انتخاب تغییر کرده است.',true);
+      try{const target=await panelForIdentity(env,await assertCategory(env,cat));await groupCredentials(target,cat.group_ids,0);const capability=await panelCall(target,'GET','/panel/api/inbounds/migrationCapability');if(!capability.success||capability.obj?.usageImport!==true)throw Error();}catch{return answer('پنل مقصد آمادهٔ انتقال نیست.',true)}
+      const id=crypto.randomUUID();await queue.create(id,uid,draft.source,draft.categoryId,draft.selected,draft.destination);delete st.bulkDraft;
+      return render(env,cq,'✅ انتقال گروهی در صف ثبت شد. وضعیت هر سرویس جداگانه نگهداری می‌شود.',kb([[btn('📋 وضعیت انتقال',`bulk:status:${id}`)],[btn('🔙 پنل‌ها','admin:multipanels')]]));
+    }
+    return answer('درخواست نامعتبر است.',true);
+  }
+
   if (/^loc:(list|choose|go):\d+(?::\d+)?$/.test(d)) {
     const [, action, idText, extraText] = d.split(':'), id = Number(idText), extra = Number(extraText || 0);
     const svc = await getService(env,id);
@@ -1991,18 +2089,7 @@ async function onCallback(c, cq) {
     catch { return answer('دسته‌بندی مقصد در دسترس نیست.',true); }
     if(action==='choose') return render(env,cq,`🌍 سرویس «${esc(svc.name)}» به «${esc(cat.name)}» منتقل و پس از تأیید مقصد از پنل قبلی حذف شود؟\n\nمصرف ثبت‌شده و زمان پایان حفظ می‌شود. مصرف ثبت‌نشدهٔ لحظهٔ انتقال ممکن است اختلاف داشته باشد و سقف این اختلاف تضمین‌شده نیست.`,kb([[btn('✅ تأیید انتقال',`loc:go:${id}:${cat.id}`)],[btn('❌ انصراف',`loc:list:${id}`)]]));
     try {
-      const account=await panelServiceAccount(env,svc);
-      if(!account || account.enable!==true || !Number.isSafeInteger(account.expiryTime) || account.expiryTime<0 || (account.expiryTime>0 && account.expiryTime<=Date.now()) || (Number(account.totalGB)>0 && Number(account.up)+Number(account.down)>=Number(account.totalGB))) throw Error('فقط سرویس فعال و دارای زمان و حجم باقی‌مانده قابل انتقال است');
-      if((await relatedServiceOrders(env,svc)).some(o=>!['approved','rejected','cancelled','wallet_failed_refunded','wallet_review_resolved'].includes(o.status)))throw Error('سفارش مرتبط در انتظار است');
-      await groupCredentials(target,cat.group_ids,0);assertPanelReady(target);
-      if(await panelAccount(target,svc.panel_email))throw Error('نام سرویس در پنل مقصد از قبل وجود دارد');
-      const capability=await panelCall(target,'GET','/panel/api/inbounds/migrationCapability');if(!capability.success || capability.obj?.usageImport!==true)throw Error('پنل مقصد باید به نسخهٔ پشتیبان انتقال به‌روزرسانی شود');
-      const oldMapping=await first(env,'SELECT value FROM settings WHERE key=?',`service_panel:${id}`);
-      const journal=migrationJournal(env.DB), jobId=crypto.randomUUID();
-      await journal.create(jobId,id,{source:{email:svc.panel_email,subId:svc.sub_id,panelMapping:oldMapping?.value ?? null},destinationPanelIdentity:await currentPanelIdentity(target),destinationGroupIds:cat.group_ids,renewalDuration:Number(account.renewalDuration)||durationDays(svc.duration)*DAY_MS});
-      await answer('انتقال شروع شد.');
-      await advanceMigration(journal,migrationPanelAdapter(env,(job,s)=>bestEffortMigrationBarrier(env,job,s)),jobId);
-      await journal.releaseComplete(jobId);
+      await migrateService(env,svc,cat,sourceIdentity,()=>answer('انتقال شروع شد.'));
       return render(env,cq,'✅ انتقال تأیید شد و سرویس از پنل مبدأ حذف شد. لینک جدید در «سرویس‌های من» قرار دارد.',backKb(isAdmin?`admin:svc:${id}`:`svc_${id}`));
     } catch(e) { return render(env,cq,`⚠️ انتقال کامل تأیید نشد: ${esc(String(e.message).slice(0,180))}؛ تا بررسی، دوباره تلاش نکنید.`,backKb(isAdmin?`admin:svc:${id}`:`svc_${id}`)); }
   }
@@ -2416,7 +2503,7 @@ async function handleUpdate(baseEnv, update) {
   // وضعیت کاربر + تنظیمات + ادمین‌ها با یک رفت‌وبرگشت به دیتابیس
   const [stR, setR, admR] = await baseEnv.DB.batch([
     baseEnv.DB.prepare("SELECT data FROM states WHERE user_id=?").bind(from.id),
-    baseEnv.DB.prepare("SELECT key,value FROM settings"),
+    baseEnv.DB.prepare("SELECT key,value FROM settings WHERE key NOT LIKE 'bulk_migration:%' AND key NOT LIKE 'migration:%'"),
     baseEnv.DB.prepare("SELECT user_id FROM admins"),
   ]);
   const env = Object.create(baseEnv);
@@ -2463,7 +2550,7 @@ async function handleUpdate(baseEnv, update) {
 }
 
 async function backgroundEnv(base) {
-  const rows=await all(base,'SELECT key,value FROM settings');const env=Object.create(base);env.cfg=defaults(base);
+  const rows=await all(base,"SELECT key,value FROM settings WHERE key NOT LIKE 'bulk_migration:%' AND key NOT LIKE 'migration:%'");const env=Object.create(base);env.cfg=defaults(base);
   for(const r of rows)if(Object.hasOwn(env.cfg,r.key))env.cfg[r.key]=String(r.value ?? '');
   env.panelStoredIdentity=rows.find(r=>r.key==='panel_identity_v1')?.value || '';
   const saved=rows.find(r=>r.key==='panel_credentials_v1');
@@ -2471,6 +2558,25 @@ async function backgroundEnv(base) {
   if(rows.find(r=>r.key==='panel_main_disabled')?.value==='1'){env.PANEL_URL='';env.PANEL_USER='';env.PANEL_PASS='';env.panelStoredIdentity='';}
   env.admins=new Set([...parseIds(base.ADMIN_ID),...(await all(base,'SELECT user_id FROM admins')).map(r=>Number(r.user_id))]);
   return env;
+}
+
+async function runBulkMigrations(base, {signal}={}) {
+  const env=await backgroundEnv(base), queue=bulkMigrationQueue(env.DB);env.policySignal=signal;
+  const rows=await all(env,"SELECT key FROM settings WHERE key LIKE 'bulk_migration:%' AND EXISTS(SELECT 1 FROM json_each(settings.value,'$.items') WHERE json_extract(json_each.value,'$.status') IN ('pending','running')) ORDER BY key LIMIT 5");
+  for(const row of rows){
+    if(signal?.aborted)return;
+    const id=row.key.slice('bulk_migration:'.length);
+    try {
+      let job=await queue.get(id);if(!job)continue;
+      if(job.items.some(x=>x.status==='running')){try{job=await queue.recover(id)}catch{continue}}
+      await queue.step(id,async(serviceId,batch)=>{
+        const svc=await getService(env,serviceId),cat=await getCategory(env,batch.categoryId);
+        if(!svc || !cat || !batch.destination || cat.panel_identity!==batch.destination.panelIdentity || cat.group_ids!==batch.destination.groupIds)throw Error('batch destination or service changed');
+        if(signal?.aborted)throw Error('stopped');
+        return migrateService(env,svc,cat,batch.source);
+      });
+    } catch(e) {console.log('bulk migration waiting:',String(e.message).slice(0,100));}
+  }
 }
 async function automatedDelete(env,svc) {
   const lock=await run(env,"INSERT OR IGNORE INTO service_operations(service_id,kind,created_at) VALUES(?,?,?)",svc.id,'auto_delete_running',String(Date.now()));
@@ -2557,7 +2663,7 @@ async function runSubscriptionPolicies(base,{signal}={}) {
     }
   } finally {await run(env,"DELETE FROM settings WHERE key='subscription_policy_lease' AND value=?",lease);}
 }
-export { groupCredentials, panelCreate, prepareMigrationDestination, createMigrationDestination, importMigrationUsage, verifyMigrationDestination, readMigrationSnapshot, setMigrationAdmission, bestEffortMigrationBarrier, migrationPanelAdapter, panelRenew, panelDelete, panelAccount, panelServiceAccount, panelMemberships, liveServiceDetails, panelCall, handleUpdate, subscriptionLinks, configName, linkFingerprint, runSubscriptionPolicies };
+export { groupCredentials, panelCreate, prepareMigrationDestination, createMigrationDestination, importMigrationUsage, verifyMigrationDestination, readMigrationSnapshot, setMigrationAdmission, bestEffortMigrationBarrier, migrationPanelAdapter, panelRenew, panelDelete, panelAccount, panelServiceAccount, panelMemberships, liveServiceDetails, panelCall, handleUpdate, subscriptionLinks, configName, linkFingerprint, runSubscriptionPolicies, runBulkMigrations };
 
 export default {
   async scheduled(event, env, ctx) {
@@ -2570,6 +2676,7 @@ export default {
       }
       if(!env.SERVER_MODE)await processMessageJobs(env,(id,body)=>{const p=queuedMessagePayload(id,body);return tg(env,p.method,p.params)});
       if(!env.SERVER_MODE)await runSubscriptionPolicies(env);
+      if(!env.SERVER_MODE)await runBulkMigrations(env);
     })());
   },
   async fetch(request, env, ctx) {

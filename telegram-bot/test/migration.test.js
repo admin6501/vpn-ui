@@ -136,7 +136,8 @@ test('snapshot keeps full original quota and absolute deadline, including unlimi
   const traffic = {email:'Alice', enable:false,up:10,down:20,allTime:50};
   assert.deepEqual(migrationSnapshot(account, traffic, 'alice', 'secret'), { upload: 10, download: 20, allTime: 50, quota: 100, expiry: 1234 });
   assert.equal(migrationSnapshot({ ...account, totalGB: 0, expiryTime: 0 }, traffic, 'alice', 'secret').quota, 0);
-  for (const bad of [{ ...account, enable: true }, { ...account, subId: 'wrong' }, { ...account, up: -1 }, { ...account, expiryTime: -1 }]) {
+  assert.equal(migrationSnapshot({...account,expiryTime:-86400000},traffic,'alice','secret').expiry,-86400000);
+  for (const bad of [{ ...account, enable: true }, { ...account, subId: 'wrong' }, { ...account, up: -1 }]) {
     assert.throws(() => migrationSnapshot(bad, traffic, 'alice', 'secret'));
   }
   assert.throws(() => migrationSnapshot(account, {...traffic,down:21}, 'alice', 'secret'), /inconsistent/);
