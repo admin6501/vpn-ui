@@ -179,10 +179,41 @@ async function currentPanelIdentity(env) {
   if (!env.PANEL_URL || !env.PANEL_USER) throw new Error("ابتدا اتصال پنل را تنظیم کنید");
   return panelAccountKey(env.PANEL_URL,env.PANEL_USER);
 }
+async function listBotPanels(env) {
+  const panels=[];
+  if(env.PANEL_URL && env.PANEL_USER && env.PANEL_PASS){const identity=await currentPanelIdentity(env);panels.push({slot:'main',name:'پنل ۱',identity,env});}
+  const rows=await all(env,"SELECT key,value FROM settings WHERE key LIKE 'extra_panel:%' ORDER BY key");
+  for(const row of rows){
+    const slot=row.key.slice('extra_panel:'.length);if(!/^p[0-9a-f]{12}$/.test(slot))continue;
+    try{const p=await decryptPanel(env.BOT_TOKEN,row.value);const url=panelURL(p.url);if(!p.user||!p.pass||!p.sub||!p.name)continue;
+      const identity=await panelAccountKey(url,p.user), scoped=Object.create(env);scoped.rootPanelEnv=env.rootPanelEnv || env;scoped.PANEL_URL=url;scoped.PANEL_USER=p.user;scoped.PANEL_PASS=p.pass;scoped.panelStoredIdentity=identity;scoped.cfg={...env.cfg,sub_base_url:panelURL(p.sub)+'/'};
+      panels.push({slot,name:p.name,identity,env:scoped});
+    }catch{}
+  }
+  return panels;
+}
+async function panelForIdentity(env,identity) {
+  env=env.rootPanelEnv || env;
+  const main=env.PANEL_URL && env.PANEL_USER ? await currentPanelIdentity(env) : '';if(!identity && main)return env;if(identity && identity===main)return env;
+  const panel=(await listBotPanels(env)).find(x=>x.identity===identity);if(!panel)throw Error('پنل مربوط به این سرویس در دسترس نیست؛ تنظیمات پنل را بررسی کنید');return panel.env;
+}
+async function panelForService(env,svc) {
+  if(!svc?.id)return env;
+  const mapped=await first(env,'SELECT value FROM settings WHERE key=?',`service_panel:${svc.id}`);
+  if(mapped?.value)return panelForIdentity(env,mapped.value);
+  const attempts=await all(env,"SELECT DISTINCT s.value AS identity FROM provision_attempts p JOIN settings s ON s.key='attempt_panel:'||p.attempt_key WHERE p.email=? AND p.sub_id=? UNION SELECT DISTINCT r.panel_identity AS identity FROM provision_attempts p JOIN bot_order_routes r ON p.attempt_key LIKE 'order:'||r.order_id||':%' WHERE p.email=? AND p.sub_id=? AND r.panel_identity!='' LIMIT 2",svc.panel_email,svc.sub_id,svc.panel_email,svc.sub_id);
+  if(attempts.length>1)throw Error('پنل سرویس نامشخص است؛ بررسی ادمین لازم است');
+  return panelForIdentity(env,attempts[0]?.identity || '');
+}
+async function relatedServiceOrders(env,svc) {
+  const root=env.rootPanelEnv || env,target=await panelForService(root,svc),identity=await currentPanelIdentity(target);
+  const main=root.PANEL_URL && root.PANEL_USER ? await currentPanelIdentity(root) : '';
+  return all(root,"SELECT o.id,o.status FROM orders o WHERE o.user_id=? AND (o.renew_service_id=? OR EXISTS(SELECT 1 FROM provision_attempts p LEFT JOIN bot_order_routes r ON r.order_id=o.id WHERE p.sub_id=? AND p.email=? AND p.attempt_key LIKE 'order:'||o.id||':%' AND (r.panel_identity=? OR (COALESCE(r.panel_identity,'')='' AND ?=1))))",svc.user_id,svc.id,svc.sub_id,svc.panel_email,identity,identity===main?1:0);
+}
 async function assertCategory(env,category) {
   if (!category || Number(category.active ?? category.category_active)!==1 || !parseIds(category.group_ids).length) throw new Error("دسته‌بندی بسته تنظیم نشده یا غیرفعال است");
-  const identity=await currentPanelIdentity(env);
-  if(category.panel_identity && category.panel_identity!==identity) throw new Error("دسته‌بندی متعلق به اتصال قبلی پنل است؛ دوباره تنظیم کنید");
+  const target=await panelForIdentity(env,category.panel_identity);
+  const identity=await currentPanelIdentity(target);
   return identity;
 }
 const getOrder = (env, id) => first(env, "SELECT * FROM orders WHERE id=?", id);
@@ -282,7 +313,7 @@ async function groupCredentials(env, groupIds=env.cfg.panel_group_ids, anchorId=
   const ids = parseIds(groupIds);
   if(!ids.length) throw new Error("گروه بسته تنظیم نشده است");
   const selected = ids.map(id => groups.obj.find(g => Number(g.id) === id));
-  if (selected.some(g => !g || !Array.isArray(g.inboundIds))) throw new Error("گروه انتخاب‌شده در دسترس نیست");
+  if (selected.some(g => !g || g.disabled === true || !Array.isArray(g.inboundIds))) throw new Error("گروه انتخاب‌شده در دسترس نیست");
   const inboundIds = [...new Set(selected.flatMap(g => g.inboundIds.map(Number)))];
   if (!inboundIds.length || inboundIds.some(id=>!Number.isSafeInteger(id)||id<=0)) throw new Error("ورودی‌های گروه معتبر نیستند");
   const anchor = Number(anchorId) || inboundIds[0];
@@ -326,7 +357,10 @@ async function panelCreate(env, { name, bytes, days, attemptKey, onDispatch, gro
   delete credentials.anchorProtocol;
   const inboundId = credentials.anchorId;
   delete credentials.anchorId;
-  if (attemptKey) await run(env, "INSERT INTO provision_attempts(attempt_key,email,sub_id,inbound_id,created_at) VALUES(?,?,?,?,?)", attemptKey, email, subId, inboundId, now());
+  if (attemptKey) {
+    const identity=await currentPanelIdentity(env);
+    await env.DB.batch([env.DB.prepare("INSERT INTO provision_attempts(attempt_key,email,sub_id,inbound_id,created_at) VALUES(?,?,?,?,?)").bind(attemptKey,email,subId,inboundId,now()),env.DB.prepare("INSERT INTO settings(key,value) VALUES(?,?)").bind(`attempt_panel:${attemptKey}`,identity)]);
+  }
   const settings = JSON.stringify({
     clients: [{
       ...credentials, email, enable: true, subId,
@@ -345,6 +379,7 @@ async function panelCreate(env, { name, bytes, days, attemptKey, onDispatch, gro
 
 // تمدید: مصرف صفر می‌شود و مدت از الان شروع می‌شود (مدت ثبت‌شده هنگام ساخت)
 async function panelRenew(env, svc, newBytes, days, onDispatch) {
+  env=await panelForService(env,svc);
   // Renewal restarts the original package; it cannot safely change quota/duration.
   if (!svc.volume_bytes || Number(svc.volume_bytes) !== Number(newBytes) || svc.duration !== durationText(days))
     throw new Error("تمدید خودکار فقط با همان حجم و مدت قبلی ممکن است؛ تغییر بسته را دستی انجام دهید");
@@ -373,18 +408,22 @@ async function panelAccount(env, email) {
 // the currently configured panel. A similarly named account is not sufficient.
 async function panelServiceAccount(env, svc) {
   if (!svc.panel_email) return null;
+  env=await panelForService(env,svc);
   const account=await panelAccount(env,svc.panel_email);
   if (!account) return null;
   if (svc.sub_id && String(account.subId || "") !== String(svc.sub_id)) return null;
+  Object.defineProperty(account,'_panelEnv',{value:env,enumerable:false});
   return account;
 }
 
 function currentServiceLink(env, svc, account) {
+  env=account?._panelEnv || env;
   if (svc.sub_id && account?.subId) return env.cfg.sub_base_url ? subLink(env,account.subId) : "";
   return svc.sub_link || "";
 }
 
 async function panelMemberships(env, svc) {
+  env=await panelForService(env,svc);
   const account = await panelServiceAccount(env, svc);
   if (!account || !Array.isArray(account.memberships)) throw new Error("سرویس در پنل پیدا نشد.");
   const result = await panelCall(env, "GET", "/panel/api/clients/inbounds");
@@ -401,6 +440,7 @@ async function panelMemberships(env, svc) {
 }
 
 async function panelDelete(env, svc, opts = {}) {
+  env=await panelForService(env,svc);
   let account = await panelServiceAccount(env, svc);
   if (!account || !Array.isArray(account.memberships) || !account.memberships.length) throw new Error("عضویت‌های سرویس مشخص نیست؛ حذف دستی لازم است");
   if(opts.expectedExpiry !== undefined && Number(account.expiryTime)!==opts.expectedExpiry)throw new Error('تاریخ انقضای سرویس تغییر کرده است');
@@ -446,6 +486,7 @@ async function insertService(env, o) {
   const r = await run(env,
     "INSERT INTO services(user_id,name,volume,duration,sub_link,config_link,created_at,panel_email,inbound_id,sub_id,volume_bytes) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
     o.user_id, o.name, o.volume, o.duration, o.link, null, now(), o.email, o.inboundId, o.subId, o.bytes);
+  if(o.panelIdentity)await run(env,"INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",`service_panel:${r.meta.last_row_id}`,o.panelIdentity);
   return r.meta.last_row_id;
 }
 
@@ -505,7 +546,8 @@ async function showCustomerCategories(env,cq,mode,page=0) {
   return render(env,cq,cats.length ? "🗂 دسته‌بندی را انتخاب کنید:" : "دسته‌بندی قابل استفاده‌ای تنظیم نشده است.",kb(rows));
 }
 async function categoryMatchesAccount(env,category,account,knownChoices) {
-  await assertCategory(env,category);
+  const identity=await assertCategory(env,category);env=await panelForIdentity(env,identity);
+  if(account?._panelEnv && (await currentPanelIdentity(account._panelEnv))!==identity)return false;
   const choices=knownChoices || await panelChoices(env);if(!choices || !Array.isArray(account.memberships))return false;
   const ids=parseIds(category.group_ids), groups=ids.map(id=>choices.groups.find(g=>Number(g.id)===id));
   if(groups.some(g=>!g || !Array.isArray(g.inboundIds)))return false;
@@ -614,7 +656,7 @@ const invoiceKb=(id,hasCoupon=false)=>kb([
 async function createInvoice(c, user, chat_id, name, plan, renewId, cq) {
   const { env, st } = c;
   const identity=await assertCategory(env,plan);
-  if(!renewId) {assertPanelReady(env);await groupCredentials(env,plan.group_ids,0)}
+  if(!renewId) {const target=await panelForIdentity(env,identity);assertPanelReady(target);await groupCredentials(target,plan.group_ids,0)}
   const days = Number(plan.days);
   if (!Number.isSafeInteger(days) || days <= 0 || days>36500 || !Number.isSafeInteger(Date.now()+days*DAY_MS)) throw new Error("مدت سرویس مشخص نیست؛ با پشتیبانی تماس بگیرید");
   const r = await run(env,
@@ -658,10 +700,9 @@ async function fulfillOrder(env, order, onDispatch) {
   }
   const route=await first(env,"SELECT group_ids,anchor_id,panel_identity FROM bot_order_routes WHERE order_id=?",order.id);
   if(!route || !parseIds(route.group_ids).length) throw new Error("گروه سفارش مشخص نیست؛ بررسی ادمین لازم است");
-  const identity=await currentPanelIdentity(env);
-  if(route.panel_identity && route.panel_identity!==identity) throw new Error("سفارش متعلق به اتصال قبلی پنل است؛ بررسی ادمین لازم است");
-  const p = await panelCreate(env, { name: order.service_name, bytes, days, groupIds:route.group_ids,anchorId:route.anchor_id,attemptKey: `order:${order.id}:${hex(8)}`, onDispatch });
-  await insertService(env, { ...p, user_id: order.user_id, name: order.service_name, volume: order.volume, duration: order.duration });
+  const target=await panelForIdentity(env,route.panel_identity),identity=await currentPanelIdentity(target);
+  const p = await panelCreate(target, { name: order.service_name, bytes, days, groupIds:route.group_ids,anchorId:route.anchor_id,attemptKey: `order:${order.id}:${hex(8)}`, onDispatch });
+  await insertService(env, { ...p,panelIdentity:identity, user_id: order.user_id, name: order.service_name, volume: order.volume, duration: order.duration });
   return { renewed: false, name: order.service_name, link: p.link, warn: "" };
 }
 
@@ -1009,6 +1050,36 @@ async function handleAdminUIInput(c, msg) {
     delete st.admin_ui_step; delete st.admin_ui_key;
     await sendMsg(env,msg.chat.id,"✅ متن شروع ذخیره شد."); return showAdminHome(env,msg.chat.id);
   }
+  if(step.startsWith('mpedit_')) {
+    if(!env.owners.includes(msg.from.id))return send('فقط ادمین اصلی اجازه دارد.');
+    const slot=st.admin_ui_key;if(!/^p[0-9a-f]{12}$/.test(slot))return send('پنل نامعتبر است.');const row=await first(env,'SELECT value FROM settings WHERE key=?',`extra_panel:${slot}`);let draft;try{draft=await decryptPanel(env.BOT_TOKEN,row.value)}catch{return send('اطلاعات پنل قابل خواندن نیست.')}
+    if(step==='mpedit_name'){if(!value||value.length>30||/[\r\n]/.test(value))return send('نام پنل معتبر نیست.');if((await listBotPanels(env)).some(p=>p.slot!==slot&&p.name.toLowerCase()===value.toLowerCase()))return send('این نام قبلاً ثبت شده است.');draft.name=value;}
+    else if(step==='mpedit_sub'){try{draft.sub=panelURL(value)}catch{return send('آدرس پایه اشتراک باید HTTPS معتبر باشد.')}}
+    else if(step==='mpedit_pass'){if(!value||value.length>512||/[\r\n]/.test(value))return send('رمز نامعتبر است.');try{await tg(env,'deleteMessage',{chat_id:msg.chat.id,message_id:msg.message_id})}catch{};draft.pass=value;try{await probePanel(draft)}catch(e){return send(`اتصال ناموفق بود: ${esc(e.message)}`)}}
+    else return send('درخواست نامعتبر است.');
+    await run(env,"UPDATE settings SET value=? WHERE key=?",await encryptPanel(env.BOT_TOKEN,draft),`extra_panel:${slot}`);delete st.admin_ui_step;delete st.admin_ui_key;return sendMsg(env,msg.chat.id,'✅ اطلاعات پنل ذخیره شد.',adminBack(`admin:multipanel:${slot}`));
+  }
+  if(step.startsWith('mp_')) {
+    if(!env.owners.includes(msg.from.id))return send('فقط ادمین اصلی اجازه تنظیم پنل را دارد.');
+    const draftKey=`multi_panel_draft:${msg.from.id}`;
+    if(step==='mp_name'){
+      if(!value || value.length>30 || /[\r\n]/.test(value))return send('نام پنل باید یک خط و حداکثر ۳۰ نویسه باشد.');
+      const existing=await listBotPanels(env);if(existing.some(p=>p.name.toLowerCase()===value.toLowerCase()))return send('این نام قبلاً ثبت شده است.');
+      await run(env,"INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",draftKey,await encryptPanel(env.BOT_TOKEN,{name:value,expires:Date.now()+1800000}));st.admin_ui_step='mp_url';return sendMsg(env,msg.chat.id,'آدرس HTTPS پنل، همراه مسیر آن را بفرستید.',adminBack('admin:settings'));
+    }
+    const row=await first(env,'SELECT value FROM settings WHERE key=?',draftKey);let draft;try{draft=await decryptPanel(env.BOT_TOKEN,row.value)}catch{}if(!draft || Date.now()>draft.expires)return send('درخواست منقضی شد؛ دوباره شروع کنید.');
+    if(step==='mp_url'){try{draft.url=panelURL(value)}catch{return send('آدرس HTTPS پنل معتبر نیست.')}st.admin_ui_step='mp_user';}
+    else if(step==='mp_user'){if(!value||value.length>256||/[\r\n]/.test(value))return send('نام کاربری نامعتبر است.');draft.user=value;st.admin_ui_step='mp_pass';}
+    else if(step==='mp_pass'){if(!value||value.length>512||/[\r\n]/.test(value))return send('رمز نامعتبر است.');draft.pass=value;try{await tg(env,'deleteMessage',{chat_id:msg.chat.id,message_id:msg.message_id})}catch{};try{await probePanel(draft)}catch(e){return send(`اتصال ناموفق بود: ${esc(e.message)}`)}st.admin_ui_step='mp_sub';}
+    else if(step==='mp_sub'){
+      try{draft.sub=panelURL(value)}catch{return send('آدرس پایه اشتراک باید HTTPS معتبر باشد.')}
+      const identity=await panelAccountKey(draft.url,draft.user),panels=await listBotPanels(env);if(panels.some(p=>p.identity===identity))return send('این حساب پنل قبلاً اضافه شده است.');
+      const slot='p'+hex(6);delete draft.expires;await env.DB.batch([env.DB.prepare("INSERT INTO settings(key,value) VALUES(?,?)").bind(`extra_panel:${slot}`,await encryptPanel(env.BOT_TOKEN,draft)),env.DB.prepare('DELETE FROM settings WHERE key=?').bind(draftKey)]);delete st.admin_ui_step;delete st.admin_ui_key;
+      return sendMsg(env,msg.chat.id,`✅ پنل «${esc(draft.name)}» اضافه شد.`,adminBack('admin:settings'));
+    } else return send('درخواست نامعتبر است.');
+    await run(env,"INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",draftKey,await encryptPanel(env.BOT_TOKEN,draft));
+    const prompts={mp_user:'نام کاربری پنل را بفرستید.',mp_pass:'رمز پنل را بفرستید.',mp_sub:'آدرس پایه HTTPS لینک اشتراک این پنل را بفرستید.'};return sendMsg(env,msg.chat.id,prompts[st.admin_ui_step],adminBack('admin:settings'));
+  }
   if (step.startsWith("panel_")) {
     if (!env.owners.includes(msg.from.id)) { delete st.admin_ui_step; return send("فقط ادمین اصلی اجازه دارد."); }
     const draftKey=`panel_draft:${msg.from.id}`;
@@ -1047,7 +1118,8 @@ async function handleAdminUIInput(c, msg) {
       const queries=[env.DB.prepare("INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").bind("panel_credentials_v1",await encryptPanel(env.BOT_TOKEN,config)),env.DB.prepare("INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").bind("panel_identity_v1",newIdentity),env.DB.prepare("DELETE FROM settings WHERE key=?").bind(draftKey)];
       if(changingAccount) {
         for(const key of ["panel_group_ids","panel_inbound_id","sub_base_url"]) queries.push(env.DB.prepare("INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").bind(key,""));
-        queries.push(env.DB.prepare("UPDATE bot_categories SET active=0"),env.DB.prepare("UPDATE bot_order_routes SET panel_identity='__blocked__' WHERE panel_identity=''"));
+        const previousIdentity=env.panelStoredIdentity || (env.PANEL_URL && env.PANEL_USER ? await currentPanelIdentity(env) : '');
+        queries.push(env.DB.prepare("UPDATE bot_categories SET active=0 WHERE panel_identity='' OR panel_identity=?").bind(previousIdentity),env.DB.prepare("UPDATE bot_order_routes SET panel_identity='__blocked__' WHERE panel_identity=''"));
       }
       await env.DB.batch(queries); panelCookie=null;panelCookieKey="";
       st.admin_ui_step="panel_sub"; delete st.admin_ui_key;
@@ -1163,11 +1235,13 @@ async function showTestCategoryChoices(env,cq,page) {
   return render(env,cq,cats.length ? "🎁 دسته‌بندی سرویس تست را انتخاب کنید:" : "دسته‌بندی فعالی وجود ندارد؛ ابتدا یک دسته‌بندی بسازید.",kb(rows));
 }
 async function showCategoryGroupChoices(env,chat,page) {
-  const choices=await panelChoices(env);if(!choices)return sendMsg(env,chat,"خواندن گروه‌ها از پنل ناموفق بود.",adminBack("admin:categories"));
-  const groups=choices.groups.filter(g=>positiveId(String(g.id)) && Array.isArray(g.inboundIds) && g.inboundIds.length>0 && g.inboundIds.every(id=>choices.inbounds.some(i=>Number(i.inboundId)===Number(id))));
-  const rows=groups.slice(page*10,(page+1)*10).map(g=>[btn(String(g.name || g.remark || `گروه ${g.id}`).slice(0,45),`admin:categorygroup:${g.id}`)]);
+  const groups=[],failed=[];for(const panel of await listBotPanels(env)){
+    const choices=await panelChoices(panel.env);if(!choices){failed.push(panel.name);continue;}
+    for(const g of choices.groups)if(positiveId(String(g.id))){const usable=g.disabled!==true && Array.isArray(g.inboundIds) && g.inboundIds.length>0 && g.inboundIds.every(id=>choices.inbounds.some(i=>Number(i.inboundId)===Number(id)));groups.push({g,panel,usable});}
+  }
+  const rows=groups.slice(page*10,(page+1)*10).map(({g,panel,usable})=>[btn(`${usable?'':'⚠️ '}${String(g.name || g.remark || `گروه ${g.id}`).slice(0,28)} — ${panel.name}`,panel.slot==='main'?`admin:categorygroup:${g.id}`:`admin:categorygroup:${panel.slot}:${g.id}`)]);
   const nav=[];if(page>0)nav.push(btn("◀️ قبلی",`admin:categorygroups:${page-1}`));if((page+1)*10<groups.length)nav.push(btn("بعدی ▶️",`admin:categorygroups:${page+1}`));if(nav.length)rows.push(nav);rows.push([btn("🔙 دسته‌بندی‌ها","admin:categories")]);
-  return sendMsg(env,chat,groups.length ? "گروه پنل این دسته‌بندی را انتخاب کنید:" : "گروه دارای ورودی مجاز پیدا نشد.",kb(rows));
+  return sendMsg(env,chat,(groups.length ? "گروه و پنل این دسته‌بندی را انتخاب کنید. گروه علامت‌دار تا رفع مشکل ورودی قابل انتخاب نیست:" : "گروهی پیدا نشد.")+(failed.length?`\n⚠️ خواندن این پنل‌ها ناموفق بود: ${esc(failed.join('، '))}`:''),kb(rows));
 }
 
 async function handleAdminUICallback(c, cq, answer) {
@@ -1302,7 +1376,7 @@ async function handleAdminUICallback(c, cq, answer) {
     const lock=await run(env,"INSERT OR IGNORE INTO service_operations(service_id,kind,created_at) VALUES(?,?,?)",id,"delete",now());
     if(!lock.meta.changes)return answer("عملیات دیگری روی سرویس در جریان است.",true);
     try {
-      const orders=await all(env,"SELECT o.id,o.status FROM orders o WHERE o.user_id=? AND (o.renew_service_id=? OR EXISTS(SELECT 1 FROM provision_attempts p WHERE p.sub_id=? AND p.email=? AND p.attempt_key LIKE 'order:'||o.id||':%'))",svc.user_id,id,svc.sub_id,svc.panel_email);
+      const orders=await relatedServiceOrders(env,svc);
       if(orders.some(o=>!["approved","rejected","cancelled"].includes(o.status)))throw new Error("سفارش مرتبط در حال بررسی است؛ ابتدا وضعیت آن را مشخص کنید.");
       await panelDelete(env,svc);
       const statements=orders.map(o=>env.DB.prepare("INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").bind(`hidden_order:${o.id}`,"1"));
@@ -1338,7 +1412,7 @@ async function handleAdminUICallback(c, cq, answer) {
       const before=await panelMemberships(env,svc),member=before.list.find(m=>m.id===inboundId),wanted=desired==="1";
       if(!before.accountEnabled||!member||member.enabled===null)return renderAdmin("⚠️ حساب یا وضعیت کانفیگ قابل تغییر نیست.",adminBack(`admin:sc:${serviceId}:0`));
       if(member.enabled===wanted)return renderAdmin("این وضعیت قبلاً تغییر کرده است.",adminBack(`admin:sc:${serviceId}:0`));
-      const response=await panelCall(env,"POST",`/panel/api/inbounds/${inboundId}/setMembershipEnable/${encodeURIComponent(svc.panel_email)}`,new URLSearchParams({enable:String(wanted)}));
+      const target=await panelForService(env,svc);const response=await panelCall(target,"POST",`/panel/api/inbounds/${inboundId}/setMembershipEnable/${encodeURIComponent(svc.panel_email)}`,new URLSearchParams({enable:String(wanted)}));
       if(!response.success)throw new Error("panel rejected");
       const after=await panelMemberships(env,svc),changed=after.list.find(m=>m.id===inboundId);
       if(!changed || changed.enabled!==wanted)return renderAdmin("⚠️ تغییر در پنل تأیید نشد؛ وضعیت را بررسی کنید.",adminBack(`admin:sc:${serviceId}:0`));
@@ -1452,7 +1526,8 @@ async function handleAdminUICallback(c, cq, answer) {
   if(d === "admin:category_add")return prompt("category_name","","نام دسته‌بندی را بفرستید؛ سپس گروه پنل را انتخاب کنید.","admin:categories");
   if (/^admin:category:\d+$/.test(d)) {
     const id=Number(d.split(":")[2]),cat=await getCategory(env,id);if(!cat)return answer("دسته‌بندی پیدا نشد.",true);
-    return renderAdmin(`🗂 <b>${esc(cat.name)}</b>\nگروه پنل: <code>${esc(cat.group_ids)}</code>\nوضعیت: ${cat.active ? "فعال" : "نیازمند انتخاب دوباره گروه"}`,kb([[btn("✏️ تغییر گروه پنل",`admin:category_rebind:${id}`)],[btn("🗑 حذف دسته‌بندی",`admin:category_delete:${id}`)],[btn("🔙 بازگشت","admin:categories")]]));
+    const panels=await listBotPanels(env),selected=panels.find(p=>p.identity===cat.panel_identity) || (!cat.panel_identity?panels.find(p=>p.slot==='main'):null);
+    return renderAdmin(`🗂 <b>${esc(cat.name)}</b>\nپنل: ${esc(selected?.name || 'در دسترس نیست')}\nگروه پنل: <code>${esc(cat.group_ids)}</code>\nوضعیت: ${cat.active ? "فعال" : "نیازمند انتخاب دوباره گروه"}`,kb([[btn("✏️ تغییر گروه پنل",`admin:category_rebind:${id}`)],[btn("🗑 حذف دسته‌بندی",`admin:category_delete:${id}`)],[btn("🔙 بازگشت","admin:categories")]]));
   }
   if (/^admin:category_rebind:\d+$/.test(d)) {
     const id=Number(d.split(":")[2]),cat=await getCategory(env,id);if(!cat)return answer("دسته‌بندی پیدا نشد.",true);
@@ -1462,9 +1537,9 @@ async function handleAdminUICallback(c, cq, answer) {
     const page=Number(d.split(":")[2]);if(!st.admin_category_draft || Date.now()>st.admin_category_draft.expires || !Number.isSafeInteger(page)||page>1000000)return answer("درخواست منقضی شده است.",true);
     return showCategoryGroupChoices(env,chat,page);
   }
-  if (/^admin:categorygroup:\d+$/.test(d)) {
-    const draft=st.admin_category_draft,id=d.split(":")[2];if(!draft||Date.now()>draft.expires||!positiveId(id))return answer("درخواست منقضی است.",true);
-    let identity;try{identity=await currentPanelIdentity(env);await groupCredentials(env,id,0)}catch(e){return answer(`گروه معتبر یا قابل استفاده نیست: ${String(e.message).slice(0,120)}`,true)}
+  if (/^admin:categorygroup:(?:p[0-9a-f]{12}:)?\d+$/.test(d)) {
+    const parts=d.split(':'),draft=st.admin_category_draft,id=parts.at(-1),slot=parts.length===4?parts[2]:'main';if(!draft||Date.now()>draft.expires||!positiveId(id))return answer("درخواست منقضی است.",true);
+    let identity;try{const panel=(await listBotPanels(env)).find(x=>x.slot===slot);if(!panel)throw Error('پنل پیدا نشد');identity=panel.identity;await groupCredentials(panel.env,id,0)}catch(e){return answer(`گروه معتبر یا قابل استفاده نیست: ${String(e.message).slice(0,120)}`,true)}
     if(draft.id){const updated=await run(env,"UPDATE bot_categories SET group_ids=?,panel_identity=?,active=1 WHERE id=?",id,identity,draft.id);if(!updated.meta.changes)return answer("دسته‌بندی پیدا نشد.",true)}
     else await run(env,"INSERT INTO bot_categories(name,group_ids,panel_identity) VALUES(?,?,?)",draft.name,id,identity);
     delete st.admin_category_draft;return renderAdmin("✅ دسته‌بندی و گروه پنل ذخیره شدند.",adminBack("admin:categories"));
@@ -1484,7 +1559,7 @@ async function handleAdminUICallback(c, cq, answer) {
   }
   if (/^admin:planpick:\d+$/.test(d)) {
     const draft=st.admin_plan_draft,id=Number(d.split(":")[2]);if(!draft||Date.now()>draft.expires)return answer("درخواست منقضی شده است.",true);
-    const cat=await getCategory(env,id);try{await assertCategory(env,cat);await groupCredentials(env,cat.group_ids,0)}catch(e){return answer(`دسته‌بندی معتبر نیست: ${String(e.message).slice(0,120)}`,true)}
+    const cat=await getCategory(env,id);try{const identity=await assertCategory(env,cat);await groupCredentials(await panelForIdentity(env,identity),cat.group_ids,0)}catch(e){return answer(`دسته‌بندی معتبر نیست: ${String(e.message).slice(0,120)}`,true)}
     if(draft.categoryOnly) {
       const changed=await run(env,"UPDATE bot_plan_specs SET category_id=? WHERE plan_key=? AND EXISTS(SELECT 1 FROM plans WHERE key=?) AND EXISTS(SELECT 1 FROM bot_categories WHERE id=? AND active=1 AND group_ids=? AND panel_identity=?)",id,draft.key,draft.key,id,cat.group_ids,cat.panel_identity);
       if(!changed.meta.changes)return answer("بسته یا دسته‌بندی تغییر کرده است؛ دوباره تلاش کنید.",true);
@@ -1504,10 +1579,26 @@ async function handleAdminUICallback(c, cq, answer) {
     delete st.admin_ui_step; delete st.admin_ui_key;
     const rows = [];
     if (owner) rows.push([btn("➕ افزودن یا تنظیم اتصال پنل", "admin:panelsetup")]);
+    if (owner) rows.push([btn('➕ افزودن پنل دیگر','admin:multipanel_add')]);
+    if (owner) rows.push([btn('🖥 پنل‌های متصل','admin:multipanels')]);
     rows.push([btn("🎁 دسته‌بندی سرویس تست", "admin:testcategories:0")]);
     rows.push(...Object.entries(META).map(([key, [, label]]) => [btn(label, `admin:setting:${key}`)]));
     rows.push([btn("🔙 بازگشت", "admin:root")]);
     return renderAdmin("⚙️ <b>تنظیمات</b>\nبرای دیدن و تغییر هر گزینه آن را انتخاب کنید:", kb(rows));
+  }
+  if(d==='admin:multipanel_add'){if(!owner)return answer('فقط ادمین اصلی اجازه دارد.',true);return prompt('mp_name','','برای پنل جدید یک نام بفرستید؛ مثلاً پنل ۲.','admin:settings');}
+  if(d==='admin:multipanels' || /^admin:multipanels:\d+$/.test(d)) {
+    if(!owner)return answer('فقط ادمین اصلی اجازه دارد.',true);const page=Number(d.split(':')[2] || 0);if(!Number.isSafeInteger(page)||page>1000000)return answer('صفحه نامعتبر است.',true);const panels=await listBotPanels(env);
+    const rows=panels.slice(page*10,page*10+10).map(p=>[btn(p.name,p.slot==='main'?'admin:panelsetup':`admin:multipanel:${p.slot}`)]),nav=[];if(page>0)nav.push(btn('◀️ قبلی',`admin:multipanels:${page-1}`));if((page+1)*10<panels.length)nav.push(btn('بعدی ▶️',`admin:multipanels:${page+1}`));if(nav.length)rows.push(nav);rows.push([btn('➕ افزودن پنل','admin:multipanel_add')],[btn('🔙 تنظیمات','admin:settings')]);
+    return renderAdmin(panels.length?'🖥 پنل‌های متصل:':'پنلی متصل نشده است.',kb(rows));
+  }
+  if (/^admin:multipanel:p[0-9a-f]{12}$/.test(d)) {
+    if(!owner)return answer('فقط ادمین اصلی اجازه دارد.',true);const slot=d.split(':')[2],panel=(await listBotPanels(env)).find(p=>p.slot===slot);if(!panel)return answer('پنل پیدا نشد.',true);
+    return renderAdmin(`🖥 <b>${esc(panel.name)}</b>\nآدرس: <code>${esc(panel.env.PANEL_URL)}</code>\nنام کاربری: <code>${esc(panel.env.PANEL_USER)}</code>\nآدرس ساب: <code>${esc(panel.env.cfg.sub_base_url)}</code>`,kb([[btn('✏️ نام',`admin:mpname:${slot}`),btn('🔑 رمز',`admin:mppass:${slot}`)],[btn('🔗 آدرس ساب',`admin:mpsub:${slot}`)],[btn('🔙 پنل‌ها','admin:multipanels')]]));
+  }
+  if (/^admin:mp(name|pass|sub):p[0-9a-f]{12}$/.test(d)) {
+    if(!owner)return answer('فقط ادمین اصلی اجازه دارد.',true);const [,action,slot]=d.split(':');if(!(await listBotPanels(env)).some(p=>p.slot===slot))return answer('پنل پیدا نشد.',true);
+    return prompt(`mpedit_${action.slice(2)}`,slot,action==='mpname'?'نام جدید پنل را بفرستید.':action==='mppass'?'رمز جدید پنل را بفرستید.':'آدرس پایه HTTPS اشتراک را بفرستید.',`admin:multipanel:${slot}`);
   }
   if (/^admin:testcategories:\d+$/.test(d)) {
     const page=Number(d.split(":")[2]);if(!Number.isSafeInteger(page)||page>1000000)return answer("صفحه نامعتبر است.",true);
@@ -1515,7 +1606,7 @@ async function handleAdminUICallback(c, cq, answer) {
   }
   if (/^admin:testcategory:\d+$/.test(d)) {
     const id=Number(d.split(":")[2]),cat=await getCategory(env,id);
-    try { await assertCategory(env,cat);await groupCredentials(env,cat.group_ids,0); } catch(e) { return answer(`دسته‌بندی قابل استفاده نیست: ${String(e.message).slice(0,120)}`,true); }
+    try { const identity=await assertCategory(env,cat);await groupCredentials(await panelForIdentity(env,identity),cat.group_ids,0); } catch(e) { return answer(`دسته‌بندی قابل استفاده نیست: ${String(e.message).slice(0,120)}`,true); }
     await run(env,"INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value","test_category_id",String(id));
     return renderAdmin(`✅ دسته‌بندی «${esc(cat.name)}» برای سرویس تست انتخاب شد.`,adminBack("admin:settings"));
   }
@@ -1638,7 +1729,7 @@ async function onMessage(c, msg) {
     if (st.step === "test_name") {
       const name=text.trim();
       if(!NAME_RE.test(name) || name.length>30) return sendMsg(env,msg.chat.id,"نام باید حداکثر ۳۰ حرف انگلیسی بدون فاصله و عدد باشد.");
-      try {if(await panelAccount(env,name))return sendMsg(env,msg.chat.id,"این نام قبلاً ثبت شده است؛ نام دیگری وارد کنید.");} catch {return sendMsg(env,msg.chat.id,"بررسی نام در پنل ناموفق بود؛ دوباره تلاش کنید.");}
+      try {const cat=await getCategory(env,Number(st.test_category));const target=await panelForIdentity(env,await assertCategory(env,cat));if(await panelAccount(target,name))return sendMsg(env,msg.chat.id,"این نام قبلاً ثبت شده است؛ نام دیگری وارد کنید.");} catch {return sendMsg(env,msg.chat.id,"بررسی نام در پنل ناموفق بود؛ دوباره تلاش کنید.");}
       st.test_name=name;st.step="test_name_ready";
       return sendMsg(env,msg.chat.id,`نام سرویس تست: <b>${esc(name)}</b>\nبرای ساخت، دکمه زیر را بزنید.`,kb([[btn("✅ ساخت سرویس تست","testname:make")],[btn("🔙 بازگشت","main_menu")]]));
     }
@@ -1649,10 +1740,9 @@ async function onMessage(c, msg) {
           "❌ نام نامعتبر است.\n\n⚠️ فقط حروف انگلیسی (A-Z) مجاز است، بدون فاصله و بدون هیچ علامتی.\n<i>مثال درست: Amir  یا  Mobile</i>");
       }
       if (name.length > 30) return sendMsg(env, msg.chat.id, "❌ نام سرویس خیلی طولانی است. کوتاه‌تر بنویسید.");
-      try {if(await panelAccount(env,name))return sendMsg(env,msg.chat.id,"این نام قبلاً ثبت شده است؛ نام دیگری وارد کنید.");} catch {return sendMsg(env,msg.chat.id,"بررسی نام در پنل ناموفق بود؛ دوباره تلاش کنید.");}
       const plan = await getPlan(env, st.plan_key);
       if (!plan) { c.st = {}; return sendMsg(env, msg.chat.id, "❌ بسته یافت نشد، دوباره از منو اقدام کنید."); }
-      try { await assertCategory(env,plan);await groupCredentials(env,plan.group_ids,0);if(!(await claimPurchaseChoice(env,st,uid)))return sendMsg(env,msg.chat.id,"این درخواست قبلاً ثبت شده یا منقضی است؛ بسته را دوباره انتخاب کنید.",backKb("buy"));return await createInvoice(c, msg.from, msg.chat.id, name, plan, null, null); }
+      try {const target=await panelForIdentity(env,await assertCategory(env,plan));if(await panelAccount(target,name))return sendMsg(env,msg.chat.id,"این نام قبلاً ثبت شده است؛ نام دیگری وارد کنید.");await groupCredentials(target,plan.group_ids,0);if(!(await claimPurchaseChoice(env,st,uid)))return sendMsg(env,msg.chat.id,"این درخواست قبلاً ثبت شده یا منقضی است؛ بسته را دوباره انتخاب کنید.",backKb("buy"));return await createInvoice(c, msg.from, msg.chat.id, name, plan, null, null); }
       catch(e) { return sendMsg(env,msg.chat.id,`❌ بسته در دسترس نیست: ${esc(String(e.message).slice(0,160))}`,backKb("buy")); }
     }
     if (st.step === "receipt") return sendMsg(env,msg.chat.id,"لطفاً عکس رسید واریز را ارسال کنید.");
@@ -1856,14 +1946,14 @@ async function onCallback(c, cq) {
     if(existing) return answer(String(existing.created_at || "").startsWith("processing|") || String(existing.created_at || "").startsWith("review|") ? "درخواست تست قبلی در حال پردازش یا بررسی است." : "شما قبلاً سرویس تست دریافت کرده‌اید.",true);
     delete st.test_name;delete st.step;delete st.test_category;
     const id=Number(env.cfg.test_category_id),cat=await getCategory(env,id);
-    try {if(!Number.isSafeInteger(id)||id<=0)throw Error();await assertCategory(env,cat);await groupCredentials(env,cat.group_ids,0)} catch {return render(env,cq,"سرویس تست فعلاً آماده نیست؛ با پشتیبانی تماس بگیرید.",backKb());}
+    try {if(!Number.isSafeInteger(id)||id<=0)throw Error();const target=await panelForIdentity(env,await assertCategory(env,cat));await groupCredentials(target,cat.group_ids,0)} catch {return render(env,cq,"سرویس تست فعلاً آماده نیست؛ با پشتیبانی تماس بگیرید.",backKb());}
     return render(env,cq,"🎁 دسته‌بندی سرویس تست را انتخاب کنید:",kb([[btn(String(cat.name).slice(0,45),`testcat:${id}:0`)],[btn("🔙 بازگشت","main_menu")]]));
   }
   if (/^testcat:\d+:\d+$/.test(d)) {
     if(env.cfg.test_enabled!=="1")return answer("سرویس تست فعلا غیرفعال است.",true);
     const id=Number(d.split(":")[1]),cat=await getCategory(env,id);
     if(!id || id!==Number(env.cfg.test_category_id))return answer("دسته‌بندی تست تغییر کرده است؛ دوباره تلاش کنید.",true);
-    try {await assertCategory(env,cat);await groupCredentials(env,cat.group_ids,0)} catch {return answer("این دسته‌بندی فعلاً در دسترس نیست.",true)}
+    try {const target=await panelForIdentity(env,await assertCategory(env,cat));await groupCredentials(target,cat.group_ids,0)} catch {return answer("این دسته‌بندی فعلاً در دسترس نیست.",true)}
     st.test_category=id;delete st.test_name;delete st.step;
     return render(env,cq,`🎁 دسته‌بندی «${esc(cat.name)}» انتخاب شد. نام سرویس تست را چگونه انتخاب می‌کنید؟`,kb([[btn("✏️ نام دلخواه", "testname:custom")],[btn("🎲 نام تصادفی", "testname:random")],[btn("🔙 دسته‌بندی‌ها", "test_service")]]));
   }
@@ -1891,8 +1981,8 @@ async function onCallback(c, cq) {
     let dispatched = false, p;
     const mb = num(env, "test_mb"), days = num(env, "test_days"), label = `${mb} مگابایت`;
     try {
-      p = await panelCreate(env, { name: testName, bytes: mb * MB, days, groupIds:cat.group_ids,anchorId:0,attemptKey: `test:${uid}:${hex(8)}`, onDispatch: () => { dispatched = true; } });
-      await insertService(env, { ...p, user_id: uid, name: testName, volume: label, duration: `${days} روزه` });
+      const target=await panelForIdentity(env,await assertCategory(env,cat));p = await panelCreate(target, { name: testName, bytes: mb * MB, days, groupIds:cat.group_ids,anchorId:0,attemptKey: `test:${uid}:${hex(8)}`, onDispatch: () => { dispatched = true; } });
+      await insertService(env, { ...p,panelIdentity:await currentPanelIdentity(target), user_id: uid, name: testName, volume: label, duration: `${days} روزه` });
       await run(env, "UPDATE test_claims SET created_at=? WHERE user_id=? AND created_at=?", `done|${now()}`, uid, token);
     } catch (e) {
       if (dispatched) await run(env, "UPDATE test_claims SET created_at=? WHERE user_id=? AND created_at=?", `review|${now()}`, uid, token);
@@ -2027,7 +2117,7 @@ async function onCallback(c, cq) {
   if (d.startsWith("plan_")) {
     const plan = await getPlan(env, d.slice(5));
     if (!plan) return;
-    try {await assertCategory(env,plan);await groupCredentials(env,plan.group_ids,0)} catch(e) { return answer(`بسته در دسترس نیست: ${String(e.message).slice(0,120)}`,true); }
+    try {const target=await panelForIdentity(env,await assertCategory(env,plan));await groupCredentials(target,plan.group_ids,0)} catch(e) { return answer(`بسته در دسترس نیست: ${String(e.message).slice(0,120)}`,true); }
     if (["receipt","payment_choice"].includes(st.step) && st.order_id) return answer("سفارش فعلی را تکمیل کنید یا به منوی اصلی برگردید.",true);
     st.plan_key = plan.key; st.step = "purchase_name_choice";st.purchase_choice=hex(12);
     await run(env,"INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",`purchase_choice:${uid}`,st.purchase_choice);
@@ -2036,7 +2126,7 @@ async function onCallback(c, cq) {
   if (d === 'buyname:custom' || d === 'buyname:random') {
     if(st.step !== 'purchase_name_choice' || !st.plan_key)return answer('ابتدا بسته را دوباره انتخاب کنید.',true);
     const plan=await getPlan(env,st.plan_key);if(!plan)return answer('بسته پیدا نشد؛ دوباره انتخاب کنید.',true);
-    try {await assertCategory(env,plan);await groupCredentials(env,plan.group_ids,0)}catch{return answer('بسته در دسترس نیست؛ دوباره انتخاب کنید.',true)}
+    try {const target=await panelForIdentity(env,await assertCategory(env,plan));await groupCredentials(target,plan.group_ids,0)}catch{return answer('بسته در دسترس نیست؛ دوباره انتخاب کنید.',true)}
     if(d === 'buyname:random'){if(!(await claimPurchaseChoice(env,st,uid)))return answer('این درخواست قبلاً ثبت شده یا منقضی است.',true);return createInvoice(c,cq.from,chat_id,randomServiceName(),plan,null,cq);}
     st.step='service_name';return render(env,cq,'✏️ نام دلخواه را با حروف انگلیسی، بدون فاصله، عدد و علامت بفرستید؛ حداکثر ۳۰ حرف.\nمثال: Amir',backKb('buy'));
   }
@@ -2046,7 +2136,7 @@ async function onCallback(c, cq) {
     let account;try{account=await panelServiceAccount(env,svc)}catch{return sendMsg(env,chat_id,"⚠️ بررسی سرویس در پنل ناموفق بود.",backKb("my_services"))}
     if(!account)return answer("سرویس در پنل یافت نشد.",true);
     const candidates=(await getPlans(env)).filter(p=>Number(p.category_active)===1 && Number(p.days)===durationDays(svc.duration) && Math.round(Number(p.gb)*GB)===Number(svc.volume_bytes));
-    const choices=await panelChoices(env);if(!choices)return answer("دریافت گروه‌ها از پنل ناموفق بود.",true);
+    const choices=await panelChoices(await panelForService(env,svc));if(!choices)return answer("دریافت گروه‌ها از پنل ناموفق بود.",true);
     const valid=[];for(const p of candidates){try{if(await categoryMatchesAccount(env,p,account,choices))valid.push(p)}catch{}}
     if(!valid.length)return render(env,cq,"بسته‌ای با حجم، مدت و گروه فعلی این سرویس برای تمدید موجود نیست؛ با پشتیبانی تماس بگیرید.",backKb("my_services"));
     st.renew_service_id=id;return render(env,cq,`🔄 <b>تمدید سرویس «${esc(svc.name)}»</b>\nبسته مطابق سرویس را انتخاب کنید:`,await plansKb(env,"rplan",valid));
@@ -2167,8 +2257,9 @@ async function automatedDelete(env,svc) {
     const grace=await first(env,"SELECT value FROM settings WHERE key='auto_delete_days'");const days=Number(grace?.value ?? defaults(env).auto_delete_days);
     const fresh=await panelServiceAccount(env,svc);const expiry=Number(fresh?.expiryTime);
     if(!fresh || !svc.sub_id || String(fresh.subId || '')!==String(svc.sub_id) || !Number.isSafeInteger(expiry) || expiry<=0 || !Number.isSafeInteger(days) || days<0 || expiry+days*DAY_MS>Date.now())return;
-    const matches=await first(env,"SELECT COUNT(*) AS n FROM services WHERE lower(trim(panel_email))=lower(trim(?)) AND sub_id=?",svc.panel_email,svc.sub_id);if(Number(matches.n)!==1)return;
-    const orders=await all(env,"SELECT o.id,o.status FROM orders o WHERE o.user_id=? AND (o.renew_service_id=? OR EXISTS(SELECT 1 FROM provision_attempts p WHERE p.sub_id=? AND p.email=? AND p.attempt_key LIKE 'order:'||o.id||':%'))",svc.user_id,svc.id,svc.sub_id,svc.panel_email);
+    const candidates=await all(env,"SELECT * FROM services WHERE lower(trim(panel_email))=lower(trim(?)) AND sub_id=?",svc.panel_email,svc.sub_id);let matching=0;const identity=await currentPanelIdentity(await panelForService(env,svc));
+    for(const item of candidates){try{if(await currentPanelIdentity(await panelForService(env,item))===identity)matching++}catch{return;}}if(matching!==1)return;
+    const orders=await relatedServiceOrders(env,svc);
     if(orders.some(o=>!['approved','rejected','cancelled'].includes(o.status)))return;
     if(env.policySignal?.aborted)return;
     dispatched=true;await panelDelete(env,svc,{expectedExpiry:expiry,beforeDelete:async()=>{
@@ -2176,8 +2267,8 @@ async function automatedDelete(env,svc) {
       const active=await first(env,"SELECT value FROM settings WHERE key='auto_delete_enabled'");if(active?.value!=='1')throw Error('حذف خودکار خاموش شده است');
       const currentGrace=await first(env,"SELECT value FROM settings WHERE key='auto_delete_days'");const liveDays=Number(currentGrace?.value ?? defaults(env).auto_delete_days);
       if(!Number.isSafeInteger(liveDays)||liveDays<0||expiry+liveDays*DAY_MS>Date.now())throw Error('مهلت حذف تغییر کرده است');
-      const pending=await first(env,"SELECT COUNT(*) n FROM orders o WHERE o.user_id=? AND (o.renew_service_id=? OR EXISTS(SELECT 1 FROM provision_attempts p WHERE p.sub_id=? AND p.email=? AND p.attempt_key LIKE 'order:'||o.id||':%')) AND o.status NOT IN ('approved','rejected','cancelled')",svc.user_id,svc.id,svc.sub_id,svc.panel_email);
-      if(Number(pending.n))throw Error('سفارش مرتبط در حال بررسی است');
+      const pending=await relatedServiceOrders(env,svc);
+      if(pending.some(o=>!['approved','rejected','cancelled'].includes(o.status)))throw Error('سفارش مرتبط در حال بررسی است');
     }});
     const changes=orders.map(o=>env.DB.prepare("INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").bind(`hidden_order:${o.id}`,'1'));
     changes.push(env.DB.prepare('DELETE FROM services WHERE id=? AND user_id=?').bind(svc.id,svc.user_id));
@@ -2213,14 +2304,16 @@ async function runSubscriptionPolicies(base,{signal}={}) {
   const env=await backgroundEnv(base);env.policySignal=signal;if(signal?.aborted)return;
   await run(env,"UPDATE service_operations SET kind='auto_delete_review' WHERE kind='auto_delete_running' AND CAST(created_at AS INTEGER)<? AND NOT EXISTS(SELECT 1 FROM settings WHERE key='subscription_policy_lease' AND CAST(value AS INTEGER)>?)",Date.now()-21600000,Date.now());
   if(env.cfg.alerts_enabled!=='1' && env.cfg.auto_delete_enabled!=='1')return;
-  if(!env.PANEL_URL || !env.PANEL_USER || !env.PANEL_PASS)return;
+  const panels=await listBotPanels(env);if(!panels.length)return;
   let lease=`${Date.now()+21600000}|${hex(8)}`;
   const acquired=await run(env,"INSERT INTO settings(key,value) VALUES('subscription_policy_lease',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value WHERE CAST(settings.value AS INTEGER)<?",lease,Date.now());
   if(!acquired.meta.changes)return;
   try {
-    const cursor=await first(env,"SELECT value FROM settings WHERE key='subscription_policy_page'");let page=Number(cursor?.value || 1);if(!Number.isSafeInteger(page)||page<1||page>100000)page=1;
-    const response=await panelCall(env,'GET',`/panel/api/clients/list?page=${page}&size=500`);
-    if(!response.success || !Array.isArray(response.obj?.rows))throw Error('reading panel accounts failed');
+    for(const panel of panels){
+    const cursorKey=`subscription_policy_page:${panel.identity}`;
+    const cursor=await first(env,"SELECT value FROM settings WHERE key=?",cursorKey);let page=Number(cursor?.value || 1);if(!Number.isSafeInteger(page)||page<1||page>100000)page=1;
+    let response;try{response=await panelCall(panel.env,'GET',`/panel/api/clients/list?page=${page}&size=500`)}catch{continue}
+    if(!response.success || !Array.isArray(response.obj?.rows))continue;
     for(const account of response.obj.rows){
       if(signal?.aborted)break;
       const renewed=`${Date.now()+21600000}|${hex(8)}`;
@@ -2230,12 +2323,14 @@ async function runSubscriptionPolicies(base,{signal}={}) {
       const services=await all(env,"SELECT s.*,COALESCE(u.blocked,0) AS bot_blocked FROM services s LEFT JOIN bot_users u ON u.user_id=s.user_id WHERE lower(trim(s.panel_email))=lower(trim(?)) AND s.sub_id=?",account.email,account.subId);
       for(const svc of services){
         if(signal?.aborted)break;
-        if(env.cfg.auto_delete_enabled==='1' && Number(account.expiryTime)>0 && Number(account.expiryTime)+num(env,'auto_delete_days')*DAY_MS<=Date.now()){await automatedDelete(env,svc);continue;}
-        if(env.cfg.alerts_enabled==='1' && !svc.bot_blocked)await notifyService(env,svc,account);
+        let owner;try{owner=await currentPanelIdentity(await panelForService(env,svc))}catch{continue}if(owner!==panel.identity)continue;
+        if(env.cfg.auto_delete_enabled==='1' && Number(account.expiryTime)>0 && Number(account.expiryTime)+num(env,'auto_delete_days')*DAY_MS<=Date.now()){await automatedDelete(panel.env,svc);continue;}
+        if(env.cfg.alerts_enabled==='1' && !svc.bot_blocked)await notifyService(panel.env,svc,account);
       }
     }
     const next=response.obj.rows.length<500 || page*500>=Number(response.obj.total || 0) ? 1 : page+1;
-    await run(env,"INSERT INTO settings(key,value) VALUES('subscription_policy_page',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",String(next));
+    await run(env,"INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",cursorKey,String(next));
+    }
   } finally {await run(env,"DELETE FROM settings WHERE key='subscription_policy_lease' AND value=?",lease);}
 }
 export { groupCredentials, panelCreate, panelRenew, panelDelete, panelAccount, panelServiceAccount, panelMemberships, liveServiceDetails, panelCall, handleUpdate, subscriptionLinks, configName, linkFingerprint, runSubscriptionPolicies };

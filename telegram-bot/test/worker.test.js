@@ -63,11 +63,11 @@ test('Shadowsocks 2022 generates a padded key of the correct size', async()=>{
  }
 });
 test('creation records a recoverable identity before dispatch and does not retry an unknown response',async()=>{
- let stored=[];const withDB={...env,DB:{prepare:()=>({bind:(...args)=>({run:async()=>{stored.push(args);return {meta:{changes:1}}}})})}};
+ let stored=[];const withDB={...env,DB:{prepare:()=>({bind:(...args)=>({run:async()=>{stored.push(args);return {meta:{changes:1}}}})}),batch:async statements=>Promise.all(statements.map(s=>s.run()))}};
  const calls=server();const original=globalThis.fetch;
  globalThis.fetch=async(url,opt)=>{if(new URL(url).pathname.endsWith('/addClient')){calls.push({path:new URL(url).pathname});throw Error('connection lost')};return original(url,opt)};
  await assert.rejects(panelCreate(withDB,{name:'Amir',bytes:1,days:1,attemptKey:'order:19'}));
- assert.equal(stored.length,1);assert.equal(stored[0][0],'order:19');assert.equal(stored[0][1],'Amir');assert.equal(calls.filter(x=>x.path.endsWith('addClient')).length,1);
+ assert.equal(stored.length,2);assert.equal(stored[0][0],'order:19');assert.equal(stored[0][1],'Amir');assert.equal(stored[1][0],'attempt_panel:order:19');assert.equal(calls.filter(x=>x.path.endsWith('addClient')).length,1);
 });
 
 test('all 21 managed protocols produce the panel credential fields',async()=>{
