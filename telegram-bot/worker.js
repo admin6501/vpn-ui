@@ -40,6 +40,16 @@ const APPS = {
 const MAIN_TEXT = "🏠 <b>منوی اصلی</b>\n\nیکی از گزینه‌های زیر را انتخاب کنید:";
 const DEFAULT_START_TEXT = "سلام {name} 👋";
 const MAX_START_TEXT = 700;
+const appKeyOK = key => /^[A-Za-z0-9_-]{1,30}$/.test(key);
+function parseAppLinks(value) {
+  if(value.length>2500)throw Error('مجموع لینک‌ها بیش از حد طولانی است.');
+  const lines=value.split('\n').map(x=>x.trim()).filter(Boolean);
+  if(!lines.length || lines.length>10)throw Error('از ۱ تا ۱۰ لینک وارد کنید.');
+  return lines.map(line=>{const i=line.indexOf('|');if(i<1)throw Error('هر خط باید عنوان | لینک باشد.');const label=line.slice(0,i).trim(),raw=line.slice(i+1).trim();let url;try{url=new URL(raw)}catch{throw Error('لینک معتبر نیست.')}if(!label || label.length>60 || raw.length>512 || !['https:','http:'].includes(url.protocol) || url.username || url.password)throw Error('عنوان یا آدرس لینک معتبر نیست.');return [label,url.toString()];});
+}
+async function storeApp(env,key,app) {
+  await run(env,"INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",`bot_app:${key}`,JSON.stringify(app));
+}
 
 // ---------------------------------------------------------- تنظیمات قابل تغییر با /set
 // مقدار پیش‌فرض از اینجا (و wrangler.toml) می‌آید؛ هر مقداری که با /set عوض شود در دیتابیس می‌ماند.
@@ -924,6 +934,7 @@ const adminHomeKb = () => kb([
   [btn("📣 پیام همگانی", "admin:broadcast"),btn("📨 وضعیت پیام‌ها", "admin:messages:0")],
   [btn("💰 مدیریت کیف پول", "admin:wallet"),btn("⚠️ سفارش‌های قابل بررسی", "admin:wallet_reviews")],
   [btn("🎁 تنظیم هدیه دعوت", "admin:setting:referral_discount"),btn("🎟 مدیریت کد تخفیف", "admin:coupons:0")],
+  [btn("📲 مدیریت اپلیکیشن‌ها", "admin:apps")],
   [btn("🏷 نوع نام‌گذاری سرویس", "admin:setting:name_mode")],
   [btn("🎁 مجوز دوباره تست", "admin:resettest"), btn("🔌 بررسی اتصال پنل", "admin:panelcheck")],
   [btn("♻️ ریست تست همه", "admin:reset_all_tests")],
@@ -944,6 +955,29 @@ async function handleAdminUIInput(c, msg) {
   const { env, st } = c, step = st.admin_ui_step, value = (msg.text || "").trim();
   const send = text => sendMsg(env, msg.chat.id, text, adminBack());
   let command;
+  if (step === 'app_new_title') {
+    if(!value || value.length>60 || /[\r\n]/.test(value))return send('نام باید در یک خط و حداکثر ۶۰ نویسه باشد.');
+    st.app_draft={title:value};st.admin_ui_step='app_new_text';return sendMsg(env,msg.chat.id,'توضیحات برنامه را بفرستید؛ برای بدون توضیح، - بفرستید.',adminBack('admin:apps'));
+  }
+  if (step === 'app_new_text') {
+    if(!st.app_draft || !value || value.length>1000)return send('توضیحات را حداکثر در ۱۰۰۰ نویسه بفرستید.');
+    st.app_draft.text=value==='-'?'':value;st.admin_ui_step='app_new_links';return sendMsg(env,msg.chat.id,'برای هر لینک یک خط به شکل عنوان | آدرس بفرستید.\nمثال: اندروید | https://example.com/app',adminBack('admin:apps'));
+  }
+  if (step === 'app_new_links') {
+    if(!st.app_draft)return send('درخواست منقضی شده؛ دوباره شروع کنید.');let links;try{links=parseAppLinks(value)}catch(e){return send(e.message)}
+    if(Object.keys(env.apps).length>=50)return send('حداکثر ۵۰ اپلیکیشن قابل ثبت است.');
+    const key='a'+hex(8);await storeApp(env,key,{...st.app_draft,links,enabled:true});delete st.app_draft;delete st.admin_ui_step;delete st.admin_ui_key;
+    return sendMsg(env,msg.chat.id,'✅ اپلیکیشن اضافه شد.',adminBack('admin:apps'));
+  }
+  if (['app_edit_title','app_edit_text','app_edit_links'].includes(step)) {
+    const key=st.admin_ui_key,app=env.apps[key];if(!app || !appKeyOK(key))return send('اپلیکیشن پیدا نشد.');
+    let updated={...app};
+    if(step==='app_edit_title'){if(!value||value.length>60||/[\r\n]/.test(value))return send('نام باید در یک خط و حداکثر ۶۰ نویسه باشد.');updated.title=value;}
+    if(step==='app_edit_text'){if(!value||value.length>1000)return send('توضیحات را حداکثر در ۱۰۰۰ نویسه بفرستید؛ برای پاک کردن - بفرستید.');updated.text=value==='-'?'':value;}
+    if(step==='app_edit_links'){try{updated.links=parseAppLinks(value)}catch(e){return send(e.message)}}
+    await storeApp(env,key,updated);delete st.admin_ui_step;delete st.admin_ui_key;
+    return sendMsg(env,msg.chat.id,'✅ تغییر ذخیره شد.',adminBack(`admin:app:${key}`));
+  }
   if (step === "setting" && st.admin_ui_key === "start_text") {
     const text=msg.text.trim();
     if (!text || (text !== "-" && text.length > MAX_START_TEXT)) return send(`متن شروع باید حداکثر ${MAX_START_TEXT} نویسه باشد. برای بازگشت به متن پیش‌فرض، - بفرستید.`);
@@ -1127,6 +1161,26 @@ async function handleAdminUICallback(c, cq, answer) {
   if (d === "admin:root") {
     delete st.admin_ui_step; delete st.admin_ui_key;
     return renderAdmin("🛠 <b>پنل مدیریت ربات</b>\n\nبخش موردنظر را انتخاب کنید:", adminHomeKb());
+  }
+  if (d === 'admin:apps') {
+    const rows=Object.entries(env.apps).map(([key,app])=>[btn(`${app.enabled===false?'⛔':'✅'} ${String(app.title).slice(0,45)}`,`admin:app:${key}`)]);
+    rows.push([btn('➕ افزودن اپلیکیشن','admin:appadd')],[btn('🔙 پنل مدیریت','admin:root')]);
+    return renderAdmin('📲 <b>مدیریت اپلیکیشن‌ها</b>\nبرنامه را برای ویرایش انتخاب کنید.',kb(rows));
+  }
+  if (d === 'admin:appadd') {delete st.app_draft;return prompt('app_new_title','','نام اپلیکیشن جدید را بفرستید.','admin:apps');}
+  if (/^admin:app:[A-Za-z0-9_-]{1,30}$/.test(d)) {
+    const key=d.slice('admin:app:'.length),app=env.apps[key];if(!app)return answer('اپلیکیشن پیدا نشد.',true);
+    const links=app.links.map(([label,url])=>`${esc(label)} | <code>${esc(url)}</code>`).join('\n');
+    return renderAdmin(`📱 <b>${esc(app.title)}</b>\nوضعیت: ${app.enabled===false?'غیرفعال':'فعال'}\n\n${esc(app.text)}\n\n${links}`,kb([[btn('✏️ نام',`admin:apptitle:${key}`),btn('📝 توضیحات',`admin:apptext:${key}`)],[btn('🔗 تغییر لینک‌ها',`admin:applinks:${key}`)],[btn(app.enabled===false?'✅ فعال‌سازی':'⛔ غیرفعال‌سازی',`admin:apptoggle:${key}`)],[btn('🗑 حذف',`admin:appdelete:${key}`)],[btn('🔙 اپلیکیشن‌ها','admin:apps')]]));
+  }
+  if (/^admin:app(title|text|links|toggle|delete|confirm):[A-Za-z0-9_-]{1,30}$/.test(d)) {
+    const [,action,key]=d.split(':'),app=env.apps[key];if(!app)return answer('اپلیکیشن پیدا نشد.',true);
+    if(action==='apptitle')return prompt('app_edit_title',key,'نام جدید اپلیکیشن را بفرستید.',`admin:app:${key}`);
+    if(action==='apptext')return prompt('app_edit_text',key,'توضیحات جدید را بفرستید؛ برای پاک کردن - بفرستید.',`admin:app:${key}`);
+    if(action==='applinks')return prompt('app_edit_links',key,'تمام لینک‌های جدید را وارد کنید؛ هر خط: عنوان | آدرس\nمثال: اندروید | https://example.com/app',`admin:app:${key}`);
+    if(action==='apptoggle'){await storeApp(env,key,{...app,enabled:app.enabled===false});return renderAdmin('✅ وضعیت تغییر کرد.',adminBack(`admin:app:${key}`));}
+    if(action==='appdelete')return renderAdmin(`اپلیکیشن «${esc(app.title)}» حذف شود؟`,kb([[btn('✅ تأیید حذف',`admin:appconfirm:${key}`)],[btn('❌ انصراف',`admin:app:${key}`)]]));
+    if(action==='appconfirm'){await storeApp(env,key,{deleted:true});return renderAdmin('✅ اپلیکیشن حذف شد.',adminBack('admin:apps'));}
   }
   if (/^admin:coupons:\d+$/.test(d)) {
     const page=Number(d.split(":")[2]);if(!Number.isSafeInteger(page)||page>1000000)return answer("صفحه نامعتبر است.",true);
@@ -1983,17 +2037,17 @@ async function onCallback(c, cq) {
   }
 
   if (d === "apps_menu") {
-    const rows = Object.entries(APPS).map(([k, i]) => [btn(`📱 ${i.title}`, `app_${k}`)]);
+    const rows = Object.entries(env.apps).filter(([,i])=>i.enabled!==false).map(([k, i]) => [btn(`📱 ${i.title}`, `app_${k}`)]);
     rows.push([btn("🔙 بازگشت", "main_menu")]);
     return render(env, cq, "📲 <b>دانلود اپلیکیشن‌ها</b>\n\nاپلیکیشن مناسب دستگاه خود را انتخاب کنید:", kb(rows));
   }
 
   if (d.startsWith("app_")) {
-    const info = APPS[d.slice(4)];
-    if (!info) return;
+    const info = env.apps[d.slice(4)];
+    if (!info || info.enabled===false) return answer('اپلیکیشن در دسترس نیست.',true);
     const rows = info.links.map(([l, u]) => [urlBtn(l, u)]);
     rows.push([btn("🔙 بازگشت", "apps_menu")]);
-    return render(env, cq, info.text, kb(rows));
+    return render(env, cq, `📱 <b>${esc(info.title)}</b>\n\n${esc(info.text)}`, kb(rows));
   }
 }
 
@@ -2011,6 +2065,8 @@ async function handleUpdate(baseEnv, update) {
   const env = Object.create(baseEnv);
   env.cfg = defaults(baseEnv);
   for (const r of setR.results) if (Object.hasOwn(env.cfg, r.key)) env.cfg[r.key] = String(r.value ?? "");
+  env.apps=Object.fromEntries(Object.entries(APPS).map(([key,app])=>[key,{...app,text:app.text.replace(/<\/?b>/g,''),enabled:true}]));
+  for(const r of setR.results)if(r.key.startsWith('bot_app:')){const key=r.key.slice(8);if(!appKeyOK(key))continue;try{const app=JSON.parse(r.value);if(app.deleted){delete env.apps[key];continue}if(typeof app.title==='string' && typeof app.text==='string' && Array.isArray(app.links) && app.links.length && app.links.every(x=>Array.isArray(x)&&x.length===2))env.apps[key]=app}catch{}}
   env.panelStoredIdentity = setR.results.find(r=>r.key === "panel_identity_v1")?.value || "";
   const savedPanel = setR.results.find(r=>r.key === "panel_credentials_v1");
   if (savedPanel) {
