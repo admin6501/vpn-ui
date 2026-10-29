@@ -8,6 +8,7 @@ import (
 
 	"github.com/mhsanaei/3x-ui/v2/config"
 	"github.com/mhsanaei/3x-ui/v2/web/locale"
+	"github.com/mhsanaei/3x-ui/v2/web/service"
 
 	"github.com/gin-gonic/gin"
 )
@@ -155,6 +156,7 @@ func (a *SUBController) subs(c *gin.Context) {
 			// subscription client has no use for them.
 			page.Configs = a.subService.ConfigLinks(subId, host, scheme, hostWithPort, a.subPath)
 			c.HTML(200, "subpage.html", gin.H{
+				"brand_name":   (&service.SettingService{}).GetBrandName(),
 				"lang":         locale.RequestLanguage(c),
 				"title":        "subscription.title",
 				"cur_ver":      config.GetVersion(),

@@ -107,6 +107,7 @@
                 <a-card hoverable class="subscription-card">
                     <template #title>
                         <a-space>
+                            <span v-pre>{{ or .brand_name "VPN-UI" }}</span>
                             <span>{{ i18n "subscription.title" }}</span>
                             <a-tag>{{ .sId }}</a-tag>
                         </a-space>
