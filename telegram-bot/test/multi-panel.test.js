@@ -90,6 +90,19 @@ test('customer location button respects the setting and moves only that customer
  await f.cb(2,'loc:go:1:1');assert.equal(f.accounts().one.length,0);assert.equal(f.accounts().two.length,1);assert.equal(f.sql.prepare('SELECT sub_id FROM services WHERE id=1').get().sub_id,f.accounts().two[0].subId);
 });
 
+test('lost source deletion response leaves the service locked without a blind retry',async()=>{
+ const f=fixture(),target=await panelAccountKey('https://panel-two.example/base','rep');
+ f.sql.prepare('INSERT INTO settings(key,value) VALUES(?,?)').run('extra_panel:p123456789abc',await encryptPanel('token',{name:'پنل ۲',url:'https://panel-two.example/base',user:'rep',pass:'pass',sub:'https://sub-two.example/sub/'}));
+ f.sql.prepare('INSERT INTO bot_categories(id,name,group_ids,panel_identity) VALUES(1,?,?,?)').run('Germany','1',target);
+ f.sql.exec("INSERT INTO settings(key,value) VALUES('location_change_enabled','1'); INSERT INTO services(id,user_id,name,panel_email,sub_id,duration,volume_bytes) VALUES(1,2,'Alice','Alice','old','30 روزه',1000)");
+ f.accounts().one.push({email:'Alice',subId:'old',enable:true,up:10,down:20,allTime:30,totalGB:1000,expiryTime:Date.now()+86400000,renewalDuration:86400000,memberships:[{inboundId:3,enable:true}]});
+ const realFetch=globalThis.fetch;globalThis.fetch=async(url,opt)=>{if(new URL(url).pathname.includes('/delClientByEmail/')){await realFetch(url,opt);throw Error('connection lost')}return realFetch(url,opt)};
+ await f.cb(2,'loc:go:1:1');assert.equal(f.accounts().one.length,0);assert.equal(f.accounts().two.length,1);
+ const lock=f.sql.prepare('SELECT kind FROM service_operations WHERE service_id=1').get();assert.match(lock.kind,/^migration:/);
+ const job=JSON.parse(f.sql.prepare('SELECT value FROM settings WHERE key=?').get(lock.kind).value);assert.equal(job.state,'review');assert.equal(job.uncertain,'delete_source');
+ await f.cb(2,'loc:go:1:1');assert.equal(f.actions.filter(x=>x[1]==='delete').length,1);
+});
+
 test('admin selects all source services and the persisted queue moves each once',async()=>{
  const f=fixture(),target=await panelAccountKey('https://panel-two.example/base','rep');
  f.sql.prepare('INSERT INTO settings(key,value) VALUES(?,?)').run('extra_panel:p123456789abc',await encryptPanel('token',{name:'پنل ۲',url:'https://panel-two.example/base',user:'rep',pass:'pass',sub:'https://sub-two.example/sub/'}));
