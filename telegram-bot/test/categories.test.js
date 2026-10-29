@@ -35,8 +35,15 @@ test('category and plan control customer selection and preserve order group afte
  await f.cb(1,'admin:category_rebind:1');await f.cb(1,'admin:categorygroup:2');assert.equal(f.sql.prepare('SELECT group_ids FROM bot_categories WHERE id=1').get().group_ids,'2');
  await f.message(2,'receipt');await f.cb(1,`approve_${order.id}`);assert.equal(f.sent.length,1);assert.equal(f.sent[0].get('id'),'3');assert.deepEqual(f.sent[0].getAll('groupIds'),['1']);const client=JSON.parse(f.sent[0].get('settings')).clients[0];assert.equal(client.renewalDuration,14*86400000);
 });
-test('test user chooses category and automatic inbound comes from that group',async()=>{
- const f=fixture();await category(f,'A',1);await category(f,'B',2);await f.cb(5,'test_service');assert.ok(JSON.stringify(f.last().reply_markup).includes('testcat:2:0'));await f.cb(5,'testcat:2:0');await f.cb(5,'testname:random');assert.equal(f.sent.length,1);assert.equal(f.sent[0].get('id'),'7');assert.deepEqual(f.sent[0].getAll('groupIds'),['2']);
+test('admin selects one trial category; stale buttons cannot issue a trial on another group',async()=>{
+ const f=fixture();await category(f,'A',1);await category(f,'B',2);
+ await f.cb(5,'test_service');assert.match(f.last().text,/آماده نیست/);
+ await f.cb(1,'admin:settings');assert.ok(JSON.stringify(f.last().reply_markup).includes('admin:testcategories:0'));
+ await f.cb(1,'admin:testcategories:0');await f.cb(1,'admin:testcategory:2');assert.equal(f.sql.prepare("SELECT value FROM settings WHERE key='test_category_id'").get().value,'2');
+ await f.cb(5,'test_service');const markup=JSON.stringify(f.last().reply_markup);assert.ok(markup.includes('testcat:2:0'));assert.ok(!markup.includes('testcat:1:0'));
+ await f.cb(5,'testcat:1:0');await f.cb(5,'testname:random');assert.equal(f.sent.length,0);
+ await f.cb(5,'testcat:2:0');await f.cb(1,'admin:testcategory:1');await f.cb(5,'testname:random');assert.equal(f.sent.length,0);
+ await f.cb(1,'admin:testcategory:2');await f.cb(5,'testcat:2:0');await f.cb(5,'testname:random');assert.equal(f.sent.length,1);assert.equal(f.sent[0].get('id'),'7');assert.deepEqual(f.sent[0].getAll('groupIds'),['2']);
 });
 test('invalidated group and foreign panel identity cannot issue or fulfill a new invoice',async()=>{
  const f=fixture();await category(f,'A',1);await plan(f,'a10',100,10,14,1);f.setGroups([{id:2,name:'Beta',inboundIds:[7]}]);await f.cb(2,'plan_a10');assert.equal(f.sql.prepare('SELECT COUNT(*) n FROM orders').get().n,0);
