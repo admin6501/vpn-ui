@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {DatabaseSync} from 'node:sqlite';
 import {readFileSync} from 'node:fs';
-import {handleUpdate,runSubscriptionPolicies,prepareMigrationDestination,createMigrationDestination,importMigrationUsage,verifyMigrationDestination,readMigrationSnapshot,setMigrationAdmission,migrationPanelAdapter} from '../worker.js';
+import {handleUpdate,runSubscriptionPolicies,prepareMigrationDestination,createMigrationDestination,importMigrationUsage,verifyMigrationDestination,readMigrationSnapshot,setMigrationAdmission,bestEffortMigrationBarrier,migrationPanelAdapter} from '../worker.js';
 import {encryptPanel,panelAccountKey} from '../panel-config.js';
 import {migrationJournal} from '../migration-journal.js';
 import {advanceMigration} from '../migration.js';
@@ -58,7 +58,7 @@ test('migration adapter preserves counters and deletes only the source after des
  f.accounts().one.push({email:'Alice',subId:'old',enable:true,up:100,down:200,allTime:500,totalGB:1000,expiryTime:123456,memberships:[{inboundId:3,enable:true}]});
  const journal=migrationJournal(f.env.DB),id='12345678-1234-1234-1234-123456789abc';
  await journal.create(id,1,{source:{email:'Alice',subId:'old',panelMapping:null},destinationPanelIdentity:target,destinationGroupIds:'1',renewalDuration:86400000});
- const done=await advanceMigration(journal,migrationPanelAdapter(f.env,async()=>true),id);
+ const done=await advanceMigration(journal,migrationPanelAdapter(f.env,(job,svc)=>bestEffortMigrationBarrier(f.env,job,svc)),id);
  assert.equal(done.state,'complete');assert.equal(f.accounts().one.length,0);assert.equal(f.accounts().two.length,1);
  assert.equal(f.accounts().two[0].down,200);assert.equal(f.accounts().two[0].totalGB,1000);assert.equal(f.accounts().two[0].expiryTime,123456);
  assert.equal(f.sql.prepare('SELECT sub_id FROM services WHERE id=1').get().sub_id,f.accounts().two[0].subId);

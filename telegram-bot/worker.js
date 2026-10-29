@@ -476,9 +476,19 @@ async function setMigrationAdmission(env, svc, enabled, onDispatch) {
   return true;
 }
 
-// The freeze barrier is deliberately mandatory: a database switch alone does
-// not prove the core has closed sessions and flushed the last traffic counters.
-// Until a protocol-aware barrier exists this adapter refuses to run.
+// The database flag is observable but does not prove that all cores have
+// disconnected their sessions or flushed their final counters. Migration using
+// this barrier has approximate usage; the discrepancy has no hard byte bound.
+async function bestEffortMigrationBarrier(env, _job, svc) {
+  const account = await panelServiceAccount(env, svc);
+  if (!account || account.enable !== false) throw new Error('غیرفعال‌شدن سرویس مبدأ تأیید نشد');
+  const target = await panelForService(env, svc);
+  const result = await panelCall(target, 'GET', `/panel/api/inbounds/getClientTraffics/${encodeURIComponent(svc.panel_email)}`);
+  if (!result.success || result.obj?.enable !== false) throw new Error('وضعیت مصرف مبدأ تأیید نشد');
+  return true;
+}
+
+// The caller selects a barrier appropriate to its accepted accounting policy.
 function migrationPanelAdapter(env, freezeBarrier) {
   const sourceService = async job => {
     const svc = await getService(env, job.serviceId);
@@ -2506,7 +2516,7 @@ async function runSubscriptionPolicies(base,{signal}={}) {
     }
   } finally {await run(env,"DELETE FROM settings WHERE key='subscription_policy_lease' AND value=?",lease);}
 }
-export { groupCredentials, panelCreate, prepareMigrationDestination, createMigrationDestination, importMigrationUsage, verifyMigrationDestination, readMigrationSnapshot, setMigrationAdmission, migrationPanelAdapter, panelRenew, panelDelete, panelAccount, panelServiceAccount, panelMemberships, liveServiceDetails, panelCall, handleUpdate, subscriptionLinks, configName, linkFingerprint, runSubscriptionPolicies };
+export { groupCredentials, panelCreate, prepareMigrationDestination, createMigrationDestination, importMigrationUsage, verifyMigrationDestination, readMigrationSnapshot, setMigrationAdmission, bestEffortMigrationBarrier, migrationPanelAdapter, panelRenew, panelDelete, panelAccount, panelServiceAccount, panelMemberships, liveServiceDetails, panelCall, handleUpdate, subscriptionLinks, configName, linkFingerprint, runSubscriptionPolicies };
 
 export default {
   async scheduled(event, env, ctx) {
