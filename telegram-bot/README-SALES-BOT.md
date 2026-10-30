@@ -49,6 +49,12 @@ sudo vpn-ui-bot
 | 13 | Enable or change the automatic Telegram backup interval, disable it, inspect its status or send a test backup; intervals use minutes or hours. |
 | 0 | Exit the menu. |
 
+If an older menu fails to update because a runtime module was omitted, run the current updater directly once. The current updater stages runtime files and checks entry-point imports before stopping the service; if a module is missing, preparation fails while the existing service remains running:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/admin6501/vpn-ui/main/telegram-bot/manage-server.sh -o /tmp/vpn-ui-bot-update.sh && sudo bash /tmp/vpn-ui-bot-update.sh --update
+```
+
 Local snapshots are stored in `/var/lib/vpn-ui-bot/backups`. These are bot database backups, not panel backups. Restore validates the file and backs up the current bot database before replacing it; reconcile pending orders and services with the panel afterwards. Current configuration and token remain; a changed token may require panel credentials to be configured again. Automatic backups go only to the main administrator IDs recorded at installation; each must first send `/start`.
 
 ## 4. Customer menu
