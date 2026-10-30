@@ -36,3 +36,6 @@ milliseconds. Supply it for a legacy timed account with an unknown period. An
 existing recorded period must match any supplied value; no-expiry accounts accept
 only zero. The maximum supported period is 36,500 days. Renewing preserves the
 account's subscription URL and connection configuration.
+
+
+For the separate sales bot, renewal is additive and edits the existing client without resetting its consumption. The customer can select another plan in the service category. See [sales bot](../telegram-bot/README-server.txt), [migration](BOT-LOCATION-MIGRATION.fa.md) and [integration API](REPRESENTATIVE-BOT-API.fa.md). The panel `renewClient` operation described above has different reset semantics.

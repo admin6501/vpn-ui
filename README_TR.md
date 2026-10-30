@@ -6,7 +6,7 @@ VPN-UI, çok protokollü bir VPN yönetim panelidir. **v1.0.0, bu çatalın ilk 
 
 ## On üç dil
 
-Panel, abonelik tarayıcı sayfası, Telegram botu ve paylaşılan kullanıcı arayüzü kontrolleri İngilizce, Farsça, Arapça, İspanyolca, Endonezce, Japonca, Brezilya Portekizcesi, Rusça, Türkçe, Ukraynaca, Vietnamca, Basitleştirilmiş Çince ve Geleneksel Çince'yi desteklemektedir. Dil seçicide web dilini seçin; Telegram ayarlarında bot dilini yapılandırın. Bot, her Telegram sohbeti için ayrı bir otomatik tercihi değil, yapılandırılmış dili kullanır.
+Panel, abonelik tarayıcı sayfası, yerleşik Telegram botu ve paylaşılan kullanıcı arayüzü kontrolleri İngilizce, Farsça, Arapça, İspanyolca, Endonezce, Japonca, Brezilya Portekizcesi, Rusça, Türkçe, Ukraynaca, Vietnamca, Basitleştirilmiş Çince ve Geleneksel Çince'yi desteklemektedir. Dil seçicide web dilini seçin; Telegram ayarlarında bot dilini yapılandırın. Bot, her Telegram sohbeti için ayrı bir otomatik tercihi değil, yapılandırılmış dili kullanır.
 
 Eş zamanlı panel ve abonelik istekleri de dahil olmak üzere web istekleri kendi dillerini korur. Bölgesel değişkenler desteklenen yerel ayarlara çözümlenir. Diyaloglar, takvimler ve sayfalandırmalar seçilen dili kullanır. Protokol tanımlayıcıları, konfigürasyon anahtarları, komut adları ve tanılama çıktıları orijinal söz dizimini korur. Terminal kurulumcuları İngilizce kullanır; geçiş sihirbazı Farsça ve İngilizce sunmaktadır. Bkz. [docs/TRANSLATIONS.md](docs/TRANSLATIONS.md).
 
@@ -153,6 +153,8 @@ Sürüm iş akışı, desteklenen dillerdeki yerel mimarileri, odaklanmış muha
 ## Telegram satış botu
 
 VPN-UI için cüzdanlı isteğe bağlı Telegram satış ve servis yönetimi botu Ubuntu veya Debian üzerine kurulabilir. Yeni kurulum yerel veritabanı oluşturur; Cloudflare verilerini aktarmaz. [Bot kılavuzu](telegram-bot/README-server.txt).
+
+Bağımsız satış botu Farsça kullanır; birden çok panel, kategori, kalan hakkı koruyan yenileme ve isteğe bağlı taşıma sunar. [API](docs/REPRESENTATIVE-BOT-API.fa.md) ve [taşıma](docs/BOT-LOCATION-MIGRATION.fa.md).
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/admin6501/vpn-ui/main/scripts/install-telegram-bot.sh -o install-telegram-bot.sh && sudo bash install-telegram-bot.sh

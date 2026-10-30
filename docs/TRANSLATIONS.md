@@ -21,7 +21,7 @@ The first stable release ships the same complete catalog in thirteen locales:
 ## What follows the selected language
 
 Panel pages, subscription browser presentation, forms, explanations, dialogs and shared component
-controls use the selected web language. The Telegram bot uses the language configured in its
+controls use the selected web language. The built-in management Telegram bot uses the language configured in its
 settings, not a different automatic language for every chat. Terminal installers/menu output is
 English; the migration wizard offers Persian and English. Protocol identifiers, enum values,
 configuration examples, file paths, app names, command names and raw backend diagnostics keep their
@@ -70,3 +70,5 @@ Automated completeness is not proof of perfect prose. Review terminology and tec
 when editing translations, especially bits versus bytes, reset versus renewal, disabled access,
 TLS warnings and protocol-specific default values. For current operation see the
 [panel guide](PANEL-GUIDE.md) or [راهنمای فارسی](PANEL-GUIDE.fa.md).
+
+The separate [sales bot](../telegram-bot/README-server.txt) currently has a Persian interface; it does not share the panel bot language selector.

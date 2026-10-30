@@ -6,7 +6,7 @@ VPN-UI es un panel de gestión de VPN multiprotocolo. **v1.0.0 es la primera ver
 
 ## Trece idiomas
 
-El panel, la página del navegador de suscripción, el bot de Telegram y los controles de interfaz de usuario compartidos admiten inglés, persa, árabe, español, indonesio, japonés, portugués brasileño, ruso, turco, ucraniano, vietnamita, chino simplificado y chino tradicional. Elija el idioma web en el selector de idiomas; configure el idioma del bot en la configuración de Telegram. El bot usa el idioma configurado, no una preferencia automática separada para cada chat de Telegram.
+El panel, la página del navegador de suscripción, el bot integrado de Telegram y los controles de interfaz de usuario compartidos admiten inglés, persa, árabe, español, indonesio, japonés, portugués brasileño, ruso, turco, ucraniano, vietnamita, chino simplificado y chino tradicional. Elija el idioma web en el selector de idiomas; configure el idioma del bot en la configuración de Telegram. El bot usa el idioma configurado, no una preferencia automática separada para cada chat de Telegram.
 
 Las solicitudes web mantienen su propio idioma, incluidas las solicitudes simultáneas de panel y suscripción. Las variantes regionales se resuelven en configuraciones regionales admitidas. Los diálogos, calendarios y paginación utilizan el idioma seleccionado. Los identificadores de protocolo, las claves de configuración, los nombres de comandos y los resultados de diagnóstico conservan su sintaxis original. Los instaladores de terminales utilizan el inglés; el asistente de migración ofrece persa e inglés. Consulte [docs/TRANSLACIONES.md](docs/TRANSLATIONS.md).
 
@@ -153,6 +153,8 @@ El flujo de trabajo de lanzamiento valida ambas arquitecturas nativas, contabili
 ## Bot de ventas de Telegram
 
 Hay un bot opcional de ventas y gestión de servicios VPN-UI con monedero para Ubuntu o Debian. La instalación crea una base de datos local nueva y no importa los datos de Cloudflare. [Guía del bot](telegram-bot/README-server.txt).
+
+El bot de ventas independiente usa persa y admite varios paneles, categorías, renovación acumulativa y migración opcional. [API](docs/REPRESENTATIVE-BOT-API.fa.md) y [migración](docs/BOT-LOCATION-MIGRATION.fa.md).
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/admin6501/vpn-ui/main/scripts/install-telegram-bot.sh -o install-telegram-bot.sh && sudo bash install-telegram-bot.sh
