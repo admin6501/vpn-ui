@@ -209,7 +209,7 @@ async function currentPanelIdentity(env) {
 }
 async function listBotPanels(env) {
   const panels=[];
-  if(env.PANEL_URL && env.PANEL_USER && env.PANEL_PASS){const identity=await currentPanelIdentity(env);panels.push({slot:'main',name:'پنل ۱',identity,env});}
+  if(env.PANEL_URL && env.PANEL_USER && env.PANEL_PASS){const identity=await currentPanelIdentity(env),name=(await first(env,"SELECT value FROM settings WHERE key=?",'main_panel_name'))?.value || 'پنل ۱';panels.push({slot:'main',name,identity,env});}
   const rows=await all(env,"SELECT key,value FROM settings WHERE key LIKE 'extra_panel:%' ORDER BY key");
   for(const row of rows){
     const slot=row.key.slice('extra_panel:'.length);if(!/^p[0-9a-f]{12}$/.test(slot))continue;
@@ -1303,6 +1303,12 @@ async function handleAdminUIInput(c, msg) {
   if(step.startsWith('mpedit_')) {
     if(!env.owners.includes(msg.from.id))return send('فقط ادمین اصلی اجازه دارد.');
     const slot=st.admin_ui_key;if(!/^(main|p[0-9a-f]{12})$/.test(slot))return send('پنل نامعتبر است.');const panel=(await listBotPanels(env)).find(p=>p.slot===slot);if(!panel)return send('پنل پیدا نشد.');
+    if(step==='mpedit_name' && slot==='main') {
+      if(!value||value.length>30||/[\r\n]/.test(value))return send('نام پنل معتبر نیست.');
+      if((await listBotPanels(env)).some(p=>p.slot!==slot&&p.name.toLowerCase()===value.toLowerCase()))return send('این نام قبلاً ثبت شده است.');
+      await run(env,"INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",'main_panel_name',value);
+      delete st.admin_ui_step;delete st.admin_ui_key;return sendMsg(env,msg.chat.id,'✅ نام پنل ذخیره شد.',adminBack(`admin:multipanel:${slot}`));
+    }
     const row=slot==='main'?await first(env,'SELECT value FROM settings WHERE key=?','panel_credentials_v1'):await first(env,'SELECT value FROM settings WHERE key=?',`extra_panel:${slot}`);let draft;try{draft=row?await decryptPanel(env.BOT_TOKEN,row.value):{url:panel.env.PANEL_URL,user:panel.env.PANEL_USER,pass:panel.env.PANEL_PASS,name:panel.name,sub:panel.env.cfg.sub_base_url}}catch{return send('اطلاعات پنل قابل خواندن نیست.')}
     if(step==='mpedit_name'){if(!value||value.length>30||/[\r\n]/.test(value))return send('نام پنل معتبر نیست.');if((await listBotPanels(env)).some(p=>p.slot!==slot&&p.name.toLowerCase()===value.toLowerCase()))return send('این نام قبلاً ثبت شده است.');draft.name=value;}
     else if(step==='mpedit_sub'){try{draft.sub=panelURL(value)}catch{return send('آدرس پایه اشتراک باید HTTP یا HTTPS معتبر باشد.')}}
@@ -1885,7 +1891,7 @@ async function handleAdminUICallback(c, cq, answer) {
     if(!owner)return answer('فقط ادمین اصلی اجازه دارد.',true);const slot=d.split(':')[2],panel=(await listBotPanels(env)).find(p=>p.slot===slot);if(!panel)return answer('پنل پیدا نشد.',true);
     const choices=await panelChoices(panel.env),state=choices ? '✅ متصل' : '⚠️ اتصال یا دسترسی ناموفق';
     const buttons=[[btn('🌐 آدرس پنل',`admin:mpurl:${slot}`),btn('👤 نام کاربری',`admin:mpuser:${slot}`)],[btn('🔑 رمز عبور',`admin:mppass:${slot}`),btn('🔗 آدرس ساب',`admin:mpsub:${slot}`)]];
-    if(slot!=='main')buttons.push([btn('✏️ نام پنل',`admin:mpname:${slot}`)]);buttons.push([btn('🌍 انتقال گروهی سرویس‌ها',`bulk:start:${slot}`)],[btn('📋 وضعیت انتقال‌ها','bulk:history:0')],[btn('🗑 حذف پنل',`admin:mpdelete:${slot}`)],[btn('🔙 پنل‌ها','admin:multipanels')]);
+    buttons.push([btn('✏️ نام پنل',`admin:mpname:${slot}`)]);buttons.push([btn('🌍 انتقال گروهی سرویس‌ها',`bulk:start:${slot}`)],[btn('📋 وضعیت انتقال‌ها','bulk:history:0')],[btn('🗑 حذف پنل',`admin:mpdelete:${slot}`)],[btn('🔙 پنل‌ها','admin:multipanels')]);
     const httpNotice=/^http:\/\//i.test(panel.env.PANEL_URL)?'\n⚠️ اتصال HTTP رمز عبور و اطلاعات را رمزگذاری نمی‌کند.':'';
     return renderAdmin(`🖥 <b>${esc(panel.name)}</b>\nوضعیت: ${state}\nتعداد گروه‌ها: ${choices ? choices.groups.length : 'نامشخص'}\nآدرس: <code>${esc(panel.env.PANEL_URL)}</code>\nنام کاربری: <code>${esc(panel.env.PANEL_USER)}</code>\nآدرس ساب: <code>${esc(panel.env.cfg.sub_base_url)}</code>${httpNotice}`,kb(buttons));
   }

@@ -24,6 +24,14 @@ test('broadcast previews and sends photos, voice and forwards with original Tele
   assert.ok(sent.some(x=>x.method===method&&x.params.chat_id===2&&x.params.from_chat_id===1));
  }
 });
+test('existing queued media reference survives SQLite readers that truncate leading NUL',async()=>{
+ const f=fixture();await f.message(2,'/start');
+ f.sql.prepare("INSERT INTO bot_message_jobs(id,creator_id,audience,body,status,created_ms) VALUES(1,1,'broadcast',?,'queued',0)").run('\u0000telegram-message:'+JSON.stringify({chatId:1,messageId:123,forward:true}));
+ f.sql.exec("INSERT INTO bot_message_targets(job_id,user_id,status) VALUES(1,2,'pending')");
+ const sent=[];await processMessageJobs(f.env,async(id,body)=>{sent.push(queuedMessagePayload(id,body));return {ok:true}});
+ assert.deepEqual(sent[0],{method:'forwardMessage',params:{chat_id:2,from_chat_id:1,message_id:123}});
+ assert.equal(f.sql.prepare('SELECT status FROM bot_message_targets WHERE user_id=2').get().status,'sent');
+});
 test('broadcast refuses media albums rather than silently sending only one item',async()=>{
  const f=fixture();await f.cb(1,'admin:broadcast');await f.media(1,{photo:[{file_id:'a'}],media_group_id:'group'});assert.equal(f.sql.prepare('SELECT COUNT(*) n FROM bot_message_jobs').get().n,0);assert.ok(f.out.some(x=>x.body.text?.includes('آلبوم')));
 });
