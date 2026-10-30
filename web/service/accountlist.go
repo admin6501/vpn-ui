@@ -217,16 +217,22 @@ func (s *AccountService) ListAccounts(user *model.User, page, size int, search, 
 	}
 
 	var admins []model.User
-	if err := db.Select("id,username,is_super_admin").Find(&admins).Error; err != nil {
+	if err := db.Select("id,username,is_super_admin,is_panel_owner").Order("id").Find(&admins).Error; err != nil {
 		return nil, err
 	}
 	names := map[int]string{}
-	rootID := 0
+	rootID, firstSuperID := 0, 0
 	for _, admin := range admins {
 		names[admin.Id] = admin.Username
-		if admin.IsSuperAdmin && rootID == 0 {
+		if admin.IsPanelOwner && rootID == 0 {
 			rootID = admin.Id
 		}
+		if admin.IsSuperAdmin && firstSuperID == 0 {
+			firstSuperID = admin.Id
+		}
+	}
+	if rootID == 0 {
+		rootID = firstSuperID
 	}
 	visible, err := s.visibilityFilter(user)
 	if err != nil {
@@ -270,6 +276,9 @@ func (s *AccountService) ListAccounts(user *model.User, page, size int, search, 
 		}
 		row.GroupIDs = append([]int{}, groupIDs[account.Id]...)
 		row.OwnerID = owner[key]
+		if row.OwnerID == 0 {
+			row.OwnerID = account.OwnerAdminID
+		}
 		if row.OwnerID == 0 {
 			row.OwnerID = rootID
 		}

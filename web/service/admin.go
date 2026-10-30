@@ -414,6 +414,12 @@ func (s *AdminService) DeleteAdmin(id int) error {
 	if owned > 0 {
 		return fmt.Errorf("this admin still owns %d inbound(s); delete or reassign them first", owned)
 	}
+	if err := db.Model(&model.Account{}).Where("owner_admin_id = ?", id).Count(&owned).Error; err != nil {
+		return err
+	}
+	if owned > 0 {
+		return fmt.Errorf("this admin still owns %d client account(s); transfer them first", owned)
+	}
 	return db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Where("user_id = ?", id).Delete(&model.AdminGroupAccess{}).Error; err != nil {
 			return err

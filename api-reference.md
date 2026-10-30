@@ -1743,6 +1743,8 @@ curl -sS -b "$JAR" -X POST "$BASE/panel/api/clients/transferOwner" \
   --data-urlencode 'ownerId=6'
 ```
 
+New clients created by a super administrator record that administrator as owner. Admin-to-admin transfers preserve the client state and usage. Older clients without a stored administrator owner retain the default-owner display; their creator cannot be inferred. The endpoint accepts form or JSON payloads.
+
 Choose actual IDs returned by the account and owners endpoints. The service checks eligibility,
 user-count limits and consumption-based ownership rules transactionally. Legacy prepaid ownership
 transfers are rejected. A representative role with an all scope may intentionally see more accounts;

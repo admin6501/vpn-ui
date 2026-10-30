@@ -1068,7 +1068,12 @@ func (a *InboundController) addInboundClient(c *gin.Context) {
 		return
 	}
 
-	needRestart, err := a.inboundService.AddInboundClient(data)
+	var needRestart bool
+	if user := session.GetLoginUser(c); user != nil && (user.IsSuperAdmin || user.IsPanelOwner) {
+		needRestart, err = a.inboundService.AddInboundClientForAdmin(data, user.Id)
+	} else {
+		needRestart, err = a.inboundService.AddInboundClient(data)
+	}
 	if err != nil {
 		// The reservation paid for an account that never landed. Give it back.
 		if rerr := resellerService.Rollback(ticket); rerr != nil {
@@ -1210,7 +1215,11 @@ func (a *InboundController) saveAccountClient(c *gin.Context) {
 		}
 	}
 
-	if _, err := accountService.SaveAccountWithoutInbound(entry); err != nil {
+	ownerID := 0
+	if user := session.GetLoginUser(c); user != nil && (user.IsSuperAdmin || user.IsPanelOwner) {
+		ownerID = user.Id
+	}
+	if _, err := accountService.SaveAccountWithoutInbound(entry, ownerID); err != nil {
 		jsonMsg(c, I18nWeb(c, "somethingWentWrong"), err)
 		return
 	}

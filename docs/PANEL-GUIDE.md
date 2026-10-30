@@ -40,6 +40,12 @@ identities with separate quota/state. Use a single account with multiple members
 quota. A subscription token is a credential: never publish screenshots containing complete links,
 UUIDs, passwords, private keys or QR codes.
 
+## Client ownership
+
+New clients created by a super administrator record that administrator as owner. A super administrator can transfer ownership from the Users page to another super administrator or an eligible representative. Admin-to-admin transfer preserves usage, credentials, subscription, status and memberships; representative billing rules still apply. Transfer owned clients before deleting their administrator.
+
+Older administrator-created clients may lack creator records. The panel shows the default owner for those accounts and cannot infer the original creator; assign the correct owner manually if needed.
+
 ## Reading status and usage
 
 A checked **Enabled** switch records the administrator's intent. Effective access additionally

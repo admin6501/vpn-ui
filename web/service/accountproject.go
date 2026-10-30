@@ -580,6 +580,7 @@ func (s *AccountService) upsertAccountFromEntry(tx *gorm.DB, entry map[string]an
 		return nil, err
 	}
 	updated.Id = account.Id
+	updated.OwnerAdminID = account.OwnerAdminID
 	updated.ProtocolCredentials = account.ProtocolCredentials
 	updated.RepresentativeBlocked = account.RepresentativeBlocked
 	updated.ImportedResetDays = account.ImportedResetDays
@@ -1215,7 +1216,7 @@ func (s *AccountService) ApplyMembershipsFrom(email string, anchorInboundId int,
 // The membership set is the CALLER's next call (ApplyMembershipsFrom): this writes
 // the account, that decides what serves it, and keeping them apart is what lets the
 // same handler create an account on nothing and re-attach one to three inbounds.
-func (s *AccountService) SaveAccountWithoutInbound(entry map[string]any) (*model.Account, error) {
+func (s *AccountService) SaveAccountWithoutInbound(entry map[string]any, ownerAdminID ...int) (*model.Account, error) {
 	encoded, err := json.Marshal(entry)
 	if err != nil {
 		return nil, err
@@ -1255,6 +1256,12 @@ func (s *AccountService) SaveAccountWithoutInbound(entry map[string]any) (*model
 		account, err := s.upsertAccountFromEntry(tx, entry, nil)
 		if err != nil {
 			return err
+		}
+		if existing == nil && len(ownerAdminID) > 0 && ownerAdminID[0] > 0 {
+			account.OwnerAdminID = ownerAdminID[0]
+			if err := tx.Model(account).Update("owner_admin_id", account.OwnerAdminID).Error; err != nil {
+				return err
+			}
 		}
 
 		if !hasTraffic {

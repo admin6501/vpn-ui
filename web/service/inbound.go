@@ -2011,6 +2011,16 @@ func (s *InboundService) updateClientTraffics(tx *gorm.DB, oldInbound *model.Inb
 }
 
 func (s *InboundService) AddInboundClient(data *model.Inbound) (bool, error) {
+	return s.addInboundClient(data, 0)
+}
+
+// AddInboundClientForAdmin records the creating super administrator together
+// with the account rows; representative ownership remains in the billing ledger.
+func (s *InboundService) AddInboundClientForAdmin(data *model.Inbound, ownerID int) (bool, error) {
+	return s.addInboundClient(data, ownerID)
+}
+
+func (s *InboundService) addInboundClient(data *model.Inbound, ownerID int) (bool, error) {
 	// Before anything parses the settings: interfaceClients below is spliced into the
 	// inbound's stored JSON verbatim, so an email left untrimmed here is persisted.
 	data.Settings = normalizeClientEmails(data.Settings)
@@ -2218,7 +2228,25 @@ func (s *InboundService) AddInboundClient(data *model.Inbound) (bool, error) {
 	}
 	s.xrayApi.Close()
 
-	return needRestart, tx.Save(oldInbound).Error
+	if err = tx.Save(oldInbound).Error; err != nil {
+		return false, err
+	}
+	if ownerID > 0 {
+		if err = (&AccountService{}).SyncInboundAccounts(tx, data.Id); err != nil {
+			return false, err
+		}
+		for _, client := range clients {
+			result := tx.Model(&model.Account{}).Where("LOWER(TRIM(email)) = ?", accountKey(client.Email)).Update("owner_admin_id", ownerID)
+			if err = result.Error; err != nil {
+				return false, err
+			}
+			if result.RowsAffected != 1 {
+				err = common.NewError("created account owner could not be recorded")
+				return false, err
+			}
+		}
+	}
+	return needRestart, nil
 }
 
 // clientIdentityKey returns the settings-JSON field a protocol's clients are

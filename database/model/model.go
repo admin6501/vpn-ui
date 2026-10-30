@@ -644,6 +644,10 @@ type ClientGrePeer struct {
 type Account struct {
 	Id int `json:"id" gorm:"primaryKey;autoIncrement"`
 
+	// Administrative ownership is separate from reseller billing. Zero marks a
+	// legacy account whose original creator was not recorded.
+	OwnerAdminID int `json:"-" gorm:"not null;default:0;index"`
+
 	// Email is the identity, and is matched case-insensitively after trimming (see
 	// AccountKey). uniqueIndex here mirrors xray.ClientTraffic.Email's own unique
 	// constraint; relaxing either was rejected twice before (see
