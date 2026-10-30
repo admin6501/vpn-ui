@@ -91,6 +91,8 @@ func (a *InboundController) initRouter(g *gin.RouterGroup) {
 	g.POST("/:id/copyClients", requirePerm(model.PermCreateClient), owns, a.copyInboundClients)
 	g.POST("/:id/delClient/:clientId", requirePerm(model.PermDeleteClient), owns, a.delInboundClient)
 	g.POST("/updateClient/:clientId", requirePerm(model.PermEditClient), a.updateInboundClient)
+	g.POST("/updateClientByEmail", requirePerm(model.PermEditClient), a.updateInboundClientByEmail)
+	g.GET("/updateClientByEmailCapability", requirePerm(model.PermEditClient), func(c *gin.Context) { jsonObj(c, gin.H{"supported": true, "guardedExpiry": true}, nil) })
 	// The two routes for an account NO inbound addresses. Neither is a second write
 	// path for an ordinary client: an account with a membership is created, edited and
 	// deleted through the three routes above, and these exist for the state those
@@ -1411,6 +1413,44 @@ func (a *InboundController) delInboundClient(c *gin.Context) {
 }
 
 // updateInboundClient updates a client's configuration in an inbound.
+func (a *InboundController) updateInboundClientByEmail(c *gin.Context) {
+	if !strings.HasPrefix(strings.ToLower(c.ContentType()), "application/x-www-form-urlencoded") {
+		jsonMsg(c, "", fmt.Errorf("form encoding required"))
+		return
+	}
+	var data model.Inbound
+	if err := c.ShouldBind(&data); err != nil {
+		jsonMsg(c, "", err)
+		return
+	}
+	entry, err := singlePostedClientEntry(data.Settings)
+	if err != nil {
+		jsonMsg(c, "", err)
+		return
+	}
+	email, _ := entry["email"].(string)
+	if err = service.ValidateClientEmail(email); err != nil {
+		jsonMsg(c, "", err)
+		return
+	}
+	if !a.callerOwnsInbound(c, data.Id) || !a.callerMayTouchClient(c, email) {
+		jsonMsg(c, "", errNotOwned)
+		return
+	}
+	inbound, err := a.inboundService.GetInbound(data.Id)
+	if err != nil {
+		jsonMsg(c, "", err)
+		return
+	}
+	identity, err := a.inboundService.ClientIdentityForEmail(inbound, email)
+	if err != nil {
+		jsonMsg(c, "", err)
+		return
+	}
+	c.Params = append(c.Params, gin.Param{Key: "clientId", Value: identity})
+	a.updateInboundClient(c)
+}
+
 func (a *InboundController) updateInboundClient(c *gin.Context) {
 	clientId := c.Param("clientId")
 
@@ -1456,6 +1496,27 @@ func (a *InboundController) updateInboundClient(c *gin.Context) {
 	if err != nil {
 		jsonMsg(c, I18nWeb(c, "somethingWentWrong"), err)
 		return
+	}
+	// A bot selling a specific number of days must not silently grant a different
+	// duration when a representative's days-per-GB policy rewrites the edit. This
+	// optional precondition leaves all existing panel edits unchanged.
+	if requested := c.PostForm("expectedExpiry"); requested != "" {
+		expected, parseErr := strconv.ParseInt(requested, 10, 64)
+		entry, entryErr := singlePostedClientEntry(inbound.Settings)
+		actual, numberOK := entry["expiryTime"].(float64)
+		const maxSafeInteger = int64(9007199254740991)
+		valid := parseErr == nil && entryErr == nil && numberOK && expected >= -maxSafeInteger && expected <= maxSafeInteger && actual >= -float64(maxSafeInteger) && actual <= float64(maxSafeInteger) && actual == float64(int64(actual))
+		if valid {
+			delta := int64(actual) - expected
+			valid = delta >= -5000 && delta <= 5000
+		}
+		if !valid {
+			if rerr := resellerService.Rollback(ticket); rerr != nil {
+				logger.Warning("rolling back guarded edit charge: ", rerr)
+			}
+			jsonMsg(c, "", fmt.Errorf("requested expiry conflicts with representative policy"))
+			return
+		}
 	}
 
 	// The email as STORED, read before the write replaces it. An edit may rename the
