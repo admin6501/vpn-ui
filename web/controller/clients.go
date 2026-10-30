@@ -94,17 +94,15 @@ func (a *ClientsController) owners(c *gin.Context) {
 	jsonObj(c, rows, err)
 }
 func (a *ClientsController) transferOwner(c *gin.Context) {
-	id, err := strconv.Atoi(c.PostForm("accountId"))
-	if err != nil {
-		jsonMsg(c, "Invalid account", err)
+	var input struct {
+		AccountID int `json:"accountId" form:"accountId" binding:"required,gt=0"`
+		OwnerID   int `json:"ownerId" form:"ownerId" binding:"required,gt=0"`
+	}
+	if err := c.ShouldBind(&input); err != nil {
+		jsonMsg(c, "Invalid account or owner", err)
 		return
 	}
-	owner, err := strconv.Atoi(c.PostForm("ownerId"))
-	if err != nil {
-		jsonMsg(c, "Invalid owner", err)
-		return
-	}
-	err = accountService.TransferOwnership(session.GetLoginUser(c), id, owner)
+	err := accountService.TransferOwnership(session.GetLoginUser(c), input.AccountID, input.OwnerID)
 	if err == nil {
 		(&service.XrayService{}).SetToNeedRestart()
 	}

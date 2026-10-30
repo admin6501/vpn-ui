@@ -20,7 +20,7 @@ func (s *AccountService) OwnershipChoices(actor *model.User) ([]AccountOwnerChoi
 		return nil, errors.New("only the panel owner can transfer accounts")
 	}
 	var rows []AccountOwnerChoice
-	err := database.GetDB().Model(&model.User{}).Select("id,username").Where("is_super_admin = ? OR (is_reseller = ? AND representative_role_id > 0)", true, true).Scan(&rows).Error
+	err := database.GetDB().Model(&model.User{}).Select("id,username").Where("is_super_admin = ? OR is_panel_owner = ? OR (is_reseller = ? AND representative_role_id > 0)", true, true, true).Scan(&rows).Error
 	return rows, err
 }
 func (s *AccountService) TransferOwnership(actor *model.User, accountID, newOwnerID int) error {
@@ -36,7 +36,7 @@ func (s *AccountService) TransferOwnership(actor *model.User, accountID, newOwne
 		if err := tx.First(&target, newOwnerID).Error; err != nil {
 			return err
 		}
-		if !target.IsSuperAdmin && (!target.IsReseller || target.RepresentativeRoleID == 0) {
+		if !target.IsSuperAdmin && !target.IsPanelOwner && (!target.IsReseller || target.RepresentativeRoleID == 0) {
 			return errors.New("target must be a PasarGuard representative or panel owner")
 		}
 		var old model.ResellerClient
@@ -46,6 +46,11 @@ func (s *AccountService) TransferOwnership(actor *model.User, accountID, newOwne
 		}
 		if err == nil && old.UserId == newOwnerID {
 			return nil
+		}
+		// Admin-to-admin transfers change only ownership. Do not touch a disabled
+		// account, its usage, credentials, memberships or running core.
+		if old.Id == 0 && (target.IsSuperAdmin || target.IsPanelOwner) {
+			return tx.Model(&a).Update("owner_admin_id", newOwnerID).Error
 		}
 		var ct xray.ClientTraffic
 		if err := tx.Where("email = ?", a.Email).First(&ct).Error; err != nil {
@@ -69,7 +74,14 @@ func (s *AccountService) TransferOwnership(actor *model.User, accountID, newOwne
 				return err
 			}
 		}
-		if !target.IsSuperAdmin {
+		ownerID := 0
+		if target.IsSuperAdmin || target.IsPanelOwner {
+			ownerID = target.Id
+		}
+		if err := tx.Model(&a).Update("owner_admin_id", ownerID).Error; err != nil {
+			return err
+		}
+		if !target.IsSuperAdmin && !target.IsPanelOwner {
 			if err := enforceRepresentativeUserCount(tx, newOwnerID); err != nil {
 				return err
 			}
