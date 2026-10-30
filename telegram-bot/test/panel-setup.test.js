@@ -49,8 +49,8 @@ test('non-owner cannot configure panel and owner may switch with existing servic
  assert.ok(f.sql.prepare("SELECT value FROM settings WHERE key='panel_credentials_v1'").get());assert.ok(f.panelRequests.length>0);assert.ok(f.sql.prepare("SELECT * FROM services WHERE user_id=2").get());
 });
 
-test('invalid HTTP URL does not persist credentials',async()=>{
- const f=fixture();await f.cb(1,'admin:panelsetup');await f.message(1,'http://panel.example/path');assert.equal(f.sql.prepare("SELECT value FROM settings WHERE key='panel_credentials_v1'").get(),undefined);assert.ok(f.out.some(x=>x.body.text?.includes('HTTPS')));
+test('unsupported URL does not persist credentials',async()=>{
+ const f=fixture();await f.cb(1,'admin:panelsetup');await f.message(1,'ftp://panel.example/path');assert.equal(f.sql.prepare("SELECT value FROM settings WHERE key='panel_credentials_v1'").get(),undefined);assert.ok(f.out.some(x=>x.body.text?.includes('HTTP')));
 });
 
 test('rotating bot token permits re-entering the same account without clearing service settings',async()=>{

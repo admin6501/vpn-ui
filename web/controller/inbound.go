@@ -128,6 +128,8 @@ func (a *InboundController) initRouter(g *gin.RouterGroup) {
 	g.POST("/onlineMemberships", read, a.onlineMemberships)
 	g.POST("/lastOnline", read, a.lastOnline)
 	g.POST("/updateClientTraffic/:email", requirePerm(model.PermEditClient), ownsClient, a.updateClientTraffic)
+	g.POST("/migrationImportUsage/:email", requirePerm(model.PermEditClient), ownsClient, a.migrationImportUsage)
+	g.GET("/migrationCapability", requirePerm(model.PermEditClient), func(c *gin.Context) { jsonObj(c, gin.H{"usageImport": true}, nil) })
 	g.GET("/multiDeleteCapability", read, func(c *gin.Context) { jsonObj(c, gin.H{"preservesSharedTraffic": true}, nil) })
 	g.POST("/:id/delClientByEmail/:email", requirePerm(model.PermDeleteClient), owns, a.delInboundClientByEmail)
 	g.GET("/:id/ovpn/:proto", read, owns, a.downloadOvpn)
@@ -2433,6 +2435,27 @@ func (a *InboundController) updateClientTraffic(c *gin.Context) {
 	}
 
 	jsonMsg(c, I18nWeb(c, "pages.inbounds.toasts.inboundClientUpdateSuccess"), nil)
+}
+
+// migrationImportUsage only initializes a disabled destination account. Importing
+// lifetime accounting is reserved to the panel's super-administrator.
+func (a *InboundController) migrationImportUsage(c *gin.Context) {
+	user := session.GetLoginUser(c)
+	if user == nil || !user.IsSuperAdmin {
+		pureJsonMsg(c, http.StatusForbidden, false, "migration usage import requires the main administrator")
+		return
+	}
+	var request struct {
+		Upload   int64 `json:"upload"`
+		Download int64 `json:"download"`
+		AllTime  int64 `json:"allTime"`
+	}
+	if err := c.ShouldBindJSON(&request); err != nil {
+		jsonMsg(c, "", err)
+		return
+	}
+	err := service.ImportMigrationUsage(c.Param("email"), request.Upload, request.Download, request.AllTime)
+	jsonMsg(c, I18nWeb(c, "pages.inbounds.toasts.inboundClientUpdateSuccess"), err)
 }
 
 // downloadOvpn generates and returns an .ovpn client config file.

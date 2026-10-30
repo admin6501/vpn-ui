@@ -3,6 +3,10 @@ import { parseMoney, walletBalance, reserveWalletPayment, completeWalletPayment,
 import { encryptPanel, decryptPanel, panelURL, panelAccountKey, probePanel } from './panel-config.js';
 import { applyCoupon, expireCouponReservations, cancelDraftOrder, normalizeCoupon, validCouponCode } from './coupons.js';
 import { createMessageJob, confirmMessageJob, processMessageJobs, encodeMessageReference, queuedMessagePayload } from './messages.js';
+import { migrationSnapshot, advanceMigration } from './migration.js';
+import { commitMigrationService } from './migration-commit.js';
+import { migrationJournal } from './migration-journal.js';
+import { bulkMigrationQueue } from './bulk-migration.js';
 
 // ربات فروش کانفیگ | NovaRay VPN — Cloudflare Workers + D1 + اتصال به پنل vpn-ui
 // ساخت/تمدید/حذف سرویس مستقیم از طریق API پنل (حساب نماینده) انجام می‌شود.
@@ -65,6 +69,7 @@ const META = {
   alerts_gb: ["number", "📦 هشدار چند گیگ مانده"],
   auto_delete_enabled: ["bool", "🗑 حذف خودکار اشتراک منقضی"],
   auto_delete_days: ["int", "📅 حذف چند روز پس از انقضا"],
+  location_change_enabled: ["bool", "🌍 تغییر لوکیشن توسط مشتری"],
   card_number: ["text", "شماره کارت"],
   card_holder: ["text", "نام صاحب کارت"],
   support_id: ["text", "آیدی پشتیبانی (با @)"],
@@ -72,7 +77,6 @@ const META = {
   channel_link: ["text", "لینک کانال"],
   main_menu_image_url: ["text", "لینک عکس منوی اصلی (برای خالی کردن: -)"],
   start_text: ["text", "متن پیام شروع"],
-  sub_base_url: ["text", "آدرس پایه لینک ساب، مثلا https://example.com:8000/sub/"],
 };
 
 const defaults = (env) => ({
@@ -89,6 +93,7 @@ const defaults = (env) => ({
   alerts_gb: "1",
   auto_delete_enabled: "0",
   auto_delete_days: "7",
+  location_change_enabled: "0",
   test_category_id: "",
   card_number: env.CARD_NUMBER || "",
   card_holder: env.CARD_HOLDER || "",
@@ -210,6 +215,15 @@ async function relatedServiceOrders(env,svc) {
   const main=root.PANEL_URL && root.PANEL_USER ? await currentPanelIdentity(root) : '';
   return all(root,"SELECT o.id,o.status FROM orders o WHERE o.user_id=? AND (o.renew_service_id=? OR EXISTS(SELECT 1 FROM provision_attempts p LEFT JOIN bot_order_routes r ON r.order_id=o.id WHERE p.sub_id=? AND p.email=? AND p.attempt_key LIKE 'order:'||o.id||':%' AND (r.panel_identity=? OR (COALESCE(r.panel_identity,'')='' AND ?=1))))",svc.user_id,svc.id,svc.sub_id,svc.panel_email,identity,identity===main?1:0);
 }
+async function panelRemovalBlocker(env,panel) {
+  const entries=await all(env,'SELECT * FROM services');
+  for(const svc of entries){if(!svc.panel_email || !svc.sub_id)return 'هویت بعضی سرویس‌ها نامشخص است؛ ابتدا آن‌ها را بررسی کنید.';try{const owner=await panelForService(env,svc);if(await currentPanelIdentity(owner)===panel.identity)return 'این پنل سرویس ثبت‌شده دارد؛ ابتدا سرویس‌ها را منتقل یا حذف کنید.'}catch{return 'هویت بعضی سرویس‌ها نامشخص است؛ ابتدا آن‌ها را بررسی کنید.'}}
+  const main=panel.slot==='main'?1:0;
+  const active=await first(env,"SELECT COUNT(*) n FROM orders o LEFT JOIN bot_order_routes r ON r.order_id=o.id WHERE (r.order_id IS NULL OR r.panel_identity=? OR (?=1 AND r.panel_identity='')) AND o.status NOT IN ('approved','rejected','cancelled','wallet_failed_refunded','wallet_review_resolved')",panel.identity,main);
+  if(Number(active.n))return 'این پنل سفارش فعال یا نیازمند بررسی دارد.';
+  const ops=await first(env,'SELECT COUNT(*) n FROM service_operations');if(Number(ops.n))return 'عملیات سرویس در جریان یا نیازمند بررسی است.';
+  return '';
+}
 async function assertCategory(env,category) {
   if (!category || Number(category.active ?? category.category_active)!==1 || !parseIds(category.group_ids).length) throw new Error("دسته‌بندی بسته تنظیم نشده یا غیرفعال است");
   const target=await panelForIdentity(env,category.panel_identity);
@@ -257,7 +271,7 @@ async function panelLogin(env, identity) {
   }
   const r = await fetch(`${panelBase(env)}/login`, {
     method: "POST", redirect: "error",
-    ...(env.policySignal ? {signal:AbortSignal.any([env.policySignal,AbortSignal.timeout(15000)])} : {}),
+    signal:env.policySignal ? AbortSignal.any([env.policySignal,AbortSignal.timeout(15000)]) : AbortSignal.timeout(15000),
     headers: { "content-type": "application/x-www-form-urlencoded", "X-Requested-With": "XMLHttpRequest" },
     body: new URLSearchParams({ username: env.PANEL_USER, password: env.PANEL_PASS }).toString(),
   });
@@ -280,9 +294,10 @@ async function panelCall(env, method, path, form, onDispatch) {
     const cookie = panelCookie && panelCookieKey === identity ? panelCookie : await panelLogin(env, identity);
     const headers = { cookie, "X-Requested-With": "XMLHttpRequest" };
     let body;
-    if (form) { headers["content-type"] = "application/x-www-form-urlencoded"; body = form.toString(); }
+    if (form instanceof URLSearchParams) { headers["content-type"] = "application/x-www-form-urlencoded"; body = form.toString(); }
+    else if (form) { headers["content-type"] = "application/json"; body = JSON.stringify(form); }
     if (onDispatch) onDispatch();
-    const r = await fetch(panelBase(env) + path, { method, headers, body, redirect:"error",...(env.policySignal ? {signal:AbortSignal.any([env.policySignal,AbortSignal.timeout(15000)])} : {}) });
+    const r = await fetch(panelBase(env) + path, { method, headers, body, redirect:"error",signal:env.policySignal ? AbortSignal.any([env.policySignal,AbortSignal.timeout(15000)]) : AbortSignal.timeout(15000) });
     const text = await r.text();
     if (r.status === 401 || r.status === 404 || text.trimStart().startsWith("<")) { panelCookie = null; if (method !== "GET") throw new Error("نشست نامعتبر یا نتیجه عملیات نامشخص است؛ پیش از تکرار دستی بررسی کنید"); continue; }
     if (r.status === 403) throw new Error("دسترسی حساب نماینده در پنل کافی نیست (نقش/گروه/اعتبار را بررسی کنید)");
@@ -298,7 +313,7 @@ function subLink(env, subId) {
 }
 
 function assertPanelReady(env) {
-  if (!/^https:\/\//i.test(env.PANEL_URL || "") || !/^https:\/\//i.test(env.cfg.sub_base_url || "")) throw new Error("آدرس پنل و ساب باید HTTPS باشند");
+  try{panelURL(env.PANEL_URL || '');panelURL(env.cfg.sub_base_url || '')}catch{throw new Error('آدرس پنل و ساب باید HTTP یا HTTPS معتبر باشند')}
   if (!env.cfg.sub_base_url) throw new Error("تنظیم sub_base_url خالی است (/set sub_base_url ...)");
 }
 
@@ -342,7 +357,7 @@ async function groupCredentials(env, groupIds=env.cfg.panel_group_ids, anchorId=
   // WireGuard, GRE and MTProto use email as id, set after email is minted.
   return { id, uuid, password, vpnUsername, auth, secret, naiveUsername,
     ...(anchorProtocol === "naive" ? { username: naiveUsername } : {}),
-    ...(anchorProtocol === "vmess" ? { security: "auto" } : {}), anchorProtocol, anchorId:anchor };
+    ...(anchorProtocol === "vmess" ? { security: "auto" } : {}), anchorProtocol, anchorId:anchor, memberIds:inboundIds };
 
 }
 
@@ -357,6 +372,7 @@ async function panelCreate(env, { name, bytes, days, attemptKey, onDispatch, gro
   delete credentials.anchorProtocol;
   const inboundId = credentials.anchorId;
   delete credentials.anchorId;
+  delete credentials.memberIds;
   if (attemptKey) {
     const identity=await currentPanelIdentity(env);
     await env.DB.batch([env.DB.prepare("INSERT INTO provision_attempts(attempt_key,email,sub_id,inbound_id,created_at) VALUES(?,?,?,?,?)").bind(attemptKey,email,subId,inboundId,now()),env.DB.prepare("INSERT INTO settings(key,value) VALUES(?,?)").bind(`attempt_panel:${attemptKey}`,identity)]);
@@ -375,6 +391,163 @@ async function panelCreate(env, { name, bytes, days, attemptKey, onDispatch, gro
   const j = await panelCall(env, "POST", "/panel/api/inbounds/addClient", form, onDispatch);
   if (!j.success) throw new Error("پنل رد کرد: " + (j.msg || JSON.stringify(j)));
   return { email, inboundId, subId, link: subLink(env, subId), bytes };
+}
+
+// Prepare the exact identity before dispatch so a lost reply can be reconciled
+// without inventing another subscription or overwriting an existing account.
+async function prepareMigrationDestination(env, { name, snapshot, renewalDuration, groupIds }) {
+  assertPanelReady(env);
+  if (!name || !snapshot || !Number.isSafeInteger(snapshot.quota) || snapshot.quota < 0 ||
+      !Number.isSafeInteger(snapshot.expiry) ||
+      !Number.isSafeInteger(renewalDuration) || renewalDuration < 0) throw new Error('سهمیه یا تاریخ انتقال نامعتبر است');
+  if (await panelAccount(env, name)) throw new Error('این نام از قبل در پنل مقصد وجود دارد');
+  const credentials = await groupCredentials(env, groupIds, 0);
+  if (['wg-c','awg','wireguard','gre','mtproto'].includes(credentials.anchorProtocol)) credentials.id = name;
+  const inboundId = credentials.anchorId;
+  const memberIds = credentials.memberIds;
+  delete credentials.anchorProtocol;
+  delete credentials.anchorId;
+  delete credentials.memberIds;
+  const subId = b64url(18);
+  return { email: name, inboundId, memberIds, subId, groupIds: parseIds(groupIds), link: subLink(env, subId),
+    client: { ...credentials, email: name, enable: false, subId, totalGB: snapshot.quota,
+      expiryTime: snapshot.expiry, renewalDuration, limitIp: 0, reset: 0 } };
+}
+
+async function createMigrationDestination(env, prepared, onDispatch) {
+  if (!prepared || !prepared.email || !prepared.subId || prepared.client?.enable !== false ||
+      prepared.client.email !== prepared.email || prepared.client.subId !== prepared.subId ||
+      !Number.isSafeInteger(prepared.inboundId) || prepared.inboundId <= 0 ||
+      !Array.isArray(prepared.groupIds) || !prepared.groupIds.length) throw new Error('مشخصات مقصد نامعتبر است');
+  const form = new URLSearchParams();
+  form.set('id', String(prepared.inboundId));
+  for (const id of prepared.groupIds) form.append('groupIds', String(id));
+  form.set('settings', JSON.stringify({ clients: [prepared.client] }));
+  const result = await panelCall(env, 'POST', '/panel/api/inbounds/addClient', form, onDispatch);
+  if (!result.success) throw new Error('پنل مقصد درخواست را رد کرد: ' + (result.msg || 'خطای نامشخص'));
+  return true;
+}
+
+async function importMigrationUsage(env, prepared, snapshot, onDispatch) {
+  if (!prepared?.email || !snapshot || !Number.isSafeInteger(snapshot.upload) || snapshot.upload < 0 ||
+      !Number.isSafeInteger(snapshot.download) || snapshot.download < 0 ||
+      !Number.isSafeInteger(snapshot.allTime) || snapshot.allTime < 0) throw new Error('مصرف انتقال نامعتبر است');
+  const result = await panelCall(env, 'POST', `/panel/api/inbounds/migrationImportUsage/${encodeURIComponent(prepared.email)}`,
+    { upload: snapshot.upload, download: snapshot.download, allTime: snapshot.allTime }, onDispatch);
+  if (!result.success) throw new Error('ثبت مصرف در مقصد تأیید نشد: ' + (result.msg || 'خطای نامشخص'));
+  return true;
+}
+
+async function verifyMigrationDestination(env, prepared, snapshot, enabled) {
+  const account = await panelAccount(env, prepared.email);
+  const response = await panelCall(env, 'GET', `/panel/api/inbounds/getClientTraffics/${encodeURIComponent(prepared.email)}`);
+  const traffic = response.success && response.obj;
+  const members = Array.isArray(account?.memberships) ? account.memberships.map(m => Number(m.inboundId)) : [];
+  if (!account || !traffic || account.email.toLowerCase() !== prepared.email.toLowerCase() || account.subId !== prepared.subId ||
+      account.enable !== enabled || traffic.enable !== enabled || account.totalGB !== snapshot.quota || account.expiryTime !== snapshot.expiry ||
+      account.up !== snapshot.upload || account.down !== snapshot.download || traffic.up !== snapshot.upload || traffic.down !== snapshot.download || traffic.allTime !== snapshot.allTime ||
+      !Array.isArray(prepared.memberIds) || members.length !== prepared.memberIds.length || new Set(members).size !== members.length || prepared.memberIds.some(id => !members.includes(id))) {
+    throw new Error('وضعیت، عضویت‌ها یا مصرف سرویس مقصد تأیید نشد');
+  }
+  return true;
+}
+
+// This reads a consistent pair of database records. It does not prove that
+// active core sessions have stopped or that pending counters have been flushed.
+async function readMigrationSnapshot(env, svc) {
+  const source = await panelForService(env, svc);
+  const account = await panelServiceAccount(env, svc);
+  if (!account) throw new Error('سرویس مبدأ یافت نشد');
+  const response = await panelCall(source, 'GET', `/panel/api/inbounds/getClientTraffics/${encodeURIComponent(svc.panel_email)}`);
+  if (!response.success || !response.obj) throw new Error('خواندن مصرف مبدأ ناموفق بود');
+  return migrationSnapshot(account, response.obj, svc.panel_email, svc.sub_id);
+}
+
+// This changes the database admission flag only. It is not a core-session
+// barrier and must not be used alone as proof that final usage has landed.
+async function setMigrationAdmission(env, svc, enabled, onDispatch) {
+  if (typeof enabled !== 'boolean') throw new Error('وضعیت نامعتبر است');
+  const target = await panelForService(env, svc);
+  const account = await panelServiceAccount(env, svc);
+  if (!account || !Array.isArray(account.memberships) || !account.memberships.length) throw new Error('ورودی‌های سرویس یافت نشدند');
+  const ids = account.memberships.map(m => Number(m.inboundId));
+  if (ids.some(id => !Number.isSafeInteger(id) || id <= 0) || new Set(ids).size !== ids.length) throw new Error('ورودی‌های سرویس نامعتبرند');
+  const data = {op: enabled ? 'enable' : 'disable', targets: ids.map(inboundId => ({inboundId, email:svc.panel_email}))};
+  const response = await panelCall(target, 'POST', '/panel/api/inbounds/bulkUpdateClients', new URLSearchParams({data:JSON.stringify(data)}), onDispatch);
+  if (!response.success) throw new Error('تغییر وضعیت سرویس تأیید نشد');
+  const after = await panelServiceAccount(env, svc);
+  if (!after || after.enable !== enabled || !Array.isArray(after.memberships) || after.memberships.length !== ids.length || ids.some(id => !after.memberships.some(m => Number(m.inboundId) === id))) throw new Error('وضعیت سرویس بعد از تغییر تأیید نشد');
+  return true;
+}
+
+// The database flag is observable but does not prove that all cores have
+// disconnected their sessions or flushed their final counters. Migration using
+// this barrier has approximate usage; the discrepancy has no hard byte bound.
+async function bestEffortMigrationBarrier(env, _job, svc) {
+  const account = await panelServiceAccount(env, svc);
+  if (!account || account.enable !== false) throw new Error('غیرفعال‌شدن سرویس مبدأ تأیید نشد');
+  const target = await panelForService(env, svc);
+  const result = await panelCall(target, 'GET', `/panel/api/inbounds/getClientTraffics/${encodeURIComponent(svc.panel_email)}`);
+  if (!result.success || result.obj?.enable !== false) throw new Error('وضعیت مصرف مبدأ تأیید نشد');
+  return true;
+}
+
+// The caller selects a barrier appropriate to its accepted accounting policy.
+function migrationPanelAdapter(env, freezeBarrier) {
+  const sourceService = async job => {
+    const svc = await getService(env, job.serviceId);
+    if (!svc || svc.panel_email !== job.source.email || svc.sub_id !== job.source.subId) throw new Error('سرویس مبدأ تغییر کرده است');
+    return svc;
+  };
+  const destination = job => panelForIdentity(env, job.destinationPanelIdentity);
+  return {
+    async freezeSource(job) {
+      if (typeof freezeBarrier !== 'function') throw new Error('توقف و ثبت نهایی مصرف هسته پشتیبانی نمی‌شود');
+      const svc = await sourceService(job);
+      await setMigrationAdmission(env, svc, false);
+      if (await freezeBarrier(job, svc) !== true) throw new Error('توقف کامل اتصال و ثبت آخرین مصرف تأیید نشد');
+      return true;
+    },
+    async snapshotSource(job) {
+      const svc = await sourceService(job);
+      const snapshot = await readMigrationSnapshot(env, svc);
+      const target = await destination(job);
+      const prepared = await prepareMigrationDestination(target, {name:svc.panel_email, snapshot,
+        renewalDuration:job.renewalDuration, groupIds:job.destinationGroupIds});
+      return { snapshot, destination:{...prepared, panelIdentity:job.destinationPanelIdentity} };
+    },
+    async createDestination(job) { return createMigrationDestination(await destination(job), job.destination); },
+    async importUsage(job) { return importMigrationUsage(await destination(job), job.destination, job.snapshot); },
+    async verifyDestination(job) { return verifyMigrationDestination(await destination(job), job.destination, job.snapshot, false); },
+    async activateDestination(job) {
+      if (!job.sourceEnabled) return true;
+      return setMigrationAdmission(await destination(job), {panel_email:job.destination.email, sub_id:job.destination.subId}, true);
+    },
+    async verifyActiveDestination(job) { return verifyMigrationDestination(await destination(job), job.destination, job.snapshot, !!job.sourceEnabled); },
+    async deleteSource(job) { await panelDelete(env, await sourceService(job)); return true; },
+    async commitDestination(job) { return commitMigrationService(env.DB, job); },
+  };
+}
+
+async function migrateService(env, svc, cat, expectedSource, onStarted) {
+  const sourceIdentity=await currentPanelIdentity(await panelForService(env,svc));
+  if(expectedSource && sourceIdentity!==expectedSource)throw Error('پنل مبدأ سرویس تغییر کرده است');
+  const target=await panelForIdentity(env,await assertCategory(env,cat));
+  if(await currentPanelIdentity(target)===sourceIdentity)throw Error('پنل مقصد با مبدأ یکسان است');
+  const account=await panelServiceAccount(env,svc);
+  if(!account || typeof account.enable!=='boolean' || !Number.isSafeInteger(account.expiryTime) || !Number.isSafeInteger(account.totalGB) || account.totalGB<0 || !Number.isSafeInteger(account.up) || account.up<0 || !Number.isSafeInteger(account.down) || account.down<0 || !Number.isSafeInteger(account.up+account.down)) throw Error('وضعیت یا مصرف سرویس مبدأ معتبر نیست');
+  const sourceEnabled=account.enable && !(account.expiryTime>0 && account.expiryTime<=Date.now()) && !(account.totalGB>0 && account.up+account.down>=account.totalGB);
+  if((await relatedServiceOrders(env,svc)).some(o=>!['approved','rejected','cancelled','wallet_failed_refunded','wallet_review_resolved'].includes(o.status)))throw Error('سفارش مرتبط در انتظار است');
+  await groupCredentials(target,cat.group_ids,0);assertPanelReady(target);
+  if(await panelAccount(target,svc.panel_email))throw Error('نام سرویس در پنل مقصد از قبل وجود دارد');
+  const capability=await panelCall(target,'GET','/panel/api/inbounds/migrationCapability');if(!capability.success || capability.obj?.usageImport!==true)throw Error('پنل مقصد باید به نسخهٔ پشتیبان انتقال به‌روزرسانی شود');
+  const oldMapping=await first(env,'SELECT value FROM settings WHERE key=?',`service_panel:${svc.id}`);
+  const journal=migrationJournal(env.DB), jobId=crypto.randomUUID();
+  await journal.create(jobId,svc.id,{source:{email:svc.panel_email,subId:svc.sub_id,panelMapping:oldMapping?.value ?? null},sourceEnabled,destinationPanelIdentity:await currentPanelIdentity(target),destinationGroupIds:cat.group_ids,renewalDuration:Number(account.renewalDuration)||durationDays(svc.duration)*DAY_MS});
+  if(onStarted)await onStarted();
+  await advanceMigration(journal,migrationPanelAdapter(env,(job,s)=>bestEffortMigrationBarrier(env,job,s)),jobId);
+  await journal.releaseComplete(jobId);
+  return true;
 }
 
 // تمدید: مصرف صفر می‌شود و مدت از الان شروع می‌شود (مدت ثبت‌شده هنگام ساخت)
@@ -574,9 +747,10 @@ function serviceCaption(name, volume, dur, sub, cfg, header) {
 const sendServiceCard = (env, chat_id, name, volume, dur, sub, cfg, keyboard, header) =>
   sendMsg(env, chat_id, serviceCaption(name, volume, dur, sub, cfg, header), keyboard);
 
-const serviceKb = (id) => kb([
+const serviceKb = (id, env) => kb([
   [btn("🔗 کانفیگ‌ها و QR", `cfglist:${id}:0`)],
   [btn("🔄 تمدید سرویس", `renew_${id}`)],
+  ...(env?.cfg?.location_change_enabled === '1' ? [[btn('🌍 تغییر لوکیشن',`loc:list:${id}`)]] : []),
   [btn("🗑 حذف سرویس", `delsvc_${id}`)],
   [btn("🔙 بازگشت", "my_services")],
 ]);
@@ -590,7 +764,7 @@ async function subscriptionLinks(svc) {
     throw new Error("لینک اشتراک این سرویس ثبت نشده است.");
   }
   const url = new URL(svc.sub_link);
-  if (url.protocol !== "https:" || url.username || url.password || url.hash) throw new Error("آدرس اشتراک معتبر و امن نیست.");
+  if (!['http:','https:'].includes(url.protocol) || url.username || url.password || url.hash) throw new Error("آدرس اشتراک معتبر نیست.");
   url.pathname = url.pathname.replace(/\/+$/, "") + "/raw";
   const r = await fetch(url.toString(), { headers: {Accept:"text/plain", "User-Agent":"VPN-UI-Telegram-Bot/1.0"}, redirect:"error", signal:AbortSignal.timeout(15000) });
   if (!r.ok || !r.body) throw new Error(`دریافت اشتراک ناموفق بود (HTTP ${r.status}).`);
@@ -660,9 +834,10 @@ async function createInvoice(c, user, chat_id, name, plan, renewId, cq) {
   const days = Number(plan.days);
   if (!Number.isSafeInteger(days) || days <= 0 || days>36500 || !Number.isSafeInteger(Date.now()+days*DAY_MS)) throw new Error("مدت سرویس مشخص نیست؛ با پشتیبانی تماس بگیرید");
   const r = await run(env,
-    "INSERT INTO orders(user_id,username,service_name,volume,price,discount,final_price,duration,renew_service_id,gb,days,created_at,status) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+    "INSERT INTO orders(user_id,username,service_name,volume,price,discount,final_price,duration,renew_service_id,gb,days,created_at,status) SELECT ?,?,?,?,?,?,?,?,?,?,?,?,? WHERE EXISTS(SELECT 1 FROM bot_plan_specs s JOIN plans p ON p.key=s.plan_key JOIN bot_categories c ON c.id=s.category_id WHERE s.plan_key=? AND c.id=? AND c.active=1 AND c.group_ids=? AND COALESCE(c.panel_identity,'')=? AND s.days=? AND p.gb=? AND p.price=?) AND (? IS NULL OR NOT EXISTS(SELECT 1 FROM service_operations WHERE service_id=?))",
     user.id, user.username || "-", name, planLabel(plan), plan.price, 0, plan.price, durationText(days),
-    renewId || null, plan.gb, days, now(), "draft");
+    renewId || null, plan.gb, days, now(), "draft",plan.key,plan.category_id,plan.group_ids,plan.panel_identity || '',days,plan.gb,plan.price,renewId || null,renewId || null);
+  if(!r.meta.changes)throw new Error('بسته یا پنل تغییر کرده است؛ دوباره انتخاب کنید');
   const orderId = r.meta.last_row_id;
   await run(env,"INSERT INTO bot_order_routes(order_id,group_ids,anchor_id,panel_identity) VALUES(?,?,0,?)",orderId,plan.group_ids,identity);
   await reserveReferral(env,orderId,user.id);
@@ -1052,12 +1227,24 @@ async function handleAdminUIInput(c, msg) {
   }
   if(step.startsWith('mpedit_')) {
     if(!env.owners.includes(msg.from.id))return send('فقط ادمین اصلی اجازه دارد.');
-    const slot=st.admin_ui_key;if(!/^p[0-9a-f]{12}$/.test(slot))return send('پنل نامعتبر است.');const row=await first(env,'SELECT value FROM settings WHERE key=?',`extra_panel:${slot}`);let draft;try{draft=await decryptPanel(env.BOT_TOKEN,row.value)}catch{return send('اطلاعات پنل قابل خواندن نیست.')}
+    const slot=st.admin_ui_key;if(!/^(main|p[0-9a-f]{12})$/.test(slot))return send('پنل نامعتبر است.');const panel=(await listBotPanels(env)).find(p=>p.slot===slot);if(!panel)return send('پنل پیدا نشد.');
+    const row=slot==='main'?await first(env,'SELECT value FROM settings WHERE key=?','panel_credentials_v1'):await first(env,'SELECT value FROM settings WHERE key=?',`extra_panel:${slot}`);let draft;try{draft=row?await decryptPanel(env.BOT_TOKEN,row.value):{url:panel.env.PANEL_URL,user:panel.env.PANEL_USER,pass:panel.env.PANEL_PASS,name:panel.name,sub:panel.env.cfg.sub_base_url}}catch{return send('اطلاعات پنل قابل خواندن نیست.')}
     if(step==='mpedit_name'){if(!value||value.length>30||/[\r\n]/.test(value))return send('نام پنل معتبر نیست.');if((await listBotPanels(env)).some(p=>p.slot!==slot&&p.name.toLowerCase()===value.toLowerCase()))return send('این نام قبلاً ثبت شده است.');draft.name=value;}
-    else if(step==='mpedit_sub'){try{draft.sub=panelURL(value)}catch{return send('آدرس پایه اشتراک باید HTTPS معتبر باشد.')}}
+    else if(step==='mpedit_sub'){try{draft.sub=panelURL(value)}catch{return send('آدرس پایه اشتراک باید HTTP یا HTTPS معتبر باشد.')}}
+    else if(step==='mpedit_url'){try{draft.url=panelURL(value)}catch{return send('آدرس پنل معتبر نیست.')}}
+    else if(step==='mpedit_user'){if(!value||value.length>256||/[\r\n]/.test(value))return send('نام کاربری معتبر نیست.');draft.user=value;}
     else if(step==='mpedit_pass'){if(!value||value.length>512||/[\r\n]/.test(value))return send('رمز نامعتبر است.');try{await tg(env,'deleteMessage',{chat_id:msg.chat.id,message_id:msg.message_id})}catch{};draft.pass=value;try{await probePanel(draft)}catch(e){return send(`اتصال ناموفق بود: ${esc(e.message)}`)}}
     else return send('درخواست نامعتبر است.');
-    await run(env,"UPDATE settings SET value=? WHERE key=?",await encryptPanel(env.BOT_TOKEN,draft),`extra_panel:${slot}`);delete st.admin_ui_step;delete st.admin_ui_key;return sendMsg(env,msg.chat.id,'✅ اطلاعات پنل ذخیره شد.',adminBack(`admin:multipanel:${slot}`));
+    if(step==='mpedit_url'||step==='mpedit_user'){
+      try{await probePanel(draft)}catch(e){return send(`اتصال ناموفق بود: ${esc(e.message)}`)}
+      const newId=await panelAccountKey(draft.url,draft.user);if((await listBotPanels(env)).some(p=>p.slot!==slot && p.identity===newId))return send('این حساب قبلاً به ربات وصل است.');
+      const inflight=await first(env,"SELECT COUNT(*) AS n FROM orders o LEFT JOIN bot_order_routes r ON r.order_id=o.id WHERE (r.order_id IS NULL OR r.panel_identity=? OR (?=1 AND r.panel_identity='')) AND o.status NOT IN ('approved','rejected','cancelled','wallet_failed_refunded','wallet_review_resolved')",panel.identity,slot==='main'?1:0);const ops=await first(env,'SELECT COUNT(*) AS n FROM service_operations');if(Number(inflight.n)||Number(ops.n))return send('سفارش فعال یا عملیات سرویس در جریان است؛ ابتدا تعیین تکلیف کنید.');
+      const bindings=[env.DB.prepare("UPDATE bot_categories SET panel_identity=? WHERE panel_identity=? OR (?=1 AND panel_identity='')").bind(newId,panel.identity,slot==='main'?1:0),env.DB.prepare("UPDATE bot_order_routes SET panel_identity=? WHERE panel_identity=? OR (?=1 AND panel_identity='')").bind(newId,panel.identity,slot==='main'?1:0),env.DB.prepare("UPDATE settings SET value=? WHERE (key LIKE 'service_panel:%' OR key LIKE 'attempt_panel:%') AND value=?").bind(newId,panel.identity)];
+      if(slot==='main')bindings.push(env.DB.prepare("INSERT INTO settings(key,value) VALUES('panel_identity_v1',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").bind(newId));
+      bindings.push(env.DB.prepare("INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").bind(slot==='main'?'panel_credentials_v1':`extra_panel:${slot}`,await encryptPanel(env.BOT_TOKEN,draft)));await env.DB.batch(bindings);
+    } else if(slot==='main' && step==='mpedit_sub')await run(env,"INSERT INTO settings(key,value) VALUES('sub_base_url',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",draft.sub+'/');
+    else await run(env,"INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",slot==='main'?'panel_credentials_v1':`extra_panel:${slot}`,await encryptPanel(env.BOT_TOKEN,draft));
+    delete st.admin_ui_step;delete st.admin_ui_key;return sendMsg(env,msg.chat.id,'✅ اطلاعات پنل ذخیره شد.',adminBack(`admin:multipanel:${slot}`));
   }
   if(step.startsWith('mp_')) {
     if(!env.owners.includes(msg.from.id))return send('فقط ادمین اصلی اجازه تنظیم پنل را دارد.');
@@ -1065,20 +1252,20 @@ async function handleAdminUIInput(c, msg) {
     if(step==='mp_name'){
       if(!value || value.length>30 || /[\r\n]/.test(value))return send('نام پنل باید یک خط و حداکثر ۳۰ نویسه باشد.');
       const existing=await listBotPanels(env);if(existing.some(p=>p.name.toLowerCase()===value.toLowerCase()))return send('این نام قبلاً ثبت شده است.');
-      await run(env,"INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",draftKey,await encryptPanel(env.BOT_TOKEN,{name:value,expires:Date.now()+1800000}));st.admin_ui_step='mp_url';return sendMsg(env,msg.chat.id,'آدرس HTTPS پنل، همراه مسیر آن را بفرستید.',adminBack('admin:settings'));
+      await run(env,"INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",draftKey,await encryptPanel(env.BOT_TOKEN,{name:value,expires:Date.now()+1800000}));st.admin_ui_step='mp_url';return sendMsg(env,msg.chat.id,'آدرس HTTP یا HTTPS پنل، همراه مسیر آن را بفرستید.',adminBack('admin:settings'));
     }
     const row=await first(env,'SELECT value FROM settings WHERE key=?',draftKey);let draft;try{draft=await decryptPanel(env.BOT_TOKEN,row.value)}catch{}if(!draft || Date.now()>draft.expires)return send('درخواست منقضی شد؛ دوباره شروع کنید.');
-    if(step==='mp_url'){try{draft.url=panelURL(value)}catch{return send('آدرس HTTPS پنل معتبر نیست.')}st.admin_ui_step='mp_user';}
+    if(step==='mp_url'){try{draft.url=panelURL(value)}catch{return send('آدرس HTTP یا HTTPS پنل معتبر نیست.')}st.admin_ui_step='mp_user';}
     else if(step==='mp_user'){if(!value||value.length>256||/[\r\n]/.test(value))return send('نام کاربری نامعتبر است.');draft.user=value;st.admin_ui_step='mp_pass';}
     else if(step==='mp_pass'){if(!value||value.length>512||/[\r\n]/.test(value))return send('رمز نامعتبر است.');draft.pass=value;try{await tg(env,'deleteMessage',{chat_id:msg.chat.id,message_id:msg.message_id})}catch{};try{await probePanel(draft)}catch(e){return send(`اتصال ناموفق بود: ${esc(e.message)}`)}st.admin_ui_step='mp_sub';}
     else if(step==='mp_sub'){
-      try{draft.sub=panelURL(value)}catch{return send('آدرس پایه اشتراک باید HTTPS معتبر باشد.')}
+      try{draft.sub=panelURL(value)}catch{return send('آدرس پایه اشتراک باید HTTP یا HTTPS معتبر باشد.')}
       const identity=await panelAccountKey(draft.url,draft.user),panels=await listBotPanels(env);if(panels.some(p=>p.identity===identity))return send('این حساب پنل قبلاً اضافه شده است.');
       const slot='p'+hex(6);delete draft.expires;await env.DB.batch([env.DB.prepare("INSERT INTO settings(key,value) VALUES(?,?)").bind(`extra_panel:${slot}`,await encryptPanel(env.BOT_TOKEN,draft)),env.DB.prepare('DELETE FROM settings WHERE key=?').bind(draftKey)]);delete st.admin_ui_step;delete st.admin_ui_key;
       return sendMsg(env,msg.chat.id,`✅ پنل «${esc(draft.name)}» اضافه شد.`,adminBack('admin:settings'));
     } else return send('درخواست نامعتبر است.');
     await run(env,"INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",draftKey,await encryptPanel(env.BOT_TOKEN,draft));
-    const prompts={mp_user:'نام کاربری پنل را بفرستید.',mp_pass:'رمز پنل را بفرستید.',mp_sub:'آدرس پایه HTTPS لینک اشتراک این پنل را بفرستید.'};return sendMsg(env,msg.chat.id,prompts[st.admin_ui_step],adminBack('admin:settings'));
+    const prompts={mp_user:'نام کاربری پنل را بفرستید.',mp_pass:'رمز پنل را بفرستید.',mp_sub:'آدرس پایه HTTP یا HTTPS اشتراک این پنل را بفرستید.'};return sendMsg(env,msg.chat.id,prompts[st.admin_ui_step],adminBack('admin:settings'));
   }
   if (step.startsWith("panel_")) {
     if (!env.owners.includes(msg.from.id)) { delete st.admin_ui_step; return send("فقط ادمین اصلی اجازه دارد."); }
@@ -1086,14 +1273,14 @@ async function handleAdminUIInput(c, msg) {
     // Try to remove the original message, but never claim Telegram erased it.
     try { await tg(env,"deleteMessage",{chat_id:msg.chat.id,message_id:msg.message_id}); } catch {}
     if (step === "panel_sub") {
-      let url; try { url=panelURL(value); } catch { return send("آدرس ساب باید یک آدرس HTTPS معتبر باشد."); }
+      let url; try { url=panelURL(value); } catch { return send("آدرس ساب باید یک آدرس HTTP یا HTTPS معتبر باشد."); }
       await run(env,"INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value","sub_base_url",url+"/");
       delete st.admin_ui_step; delete st.admin_ui_key;
       await sendMsg(env,msg.chat.id,"✅ آدرس ساب ذخیره شد؛ تنظیم اتصال پنل کامل است."); return showAdminHome(env,msg.chat.id);
     }
     let draft;
     if (step === "panel_url") {
-      let url; try { url=panelURL(value); } catch { return send("آدرس پنل باید HTTPS و بدون پارامتر باشد؛ دوباره بفرستید."); }
+      let url; try { url=panelURL(value); } catch { return send("آدرس پنل باید HTTP یا HTTPS و بدون پارامتر باشد؛ دوباره بفرستید."); }
       draft={url,expires:Date.now()+30*60*1000};
       await run(env,"INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",draftKey,await encryptPanel(env.BOT_TOKEN,draft));
       st.admin_ui_step="panel_user"; return sendMsg(env,msg.chat.id,"نام کاربری حساب نمایندهٔ پنل را بفرستید.",adminBack("admin:settings"));
@@ -1115,7 +1302,7 @@ async function handleAdminUIInput(c, msg) {
 
       const config={url:draft.url,user:draft.user,pass};
       try { await probePanel(config); } catch(e) { return send(`❌ اتصال تأیید نشد: ${esc(e.message)}\nرمز را دوباره بفرستید یا از تنظیمات شروع کنید.`); }
-      const queries=[env.DB.prepare("INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").bind("panel_credentials_v1",await encryptPanel(env.BOT_TOKEN,config)),env.DB.prepare("INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").bind("panel_identity_v1",newIdentity),env.DB.prepare("DELETE FROM settings WHERE key=?").bind(draftKey)];
+      const queries=[env.DB.prepare("INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").bind("panel_credentials_v1",await encryptPanel(env.BOT_TOKEN,config)),env.DB.prepare("INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").bind("panel_identity_v1",newIdentity),env.DB.prepare("DELETE FROM settings WHERE key=?").bind(draftKey),env.DB.prepare("DELETE FROM settings WHERE key='panel_main_disabled'")];
       if(changingAccount) {
         for(const key of ["panel_group_ids","panel_inbound_id","sub_base_url"]) queries.push(env.DB.prepare("INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").bind(key,""));
         const previousIdentity=env.panelStoredIdentity || (env.PANEL_URL && env.PANEL_USER ? await currentPanelIdentity(env) : '');
@@ -1123,7 +1310,7 @@ async function handleAdminUIInput(c, msg) {
       }
       await env.DB.batch(queries); panelCookie=null;panelCookieKey="";
       st.admin_ui_step="panel_sub"; delete st.admin_ui_key;
-      return sendMsg(env,msg.chat.id,"✅ اتصال پنل ذخیره شد. آدرس پایه HTTPS اشتراک را بفرستید؛ بعداً برای هر دسته‌بندی گروه پنل را انتخاب می‌کنید.",adminBack("admin:settings"));
+      return sendMsg(env,msg.chat.id,"✅ اتصال پنل ذخیره شد. آدرس پایه HTTP یا HTTPS اشتراک را بفرستید؛ بعداً برای هر دسته‌بندی گروه پنل را انتخاب می‌کنید.",adminBack("admin:settings"));
     }
     delete st.admin_ui_step; return send("درخواست نامعتبر است؛ دوباره شروع کنید.");
   }
@@ -1353,11 +1540,30 @@ async function handleAdminUICallback(c, cq, answer) {
     const id=Number(d.split(":")[2]);if(!Number.isSafeInteger(id)||id<=0)return answer("سرویس نامعتبر است.",true);
     const svc=await getService(env,id);if(!svc)return answer("سرویس یافت نشد.",true);
     let details;try { const account=await panelServiceAccount(env,svc); details=account ? liveServiceDetails(account) : "⚠️ سرویس در پنل متصل فعلی یافت نشد."; } catch { details="⚠️ وضعیت سرویس نامشخص است؛ ارتباط با پنل برقرار نشد."; }
-    const operation=await first(env,'SELECT kind FROM service_operations WHERE service_id=?',id);const review=operation?.kind==='auto_delete_review';
-    const buttons=[[btn("🔘 وضعیت کانفیگ‌ها",`admin:sc:${svc.id}:0`)],[btn("🗑 حذف سرویس",`admin:svcdelete:${svc.id}`)]];
+    const operation=await first(env,'SELECT kind FROM service_operations WHERE service_id=?',id);const review=operation?.kind==='auto_delete_review',migrationReview=operation?.kind?.startsWith('migration:');
+    const buttons=[[btn("🔘 وضعیت کانفیگ‌ها",`admin:sc:${svc.id}:0`)],[btn('🌍 انتقال سرویس',`loc:list:${svc.id}`)],[btn("🗑 حذف سرویس",`admin:svcdelete:${svc.id}`)]];
     if(review)buttons.push([btn('⚠️ بررسی توقف حذف خودکار',`admin:autodelreview:${id}`)]);
+    if(migrationReview)buttons.push([btn('⚠️ بررسی انتقال',`admin:migrationreview:${id}`)]);
     buttons.push([btn("👤 پنل کاربر",`admin:user:${svc.user_id}`)],[btn("🔙 نتایج جستجو","admin:searchpage:0"),btn("🔎 جستجوی جدید","admin:service_search")]);
     return renderAdmin(`📦 <b>سرویس ${esc(String(svc.name || "—").slice(0,50))}</b>\nشناسه ربات: <code>${svc.id}</code>\nکاربر: <code>${svc.user_id}</code>\nحساب پنل: <code>${esc(String(svc.panel_email || "—").slice(0,100))}</code>\n\n${details}${review?'\n⚠️ حذف خودکار نیاز به بررسی دارد.':''}`,kb(buttons));
+  }
+  if (/^admin:migrationreview:\d+$/.test(d)) {
+    const id=Number(d.split(':')[2]),lock=await first(env,'SELECT kind FROM service_operations WHERE service_id=?',id);
+    if(!lock?.kind?.startsWith('migration:'))return answer('انتقال نیازمند بررسی پیدا نشد.',true);
+    const job=await migrationJournal(env.DB).get(lock.kind.slice('migration:'.length));
+    if(!job)return answer('سوابق انتقال یافت نشد؛ بررسی دستی لازم است.',true);
+    return renderAdmin(`⚠️ مرحلهٔ انتقال: <code>${esc(job.uncertain || job.state)}</code>\nابتدا سرویس و مصرف را در هر دو پنل و لینک ثبت‌شده در ربات دستی بررسی و اصلاح کنید. رفع توقف، انتقال را تکمیل یا برگشت نمی‌دهد.`,kb([[btn('✅ بررسی و اصلاح دستی انجام شد',`admin:migrationrelease:${id}`)],[btn('🔙 بازگشت',`admin:svc:${id}`)]]));
+  }
+  if (/^admin:migrationrelease:\d+$/.test(d)) {
+    if(!owner)return answer('فقط ادمین اصلی اجازه دارد.',true);
+    const id=Number(d.split(':')[2]),lock=await first(env,'SELECT kind FROM service_operations WHERE service_id=?',id);if(!lock?.kind?.startsWith('migration:'))return answer('انتقال پیدا نشد.',true);
+    const journal=migrationJournal(env.DB),job=await journal.get(lock.kind.slice('migration:'.length));
+    if(job?.state==='complete'){await journal.releaseComplete(job.id);return renderAdmin('انتقال تکمیل شده بود و قفل آن برداشته شد.',adminBack(`admin:svc:${id}`));}
+    const last=job?.dispatchedAt ?? job?.lastCompletedAt;
+    if(!job || !['review','ready'].includes(job.state) || !Number.isSafeInteger(last) || Date.now()-last<600000)return answer('عملیات ممکن است هنوز در حال اجرا باشد؛ حداقل ده دقیقه صبر کنید.',true);
+    const changed=await journal.compareAndSet(job.id,job,{...job,state:'manual_closed'});if(!changed)return answer('وضعیت انتقال تغییر کرد؛ دوباره بررسی کنید.',true);
+    await run(env,'DELETE FROM service_operations WHERE service_id=? AND kind=?',id,lock.kind);
+    return renderAdmin('توقف برداشته شد؛ وضعیت پنل و ربات همان است که پس از بررسی دستی ثبت کرده‌اید.',adminBack(`admin:svc:${id}`));
   }
   if (/^admin:autodelreview:\d+$/.test(d)) {
     const id=Number(d.split(':')[2]),lock=await first(env,"SELECT kind FROM service_operations WHERE service_id=? AND kind='auto_delete_review'",id);if(!lock)return answer('عملیات نیازمند بررسی پیدا نشد.',true);
@@ -1589,16 +1795,37 @@ async function handleAdminUICallback(c, cq, answer) {
   if(d==='admin:multipanel_add'){if(!owner)return answer('فقط ادمین اصلی اجازه دارد.',true);return prompt('mp_name','','برای پنل جدید یک نام بفرستید؛ مثلاً پنل ۲.','admin:settings');}
   if(d==='admin:multipanels' || /^admin:multipanels:\d+$/.test(d)) {
     if(!owner)return answer('فقط ادمین اصلی اجازه دارد.',true);const page=Number(d.split(':')[2] || 0);if(!Number.isSafeInteger(page)||page>1000000)return answer('صفحه نامعتبر است.',true);const panels=await listBotPanels(env);
-    const rows=panels.slice(page*10,page*10+10).map(p=>[btn(p.name,p.slot==='main'?'admin:panelsetup':`admin:multipanel:${p.slot}`)]),nav=[];if(page>0)nav.push(btn('◀️ قبلی',`admin:multipanels:${page-1}`));if((page+1)*10<panels.length)nav.push(btn('بعدی ▶️',`admin:multipanels:${page+1}`));if(nav.length)rows.push(nav);rows.push([btn('➕ افزودن پنل','admin:multipanel_add')],[btn('🔙 تنظیمات','admin:settings')]);
+    const rows=panels.slice(page*10,page*10+10).map(p=>[btn(p.name,`admin:multipanel:${p.slot}`)]),nav=[];if(page>0)nav.push(btn('◀️ قبلی',`admin:multipanels:${page-1}`));if((page+1)*10<panels.length)nav.push(btn('بعدی ▶️',`admin:multipanels:${page+1}`));if(nav.length)rows.push(nav);rows.push([btn('➕ افزودن پنل','admin:multipanel_add')],[btn('🔙 تنظیمات','admin:settings')]);
     return renderAdmin(panels.length?'🖥 پنل‌های متصل:':'پنلی متصل نشده است.',kb(rows));
   }
-  if (/^admin:multipanel:p[0-9a-f]{12}$/.test(d)) {
+  if (/^admin:multipanel:(?:main|p[0-9a-f]{12})$/.test(d)) {
     if(!owner)return answer('فقط ادمین اصلی اجازه دارد.',true);const slot=d.split(':')[2],panel=(await listBotPanels(env)).find(p=>p.slot===slot);if(!panel)return answer('پنل پیدا نشد.',true);
-    return renderAdmin(`🖥 <b>${esc(panel.name)}</b>\nآدرس: <code>${esc(panel.env.PANEL_URL)}</code>\nنام کاربری: <code>${esc(panel.env.PANEL_USER)}</code>\nآدرس ساب: <code>${esc(panel.env.cfg.sub_base_url)}</code>`,kb([[btn('✏️ نام',`admin:mpname:${slot}`),btn('🔑 رمز',`admin:mppass:${slot}`)],[btn('🔗 آدرس ساب',`admin:mpsub:${slot}`)],[btn('🔙 پنل‌ها','admin:multipanels')]]));
+    const choices=await panelChoices(panel.env),state=choices ? '✅ متصل' : '⚠️ اتصال یا دسترسی ناموفق';
+    const buttons=[[btn('🌐 آدرس پنل',`admin:mpurl:${slot}`),btn('👤 نام کاربری',`admin:mpuser:${slot}`)],[btn('🔑 رمز عبور',`admin:mppass:${slot}`),btn('🔗 آدرس ساب',`admin:mpsub:${slot}`)]];
+    if(slot!=='main')buttons.push([btn('✏️ نام پنل',`admin:mpname:${slot}`)]);buttons.push([btn('🌍 انتقال گروهی سرویس‌ها',`bulk:start:${slot}`)],[btn('📋 وضعیت انتقال‌ها','bulk:history:0')],[btn('🗑 حذف پنل',`admin:mpdelete:${slot}`)],[btn('🔙 پنل‌ها','admin:multipanels')]);
+    const httpNotice=/^http:\/\//i.test(panel.env.PANEL_URL)?'\n⚠️ اتصال HTTP رمز عبور و اطلاعات را رمزگذاری نمی‌کند.':'';
+    return renderAdmin(`🖥 <b>${esc(panel.name)}</b>\nوضعیت: ${state}\nتعداد گروه‌ها: ${choices ? choices.groups.length : 'نامشخص'}\nآدرس: <code>${esc(panel.env.PANEL_URL)}</code>\nنام کاربری: <code>${esc(panel.env.PANEL_USER)}</code>\nآدرس ساب: <code>${esc(panel.env.cfg.sub_base_url)}</code>${httpNotice}`,kb(buttons));
   }
-  if (/^admin:mp(name|pass|sub):p[0-9a-f]{12}$/.test(d)) {
+  if (/^admin:mp(name|pass|sub|url|user):(?:main|p[0-9a-f]{12})$/.test(d)) {
     if(!owner)return answer('فقط ادمین اصلی اجازه دارد.',true);const [,action,slot]=d.split(':');if(!(await listBotPanels(env)).some(p=>p.slot===slot))return answer('پنل پیدا نشد.',true);
-    return prompt(`mpedit_${action.slice(2)}`,slot,action==='mpname'?'نام جدید پنل را بفرستید.':action==='mppass'?'رمز جدید پنل را بفرستید.':'آدرس پایه HTTPS اشتراک را بفرستید.',`admin:multipanel:${slot}`);
+    const messages={mpname:'نام جدید پنل را بفرستید.',mppass:'رمز جدید پنل را بفرستید.',mpsub:'آدرس پایه HTTP یا HTTPS اشتراک را بفرستید.',mpurl:'آدرس HTTP یا HTTPS پنل را بفرستید.',mpuser:'نام کاربری پنل را بفرستید.'};
+    return prompt(`mpedit_${action.slice(2)}`,slot,messages[action],`admin:multipanel:${slot}`);
+  }
+  if (/^admin:mpdelete:(?:main|p[0-9a-f]{12})$/.test(d)) {
+    if(!owner)return answer('فقط ادمین اصلی اجازه دارد.',true);const slot=d.split(':')[2],panel=(await listBotPanels(env)).find(p=>p.slot===slot);if(!panel)return answer('پنل پیدا نشد.',true);
+    const reason=await panelRemovalBlocker(env,panel);if(reason)return answer(reason,true);
+    return renderAdmin(`حذف اتصال «${esc(panel.name)}» از ربات تأیید شود؟ دسته‌بندی‌های متصل به آن غیرفعال می‌شوند.`,kb([[btn('✅ تأیید حذف',`admin:mpdeleteyes:${slot}`)],[btn('❌ انصراف',`admin:multipanel:${slot}`)]]));
+  }
+  if (/^admin:mpdeleteyes:(?:main|p[0-9a-f]{12})$/.test(d)) {
+    if(!owner)return answer('فقط ادمین اصلی اجازه دارد.',true);const slot=d.split(':')[2],panel=(await listBotPanels(env)).find(p=>p.slot===slot);if(!panel)return answer('پنل پیدا نشد.',true);
+    const reason=await panelRemovalBlocker(env,panel);if(reason)return answer(reason,true);
+    const guard="NOT EXISTS(SELECT 1 FROM orders o LEFT JOIN bot_order_routes r ON r.order_id=o.id WHERE (r.order_id IS NULL OR r.panel_identity=? OR (?=1 AND r.panel_identity='')) AND o.status NOT IN ('approved','rejected','cancelled','wallet_failed_refunded','wallet_review_resolved')) AND NOT EXISTS(SELECT 1 FROM service_operations)";
+    const isMain=slot==='main'?1:0,key=slot==='main'?'panel_main_disabled':`extra_panel:${slot}`;
+    const remove=slot==='main'?env.DB.prepare(`INSERT INTO settings(key,value) SELECT 'panel_main_disabled','1' WHERE ${guard} ON CONFLICT(key) DO UPDATE SET value='1'`).bind(panel.identity,isMain):env.DB.prepare(`DELETE FROM settings WHERE key=? AND ${guard}`).bind(key,panel.identity,isMain);
+    const disabled=slot==='main'?"EXISTS(SELECT 1 FROM settings WHERE key=? AND value='1')":"NOT EXISTS(SELECT 1 FROM settings WHERE key=?)";
+    const result=await env.DB.batch([remove,env.DB.prepare(`UPDATE bot_categories SET active=0 WHERE (panel_identity=? OR (?=1 AND panel_identity='')) AND ${disabled}`).bind(panel.identity,isMain,key)]);
+    if(!result[0]?.meta?.changes)return answer('سفارش یا عملیاتی هم‌زمان شروع شد؛ دوباره بررسی کنید.',true);
+    return renderAdmin('✅ اتصال پنل از ربات حذف شد.',adminBack('admin:multipanels'));
   }
   if (/^admin:testcategories:\d+$/.test(d)) {
     const page=Number(d.split(":")[2]);if(!Number.isSafeInteger(page)||page>1000000)return answer("صفحه نامعتبر است.",true);
@@ -1613,7 +1840,7 @@ async function handleAdminUICallback(c, cq, answer) {
   if (d === "admin:panelsetup") {
     if (!owner) return answer("فقط ادمین اصلی اجازه تنظیم اتصال پنل را دارد.", true);
     await run(env, "DELETE FROM settings WHERE key=?", `panel_draft:${uid}`);
-    return prompt("panel_url", "", "➕ آدرس کامل HTTPS پنل شامل پورت و مسیر پنل را بفرستید.\nمثال: <code>https://panel.example.com:2053/SECRET_PATH</code>", "admin:settings");
+    return prompt("panel_url", "", "➕ آدرس کامل HTTP یا HTTPS پنل شامل پورت و مسیر پنل را بفرستید.\nمثال: <code>https://panel.example.com:2053/SECRET_PATH</code>", "admin:settings");
   }
   if (d.startsWith("admin:setting:")) {
     const key = d.slice("admin:setting:".length), meta = Object.hasOwn(META, key) ? META[key] : null;
@@ -1622,6 +1849,7 @@ async function handleAdminUICallback(c, cq, answer) {
     if (key === "referral_discount") return prompt("setting",key,`🎁 <b>هدیه دعوت</b>\nمقدار فعلی: ${toman(env.cfg.referral_discount)}\nمبلغ جدید را به تومان بفرستید؛ عدد 0 هدیه را غیرفعال می‌کند. این هدیه تخفیف خرید بعدی معرف است و به کیف پول اضافه نمی‌شود.`,"admin:settings");
     if (key === "channel_username" || key === "channel_link") return prompt("setting",key,`📢 <b>عضویت اجباری</b>\nبرای بررسی عضویت کاربران، ابتدا ربات را به کانال اضافه و ادمین کانال کنید. یوزرنیم یا شناسهٔ کانال و لینک عضویت را در تنظیمات جداگانه وارد کنید.\n\n${key === "channel_username" ? "یوزرنیم کانال همراه @ یا شناسهٔ عددی کانال را بفرستید." : "لینک عضویت کانال را بفرستید."}\nمقدار فعلی: <code>${esc(env.cfg[key] || "خالی")}</code>\nبرای پاک‌کردن مقدار، - بفرستید.`,"admin:settings");
     if (key === "test_enabled") return renderAdmin(`🎁 سرویس تست اکنون ${env.cfg.test_enabled === "1" ? "فعال" : "غیرفعال"} است.`, kb([[btn("✅ فعال", "admin:test:1"),btn("⛔ غیرفعال", "admin:test:0")],[btn("🔙 بازگشت", "admin:settings")]]));
+    if (key === 'location_change_enabled') return renderAdmin(`🌍 تغییر لوکیشن مشتری اکنون ${env.cfg[key]==='1'?'فعال':'خاموش'} است.`,kb([[btn('✅ فعال',`admin:policy:${key}:1`),btn('⛔ خاموش',`admin:policy:${key}:0`)],[btn('🔙 بازگشت','admin:settings')]]));
     if (key === 'alerts_enabled' || key === 'auto_delete_enabled') {
       const deletion=key==='auto_delete_enabled';
       return renderAdmin(`${deletion?'🗑 حذف خودکار اشتراک‌های منقضی':'🔔 هشدار اشتراک'} اکنون ${env.cfg[key]==='1'?'فعال':'خاموش'} است.\n${deletion?'پس از تعداد روز تنظیم‌شده از تاریخ انقضا، سرویس واجد شرایط از پنل و ربات حذف می‌شود؛ سفارش در حال بررسی از حذف جلوگیری می‌کند.':'به مشتری نزدیک انقضا یا پایان حجم پیام ارسال می‌شود.'}`,kb([[btn('✅ فعال',`admin:policy:${key}:1`),btn('⛔ خاموش',`admin:policy:${key}:0`)],[btn('🔙 بازگشت','admin:settings')]]));
@@ -1634,7 +1862,7 @@ async function handleAdminUICallback(c, cq, answer) {
     const value = d.slice(-1); await handleAdminCommand(c, {chat:{id:chat},from:cq.from,text:`/set test_enabled ${value}`});
     return showAdminHome(env, chat);
   }
-  if (/^admin:policy:(alerts_enabled|auto_delete_enabled):[01]$/.test(d)) {
+  if (/^admin:policy:(alerts_enabled|auto_delete_enabled|location_change_enabled):[01]$/.test(d)) {
     const [, ,key,value]=d.split(':');
     await run(env,'INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value',key,value);
     return renderAdmin(value==='1'?'✅ فعال شد.':'⛔ خاموش شد.',adminBack('admin:settings'));
@@ -1784,6 +2012,87 @@ async function onCallback(c, cq) {
   const isAdmin = env.admins.has(uid);
   const answer = (text, alert = false) => { if (cq._answered) return; cq._answered = true; return tg(env, "answerCallbackQuery", { callback_query_id: cq.id, text, show_alert: alert }); };
   const del = () => tg(env, "deleteMessage", { chat_id, message_id: cq.message.message_id });
+
+  if (d.startsWith('bulk:')) {
+    if(!env.owners.includes(uid))return answer('فقط ادمین اصلی اجازه دارد.',true);
+    const parts=d.split(':'),action=parts[1],queue=bulkMigrationQueue(env.DB);
+    if(action==='history'){
+      const page=Number(parts[2]);if(!Number.isSafeInteger(page)||page<0||page>1000000)return answer('صفحه نامعتبر است.',true);
+      const jobs=await all(env,"SELECT key,value FROM settings WHERE key LIKE 'bulk_migration:%' ORDER BY CAST(json_extract(value,'$.createdAt') AS INTEGER) DESC LIMIT 11 OFFSET ?",page*10);
+      const rows=jobs.slice(0,10).map(row=>{const j=JSON.parse(row.value);return [btn(`انتقال ${j.items.length} سرویس — ${j.items.filter(x=>x.status==='done').length} موفق`,`bulk:status:${j.id}`)]}),nav=[];
+      if(page>0)nav.push(btn('◀️ قبلی',`bulk:history:${page-1}`));if(jobs.length>10)nav.push(btn('بعدی ▶️',`bulk:history:${page+1}`));if(nav.length)rows.push(nav);rows.push([btn('🔙 پنل‌ها','admin:multipanels')]);
+      return render(env,cq,jobs.length?'📋 انتقال‌های گروهی':'انتقال گروهی ثبت نشده است.',kb(rows));
+    }
+    if(action==='status'){
+      const job=await queue.get(parts[2]);if(!job)return answer('انتقال پیدا نشد.',true);
+      const counts={pending:0,running:0,done:0,review:0};for(const item of job.items)if(Object.hasOwn(counts,item.status))counts[item.status]++;
+      const review=job.items.filter(x=>x.status==='review').slice(0,20).map(x=>`#${x.serviceId}`).join('، ');
+      const reviewButtons=job.items.filter(x=>x.status==='review').slice(0,10).map(x=>[btn(`⚠️ بررسی سرویس ${x.serviceId}`,`admin:svc:${x.serviceId}`)]);
+      return render(env,cq,`🌍 انتقال گروهی\nموفق: ${counts.done}، در انتظار: ${counts.pending}، در حال اجرا: ${counts.running}، نیازمند بررسی: ${counts.review}${review?`\nشناسه‌های نیازمند بررسی: ${review}`:''}`,kb([...reviewButtons,[btn('🔄 تازه‌سازی',`bulk:status:${job.id}`)],[btn('🔙 پنل‌ها','admin:multipanels')]]));
+    }
+    if(action==='start'){
+      const panel=(await listBotPanels(env)).find(x=>x.slot===parts[2]);if(!panel)return answer('پنل پیدا نشد.',true);
+      st.bulkDraft={source:panel.identity,slot:panel.slot,selected:[],expires:Date.now()+1800000};
+    }
+    const draft=st.bulkDraft;if(!draft || Date.now()>draft.expires)return answer('انتخاب منقضی شد؛ از پنل مبدأ دوباره شروع کنید.',true);
+    const sourceServices=async()=>{const result=[],unresolved=[];for(const s of await all(env,'SELECT * FROM services ORDER BY id DESC')){try{if(await currentPanelIdentity(await panelForService(env,s))===draft.source)result.push(s)}catch{unresolved.push(s.id)}}return {result,unresolved}};
+    if(action==='start'||action==='list'||action==='toggle'||action==='all'){
+      const {result,unresolved}=await sourceServices();let page=action==='list'?Number(parts[2]):action==='toggle'?Number(parts[3]):0;
+      if(!Number.isSafeInteger(page)||page<0||page>1000000)return answer('صفحه نامعتبر است.',true);
+      const valid=new Set(result.map(s=>s.id));draft.selected=draft.selected.filter(id=>valid.has(id));
+      if(action==='toggle'){const id=Number(parts[2]);if(!valid.has(id))return answer('سرویس پیدا نشد.',true);draft.selected=draft.selected.includes(id)?draft.selected.filter(x=>x!==id):[...draft.selected,id];}
+      if(action==='all'){if(unresolved.length)return answer('پنل بعضی سرویس‌ها نامشخص است؛ ابتدا آنها را بررسی کنید.',true);if(result.length>10000)return answer('تعداد سرویس‌ها بیش از سقف انتقال گروهی است.',true);draft.selected=result.map(s=>s.id);}
+      const selected=new Set(draft.selected),rows=result.slice(page*10,page*10+10).map(s=>[btn(`${selected.has(s.id)?'☑️':'⬜'} ${s.name} #${s.id}`,`bulk:toggle:${s.id}:${page}`)]),nav=[];
+      if(page>0)nav.push(btn('◀️ قبلی',`bulk:list:${page-1}`));if((page+1)*10<result.length)nav.push(btn('بعدی ▶️',`bulk:list:${page+1}`));if(nav.length)rows.push(nav);
+      rows.push([btn('✅ انتخاب همه','bulk:all'),btn('🌍 انتخاب مقصد','bulk:destpage:0')],[btn('🔙 بازگشت',`admin:multipanel:${draft.slot}`)]);
+      return render(env,cq,`سرویس‌های پنل مبدأ را انتخاب کنید. انتخاب‌شده: ${draft.selected.length}${unresolved.length?`\n⚠️ پنل ${unresolved.length} سرویس نامشخص است.`:''}`,kb(rows));
+    }
+    if(action==='destpage'){
+      if(!draft.selected.length)return answer('ابتدا سرویس انتخاب کنید.',true);const page=Number(parts[2]);if(!Number.isSafeInteger(page)||page<0||page>1000000)return answer('صفحه نامعتبر است.',true);
+      const panels=await listBotPanels(env),cats=await all(env,'SELECT * FROM bot_categories WHERE active=1 ORDER BY id');
+      const choices=cats.map(cat=>({cat,panel:panels.find(p=>p.identity===cat.panel_identity)||(!cat.panel_identity?panels.find(p=>p.slot==='main'):null)})).filter(x=>x.panel&&x.panel.identity!==draft.source);
+      const rows=choices.slice(page*10,page*10+10).map(({cat,panel})=>[btn(`${cat.name} — ${panel.name}`,`bulk:dest:${cat.id}`)]),nav=[];
+      if(page>0)nav.push(btn('◀️ قبلی',`bulk:destpage:${page-1}`));if((page+1)*10<choices.length)nav.push(btn('بعدی ▶️',`bulk:destpage:${page+1}`));if(nav.length)rows.push(nav);rows.push([btn('🔙 انتخاب سرویس','bulk:list:0')]);
+      return render(env,cq,choices.length?'دسته‌بندی مقصد را انتخاب کنید.':'دسته‌بندی مقصد پیدا نشد.',kb(rows));
+    }
+    if(action==='dest'){
+      const cat=await getCategory(env,Number(parts[2]));try{const target=await panelForIdentity(env,await assertCategory(env,cat));if(await currentPanelIdentity(target)===draft.source)throw Error()}catch{return answer('مقصد در دسترس نیست.',true)}
+      draft.categoryId=cat.id;draft.destination={panelIdentity:cat.panel_identity,groupIds:cat.group_ids};
+      return render(env,cq,`انتقال ${draft.selected.length} سرویس به «${esc(cat.name)}» تأیید شود؟ هر سرویس بعد از تأیید مقصد از مبدأ حذف می‌شود. اختلاف مصرف ثبت‌نشده سقف تضمین‌شده ندارد.`,kb([[btn('✅ تأیید انتقال','bulk:confirm')],[btn('❌ انصراف','bulk:destpage:0')]]));
+    }
+    if(action==='confirm'){
+      const cat=await getCategory(env,draft.categoryId);if(!cat || cat.panel_identity!==draft.destination?.panelIdentity || cat.group_ids!==draft.destination?.groupIds || !draft.selected.length)return answer('انتخاب تغییر کرده است.',true);
+      try{const target=await panelForIdentity(env,await assertCategory(env,cat));await groupCredentials(target,cat.group_ids,0);const capability=await panelCall(target,'GET','/panel/api/inbounds/migrationCapability');if(!capability.success||capability.obj?.usageImport!==true)throw Error();}catch{return answer('پنل مقصد آمادهٔ انتقال نیست.',true)}
+      const id=crypto.randomUUID();await queue.create(id,uid,draft.source,draft.categoryId,draft.selected,draft.destination);delete st.bulkDraft;
+      return render(env,cq,'✅ انتقال گروهی در صف ثبت شد. وضعیت هر سرویس جداگانه نگهداری می‌شود.',kb([[btn('📋 وضعیت انتقال',`bulk:status:${id}`)],[btn('🔙 پنل‌ها','admin:multipanels')]]));
+    }
+    return answer('درخواست نامعتبر است.',true);
+  }
+
+  if (/^loc:(list|choose|go):\d+(?::\d+)?$/.test(d)) {
+    const [, action, idText, extraText] = d.split(':'), id = Number(idText), extra = Number(extraText || 0);
+    const svc = await getService(env,id);
+    if (!svc || (!isAdmin && (Number(svc.user_id) !== uid || env.cfg.location_change_enabled !== '1'))) return answer('دسترسی یا سرویس پیدا نشد.',true);
+    let sourceIdentity;
+    try { sourceIdentity=await currentPanelIdentity(await panelForService(env,svc)); } catch { return answer('پنل مبدأ در دسترس نیست.',true); }
+    if (action === 'list') {
+      if (!Number.isSafeInteger(extra) || extra < 0 || extra > 1000000) return answer('صفحه نامعتبر است.',true);
+      const panels=await listBotPanels(env), cats=await all(env,'SELECT * FROM bot_categories WHERE active=1 ORDER BY id');
+      const choices=cats.map(cat=>({cat,panel:panels.find(p=>p.identity===cat.panel_identity) || (!cat.panel_identity ? panels.find(p=>p.slot==='main') : null)})).filter(x=>x.panel && x.panel.identity!==sourceIdentity);
+      const rows=choices.slice(extra*10,extra*10+10).map(({cat,panel})=>[btn(`${cat.name} — ${panel.name}`,`loc:choose:${id}:${cat.id}`)]),nav=[];
+      if(extra>0)nav.push(btn('◀️ قبلی',`loc:list:${id}:${extra-1}`));if((extra+1)*10<choices.length)nav.push(btn('بعدی ▶️',`loc:list:${id}:${extra+1}`));if(nav.length)rows.push(nav);rows.push([btn('🔙 بازگشت',isAdmin?`admin:svc:${id}`:`svc_${id}`)]);
+      return render(env,cq,choices.length?'🌍 دسته‌بندی و پنل مقصد را انتخاب کنید.':'پنل مقصد با دسته‌بندی فعال پیدا نشد.',kb(rows));
+    }
+    const cat=await getCategory(env,extra);
+    let target;
+    try { target=await panelForIdentity(env,await assertCategory(env,cat));if(await currentPanelIdentity(target)===sourceIdentity)throw Error('پنل مقصد با مبدأ یکسان است'); }
+    catch { return answer('دسته‌بندی مقصد در دسترس نیست.',true); }
+    if(action==='choose') return render(env,cq,`🌍 سرویس «${esc(svc.name)}» به «${esc(cat.name)}» منتقل و پس از تأیید مقصد از پنل قبلی حذف شود؟\n\nمصرف ثبت‌شده و زمان پایان حفظ می‌شود. مصرف ثبت‌نشدهٔ لحظهٔ انتقال ممکن است اختلاف داشته باشد و سقف این اختلاف تضمین‌شده نیست.`,kb([[btn('✅ تأیید انتقال',`loc:go:${id}:${cat.id}`)],[btn('❌ انصراف',`loc:list:${id}`)]]));
+    try {
+      await migrateService(env,svc,cat,sourceIdentity,()=>answer('انتقال شروع شد.'));
+      return render(env,cq,'✅ انتقال تأیید شد و سرویس از پنل مبدأ حذف شد. لینک جدید در «سرویس‌های من» قرار دارد.',backKb(isAdmin?`admin:svc:${id}`:`svc_${id}`));
+    } catch(e) { return render(env,cq,`⚠️ انتقال کامل تأیید نشد: ${esc(String(e.message).slice(0,180))}؛ تا بررسی، دوباره تلاش نکنید.`,backKb(isAdmin?`admin:svc:${id}`:`svc_${id}`)); }
+  }
 
   if (d.startsWith("topup:")) {
     if(!isAdmin) return answer("دسترسی ندارید.",true);
@@ -2039,7 +2348,7 @@ async function onCallback(c, cq) {
       }
       const nav=[]; if(page>0) nav.push(btn("◀️ قبلی",`cfglist:${id}:${page-1}`));
       if((page+1)*10<links.length) nav.push(btn("بعدی ▶️",`cfglist:${id}:${page+1}`)); if(nav.length) rows.push(nav);
-      const subUrl = (()=>{try {const u=new URL(actualSvc.sub_link); return u.protocol === 'https:' ? u.toString() : null;} catch{return null;}})();
+      const subUrl = (()=>{try {const u=new URL(actualSvc.sub_link); return ['http:','https:'].includes(u.protocol) ? u.toString() : null;} catch{return null;}})();
       if(subUrl) rows.push([urlBtn("🌐 صفحهٔ اشتراک و فایل‌ها",subUrl)]);
       rows.push([btn("🔙 بازگشت",`svc_${id}`)]);
       const message = links.length ? `🔗 <b>کانفیگ‌های قابل استفاده</b> (${links.length})\nبرای دریافت لینک یا QR هر مورد، دکمه‌اش را بزنید.` : "کانفیگ تکی فعالی در خروجی ساب موجود نیست. برای فایل‌های تنظیمات و جزئیات، صفحهٔ اشتراک را بررسی کنید.";
@@ -2066,7 +2375,7 @@ async function onCallback(c, cq) {
     catch { return sendMsg(env, chat_id, "⚠️ بررسی سرویس در پنل ناموفق بود؛ بعداً دوباره تلاش کنید.", backKb("my_services")); }
     if (!account) return render(env, cq, "❌ سرویس در پنل متصل فعلی یافت نشد.", backKb("my_services"));
     await del();
-    return sendServiceCard(env, chat_id, s.name, s.volume, s.duration, currentServiceLink(env,s,account), s.config_link, serviceKb(id), liveServiceDetails(account));
+    return sendServiceCard(env, chat_id, s.name, s.volume, s.duration, currentServiceLink(env,s,account), s.config_link, serviceKb(id,env), liveServiceDetails(account));
   }
 
   if (d.startsWith("delsvc_")) {
@@ -2194,7 +2503,7 @@ async function handleUpdate(baseEnv, update) {
   // وضعیت کاربر + تنظیمات + ادمین‌ها با یک رفت‌وبرگشت به دیتابیس
   const [stR, setR, admR] = await baseEnv.DB.batch([
     baseEnv.DB.prepare("SELECT data FROM states WHERE user_id=?").bind(from.id),
-    baseEnv.DB.prepare("SELECT key,value FROM settings"),
+    baseEnv.DB.prepare("SELECT key,value FROM settings WHERE key NOT LIKE 'bulk_migration:%' AND key NOT LIKE 'migration:%'"),
     baseEnv.DB.prepare("SELECT user_id FROM admins"),
   ]);
   const env = Object.create(baseEnv);
@@ -2211,6 +2520,7 @@ async function handleUpdate(baseEnv, update) {
       if (typeof p.user !== "string" || !p.user || typeof p.pass !== "string" || !p.pass) throw new Error();
     } catch { env.PANEL_URL=""; env.PANEL_USER=""; env.PANEL_PASS=""; }
   }
+  if(setR.results.find(r=>r.key==='panel_main_disabled')?.value==='1'){env.PANEL_URL='';env.PANEL_USER='';env.PANEL_PASS='';env.panelStoredIdentity='';}
   env.actor = from.id;
   env.owners = parseIds(baseEnv.ADMIN_ID);
   env.admins = new Set([...env.owners, ...admR.results.map((r) => Number(r.user_id))]);
@@ -2240,13 +2550,33 @@ async function handleUpdate(baseEnv, update) {
 }
 
 async function backgroundEnv(base) {
-  const rows=await all(base,'SELECT key,value FROM settings');const env=Object.create(base);env.cfg=defaults(base);
+  const rows=await all(base,"SELECT key,value FROM settings WHERE key NOT LIKE 'bulk_migration:%' AND key NOT LIKE 'migration:%'");const env=Object.create(base);env.cfg=defaults(base);
   for(const r of rows)if(Object.hasOwn(env.cfg,r.key))env.cfg[r.key]=String(r.value ?? '');
   env.panelStoredIdentity=rows.find(r=>r.key==='panel_identity_v1')?.value || '';
   const saved=rows.find(r=>r.key==='panel_credentials_v1');
   if(saved){try{const p=await decryptPanel(base.BOT_TOKEN,saved.value);env.PANEL_URL=panelURL(p.url);env.PANEL_USER=p.user;env.PANEL_PASS=p.pass;if(!p.user||!p.pass)throw Error()}catch{env.PANEL_URL='';env.PANEL_USER='';env.PANEL_PASS='';}}
+  if(rows.find(r=>r.key==='panel_main_disabled')?.value==='1'){env.PANEL_URL='';env.PANEL_USER='';env.PANEL_PASS='';env.panelStoredIdentity='';}
   env.admins=new Set([...parseIds(base.ADMIN_ID),...(await all(base,'SELECT user_id FROM admins')).map(r=>Number(r.user_id))]);
   return env;
+}
+
+async function runBulkMigrations(base, {signal}={}) {
+  const env=await backgroundEnv(base), queue=bulkMigrationQueue(env.DB);env.policySignal=signal;
+  const rows=await all(env,"SELECT key FROM settings WHERE key LIKE 'bulk_migration:%' AND EXISTS(SELECT 1 FROM json_each(settings.value,'$.items') WHERE json_extract(json_each.value,'$.status') IN ('pending','running')) ORDER BY key LIMIT 5");
+  for(const row of rows){
+    if(signal?.aborted)return;
+    const id=row.key.slice('bulk_migration:'.length);
+    try {
+      let job=await queue.get(id);if(!job)continue;
+      if(job.items.some(x=>x.status==='running')){try{job=await queue.recover(id)}catch{continue}}
+      await queue.step(id,async(serviceId,batch)=>{
+        const svc=await getService(env,serviceId),cat=await getCategory(env,batch.categoryId);
+        if(!svc || !cat || !batch.destination || cat.panel_identity!==batch.destination.panelIdentity || cat.group_ids!==batch.destination.groupIds)throw Error('batch destination or service changed');
+        if(signal?.aborted)throw Error('stopped');
+        return migrateService(env,svc,cat,batch.source);
+      });
+    } catch(e) {console.log('bulk migration waiting:',String(e.message).slice(0,100));}
+  }
 }
 async function automatedDelete(env,svc) {
   const lock=await run(env,"INSERT OR IGNORE INTO service_operations(service_id,kind,created_at) VALUES(?,?,?)",svc.id,'auto_delete_running',String(Date.now()));
@@ -2333,7 +2663,7 @@ async function runSubscriptionPolicies(base,{signal}={}) {
     }
   } finally {await run(env,"DELETE FROM settings WHERE key='subscription_policy_lease' AND value=?",lease);}
 }
-export { groupCredentials, panelCreate, panelRenew, panelDelete, panelAccount, panelServiceAccount, panelMemberships, liveServiceDetails, panelCall, handleUpdate, subscriptionLinks, configName, linkFingerprint, runSubscriptionPolicies };
+export { groupCredentials, panelCreate, prepareMigrationDestination, createMigrationDestination, importMigrationUsage, verifyMigrationDestination, readMigrationSnapshot, setMigrationAdmission, bestEffortMigrationBarrier, migrationPanelAdapter, panelRenew, panelDelete, panelAccount, panelServiceAccount, panelMemberships, liveServiceDetails, panelCall, handleUpdate, subscriptionLinks, configName, linkFingerprint, runSubscriptionPolicies, runBulkMigrations };
 
 export default {
   async scheduled(event, env, ctx) {
@@ -2346,6 +2676,7 @@ export default {
       }
       if(!env.SERVER_MODE)await processMessageJobs(env,(id,body)=>{const p=queuedMessagePayload(id,body);return tg(env,p.method,p.params)});
       if(!env.SERVER_MODE)await runSubscriptionPolicies(env);
+      if(!env.SERVER_MODE)await runBulkMigrations(env);
     })());
   },
   async fetch(request, env, ctx) {

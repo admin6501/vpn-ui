@@ -2,7 +2,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { readFileSync, mkdirSync, chmodSync, existsSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
-import worker, { handleUpdate, runSubscriptionPolicies } from './worker.js';
+import worker, { handleUpdate, runSubscriptionPolicies, runBulkMigrations } from './worker.js';
 import { migratePlanModel } from './plan-migration.mjs';
 import { processMessageJobs, queuedMessagePayload } from './messages.js';
 
@@ -47,6 +47,9 @@ const sendQueued=async(userId,body,signal)=>{
 };
 const tickMessages=()=>{if(stopping||messageTask)return;messageTask=processMessageJobs(env,sendQueued,{signal:shutdown.signal}).catch(e=>console.error('Message queue error:',e.message)).finally(()=>{messageTask=null})};
 const messageTimer=setInterval(tickMessages,5000);messageTimer.unref();tickMessages();
+let migrationTask=null;
+const tickMigrations=()=>{if(stopping||migrationTask)return;migrationTask=runBulkMigrations(env,{signal:shutdown.signal}).catch(e=>{if(!stopping)console.error('Migration queue error:',e.message)}).finally(()=>{migrationTask=null})};
+const migrationTimer=setInterval(tickMigrations,5000);migrationTimer.unref();tickMigrations();
 let policyTask=null;
 const tickPolicies=()=>{if(stopping||policyTask)return;policyTask=runSubscriptionPolicies(env,{signal:shutdown.signal}).catch(e=>{if(!stopping)console.error('Subscription policy error:',e.message)}).finally(()=>{policyTask=null})};
 const policyTimer=setInterval(tickPolicies,300000);policyTimer.unref();tickPolicies();
@@ -63,4 +66,4 @@ while(!stopping){
   }
  }catch(e){if(!stopping){console.error('Polling/recovery error:',e.message);await delay(5000,undefined,{signal:shutdown.signal}).catch(()=>{})}}
 }
-clearInterval(messageTimer);clearInterval(policyTimer);if(messageTask)await messageTask;if(policyTask)await policyTask;db.close();console.log('Bot stopped.');
+clearInterval(messageTimer);clearInterval(policyTimer);clearInterval(migrationTimer);if(messageTask)await messageTask;if(policyTask)await policyTask;if(migrationTask)await migrationTask;db.close();console.log('Bot stopped.');

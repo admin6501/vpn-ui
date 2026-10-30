@@ -20,7 +20,7 @@ export async function decryptPanel(token, stored) {
 }
 export function panelURL(value) {
   let u; try {u=new URL(value);} catch {throw new Error('آدرس معتبر نیست.');}
-  if(u.protocol!=='https:' || u.username || u.password || u.search || u.hash || !u.hostname || value.length>2048) throw new Error('آدرس باید HTTPS و بدون نام کاربری، رمز، پارامتر یا # باشد.');
+  if(!['http:','https:'].includes(u.protocol) || u.username || u.password || u.search || u.hash || !u.hostname || value.length>2048) throw new Error('آدرس باید HTTP یا HTTPS و بدون نام کاربری، رمز، پارامتر یا # باشد.');
   return u.origin + u.pathname.replace(/\/+$/, '');
 }
 export async function panelAccountKey(url, user) {
@@ -34,7 +34,7 @@ export async function probePanel(config) {
   try {
     r=await fetch(base+'/login',{...options,method:'POST',headers:{'content-type':'application/x-www-form-urlencoded','X-Requested-With':'XMLHttpRequest'},body:new URLSearchParams({username:config.user,password:config.pass}).toString()});
     j=await r.json();
-  } catch {throw new Error('ارتباط HTTPS یا پاسخ ورود پنل ناموفق بود.');}
+  } catch {throw new Error('ارتباط یا پاسخ ورود پنل ناموفق بود.');}
   if(!r.ok || !j?.success) throw new Error(j?.obj?.twoFactorRequired ? 'ورود خودکار با حساب دارای تأیید دومرحله‌ای پشتیبانی نمی‌شود.' : 'ورود به پنل ناموفق بود؛ آدرس و اطلاعات حساب را بررسی کنید.');
   const raw=typeof r.headers.getSetCookie==='function'?r.headers.getSetCookie():[r.headers.get('set-cookie')||''];
   const cookie=raw.map(x=>x.split(';')[0]).filter(x=>x.startsWith('vpn-ui=')).join('; ');

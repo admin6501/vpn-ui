@@ -45,7 +45,7 @@ test('admin menu exposes every section, settings edit and toggle',async()=>{
  const f=fixture();await f.message(1,'/start');assert.ok(JSON.stringify(f.last().reply_markup).includes('admin:root'));
  await f.callback(1,'admin:root');for(const name of ['admin:settings','admin:plans','admin:admins','admin:stats','admin:resettest','admin:panelcheck'])assert.ok(JSON.stringify(f.last().reply_markup).includes(name));
  assert.ok(!JSON.stringify(f.last().reply_markup).includes('admin:help'));
- await f.callback(1,'admin:settings');assert.ok(JSON.stringify(f.last().reply_markup).includes('admin:setting:sub_base_url'));
+ await f.callback(1,'admin:settings');assert.ok(!JSON.stringify(f.last().reply_markup).includes('admin:setting:sub_base_url'));
  await f.callback(1,'admin:setting:test_days');await f.message(1,'45');assert.equal(f.sql.prepare("SELECT value FROM settings WHERE key='test_days'").get().value,'45');
  await f.callback(1,'admin:setting:test_enabled');await f.callback(1,'admin:test:0');assert.equal(f.sql.prepare("SELECT value FROM settings WHERE key='test_enabled'").get().value,'0');
  await f.callback(1,'admin:panelcheck');assert.ok(f.output.some(x=>x.body.text?.includes('اتصال به پنل برقرار')));
