@@ -12,7 +12,7 @@
 | --- | --- |
 | Users, quota, subscriptions, branding and time | [Panel guide](PANEL-GUIDE.md), [راهنمای فارسی](PANEL-GUIDE.fa.md) |
 | Manual panel renewal and reset permissions | [Client renewal](CLIENT-RENEWAL.md) |
-| Sales bot installation, additive renewal and migration | [Sales bot guide](TELEGRAM-SALES-BOT.md), [راهنمای فارسی](TELEGRAM-SALES-BOT.fa.md), [انتقال سرویس](BOT-LOCATION-MIGRATION.fa.md) |
+| Sales bot installation, additive renewal and migration | [Sales bot guide](TELEGRAM-SALES-BOT.md), [راهنمای فارسی](../telegram-bot/readmesalsebot.md), [انتقال سرویس](BOT-LOCATION-MIGRATION.fa.md) |
 | Dedicated locations, core/runtime controls and installer menu | [Nodes](NODES.md), [نودها](NODES.fa.md) |
 | Local panel/agent files, checksums and optional apt step | [Offline installation](OFFLINE-INSTALL.md) |
 | PasarGuard conversion | [Migration](../migration/INSTALL-MIGRATION.fa.md) |
