@@ -71,4 +71,4 @@ when editing translations, especially bits versus bytes, reset versus renewal, d
 TLS warnings and protocol-specific default values. For current operation see the
 [panel guide](PANEL-GUIDE.md) or [راهنمای فارسی](PANEL-GUIDE.fa.md).
 
-The separate [sales bot](TELEGRAM-SALES-BOT.md) currently has a Persian interface; it does not share the panel bot language selector.
+The separate [sales bot](../telegram-bot/README-SALES-BOT.md) currently has a Persian interface; it does not share the panel bot language selector.

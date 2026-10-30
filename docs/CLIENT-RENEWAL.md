@@ -38,4 +38,4 @@ only zero. The maximum supported period is 36,500 days. Renewing preserves the
 account's subscription URL and connection configuration.
 
 
-For the separate sales bot, renewal is additive and edits the existing client without resetting its consumption. The customer can select another plan in the service category. See [sales bot](TELEGRAM-SALES-BOT.md), [migration](BOT-LOCATION-MIGRATION.fa.md) and [integration API](REPRESENTATIVE-BOT-API.fa.md). The panel `renewClient` operation described above has different reset semantics.
+For the separate sales bot, renewal is additive and edits the existing client without resetting its consumption. The customer can select another plan in the service category. See [sales bot](../telegram-bot/README-SALES-BOT.md), [migration](BOT-LOCATION-MIGRATION.fa.md) and [integration API](REPRESENTATIVE-BOT-API.fa.md). The panel `renewClient` operation described above has different reset semantics.

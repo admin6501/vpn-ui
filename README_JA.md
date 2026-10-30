@@ -152,7 +152,7 @@ cd vpn-ui
 
 ## Telegram 販売ボット
 
-Ubuntu または Debian 向けに、ウォレット付きの VPN-UI 販売・サービス管理用 Telegram ボットを用意しています。新規インストールはローカルデータベースを作成し、Cloudflare のデータは移行しません。[ボットの手順](docs/TELEGRAM-SALES-BOT.md)。
+Ubuntu または Debian 向けに、ウォレット付きの VPN-UI 販売・サービス管理用 Telegram ボットを用意しています。新規インストールはローカルデータベースを作成し、Cloudflare のデータは移行しません。[ボットの手順](telegram-bot/README-SALES-BOT.md)。
 
 独立した販売ボットの表示言語はペルシア語です。複数パネル、カテゴリ、残量を引き継ぐ更新、任意の移行をサポートします。[API](docs/REPRESENTATIVE-BOT-API.fa.md)・[移行ガイド](docs/BOT-LOCATION-MIGRATION.fa.md)。
 
