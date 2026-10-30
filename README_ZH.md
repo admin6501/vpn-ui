@@ -6,7 +6,7 @@ VPN-UI 是一个多协议 VPN 管理面板。 **v1.0.0 是该分支的第一个�
 
 ## 十三种语言
 
-面板、订阅浏览器页面、Telegram 机器人和共享 UI 控件支持英语、波斯语、阿拉伯语、西班牙语、印度尼西亚语、日语、巴西葡萄牙语、俄语、土耳其语、乌克兰语、越南语、简体中文和繁体中文。在语言选择器中选择网络语言；在 Telegram 设置中配置机器人语言。该机器人使用配置的语言，而不是每个 Telegram 聊天的单独自动首选项。
+面板、订阅浏览器页面、内置 Telegram 机器人和共享 UI 控件支持英语、波斯语、阿拉伯语、西班牙语、印度尼西亚语、日语、巴西葡萄牙语、俄语、土耳其语、乌克兰语、越南语、简体中文和繁体中文。在语言选择器中选择网络语言；在 Telegram 设置中配置机器人语言。该机器人使用配置的语言，而不是每个 Telegram 聊天的单独自动首选项。
 
 Web 请求保留自己的语言，包括并发面板和订阅请求。区域变体解析为受支持的区域设置。对话框、日历和分页使用所选语言。协议标识符、配置键、命令名称和诊断输出保留其原始语法。终端安装程序使用英语；迁移向导提供波斯语和英语。请参阅 [docs/TRANSLATIONS.md](docs/TRANSLATIONS.md)。
 
@@ -153,6 +153,8 @@ cd vpn-ui
 ## Telegram 销售机器人
 
 可在 Ubuntu 或 Debian 上安装可选的 VPN-UI Telegram 销售和服务管理机器人，支持钱包。全新安装会创建本地数据库，不会导入 Cloudflare 数据。[机器人指南](telegram-bot/README-server.txt)。
+
+独立销售机器人使用波斯语，支持多个面板、分类、累加续费和可选迁移。[API](docs/REPRESENTATIVE-BOT-API.fa.md) · [迁移指南](docs/BOT-LOCATION-MIGRATION.fa.md)。
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/admin6501/vpn-ui/main/scripts/install-telegram-bot.sh -o install-telegram-bot.sh && sudo bash install-telegram-bot.sh

@@ -148,7 +148,7 @@ curl -b jar.txt -X POST 'https://HOST:PORT/<basePath>/panel/api/inbounds/add' \
   --data-urlencode 'listen=' \
   --data-urlencode 'port=1701' \
   --data-urlencode 'protocol=l2tp' \
-  --data-urlencode 'settings={"clients":[{"id":"alice","password":"s3cret","email":"alice@example.com","enable":true}]}' \
+  --data-urlencode 'settings={"clients":[]}' \
   --data-urlencode 'streamSettings={}' \
   --data-urlencode 'sniffing={}'
 ```
@@ -208,6 +208,12 @@ alone is not an ownership grant.
 | POST   | `/reorder`                       | editInbound    | Display order only                                                 |
 | POST   | `/addClient`                     | createClient   | Add an account (target inbound is a **body** field)                |
 | POST   | `/updateClient/:clientId`        | editClient     | Edit an account                                                    |
+| GET    | `/updateClientByEmailCapability` | editClient | Reports `supported` and `guardedExpiry` |
+| POST   | `/updateClientByEmail` | editClient | Edit stored client selected by its email and inbound; form encoded |
+| GET    | `/multiDeleteCapability` | accessInbounds | Reports shared-traffic-safe multi-membership deletion support |
+| GET    | `/migrationCapability` | editClient | Reports availability of migration usage import, not authorization |
+| POST   | `/migrationImportUsage/:email` | editClient + super admin | Initialize usage of a disabled unused destination account |
+| POST   | `/renewClient/:email` | editClient + reset | Reset current consumption and restart the stored period |
 | POST   | `/:id/delClient/:clientId`       | deleteClient   | Delete by identity                                                 |
 | POST   | `/:id/delClientByEmail/:email`   | deleteClient   | Delete by email                                                    |
 | POST   | `/:id/copyClients`               | createClient   | Copy accounts to another inbound                                   |
@@ -1910,3 +1916,14 @@ See [renewal](docs/CLIENT-RENEWAL.md) and [panel guide](docs/PANEL-GUIDE.md).
 Node polling is one second and diagnostics normally five seconds. A node pairs with one panel.
 IPsec is independently selectable in the central and node Cores dialogs and remains a shared dependency
 of L2TP/IKEv2. See [current node operations](docs/NODES.md).
+
+
+## Bot integration: additive renewal, multi-inbound deletion and migration
+
+The [Persian integration guide](docs/REPRESENTATIVE-BOT-API.fa.md) covers both self-hosted panel owners and representatives, including session authentication, groups, credential requirements and ownership boundaries. The separate [sales bot guide](telegram-bot/README-server.txt) and [migration guide](docs/BOT-LOCATION-MIGRATION.fa.md) describe the shipped bot.
+
+`renewClient` resets period consumption; additive bot renewal edits an existing client instead. Read the exact account (`email`, `subId`, membership IDs and consumption) and its complete stored client entry. For finite quota use `max(totalGB, up+down)+purchasedBytes`; zero quota stays unlimited. For a positive expiry use `max(expiryTime, nowMs)+purchasedDays*86400000`; zero stays unlimited and a negative first-use duration is extended negatively. Preserve credentials, subscription ID, membership choices and consumption, send the full client in form field `settings` with its inbound `id`, and verify the resulting account. The bot checks the snapshot before dispatch but cannot provide an atomic compare-and-swap against changes made outside the bot; serialize external edits operationally. Never retry an uncertain write without reconciliation.
+
+For identities unsuitable for a URL path (such as `/`), `POST /panel/api/inbounds/updateClientByEmail` accepts `application/x-www-form-urlencoded` with `id` and a `settings` JSON string containing exactly one complete client and its existing `email`. It resolves the identity stored on that inbound, then applies the same edit, ownership and representative billing checks as `updateClient/:clientId`. `GET /panel/api/inbounds/updateClientByEmailCapability` returns `{supported:true, guardedExpiry:true}` in `obj`. An optional form field `expectedExpiry` on either edit rejects a policy-adjusted expiry that differs by more than 5000 ms and rolls back a reserved representative charge. It guards the final requested expiry, not concurrent updates. A representative must have edit permission and the relevant account/inbound scope; when no guarded capability exists, the shipped bot refuses representative additive renewal before writing.
+
+For multiple memberships, query `GET /panel/api/inbounds/multiDeleteCapability` (`obj.preservesSharedTraffic`), delete each actual membership by email and check after each operation. This is not atomic. For migration, `GET /panel/api/inbounds/migrationCapability` reports `usageImport`; it does not assert permission. `POST /panel/api/inbounds/migrationImportUsage/:email` accepts JSON integer bytes `{ "upload": 0, "download": 0, "allTime": 0 }` and requires a super-admin destination and a disabled account with no previous usage. An identical existing snapshot is idempotent; conflicting existing usage is rejected and lifetime is at least upload plus download. Reconcile source and destination before retrying partial transfers; consumption not yet recorded at the source can be missed.

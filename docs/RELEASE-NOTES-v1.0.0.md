@@ -6,6 +6,11 @@ migration tools together with a complete, current documentation set. This page d
 stable release as a whole; older version numbers and dated live-test reports in retained design
 records describe upstream development, not previous stable releases of this fork.
 
+
+## Sales bot updates / به‌روزرسانی ربات فروش
+
+The optional server bot supports multiple panels and category-bound plans, customer-selected names, wallet and card checkout, coupon limits, customer/admin messaging, subscription alerts, optional expired-service deletion, and backup/restore with scheduled Telegram backups. Transfer of bot-managed services requires a super-admin destination for importing recorded usage; unrecorded source usage can be missed. Additive renewal edits the existing client and preserves consumption, unlike the panel reset-style renewal. The bot UI is Persian; the panel's built-in Telegram management bot has separate language settings. [Bot guide](../telegram-bot/README-server.txt), [migration](BOT-LOCATION-MIGRATION.fa.md), [API for panel owners and representatives](REPRESENTATIVE-BOT-API.fa.md).
+
 ## تغییر جدید: حذف کاربر چندورودی
 
 با حذف کاربر از یکی از چند ورودی، مصرف و IPهای مشترک تا حذف آخرین ورودی حفظ می‌شوند و بازپرداخت اعتبار نماینده بر اساس مصرف ثبت‌شده محاسبه می‌شود. تنظیمات سرویس پروتکل مربوط هم بازسازی می‌شود. ربات می‌تواند قابلیت پنل را تشخیص دهد، اما باید هر ورودی را جداگانه حذف و نتیجه را بررسی کند؛ در صورت قطع یا خطا، حذف ممکن است ناقص بماند و باید بررسی شود.
@@ -95,7 +100,7 @@ records describe upstream development, not previous stable releases of this fork
 
 English, Persian, Arabic, Spanish, Indonesian, Japanese, Brazilian Portuguese, Russian, Turkish,
 Ukrainian, Vietnamese, Simplified Chinese and Traditional Chinese are included in the panel,
-subscription browser page and Telegram bot. The bot uses its configured language. Terminal
+subscription browser page and built-in Telegram management bot. The built-in bot uses its configured language. The separate sales bot currently uses Persian. Terminal
 installers remain English; the migration wizard supports Persian and English.
 
 This stable update fixes concurrent HTML language mixing, regional-language/cookie fallback and
@@ -196,7 +201,7 @@ Documentation: [all guides](https://github.com/admin6501/vpn-ui/blob/main/docs/I
 IP خروجی، دیگر هم‌زمان برچسب خطا نشان نمی‌دهد.
 
 **این اولین نسخهٔ پایدار این فورک با شمارهٔ v1.0.0 است.** پنل مرکزی، عامل نود، نصب آنلاین/آفلاین
-و ابزار مهاجرت همراه راهنماهای هماهنگ منتشر می‌شوند. پنل، ساب و ربات ۱۳ زبان دارند؛ شش README
+و ابزار مهاجرت همراه راهنماهای هماهنگ منتشر می‌شوند. پنل، ساب و ربات مدیریتی داخلی ۱۳ زبان دارند؛ رابط ربات فروش مستقل فارسی است؛ شش README
 جاافتاده اضافه و هر ۱۳ راهنما هم‌ساختار شده‌اند. تداخل زبان درخواست‌های هم‌زمان، تشخیص زبان منطقه‌ای
 و متن‌های ثابت فرم‌ها، هشدارها و راهنمای GRE اصلاح شده‌اند. اسکریپت ترمینال انگلیسی و مهاجرت فارسی/انگلیسی است.
 

@@ -6,7 +6,7 @@ VPN-UI là bảng quản lý VPN đa giao thức. **v1.0.0 là bản phát hành
 
 ## Mười ba ngôn ngữ
 
-Bảng điều khiển, trang trình duyệt đăng ký, bot Telegram và các điều khiển giao diện người dùng dùng chung hỗ trợ tiếng Anh, tiếng Ba Tư, tiếng Ả Rập, tiếng Tây Ban Nha, tiếng Indonesia, tiếng Nhật, tiếng Bồ Đào Nha Brazil, tiếng Nga, tiếng Thổ Nhĩ Kỳ, tiếng Ukraina, tiếng Việt, tiếng Trung giản thể và tiếng Trung phồn thể. Chọn ngôn ngữ web trong bộ chọn ngôn ngữ; định cấu hình ngôn ngữ bot trong cài đặt Telegram. Bot sử dụng ngôn ngữ được định cấu hình, không phải tùy chọn tự động riêng biệt cho mỗi cuộc trò chuyện Telegram.
+Bảng điều khiển, trang trình duyệt đăng ký, bot Telegram tích hợp và các điều khiển giao diện người dùng dùng chung hỗ trợ tiếng Anh, tiếng Ba Tư, tiếng Ả Rập, tiếng Tây Ban Nha, tiếng Indonesia, tiếng Nhật, tiếng Bồ Đào Nha Brazil, tiếng Nga, tiếng Thổ Nhĩ Kỳ, tiếng Ukraina, tiếng Việt, tiếng Trung giản thể và tiếng Trung phồn thể. Chọn ngôn ngữ web trong bộ chọn ngôn ngữ; định cấu hình ngôn ngữ bot trong cài đặt Telegram. Bot sử dụng ngôn ngữ được định cấu hình, không phải tùy chọn tự động riêng biệt cho mỗi cuộc trò chuyện Telegram.
 
 Các yêu cầu web giữ ngôn ngữ riêng của chúng, bao gồm các yêu cầu đăng ký và bảng điều khiển đồng thời. Các biến thể khu vực sẽ phân giải thành các ngôn ngữ được hỗ trợ. Hộp thoại, lịch và phân trang sử dụng ngôn ngữ đã chọn. Mã định danh giao thức, khóa cấu hình, tên lệnh và đầu ra chẩn đoán vẫn giữ nguyên cú pháp ban đầu. Trình cài đặt thiết bị đầu cuối sử dụng tiếng Anh; trình hướng dẫn di chuyển cung cấp tiếng Ba Tư và tiếng Anh. Xem [docs/TRANSLATIONS.md](docs/TRANSLATIONS.md).
 
@@ -153,6 +153,8 @@ Quy trình phát hành xác thực cả kiến ​​trúc gốc, hành vi cấp
 ## Bot bán hàng Telegram
 
 Có thể cài bot Telegram tùy chọn để bán và quản lý dịch vụ VPN-UI cùng ví trên Ubuntu hoặc Debian. Cài mới tạo cơ sở dữ liệu cục bộ và không nhập dữ liệu Cloudflare. [Hướng dẫn bot](telegram-bot/README-server.txt).
+
+Bot bán hàng riêng dùng tiếng Ba Tư, hỗ trợ nhiều bảng điều khiển, danh mục, gia hạn cộng dồn và chuyển dịch vụ tùy chọn. [API](docs/REPRESENTATIVE-BOT-API.fa.md), [hướng dẫn chuyển](docs/BOT-LOCATION-MIGRATION.fa.md).
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/admin6501/vpn-ui/main/scripts/install-telegram-bot.sh -o install-telegram-bot.sh && sudo bash install-telegram-bot.sh

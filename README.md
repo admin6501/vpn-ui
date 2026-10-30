@@ -6,7 +6,7 @@ VPN-UI is a multi-protocol VPN management panel. **v1.0.0 is the first stable re
 
 ## Thirteen languages
 
-The panel, subscription browser page, Telegram bot and shared UI controls support English, Persian, Arabic, Spanish, Indonesian, Japanese, Brazilian Portuguese, Russian, Turkish, Ukrainian, Vietnamese, Simplified Chinese and Traditional Chinese. Choose the web language in the language selector; configure the bot language in Telegram settings. The bot uses the configured language, not a separate automatic preference for each Telegram chat.
+The panel, subscription browser page, built-in Telegram bot and shared UI controls support English, Persian, Arabic, Spanish, Indonesian, Japanese, Brazilian Portuguese, Russian, Turkish, Ukrainian, Vietnamese, Simplified Chinese and Traditional Chinese. Choose the web language in the language selector; configure the bot language in Telegram settings. The bot uses the configured language, not a separate automatic preference for each Telegram chat.
 
 Web requests keep their own language, including concurrent panel and subscription requests. Regional variants resolve to supported locales. Dialogs, calendars and pagination use the selected language. Protocol identifiers, configuration keys, command names and diagnostic output retain their original syntax. Terminal installers use English; the migration wizard offers Persian and English. See [docs/TRANSLATIONS.md](docs/TRANSLATIONS.md).
 
@@ -153,6 +153,8 @@ The release workflow validates both native architectures, focused accounting and
 ## Telegram sales bot
 
 An optional Telegram sales bot for VPN-UI can be installed on an Ubuntu/Debian server. It includes service management and a wallet. A fresh install creates a new local database; it does not import an existing Cloudflare bot. See [bot instructions](telegram-bot/README-server.txt).
+
+The separate sales bot uses Persian and supports multiple panels, categories, additive renewal and optional migration. See [bot integration API](docs/REPRESENTATIVE-BOT-API.fa.md) and [migration guide](docs/BOT-LOCATION-MIGRATION.fa.md).
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/admin6501/vpn-ui/main/scripts/install-telegram-bot.sh -o install-telegram-bot.sh && sudo bash install-telegram-bot.sh
