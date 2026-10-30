@@ -16,16 +16,25 @@ function fixture(schemaChanged=false) {
  writeFileSync(join(conf,'config.json'),'{}');const db=new DatabaseSync(join(data,'bot.sqlite'));db.exec('CREATE TABLE keepme(v); INSERT INTO keepme VALUES(42)');db.close();
  assert.equal(spawnSync('tar',['-czf',join(dir,'repo.tar.gz'),'-C',dir,'vpn-ui-main']).status,0);
  const fake=(name,body)=>writeFileSync(join(bin,name),'#!/usr/bin/env bash\n'+body+'\n',{mode:0o755});
- fake('curl','cp "$MOCK_ARCHIVE" "${@: -1}"');fake('npm','exit 0');fake('systemctl','echo "$*" >> "$MOCK_LOG"; if [[ "${MOCK_INTERRUPT_ON:-}" == "$1" && ! -e "$MOCK_LOG.interrupted" ]]; then touch "$MOCK_LOG.interrupted"; kill -TERM "$PPID"; exit 0; fi; if [[ "${MOCK_FAIL_START:-}" == 1 && "$1" == start && ! -e "$MOCK_LOG.failed" ]]; then touch "$MOCK_LOG.failed"; exit 1; fi; exit 0');
+ fake('curl','cp "$MOCK_ARCHIVE" "${@: -1}"');fake('npm','ln -s \"$MOCK_NODE_MODULES\" node_modules');fake('systemctl','echo "$*" >> "$MOCK_LOG"; if [[ "${MOCK_INTERRUPT_ON:-}" == "$1" && ! -e "$MOCK_LOG.interrupted" ]]; then touch "$MOCK_LOG.interrupted"; kill -TERM "$PPID"; exit 0; fi; if [[ "${MOCK_FAIL_START:-}" == 1 && "$1" == start && ! -e "$MOCK_LOG.failed" ]]; then touch "$MOCK_LOG.failed"; exit 1; fi; exit 0');
  let script=readFileSync('manage-server.sh','utf8');
  script=script.replace('APP=/opt/vpn-ui-telegram-bot',`APP=${app}`).replace('CONF=/etc/vpn-ui-bot',`CONF=${conf}`).replace('DATA=/var/lib/vpn-ui-bot',`DATA=${data}`).replace('NODE=/opt/vpn-ui-bot-node/bin/node',`NODE=${process.execPath}`).replace('[[ $EUID == 0 ]]', '[[ 1 == 1 ]]').replaceAll('/opt/.vpn-ui-bot-stage.',`${dir}/.stage.`).replaceAll('/opt/vpn-ui-bot-node',`${dir}/runtime`).replaceAll('/etc/systemd/system/vpn-ui-telegram-bot.service',`${dir}/service`).replaceAll('/etc/systemd/system/vpn-ui-bot-backup.service',`${dir}/backup.service`).replaceAll('/etc/systemd/system/vpn-ui-bot-backup.timer',`${dir}/backup.timer`).replaceAll('/usr/local/bin/vpn-ui-bot',`${dir}/link`);
  const menu=join(dir,'menu.sh');writeFileSync(menu,script);
- const run=(input,extra={})=>spawnSync('bash',[menu],{input,encoding:'utf8',timeout:20000,env:{...process.env,PATH:`${bin}:${process.env.PATH}`,MOCK_ARCHIVE:join(dir,'repo.tar.gz'),MOCK_LOG:join(dir,'calls'),...extra}});
+ const run=(input,extra={})=>spawnSync('bash',[menu],{input,encoding:'utf8',timeout:20000,env:{...process.env,PATH:`${bin}:${process.env.PATH}`,MOCK_ARCHIVE:join(dir,'repo.tar.gz'),MOCK_NODE_MODULES:resolve('node_modules'),MOCK_LOG:join(dir,'calls'),...extra}});
  const runAuto=(extra={})=>spawnSync('bash',[menu,'--auto-backup'],{encoding:'utf8',timeout:20000,env:{...process.env,PATH:`${bin}:${process.env.PATH}`,MOCK_LOG:join(dir,'calls'),...extra}});
- return {dir,app,data,conf,run,runAuto};
+ return {dir,app,data,conf,repo,run,runAuto,repack(){assert.equal(spawnSync('tar',['-czf',join(dir,'repo.tar.gz'),'-C',dir,'vpn-ui-main']).status,0)}};
 }
 test('update preserves database and creates backup before replacing code',()=>{
  const f=fixture();try{const result=f.run('9\n\n0\n');assert.equal(result.status,0,result.stderr);assert.match(result.stdout,/آپدیت انجام شد/);assert.match(readFileSync(join(f.app,'worker.js'),'utf8'),/export default/);const db=new DatabaseSync(join(f.data,'bot.sqlite'));assert.equal(db.prepare('SELECT v FROM keepme').get().v,42);db.close();assert.ok(existsSync(join(f.data,'backups')))}finally{rmSync(f.dir,{recursive:true,force:true})}
+});
+test('update includes future runtime modules without a hard-coded file list',()=>{
+ const f=fixture();try{writeFileSync(join(f.repo,'future-runtime.js'),'export const ready=true;\n');writeFileSync(join(f.repo,'worker.js'),"import './future-runtime.js';\n"+readFileSync(join(f.repo,'worker.js'),'utf8'));f.repack();const result=f.run('9\n\n0\n');assert.match(result.stdout,/آپدیت انجام شد/);assert.ok(existsSync(join(f.app,'future-runtime.js')))}finally{rmSync(f.dir,{recursive:true,force:true})}
+});
+test('missing imported module blocks update before stopping the existing service',()=>{
+ const f=fixture();try{writeFileSync(join(f.repo,'worker.js'),"import './missing-module.js';\nexport default {};\n");f.repack();const result=f.run('9\n\n0\n');assert.match(result.stdout,/آماده‌سازی ناموفق بود/);assert.equal(readFileSync(join(f.app,'worker.js'),'utf8'),'// old version\n');assert.ok(!existsSync(join(f.dir,'calls')));assert.ok(existsSync(join(f.data,'bot.sqlite')))}finally{rmSync(f.dir,{recursive:true,force:true})}
+});
+test('missing server-only import is detected before service stop',()=>{
+ const f=fixture();try{const server=join(f.repo,'server.mjs');writeFileSync(server,"import './missing-server-module.js';\n"+readFileSync(server,'utf8'));f.repack();const result=f.run('9\n\n0\n');assert.match(result.stdout,/آماده‌سازی ناموفق بود/);assert.equal(readFileSync(join(f.app,'worker.js'),'utf8'),'// old version\n');assert.ok(!existsSync(join(f.dir,'calls')))}finally{rmSync(f.dir,{recursive:true,force:true})}
 });
 test('restore validates input, saves existing database, and restores service data',()=>{
  const f=fixture();try{

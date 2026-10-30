@@ -21,7 +21,7 @@ install_bot(){
  tar -xJf "$tmp/node.tar.xz" --strip-components=1 -C /opt/vpn-ui-bot-node
  rm -rf "$tmp"
  chmod 700 "$CONF" "$DATA"
- cp "$HERE"/{worker.js,qr.js,panel-config.js,wallet.js,coupons.js,messages.js,migration.js,migration-journal.js,migration-commit.js,bulk-migration.js,server.mjs,plan-migration.mjs,schema.sql,package.json,package-lock.json,manage-server.sh} "$APP/"
+ cp "$HERE"/*.js "$HERE"/*.mjs "$HERE"/{schema.sql,package.json,package-lock.json,manage-server.sh} "$APP/"
  chmod 700 "$APP/manage-server.sh"
  ln -sfn "$APP/manage-server.sh" /usr/local/bin/vpn-ui-bot
  (cd "$APP"; PATH="/opt/vpn-ui-bot-node/bin:$PATH" npm ci --omit=dev --no-audit --no-fund)
@@ -246,8 +246,8 @@ update_bot()(
      echo 'ساختار دیتابیس نسخه جدید تغییر کرده است؛ آپدیت متوقف شد و به روش مهاجرت نیاز دارد.'; rm -rf "$tmp" "$stage"; return 1
    fi
  fi
- if ! cp "$source"/{worker.js,qr.js,panel-config.js,wallet.js,coupons.js,messages.js,migration.js,migration-journal.js,migration-commit.js,bulk-migration.js,server.mjs,plan-migration.mjs,schema.sql,package.json,package-lock.json,manage-server.sh} "$stage/" ||
-    ! (cd "$stage" && PATH="/opt/vpn-ui-bot-node/bin:$PATH" npm ci --omit=dev --no-audit --no-fund && "$NODE" --check server.mjs && "$NODE" --check worker.js && bash -n manage-server.sh); then
+ if ! cp "$source"/*.js "$source"/*.mjs "$source"/{schema.sql,package.json,package-lock.json,manage-server.sh} "$stage/" ||
+    ! (cd "$stage" && PATH="/opt/vpn-ui-bot-node/bin:$PATH" npm ci --omit=dev --no-audit --no-fund && "$NODE" --check server.mjs && "$NODE" --check worker.js && bash -n manage-server.sh && "$NODE" --experimental-vm-modules --input-type=module -e 'import {SourceTextModule,SyntheticModule} from "node:vm"; import {readFileSync} from "node:fs"; const entry=new SourceTextModule(readFileSync("server.mjs","utf8")); await entry.link(async spec=>{const ns=await import(spec);return new SyntheticModule(Object.keys(ns),function(){for(const key of Object.keys(ns))this.setExport(key,ns[key])})});'); then
    echo 'آماده‌سازی ناموفق بود؛ ربات تغییر نکرد.'; rm -rf "$tmp" "$stage"; return 1
  fi
  chmod 700 "$stage/manage-server.sh"
