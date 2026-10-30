@@ -152,7 +152,7 @@ O fluxo de trabalho de lançamento valida arquiteturas nativas, contabilidade fo
 
 ## Bot de vendas no Telegram
 
-Um bot opcional de vendas e gestão de serviços VPN-UI com carteira está disponível para Ubuntu ou Debian. A instalação cria um banco local novo e não importa os dados do Cloudflare. [Guia do bot](telegram-bot/README-server.txt).
+Um bot opcional de vendas e gestão de serviços VPN-UI com carteira está disponível para Ubuntu ou Debian. A instalação cria um banco local novo e não importa os dados do Cloudflare. [Guia do bot](docs/TELEGRAM-SALES-BOT.md).
 
 O bot de vendas independente usa persa e oferece múltiplos painéis, categorias, renovação cumulativa e migração opcional. [API](docs/REPRESENTATIVE-BOT-API.fa.md) e [migração](docs/BOT-LOCATION-MIGRATION.fa.md).
 

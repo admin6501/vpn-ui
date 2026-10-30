@@ -152,7 +152,7 @@ Quy trình phát hành xác thực cả kiến ​​trúc gốc, hành vi cấp
 
 ## Bot bán hàng Telegram
 
-Có thể cài bot Telegram tùy chọn để bán và quản lý dịch vụ VPN-UI cùng ví trên Ubuntu hoặc Debian. Cài mới tạo cơ sở dữ liệu cục bộ và không nhập dữ liệu Cloudflare. [Hướng dẫn bot](telegram-bot/README-server.txt).
+Có thể cài bot Telegram tùy chọn để bán và quản lý dịch vụ VPN-UI cùng ví trên Ubuntu hoặc Debian. Cài mới tạo cơ sở dữ liệu cục bộ và không nhập dữ liệu Cloudflare. [Hướng dẫn bot](docs/TELEGRAM-SALES-BOT.md).
 
 Bot bán hàng riêng dùng tiếng Ba Tư, hỗ trợ nhiều bảng điều khiển, danh mục, gia hạn cộng dồn và chuyển dịch vụ tùy chọn. [API](docs/REPRESENTATIVE-BOT-API.fa.md), [hướng dẫn chuyển](docs/BOT-LOCATION-MIGRATION.fa.md).
 

@@ -152,7 +152,7 @@ The release workflow validates both native architectures, focused accounting and
 
 ## Telegram sales bot
 
-An optional Telegram sales bot for VPN-UI can be installed on an Ubuntu/Debian server. It includes service management and a wallet. A fresh install creates a new local database; it does not import an existing Cloudflare bot. See [bot instructions](telegram-bot/README-server.txt).
+An optional Telegram sales bot for VPN-UI can be installed on an Ubuntu/Debian server. It includes service management and a wallet. A fresh install creates a new local database; it does not import an existing Cloudflare bot. See [bot instructions](docs/TELEGRAM-SALES-BOT.md).
 
 The separate sales bot uses Persian and supports multiple panels, categories, additive renewal and optional migration. See [bot integration API](docs/REPRESENTATIVE-BOT-API.fa.md) and [migration guide](docs/BOT-LOCATION-MIGRATION.fa.md).
 

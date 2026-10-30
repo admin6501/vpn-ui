@@ -152,7 +152,7 @@ El flujo de trabajo de lanzamiento valida ambas arquitecturas nativas, contabili
 
 ## Bot de ventas de Telegram
 
-Hay un bot opcional de ventas y gestión de servicios VPN-UI con monedero para Ubuntu o Debian. La instalación crea una base de datos local nueva y no importa los datos de Cloudflare. [Guía del bot](telegram-bot/README-server.txt).
+Hay un bot opcional de ventas y gestión de servicios VPN-UI con monedero para Ubuntu o Debian. La instalación crea una base de datos local nueva y no importa los datos de Cloudflare. [Guía del bot](docs/TELEGRAM-SALES-BOT.md).
 
 El bot de ventas independiente usa persa y admite varios paneles, categorías, renovación acumulativa y migración opcional. [API](docs/REPRESENTATIVE-BOT-API.fa.md) y [migración](docs/BOT-LOCATION-MIGRATION.fa.md).
 
