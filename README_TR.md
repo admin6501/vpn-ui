@@ -152,7 +152,7 @@ Sürüm iş akışı, desteklenen dillerdeki yerel mimarileri, odaklanmış muha
 
 ## Telegram satış botu
 
-VPN-UI için cüzdanlı isteğe bağlı Telegram satış ve servis yönetimi botu Ubuntu veya Debian üzerine kurulabilir. Yeni kurulum yerel veritabanı oluşturur; Cloudflare verilerini aktarmaz. [Bot kılavuzu](telegram-bot/README-server.txt).
+VPN-UI için cüzdanlı isteğe bağlı Telegram satış ve servis yönetimi botu Ubuntu veya Debian üzerine kurulabilir. Yeni kurulum yerel veritabanı oluşturur; Cloudflare verilerini aktarmaz. [Bot kılavuzu](docs/TELEGRAM-SALES-BOT.md).
 
 Bağımsız satış botu Farsça kullanır; birden çok panel, kategori, kalan hakkı koruyan yenileme ve isteğe bağlı taşıma sunar. [API](docs/REPRESENTATIVE-BOT-API.fa.md) ve [taşıma](docs/BOT-LOCATION-MIGRATION.fa.md).
 

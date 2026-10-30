@@ -152,7 +152,7 @@ Alur kerja rilis memvalidasi arsitektur asli, akuntansi terfokus dan perilaku iz
 
 ## Bot penjualan Telegram
 
-Bot Telegram opsional untuk penjualan dan pengelolaan layanan VPN-UI dengan dompet tersedia untuk Ubuntu atau Debian. Instalasi baru membuat database lokal dan tidak mengimpor data Cloudflare. [Panduan bot](telegram-bot/README-server.txt).
+Bot Telegram opsional untuk penjualan dan pengelolaan layanan VPN-UI dengan dompet tersedia untuk Ubuntu atau Debian. Instalasi baru membuat database lokal dan tidak mengimpor data Cloudflare. [Panduan bot](docs/TELEGRAM-SALES-BOT.md).
 
 Bot penjualan terpisah menggunakan bahasa Persia dan mendukung beberapa panel, kategori, perpanjangan akumulatif, dan migrasi opsional. [API](docs/REPRESENTATIVE-BOT-API.fa.md) dan [migrasi](docs/BOT-LOCATION-MIGRATION.fa.md).
 

@@ -1920,7 +1920,7 @@ of L2TP/IKEv2. See [current node operations](docs/NODES.md).
 
 ## Bot integration: additive renewal, multi-inbound deletion and migration
 
-The [Persian integration guide](docs/REPRESENTATIVE-BOT-API.fa.md) covers both self-hosted panel owners and representatives, including session authentication, groups, credential requirements and ownership boundaries. The separate [sales bot guide](telegram-bot/README-server.txt) and [migration guide](docs/BOT-LOCATION-MIGRATION.fa.md) describe the shipped bot.
+The [Persian integration guide](docs/REPRESENTATIVE-BOT-API.fa.md) covers both self-hosted panel owners and representatives, including session authentication, groups, credential requirements and ownership boundaries. The separate [sales bot guide](docs/TELEGRAM-SALES-BOT.md) and [migration guide](docs/BOT-LOCATION-MIGRATION.fa.md) describe the shipped bot.
 
 `renewClient` resets period consumption; additive bot renewal edits an existing client instead. Read the exact account (`email`, `subId`, membership IDs and consumption) and its complete stored client entry. For finite quota use `max(totalGB, up+down)+purchasedBytes`; zero quota stays unlimited. For a positive expiry use `max(expiryTime, nowMs)+purchasedDays*86400000`; zero stays unlimited and a negative first-use duration is extended negatively. Preserve credentials, subscription ID, membership choices and consumption, send the full client in form field `settings` with its inbound `id`, and verify the resulting account. The bot checks the snapshot before dispatch but cannot provide an atomic compare-and-swap against changes made outside the bot; serialize external edits operationally. Never retry an uncertain write without reconciliation.
 

@@ -4,7 +4,7 @@
 
 Central accounts own credentials, quota, expiry and subscription identity. Memberships and groups determine inbound access; role/owner policy bounds every operation. Jobs project changes into native and daemon-backed data paths. Dedicated location agents receive authenticated snapshots and return cumulative, sequenced counters. Nodes poll every second; host diagnostics normally refresh every five seconds. A lost 90-second management lease stops their data plane. See [node architecture and limits](NODES.md).
 
-HTML templates use thirteen bounded language-specific renderers. Middleware resolves cookie/header dialects per request; panel and subscription renders no longer depend on a concurrently mutable global language. The built-in management Telegram bot uses its configured language. The separate sales bot currently uses Persian; see [sales bot](../telegram-bot/README-server.txt). Shared component/calendar assets are local. See [translation checks](TRANSLATIONS.md).
+HTML templates use thirteen bounded language-specific renderers. Middleware resolves cookie/header dialects per request; panel and subscription renders no longer depend on a concurrently mutable global language. The built-in management Telegram bot uses its configured language. The separate sales bot currently uses Persian; see [sales bot](TELEGRAM-SALES-BOT.md). Shared component/calendar assets are local. See [translation checks](TRANSLATIONS.md).
 
 The diagrams below explain implementations, not certification of every protocol/kernel/distribution combination. The cplane proposal remains historical research. For current UI operations use the [panel guide](PANEL-GUIDE.md).
 
