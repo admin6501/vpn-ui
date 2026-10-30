@@ -56,7 +56,7 @@ Local snapshots are stored in `/var/lib/vpn-ui-bot/backups`. These are bot datab
 - **My services:** View each service's live status and subscription link, list individual configurations and request their text or QR, open the subscription page and renew. Configuration availability depends on the subscription output and panel. Customers may confirm deletion of a service, which also deletes it from the panel. Only bot administrators can toggle individual configurations.
 - **Buy:** Choose a category, plan and custom or random service name, then pay by wallet or card transfer. A duplicate custom name is rejected and another is required.
 - **Wallet:** View balance and history and request a top-up within configured limits. A card-receipt top-up is credited after administrator approval.
-- **Trial:** When enabled, only the category selected by the administrator is offered; the customer chooses a custom or random name.
+- **Trial:** When enabled, the categories selected by the administrator are listed with their panel names; the customer chooses one and then a custom or random name. Each user gets one trial in total, not one per panel.
 - **My referral code / enter referral code:** Obtain or register an invitation code according to the administrator's settings. The inviter's reward is a discount on the next purchase, not a wallet deposit.
 - **Download apps / support:** View configured applications and download links or contact support.
 - **Change location:** When enabled by the administrator, the customer can choose a destination for their service. The new subscription link appears in that service after migration.
@@ -88,7 +88,7 @@ Commands are also available: `/settings`, `/set KEY VALUE`, `/plans`, `/setprice
 ## 6. Settings and payments
 
 - **Connected panels:** The main bot administrator can view status/groups and edit address, username, password and subscription base. A panel with a registered service or pending order cannot be removed. Changing a category's group or panel URL alone does not transfer existing services.
-- **Trial:** Enable/disable it and set its traffic in MB, duration in days and one trial category.
+- **Trial:** Enable/disable it and set its traffic in MB, duration in days and select or clear one or more trial categories. The previous single selection is retained after update.
 - **Card and support:** Set the card number, cardholder and support ID. After choosing card transfer, the customer sees amount and card details and sends a photo receipt for administrator review. Wallet is a separate payment method.
 - **Minimum and maximum wallet top-up:** Set in toman; a maximum of zero means no configured maximum.
 - **Required channel membership:** First add the bot to the channel as an administrator, then set the channel username or ID and invite link.

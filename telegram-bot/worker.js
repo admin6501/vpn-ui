@@ -179,6 +179,29 @@ const PLAN_SELECT = "SELECT p.*,s.category_id,s.days,c.name AS category_name,c.g
 const getPlans = (env) => all(env, `${PLAN_SELECT} ORDER BY p.sort,p.price`);
 const getPlan = (env, key) => first(env, `${PLAN_SELECT} WHERE p.key=?`, key);
 const getCategory = (env,id) => first(env,"SELECT * FROM bot_categories WHERE id=?",id);
+// An absent multi-select setting inherits the old single category. An explicit
+// empty array disables all trials without reviving the legacy setting.
+async function trialCategoryIds(env) {
+  const row=await first(env,"SELECT value FROM settings WHERE key=?",'test_category_ids');
+  if(row) { try { const ids=JSON.parse(row.value); return Array.isArray(ids) ? [...new Set(ids.filter(id=>Number.isSafeInteger(id)&&id>0))] : []; } catch { return []; } }
+  const old=await first(env,"SELECT value FROM settings WHERE key=?",'test_category_id');
+  const id=Number(old?.value || 0);return Number.isSafeInteger(id)&&id>0?[id]:[];
+}
+async function toggleTrialCategory(env,id) {
+  const ids=await trialCategoryIds(env), initial=ids.includes(id)?ids.filter(x=>x!==id):[...ids,id];
+  await run(env,`INSERT INTO settings(key,value) VALUES('test_category_ids',?)
+    ON CONFLICT(key) DO UPDATE SET value=CASE
+      WHEN json_valid(settings.value)=0 OR json_type(settings.value)!='array' THEN '[]'
+      WHEN EXISTS(SELECT 1 FROM json_each(settings.value) WHERE json_each.value=?)
+        THEN (SELECT json_group_array(json_each.value) FROM json_each(settings.value) WHERE json_each.value!=?)
+      ELSE json_insert(settings.value,'$[#]',?) END`,JSON.stringify(initial),id,id,id);
+}
+const trialCategoryRoute = cat => JSON.stringify([String(cat?.panel_identity || ''),String(cat?.group_ids || '')]);
+async function selectedTrialCategory(env,state) {
+  const id=Number(state.test_category),cat=await getCategory(env,id);
+  if(!Number.isSafeInteger(id)||id<=0||!(await trialCategoryIds(env)).includes(id)||!cat||state.test_route!==trialCategoryRoute(cat))throw Error('دسته‌بندی تست تغییر کرده است');
+  await assertCategory(env,cat);return cat;
+}
 async function currentPanelIdentity(env) {
   if (env.panelStoredIdentity) return env.panelStoredIdentity;
   if (!env.PANEL_URL || !env.PANEL_USER) throw new Error("ابتدا اتصال پنل را تنظیم کنید");
@@ -1467,11 +1490,19 @@ async function showPlanCategoryChoices(env,chat,page) {
   return sendMsg(env,chat,cats.length ? "دسته‌بندی بسته را انتخاب کنید:" : "دسته‌بندی فعالی نیست؛ ابتدا دسته‌بندی بسازید.",kb(rows));
 }
 async function showTestCategoryChoices(env,cq,page) {
-  const cats=await all(env,"SELECT id,name FROM bot_categories WHERE active=1 ORDER BY id DESC LIMIT 11 OFFSET ?",page*10);
-  const rows=cats.slice(0,10).map(x=>[btn(`${Number(env.cfg.test_category_id)===x.id ? '✅ ' : ''}${String(x.name).slice(0,40)}`,`admin:testcategory:${x.id}`)]);
+  const cats=await all(env,"SELECT id,name,panel_identity FROM bot_categories WHERE active=1 ORDER BY id DESC LIMIT 11 OFFSET ?",page*10);
+  const selected=new Set(await trialCategoryIds(env)),panels=await listBotPanels(env);
+  const rows=cats.slice(0,10).map(x=>{const panel=panels.find(p=>x.panel_identity ? p.identity===x.panel_identity : p.slot==='main');return [btn(`${selected.has(x.id)?'✅':'⬜'} ${String(x.name).slice(0,28)} — ${panel?.name || 'پنل ناموجود'}`,`admin:testcategory:${x.id}:${page}`)]});
   const nav=[];if(page>0)nav.push(btn("◀️ قبلی",`admin:testcategories:${page-1}`));if(cats.length>10)nav.push(btn("بعدی ▶️",`admin:testcategories:${page+1}`));if(nav.length)rows.push(nav);
-  rows.push([btn("🔙 تنظیمات", "admin:settings")]);
-  return render(env,cq,cats.length ? "🎁 دسته‌بندی سرویس تست را انتخاب کنید:" : "دسته‌بندی فعالی وجود ندارد؛ ابتدا یک دسته‌بندی بسازید.",kb(rows));
+  rows.push([btn("✅ پایان انتخاب", "admin:settings")]);
+  return render(env,cq,cats.length ? "🎁 دسته‌بندی‌های مجاز تست را انتخاب یا لغو کنید؛ هر کاربر فقط یک تست در مجموع دریافت می‌کند." : "دسته‌بندی فعالی وجود ندارد؛ ابتدا دسته‌بندی بسازید.",kb(rows));
+}
+async function showCustomerTrialCategories(env,cq,page) {
+  const ids=await trialCategoryIds(env);
+  const cats=ids.length?await all(env,"SELECT id,name,panel_identity FROM bot_categories WHERE active=1 AND id IN (SELECT value FROM json_each(?)) ORDER BY id DESC LIMIT 11 OFFSET ?",JSON.stringify(ids),page*10):[];
+  const panels=await listBotPanels(env),rows=cats.slice(0,10).map(cat=>{const panel=panels.find(p=>cat.panel_identity ? p.identity===cat.panel_identity : p.slot==='main');return [btn(`${String(cat.name).slice(0,28)} — ${panel?.name || 'پنل ناموجود'}`,`testcat:${cat.id}:${page}`)]});
+  const nav=[];if(page>0)nav.push(btn("◀️ قبلی",`testpage:${page-1}`));if(cats.length>10)nav.push(btn("بعدی ▶️",`testpage:${page+1}`));if(nav.length)rows.push(nav);rows.push([btn("🔙 بازگشت","main_menu")]);
+  return render(env,cq,cats.length ? "🎁 دسته‌بندی سرویس تست را انتخاب کنید:" : "سرویس تست فعلاً آماده نیست؛ با پشتیبانی تماس بگیرید.",kb(rows));
 }
 async function showCategoryGroupChoices(env,chat,page) {
   const groups=[],failed=[];for(const panel of await listBotPanels(env)){
@@ -1839,7 +1870,7 @@ async function handleAdminUICallback(c, cq, answer) {
     if (owner) rows.push([btn("➕ افزودن یا تنظیم اتصال پنل", "admin:panelsetup")]);
     if (owner) rows.push([btn('➕ افزودن پنل دیگر','admin:multipanel_add')]);
     if (owner) rows.push([btn('🖥 پنل‌های متصل','admin:multipanels')]);
-    rows.push([btn("🎁 دسته‌بندی سرویس تست", "admin:testcategories:0")]);
+    rows.push([btn("🎁 دسته‌بندی‌های سرویس تست", "admin:testcategories:0")]);
     rows.push(...Object.entries(META).map(([key, [, label]]) => [btn(label, `admin:setting:${key}`)]));
     rows.push([btn("🔙 بازگشت", "admin:root")]);
     return renderAdmin("⚙️ <b>تنظیمات</b>\nبرای دیدن و تغییر هر گزینه آن را انتخاب کنید:", kb(rows));
@@ -1883,11 +1914,13 @@ async function handleAdminUICallback(c, cq, answer) {
     const page=Number(d.split(":")[2]);if(!Number.isSafeInteger(page)||page>1000000)return answer("صفحه نامعتبر است.",true);
     return showTestCategoryChoices(env,cq,page);
   }
-  if (/^admin:testcategory:\d+$/.test(d)) {
-    const id=Number(d.split(":")[2]),cat=await getCategory(env,id);
-    try { const identity=await assertCategory(env,cat);await groupCredentials(await panelForIdentity(env,identity),cat.group_ids,0); } catch(e) { return answer(`دسته‌بندی قابل استفاده نیست: ${String(e.message).slice(0,120)}`,true); }
-    await run(env,"INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value","test_category_id",String(id));
-    return renderAdmin(`✅ دسته‌بندی «${esc(cat.name)}» برای سرویس تست انتخاب شد.`,adminBack("admin:settings"));
+  if (/^admin:testcategory:\d+(?::\d+)?$/.test(d)) {
+    const parts=d.split(":"),id=Number(parts[2]),page=Number(parts[3] || 0),cat=await getCategory(env,id);
+    if(!Number.isSafeInteger(id)||id<=0||!Number.isSafeInteger(page)||page>1000000)return answer("دسته‌بندی نامعتبر است.",true);
+    const selected=(await trialCategoryIds(env)).includes(id);
+    if(!selected)try { const identity=await assertCategory(env,cat);await groupCredentials(await panelForIdentity(env,identity),cat.group_ids,0); } catch(e) { return answer(`دسته‌بندی قابل استفاده نیست: ${String(e.message).slice(0,120)}`,true); }
+    await toggleTrialCategory(env,id);
+    return showTestCategoryChoices(env,cq,page);
   }
   if (d === "admin:panelsetup") {
     if (!owner) return answer("فقط ادمین اصلی اجازه تنظیم اتصال پنل را دارد.", true);
@@ -2009,7 +2042,7 @@ async function onMessage(c, msg) {
     if (st.step === "test_name") {
       const name=text.trim();
       if(!NAME_RE.test(name) || name.length>30) return sendMsg(env,msg.chat.id,"نام باید حداکثر ۳۰ حرف انگلیسی بدون فاصله و عدد باشد.");
-      try {const cat=await getCategory(env,Number(st.test_category));const target=await panelForIdentity(env,await assertCategory(env,cat));if(await panelAccount(target,name))return sendMsg(env,msg.chat.id,"این نام قبلاً ثبت شده است؛ نام دیگری وارد کنید.");} catch {return sendMsg(env,msg.chat.id,"بررسی نام در پنل ناموفق بود؛ دوباره تلاش کنید.");}
+      try {const cat=await selectedTrialCategory(env,st);const target=await panelForIdentity(env,await assertCategory(env,cat));if(await panelAccount(target,name))return sendMsg(env,msg.chat.id,"این نام قبلاً ثبت شده است؛ نام دیگری وارد کنید.");} catch {return sendMsg(env,msg.chat.id,"بررسی نام در پنل ناموفق بود؛ دوباره تلاش کنید.");}
       st.test_name=name;st.step="test_name_ready";
       return sendMsg(env,msg.chat.id,`نام سرویس تست: <b>${esc(name)}</b>\nبرای ساخت، دکمه زیر را بزنید.`,kb([[btn("✅ ساخت سرویس تست","testname:make")],[btn("🔙 بازگشت","main_menu")]]));
     }
@@ -2298,36 +2331,35 @@ async function onCallback(c, cq) {
     return;
   }
 
-  if (d === "main_menu") { if(st.order_id)await cancelDraftOrder(env,Number(st.order_id),uid); delete st.order_id;delete st.step; delete st.plan_key;delete st.purchase_choice; delete st.renew_service_id;delete st.renew_category; delete st.test_category; delete st.test_name; delete st.admin_ui_step; delete st.admin_ui_key; delete st.admin_step; delete st.admin_order; delete st.admin_wallet_change; delete st.wallet_topup_id; await del(); return sendMainMenu(env, chat_id); }
+  if (d === "main_menu") { if(st.order_id)await cancelDraftOrder(env,Number(st.order_id),uid); delete st.order_id;delete st.step; delete st.plan_key;delete st.purchase_choice; delete st.renew_service_id;delete st.renew_category; delete st.test_category; delete st.test_route; delete st.test_name; delete st.admin_ui_step; delete st.admin_ui_key; delete st.admin_step; delete st.admin_order; delete st.admin_wallet_change; delete st.wallet_topup_id; await del(); return sendMainMenu(env, chat_id); }
 
   // --- سرویس تست (هر کاربر فقط یک‌بار)
-  if (d === "test_service") {
+  if (d === "test_service" || /^testpage:\d+$/.test(d)) {
     if (env.cfg.test_enabled !== "1") return answer("سرویس تست فعلا غیرفعال است.", true);
     const existing=await first(env,"SELECT created_at FROM test_claims WHERE user_id=?",uid);
     if(existing) return answer(String(existing.created_at || "").startsWith("processing|") || String(existing.created_at || "").startsWith("review|") ? "درخواست تست قبلی در حال پردازش یا بررسی است." : "شما قبلاً سرویس تست دریافت کرده‌اید.",true);
-    delete st.test_name;delete st.step;delete st.test_category;
-    const id=Number(env.cfg.test_category_id),cat=await getCategory(env,id);
-    try {if(!Number.isSafeInteger(id)||id<=0)throw Error();const target=await panelForIdentity(env,await assertCategory(env,cat));await groupCredentials(target,cat.group_ids,0)} catch {return render(env,cq,"سرویس تست فعلاً آماده نیست؛ با پشتیبانی تماس بگیرید.",backKb());}
-    return render(env,cq,"🎁 دسته‌بندی سرویس تست را انتخاب کنید:",kb([[btn(String(cat.name).slice(0,45),`testcat:${id}:0`)],[btn("🔙 بازگشت","main_menu")]]));
+    const page=d==='test_service'?0:Number(d.split(':')[1]);if(!Number.isSafeInteger(page)||page>1000000)return answer("صفحه نامعتبر است.",true);
+    delete st.test_name;delete st.step;delete st.test_category;delete st.test_route;
+    return showCustomerTrialCategories(env,cq,page);
   }
   if (/^testcat:\d+:\d+$/.test(d)) {
     if(env.cfg.test_enabled!=="1")return answer("سرویس تست فعلا غیرفعال است.",true);
     const id=Number(d.split(":")[1]),cat=await getCategory(env,id);
-    if(!id || id!==Number(env.cfg.test_category_id))return answer("دسته‌بندی تست تغییر کرده است؛ دوباره تلاش کنید.",true);
+    if(!id || !(await trialCategoryIds(env)).includes(id))return answer("دسته‌بندی تست تغییر کرده است؛ دوباره تلاش کنید.",true);
     try {const target=await panelForIdentity(env,await assertCategory(env,cat));await groupCredentials(target,cat.group_ids,0)} catch {return answer("این دسته‌بندی فعلاً در دسترس نیست.",true)}
-    st.test_category=id;delete st.test_name;delete st.step;
+    st.test_category=id;st.test_route=trialCategoryRoute(cat);delete st.test_name;delete st.step;
     return render(env,cq,`🎁 دسته‌بندی «${esc(cat.name)}» انتخاب شد. نام سرویس تست را چگونه انتخاب می‌کنید؟`,kb([[btn("✏️ نام دلخواه", "testname:custom")],[btn("🎲 نام تصادفی", "testname:random")],[btn("🔙 دسته‌بندی‌ها", "test_service")]]));
   }
   if (d === "testname:custom") {
     if (env.cfg.test_enabled !== "1") return answer("سرویس تست فعلا غیرفعال است.",true);
+    try { await selectedTrialCategory(env,st); } catch { return answer("دسته‌بندی تست را دوباره انتخاب کنید.",true); }
     st.step="test_name";delete st.test_name;
     return render(env,cq,"✏️ نام سرویس تست را با حروف انگلیسی، بدون فاصله و عدد بفرستید؛ حداکثر ۳۰ حرف.",backKb("test_service"));
   }
   if (d === "testname:random" || d === "testname:make") {
     if (env.cfg.test_enabled !== "1") return answer("سرویس تست فعلا غیرفعال است.", true);
     if (d === "testname:make" && (st.step !== "test_name_ready" || !NAME_RE.test(st.test_name || "") || st.test_name.length>30)) return answer("ابتدا نام سرویس را انتخاب کنید.",true);
-    const cat=await getCategory(env,Number(st.test_category));
-    try{if(!Number(st.test_category)||Number(st.test_category)!==Number(env.cfg.test_category_id))throw Error();await assertCategory(env,cat)}catch{return answer("دسته‌بندی تست را دوباره انتخاب کنید.",true)}
+    let cat;try{cat=await selectedTrialCategory(env,st)}catch{return answer("دسته‌بندی تست را دوباره انتخاب کنید.",true)}
     const testName=d === "testname:make" ? st.test_name : randomServiceName();
     const token = `processing|${hex(12)}|${now()}`;
     const claimed = await run(env, "INSERT OR IGNORE INTO test_claims(user_id,created_at) VALUES(?,?)", uid, token);

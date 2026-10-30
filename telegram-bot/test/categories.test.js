@@ -55,15 +55,36 @@ test('category and plan control customer selection and preserve order group afte
  await f.cb(1,'admin:category_rebind:1');await f.cb(1,'admin:categorygroup:2');assert.equal(f.sql.prepare('SELECT group_ids FROM bot_categories WHERE id=1').get().group_ids,'2');
  await f.cb(2,'card:pay:1');await f.photo(2);await f.cb(1,`approve_${order.id}`);assert.equal(f.sent.length,1);assert.equal(f.sent[0].get('id'),'3');assert.deepEqual(f.sent[0].getAll('groupIds'),['1']);const client=JSON.parse(f.sent[0].get('settings')).clients[0];assert.equal(client.renewalDuration,14*86400000);
 });
-test('admin selects one trial category; stale buttons cannot issue a trial on another group',async()=>{
+test('admin selects multiple trial categories and revoked choices cannot issue a service',async()=>{
  const f=fixture();await category(f,'A',1);await category(f,'B',2);
  await f.cb(5,'test_service');assert.match(f.last().text,/آماده نیست/);
  await f.cb(1,'admin:settings');assert.ok(JSON.stringify(f.last().reply_markup).includes('admin:testcategories:0'));
- await f.cb(1,'admin:testcategories:0');await f.cb(1,'admin:testcategory:2');assert.equal(f.sql.prepare("SELECT value FROM settings WHERE key='test_category_id'").get().value,'2');
- await f.cb(5,'test_service');const markup=JSON.stringify(f.last().reply_markup);assert.ok(markup.includes('testcat:2:0'));assert.ok(!markup.includes('testcat:1:0'));
- await f.cb(5,'testcat:1:0');await f.cb(5,'testname:random');assert.equal(f.sent.length,0);
- await f.cb(5,'testcat:2:0');await f.cb(1,'admin:testcategory:1');await f.cb(5,'testname:random');assert.equal(f.sent.length,0);
+ await f.cb(1,'admin:testcategory:1');await f.cb(1,'admin:testcategory:2');
+ assert.deepEqual(JSON.parse(f.sql.prepare("SELECT value FROM settings WHERE key='test_category_ids'").get().value),[1,2]);
+ await f.cb(5,'test_service');const markup=JSON.stringify(f.last().reply_markup);assert.ok(markup.includes('testcat:1:0'));assert.ok(markup.includes('testcat:2:0'));
+ await f.cb(5,'testcat:2:0');await f.cb(1,'admin:testcategory:2');await f.cb(5,'testname:random');assert.equal(f.sent.length,0);
  await f.cb(1,'admin:testcategory:2');await f.cb(5,'testcat:2:0');await f.cb(5,'testname:random');assert.equal(f.sent.length,1);assert.equal(f.sent[0].get('id'),'7');assert.deepEqual(f.sent[0].getAll('groupIds'),['2']);
+ await f.cb(5,'testcat:1:0');await f.cb(5,'testname:random');assert.equal(f.sent.length,1);
+});
+test('legacy trial selection is retained, can be deselected, and disabled users cannot change it',async()=>{
+ const f=fixture();await category(f,'A',1);await category(f,'B',2);f.sql.exec("INSERT INTO settings(key,value) VALUES('test_category_id','1')");
+ await f.cb(9,'admin:testcategory:2');assert.equal(f.sql.prepare("SELECT value FROM settings WHERE key='test_category_ids'").get(),undefined);
+ await f.cb(1,'admin:testcategories:0');assert.match(JSON.stringify(f.last().reply_markup),/✅ A/);
+ await f.cb(1,'admin:testcategory:2');assert.deepEqual(JSON.parse(f.sql.prepare("SELECT value FROM settings WHERE key='test_category_ids'").get().value),[1,2]);
+ await f.cb(1,'admin:testcategory:1');await f.cb(1,'admin:testcategory:2');assert.deepEqual(JSON.parse(f.sql.prepare("SELECT value FROM settings WHERE key='test_category_ids'").get().value),[]);
+ await f.cb(5,'test_service');assert.match(f.last().text,/آماده نیست/);
+});
+test('changing a trial category group after selection stops the stale request',async()=>{
+ const f=fixture();await category(f,'A',1);await f.cb(1,'admin:testcategory:1');await f.cb(5,'testcat:1:0');
+ await f.cb(1,'admin:category_rebind:1');await f.cb(1,'admin:categorygroup:2');await f.cb(5,'testname:random');assert.equal(f.sent.length,0);
+ await f.cb(5,'testcat:1:0');await f.cb(5,'testname:random');assert.equal(f.sent.length,1);assert.deepEqual(f.sent[0].getAll('groupIds'),['2']);
+});
+test('customer trial categories paginate and do not expose unselected or inactive categories',async()=>{
+ const f=fixture();for(let id=1;id<=13;id++)f.sql.prepare('INSERT INTO bot_categories(id,name,group_ids,active) VALUES(?,?,?,?)').run(id,`Category${id}`,'1',id===13?0:1);
+ f.sql.prepare("INSERT INTO settings(key,value) VALUES('test_category_ids',?)").run(JSON.stringify(Array.from({length:12},(_,i)=>i+1).concat(13)));
+ await f.cb(3,'test_service');let markup=JSON.stringify(f.last().reply_markup);assert.ok(markup.includes('testpage:1'));assert.ok(!markup.includes('testcat:13:'));
+ await f.cb(3,'testpage:1');markup=JSON.stringify(f.last().reply_markup);assert.ok(markup.includes('testcat:1:1'));assert.ok(markup.includes('testpage:0'));
+ await f.cb(3,'testcat:13:0');await f.cb(3,'testname:random');assert.equal(f.sent.length,0);
 });
 test('invalidated group and foreign panel identity cannot issue or fulfill a new invoice',async()=>{
  const f=fixture();await category(f,'A',1);await plan(f,'a10',100,10,14,1);f.setGroups([{id:2,name:'Beta',inboundIds:[7]}]);await f.cb(2,'plan_a10');assert.equal(f.sql.prepare('SELECT COUNT(*) n FROM orders').get().n,0);
