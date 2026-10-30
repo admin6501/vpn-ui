@@ -193,3 +193,17 @@ test('main panel uses the same manager and removal keeps it disabled despite env
  await f.cb(1,'admin:multipanel:main');assert.match(f.last().text,/تعداد گروه‌ها: 1/);assert.ok(JSON.stringify(f.last().reply_markup).includes('admin:mpdelete:main'));
  await f.cb(1,'admin:mpdeleteyes:main');assert.equal(f.sql.prepare("SELECT value FROM settings WHERE key='panel_main_disabled'").get().value,'1');await f.cb(1,'admin:multipanels');assert.ok(!JSON.stringify(f.last().reply_markup).includes('admin:multipanel:main'));
 });
+
+
+test('multiple selected trial categories use their own panels with one global claim per user',async()=>{
+ const f=fixture(),one=await panelAccountKey('https://panel-one.example/base','rep'),two=await panelAccountKey('https://panel-two.example/base','rep');
+ f.sql.prepare('INSERT INTO settings(key,value) VALUES(?,?)').run('extra_panel:p123456789abc',await encryptPanel('token',{name:'Panel Two',url:'https://panel-two.example/base',user:'rep',pass:'pass',sub:'https://sub-two.example/sub/'}));
+ f.sql.prepare('INSERT INTO bot_categories(id,name,group_ids,panel_identity) VALUES(1,?,?,?)').run('Same','1',one);
+ f.sql.prepare('INSERT INTO bot_categories(id,name,group_ids,panel_identity) VALUES(2,?,?,?)').run('Same','1',two);
+ f.sql.exec("INSERT INTO settings(key,value) VALUES('test_enabled','1')");
+ await f.cb(1,'admin:testcategory:1');await f.cb(1,'admin:testcategory:2');await f.cb(4,'test_service');
+ let markup=JSON.stringify(f.last().reply_markup);assert.match(markup,/پنل ۱/);assert.match(markup,/Panel Two/);assert.match(markup,/testcat:1:0/);assert.match(markup,/testcat:2:0/);
+ await f.cb(4,'testcat:2:0');await f.cb(4,'testname:custom');await f.msg(4,'Second');await f.cb(4,'testname:make');assert.deepEqual(f.actions[0],['two','add','Second']);
+ await f.cb(4,'testcat:1:0');await f.cb(4,'testname:random');assert.equal(f.actions.length,1);
+ await f.cb(5,'testcat:1:0');await f.cb(5,'testname:custom');await f.msg(5,'First');await f.cb(5,'testname:make');assert.deepEqual(f.actions[1],['one','add','First']);
+});
