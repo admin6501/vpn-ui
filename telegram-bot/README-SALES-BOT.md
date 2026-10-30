@@ -93,7 +93,7 @@ Commands are also available: `/settings`, `/set KEY VALUE`, `/plans`, `/setprice
 
 ## 6. Settings and payments
 
-- **Connected panels:** The main bot administrator can view status/groups and edit address, username, password and subscription base. A panel with a registered service or pending order cannot be removed. Changing a category's group or panel URL alone does not transfer existing services.
+- **Connected panels:** The main bot administrator can view status/groups and edit the name, address, username, password and subscription base for each panel. Changing its name only changes its display label; it does not transfer the connection or services. A panel with a registered service or pending order cannot be removed. Changing a category's group or panel URL alone does not transfer existing services.
 - **Trial:** Enable/disable it and set its traffic in MB, duration in days and select or clear one or more trial categories. The previous single selection is retained after update.
 - **Card and support:** Set the card number, cardholder and support ID. After choosing card transfer, the customer sees amount and card details and sends a photo receipt for administrator review. Wallet is a separate payment method.
 - **Minimum and maximum wallet top-up:** Set in toman; a maximum of zero means no configured maximum.

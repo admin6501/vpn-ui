@@ -207,3 +207,24 @@ test('multiple selected trial categories use their own panels with one global cl
  await f.cb(4,'testcat:1:0');await f.cb(4,'testname:random');assert.equal(f.actions.length,1);
  await f.cb(5,'testcat:1:0');await f.cb(5,'testname:custom');await f.msg(5,'First');await f.cb(5,'testname:make');assert.deepEqual(f.actions[1],['one','add','First']);
 });
+
+test('the main and additional panels can be renamed without changing connections or service bindings',async()=>{
+ const f=fixture(),identity=await panelAccountKey('https://panel-one.example/base','rep');
+ const stored=await encryptPanel('token',{url:'https://panel-one.example/base',user:'rep',pass:'pass'});
+ f.sql.prepare('INSERT INTO settings(key,value) VALUES(?,?)').run('panel_credentials_v1',stored);
+ f.sql.prepare('INSERT INTO settings(key,value) VALUES(?,?)').run('panel_identity_v1',identity);
+ f.sql.prepare('INSERT INTO settings(key,value) VALUES(?,?)').run('extra_panel:p123456789abc',await encryptPanel('token',{name:'Second',url:'https://panel-two.example/base',user:'rep',pass:'pass',sub:'https://sub-two.example/sub/'}));
+ f.sql.prepare('INSERT INTO bot_categories(id,name,group_ids,panel_identity) VALUES(1,?,?,?)').run('Trial','1',identity);
+ f.sql.exec("INSERT INTO services(id,user_id,name,panel_email,sub_id) VALUES(1,2,'Alice','Alice','old')");f.sql.prepare('INSERT INTO settings(key,value) VALUES(?,?)').run('service_panel:1',identity);
+ await f.cb(1,'admin:multipanel:main');assert.match(JSON.stringify(f.last().reply_markup),/admin:mpname:main/);
+ await f.cb(2,'admin:mpname:main');await f.msg(2,'Intruder');assert.equal(f.sql.prepare("SELECT value FROM settings WHERE key='main_panel_name'").get(),undefined);
+ await f.cb(1,'admin:mpname:main');await f.msg(1,'Second');assert.match(f.last().text,/قبلاً ثبت/);
+ await f.msg(1,'Main New');assert.equal(f.sql.prepare("SELECT value FROM settings WHERE key='main_panel_name'").get().value,'Main New');
+ assert.equal(f.sql.prepare("SELECT value FROM settings WHERE key='panel_credentials_v1'").get().value,stored);
+ assert.equal(f.sql.prepare("SELECT value FROM settings WHERE key='service_panel:1'").get().value,identity);
+ assert.equal(f.sql.prepare('SELECT panel_identity FROM bot_categories WHERE id=1').get().panel_identity,identity);
+ await f.cb(1,'admin:multipanels');let markup=JSON.stringify(f.last().reply_markup);assert.match(markup,/Main New/);assert.match(markup,/Second/);
+ await f.cb(1,'admin:category_add');await f.msg(1,'Another');markup=JSON.stringify(f.last().reply_markup);assert.match(markup,/Shared — Main New/);
+ await f.cb(1,'admin:multipanel:p123456789abc');assert.match(JSON.stringify(f.last().reply_markup),/admin:mpname:p123456789abc/);
+ await f.cb(1,'admin:mpname:p123456789abc');await f.msg(1,'Third');await f.cb(1,'admin:multipanels');markup=JSON.stringify(f.last().reply_markup);assert.match(markup,/Main New/);assert.match(markup,/Third/);
+});

@@ -31,14 +31,18 @@ export async function confirmMessageJob(env,id,creator){
 }
 export async function processMessageJobs(env,send,{signal,now=()=>Date.now(),limit=20}={}){
  await run(env,"UPDATE bot_message_targets SET status='uncertain' WHERE status='sending' AND claimed_ms<?",now()-120000);
- const job=await first(env,"SELECT * FROM bot_message_jobs WHERE status='queued' ORDER BY id LIMIT 1");if(!job)return;
+ // Node.js 22's SQLite reader truncates TEXT at a leading NUL, although the
+ // stored bytes are intact. Read that legacy media marker as a BLOB tail so
+ // pending jobs continue to work on both server and Cloudflare runtimes.
+ const job=await first(env,"SELECT *, CASE WHEN hex(substr(CAST(body AS BLOB),1,1))='00' THEN CAST(substr(CAST(body AS BLOB),2) AS TEXT) ELSE NULL END AS media_body_tail FROM bot_message_jobs WHERE status='queued' ORDER BY id LIMIT 1");if(!job)return;
+ const body=job.media_body_tail===null || job.media_body_tail===undefined ? job.body : '\u0000'+job.media_body_tail;
  if(job.audience==='broadcast')await run(env,"UPDATE bot_message_targets SET status='failed' WHERE job_id=? AND status='pending' AND EXISTS(SELECT 1 FROM bot_users u WHERE u.user_id=bot_message_targets.user_id AND u.blocked=1)",job.id);
  const recipients=await all(env,"SELECT user_id FROM bot_message_targets WHERE job_id=? AND status='pending' ORDER BY user_id LIMIT ?",job.id,limit);
  for(const r of recipients){
   if(signal?.aborted)break;
   const claimed=await run(env,"UPDATE bot_message_targets SET status='sending',claimed_ms=? WHERE job_id=? AND user_id=? AND status='pending' AND EXISTS(SELECT 1 FROM bot_message_jobs WHERE id=? AND status='queued')",now(),job.id,r.user_id,job.id);
   if(!claimed.meta.changes)continue;
-  let state='uncertain';try{const result=await send(r.user_id,job.body,signal);state=result?.ok?'sent':'failed'}catch{}
+  let state='uncertain';try{const result=await send(r.user_id,body,signal);state=result?.ok?'sent':'failed'}catch{}
   await run(env,"UPDATE bot_message_targets SET status=? WHERE job_id=? AND user_id=? AND status='sending'",state,job.id,r.user_id);
   if(!signal?.aborted)await new Promise(resolve=>setTimeout(resolve,55));
  }
