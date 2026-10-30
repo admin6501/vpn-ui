@@ -1,6 +1,6 @@
 # راهنمای نصب و مدیریت ربات فروش تلگرام
 
-این راهنما مربوط به **ربات فروش مستقل VPN-UI** است؛ با ربات مدیریتی داخلی پنل تفاوت دارد. رابط ربات فروش فعلاً فارسی است. [English guide](TELEGRAM-SALES-BOT.md) · [API برای ساخت ربات شخصی](REPRESENTATIVE-BOT-API.fa.md) · [انتقال بین پنل‌ها](BOT-LOCATION-MIGRATION.fa.md)
+این راهنما مربوط به **ربات فروش مستقل VPN-UI** است؛ با ربات مدیریتی داخلی پنل تفاوت دارد. رابط ربات فروش فعلاً فارسی است. [English guide](README-SALES-BOT.md) · [API برای ساخت ربات شخصی](../docs/REPRESENTATIVE-BOT-API.fa.md) · [انتقال بین پنل‌ها](../docs/BOT-LOCATION-MIGRATION.fa.md)
 
 ## ۱. پیش‌نیازها
 

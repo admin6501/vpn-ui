@@ -152,7 +152,7 @@ cd vpn-ui
 
 ## Telegram 銷售機器人
 
-可在 Ubuntu 或 Debian 上安裝選用的 VPN-UI Telegram 銷售與服務管理機器人，支援錢包。全新安裝會建立本機資料庫，不會匯入 Cloudflare 資料。[機器人指南](docs/TELEGRAM-SALES-BOT.md)。
+可在 Ubuntu 或 Debian 上安裝選用的 VPN-UI Telegram 銷售與服務管理機器人，支援錢包。全新安裝會建立本機資料庫，不會匯入 Cloudflare 資料。[機器人指南](telegram-bot/README-SALES-BOT.md)。
 
 獨立銷售機器人使用波斯語，支援多個面板、分類、累加續費及選用遷移。[API](docs/REPRESENTATIVE-BOT-API.fa.md) · [遷移指南](docs/BOT-LOCATION-MIGRATION.fa.md)。
 

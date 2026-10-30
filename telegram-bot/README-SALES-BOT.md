@@ -1,6 +1,6 @@
 # Telegram sales bot: installation and administration
 
-This guide covers the **standalone VPN-UI sales bot**, not the panel's built-in management bot. The sales bot's current interface is Persian. [راهنمای فارسی](TELEGRAM-SALES-BOT.fa.md) · [API integration](REPRESENTATIVE-BOT-API.fa.md) · [Panel migration](BOT-LOCATION-MIGRATION.fa.md)
+This guide covers the **standalone VPN-UI sales bot**, not the panel's built-in management bot. The sales bot's current interface is Persian. [راهنمای فارسی](README-SALES-BOT-FA.md) · [API integration](../docs/REPRESENTATIVE-BOT-API.fa.md) · [Panel migration](../docs/BOT-LOCATION-MIGRATION.fa.md)
 
 ## 1. Requirements
 
