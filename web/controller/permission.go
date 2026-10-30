@@ -553,7 +553,7 @@ func requireRepresentativeClientRoute(prefix string) gin.HandlerFunc {
 	allowed := map[string]bool{
 		"/resellerBalance": true, "/getClientTraffics/:email": true, "/getClientTrafficsById/:id": true,
 		"/clientIps/:email": true, "/clearClientIps/:email": true, "/addClient": true,
-		"/:id/delClient/:clientId": true, "/updateClient/:clientId": true,
+		"/:id/delClient/:clientId": true, "/updateClient/:clientId": true, "/updateClientByEmail": true, "/updateClientByEmailCapability": true,
 		"/renameUnservedAccount": true, "/saveAccount": true, "/delAccount/:email": true,
 		"/:id/setMembershipEnable/:email": true, "/bulkUpdateClients": true, "/bulkPreview": true,
 		"/bulkMembership": true, "/:id/resetClientTraffic/:email": true, "/renewClient/:email": true,

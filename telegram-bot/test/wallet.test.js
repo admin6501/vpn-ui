@@ -12,22 +12,24 @@ function fixture(){
  let queue=Promise.resolve(); const DB={prepare:q=>prep(q),batch(ss){const work=async()=>{sql.exec('BEGIN');try{let r=[];for(const s of ss){r.push(/^\s*select\b/i.test(s.q)?await s.all():await s.run())}sql.exec('COMMIT');return r}catch(e){sql.exec('ROLLBACK');throw e}};const next=queue.then(work);queue=next.catch(()=>{});return next}};
  const env={DB,BOT_TOKEN:'token',WEBHOOK_SECRET:'secret',ADMIN_ID:'1',PANEL_URL:'https://panel.example/base',PANEL_USER:'u',PANEL_PASS:'p',CARD_NUMBER:'1111',CARD_HOLDER:'Test'};
  sql.prepare("INSERT INTO settings(key,value) VALUES('panel_inbound_id','3'),('sub_base_url','https://sub.example/sub/')").run();
- let output=[],seq=0,mode='good',calls=0;
+ let output=[],seq=0,mode='good',calls=0;const account={email:'old',subId:'sid',enable:true,totalGB:10*1024**3,expiryTime:Date.now()+86400000,up:1,down:2,memberships:[{inboundId:3,protocol:'vless',clientId:'old-uuid'}]};
  globalThis.fetch=async(url,opt={})=>{let u=new URL(url),p=u.pathname;
   if(u.hostname==='api.telegram.org'){const method=p.split('/').at(-1),body=JSON.parse(opt.body);output.push({method,body});return new Response(JSON.stringify({ok:true,result:{message_id:8}}));}
   if(p.endsWith('/login'))return new Response(JSON.stringify({success:true}),{headers:{'set-cookie':'vpn-ui=x'}});
+  if(p.endsWith('/resellerBalance'))return Response.json({success:true,obj:{isReseller:false}});
   if(p.endsWith('/clients/groups')) {if(mode==='preflight')throw Error('connection lost before submit');return new Response(JSON.stringify({success:true,obj:[{id:1,inboundIds:[3]}]}));}
   if(p.endsWith('/clients/assignable'))return new Response(JSON.stringify({success:true,obj:[{inboundId:3,protocol:'vless'}]}));
   if(p.endsWith('/addClient')){calls++;if(mode==='ambiguous')throw Error('connection lost');return new Response(JSON.stringify({success:true}));}
-  if(p.endsWith('/clients/list'))return new Response(JSON.stringify({success:true,obj:{rows:[{email:'old',subId:'sid',enable:true,memberships:[{inboundId:3}]}],total:1}}));
-  if(p.endsWith('/renewClient/old')){calls++;if(mode==='ambiguous')throw Error('connection lost');return new Response(JSON.stringify({success:true}));}
+  if(p.endsWith('/clients/list'))return new Response(JSON.stringify({success:true,obj:{rows:[account],total:1}}));
+  if(p.endsWith('/clients/inbounds'))return Response.json({success:true,obj:[{id:3,protocol:'vless',settings:JSON.stringify({clients:[{id:'old-uuid',email:'old',subId:'sid',enable:account.enable,totalGB:account.totalGB,expiryTime:account.expiryTime}]})}]});
+  if(p.includes('/updateClient/')){calls++;if(mode==='ambiguous')throw Error('connection lost');const c=JSON.parse(new URLSearchParams(opt.body).get('settings')).clients[0];Object.assign(account,{totalGB:c.totalGB,expiryTime:c.expiryTime,enable:c.enable});if(mode==='ambiguousRenew')throw Error('connection lost after edit');return new Response(JSON.stringify({success:true}));}
   throw Error('unexpected endpoint '+p);
  };
  async function emit(data){let tasks=[];let req=new Request('https://worker.example/webhook',{method:'POST',headers:{'X-Telegram-Bot-Api-Secret-Token':'secret'},body:JSON.stringify({update_id:++seq,...data})});assert.equal((await worker.fetch(req,env,{waitUntil:p=>tasks.push(p)})).status,200);await Promise.all(tasks)}
  const message=(uid,text)=>emit({message:{from:{id:uid},chat:{id:uid,type:'private'},message_id:++seq,text}});
  const cb=(uid,data)=>emit({callback_query:{id:'cb'+ ++seq,from:{id:uid},message:{chat:{id:uid,type:'private'},message_id:1},data}});
  const order=(user=2,price=70,renew=null)=>{const r=sql.prepare("INSERT INTO orders(user_id,username,service_name,volume,price,final_price,duration,gb,days,status,renew_service_id) VALUES(?,'u','A','10 گیگ',?,?,'۱ ماهه (۳۰ روزه)',10,30,'draft',?)").run(user,price,price,renew);sql.prepare("INSERT INTO bot_order_routes VALUES(?,'1',3,'')").run(r.lastInsertRowid);return r};
- return {sql,env,out:output,message,cb,order,setMode(v){mode=v},get calls(){return calls}};
+ return {sql,env,out:output,message,cb,order,account,setMode(v){mode=v},get calls(){return calls}};
 }
 
 test('top-up receipt and duplicate admin approvals credit exactly once',async()=>{
@@ -65,6 +67,11 @@ test('unknown panel result refunds immediately and blocks duplicate fulfillment'
 });
 test('wallet can renew an existing service with preserved identity',async()=>{
  const f=fixture();await adjustWallet(f.env,2,100,1,'seed');f.sql.prepare("INSERT INTO services(user_id,name,volume,duration,sub_link,panel_email,inbound_id,sub_id,volume_bytes) VALUES(2,'A','10 گیگ','۱ ماهه (۳۰ روزه)','https://sub.example/sub/sid','old',3,'sid',?)").run(10*1024**3);f.order(2,70,1);await f.cb(2,'wallet:pay:1');assert.equal(await walletBalance(f.env,2),30);assert.equal(f.sql.prepare('SELECT status FROM orders').get().status,'approved');assert.equal(f.sql.prepare('SELECT COUNT(*) n FROM services').get().n,1);
+});
+test('lost response after renewal refunds wallet and never automatically repeats the edit',async()=>{
+ const f=fixture();await adjustWallet(f.env,2,100,1,'seed');f.sql.prepare("INSERT INTO services(user_id,name,volume,duration,sub_link,panel_email,inbound_id,sub_id,volume_bytes) VALUES(2,'A','10 گیگ','۱ ماهه (۳۰ روزه)','https://sub.example/sub/sid','old',3,'sid',?)").run(10*1024**3);f.order(2,70,1);f.setMode('ambiguousRenew');
+ await f.cb(2,'wallet:pay:1');assert.equal(await walletBalance(f.env,2),100);assert.equal(f.sql.prepare('SELECT status FROM orders').get().status,'needs_review_refunded');assert.equal(f.account.totalGB,20*1024**3);assert.equal(f.calls,1);
+ await f.cb(2,'wallet:pay:1');assert.equal(f.calls,1);assert.equal(f.account.totalGB,20*1024**3);
 });
 test('interrupted payment is refunded once by recovery and remains reviewable',async()=>{
  const f=fixture();await adjustWallet(f.env,2,100,1,'seed');f.order();const clock=Date.now;try {Date.now=()=>1000;assert.ok(await reserveWalletPayment(f.env,1,2));}finally{Date.now=clock;}

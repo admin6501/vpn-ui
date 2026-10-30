@@ -7,11 +7,13 @@ function server({groups=[{id:1,inboundIds:[3,4]}],inbounds=[{inboundId:3,protoco
   let calls=[];
   globalThis.fetch=async (url,opt={})=>{const path=new URL(url).pathname;calls.push({path,body:opt.body});
     if(path.endsWith('/login')) return json({success:true},200,{'set-cookie':'vpn-ui=example; Path=/; HttpOnly'});
+    if(path.endsWith('/resellerBalance'))return json({success:true,obj:{isReseller:false}});
     if(path.endsWith('/multiDeleteCapability')) return json({success:true,obj:{preservesSharedTraffic:multiSafe}});
     if(path.endsWith('/clients/groups')) return json({success:true,obj:groups});
     if(path.endsWith('/clients/assignable')) return json({success:true,obj:inbounds});
     if(path.endsWith('/addClient')) return json(createResult);
-    if(path.endsWith('/renewClient/customer')) return json({success:true});
+    if(path.endsWith('/clients/inbounds'))return json({success:true,obj:account?.memberships?.map(m=>({id:m.inboundId,protocol:m.protocol,settings:JSON.stringify({clients:[{id:m.clientId,email:account.email,subId:account.subId,enable:account.enable,totalGB:account.totalGB,expiryTime:account.expiryTime,password:'keep-secret',custom:'keep-field'}]})}))||[]});
+    if(path.includes('/updateClient/')){const client=JSON.parse(new URLSearchParams(opt.body).get('settings')).clients[0];Object.assign(account,{totalGB:client.totalGB,expiryTime:client.expiryTime,enable:client.enable});return json({success:true})}
     if(path.endsWith('/clients/list')) return json({success:true,obj:{rows:account?[account]:[]}});
     if(path.includes('/delClientByEmail/')) { if (deleteResult.success) { const id=Number(path.split('/').at(-3)); account.memberships=account.memberships.filter(m=>m.inboundId!==id);if(!account.memberships.length)account=null; } return json(deleteResult); }
     throw Error('Unexpected test request '+path);
@@ -33,10 +35,47 @@ test('unknown or inaccessible group member and wrong anchor are rejected',async(
  let calls=server({inbounds:[{inboundId:3,protocol:'vless'}]});await assert.rejects(panelCreate(env,{name:'Amir',bytes:1,days:1}),/دسترس/);assert.ok(!calls.some(x=>x.path.endsWith('addClient')));
  calls=server({groups:[{id:1,inboundIds:[4]}],inbounds:[{inboundId:4,protocol:'vmess'}]});await assert.rejects(panelCreate(env,{name:'Amir',bytes:1,days:1}),/عضو/);assert.ok(!calls.some(x=>x.path.endsWith('addClient')));
 });
-test('renewal only accepts existing package and does not change quota',async()=>{
- let calls=server();let svc={panel_email:'customer',volume_bytes:10,duration:'۱ ماهه (۳۰ روزه)'};
- await assert.rejects(panelRenew(env,svc,20,30),/همان حجم/);assert.equal(calls.length,0);
- await panelRenew(env,svc,10,30);assert.equal(calls.filter(x=>x.path.includes('renewClient')).length,1);assert.ok(!calls.some(x=>x.path.includes('bulkUpdate')));
+test('early renewal adds the selected package while retaining usage and client fields',async()=>{
+ const expiry=Date.now()+7*86400000,account={email:'customer',subId:'sid',enable:true,totalGB:10,expiryTime:expiry,up:2,down:1,memberships:[{inboundId:3,protocol:'vless',clientId:'old-id'}]};
+ let calls=server({account});let svc={panel_email:'customer',sub_id:'sid'};
+ await panelRenew(env,svc,5,30);const edits=calls.filter(x=>x.path.includes('/updateClient/'));assert.equal(edits.length,1);
+ const client=JSON.parse(new URLSearchParams(edits[0].body).get('settings')).clients[0];assert.equal(client.totalGB,15);assert.equal(client.expiryTime,expiry+30*86400000);assert.equal(client.subId,'sid');assert.equal(client.password,'keep-secret');assert.equal(client.custom,'keep-field');assert.equal(account.up+account.down,3);assert.ok(!calls.some(x=>x.path.includes('renewClient')||x.path.includes('resetClient')));
+});
+test('expired and overused service receives the full new allowance; unlimited stays unlimited',async()=>{
+ const now=Date.now(),base={email:'customer',subId:'sid',enable:false,totalGB:10,expiryTime:now-86400000,up:8,down:4,memberships:[{inboundId:3,protocol:'vless',clientId:'old-id'}]};
+ server({account:base});await panelRenew(env,{panel_email:'customer',sub_id:'sid'},5,7);assert.equal(base.totalGB,17);assert.ok(base.expiryTime>=now+7*86400000);assert.equal(base.enable,true);assert.equal(base.up+base.down,12);
+ const unlimited={email:'customer',subId:'sid',enable:true,totalGB:0,expiryTime:0,up:8,down:4,memberships:[{inboundId:3,protocol:'vless',clientId:'old-id'}]};server({account:unlimited});await panelRenew(env,{panel_email:'customer',sub_id:'sid'},5,7);assert.equal(unlimited.totalGB,0);assert.equal(unlimited.expiryTime,0);
+});
+test('a changed panel value prevents renewal before dispatch',async()=>{
+ const expiry=Date.now()+86400000,account={email:'customer',subId:'sid',enable:true,totalGB:10,expiryTime:expiry,up:0,down:0,memberships:[{inboundId:3,protocol:'vless',clientId:'old-id'}]};
+ const calls=server({account}),realFetch=globalThis.fetch;globalThis.fetch=async(url,opt)=>{if(new URL(url).pathname.endsWith('/clients/inbounds')){const r=await realFetch(url,opt);account.totalGB=11;return r}return realFetch(url,opt)};
+ let dispatched=false;await assert.rejects(panelRenew(env,{panel_email:'customer',sub_id:'sid'},5,7,()=>{dispatched=true}),/تغییر کرد/);assert.equal(dispatched,false);assert.ok(!calls.some(x=>x.path.includes('/updateClient/')));
+});
+test('renewal addresses each managed protocol by the panel client identity',async()=>{
+ const passwordKey=new Set(['trojan','l2tp','pptp','openvpn','openconnect','sstp','ikev2','anytls','naive']),authKey=new Set(['hysteria','hysteria2']);
+ const protocols=['vless','vmess','shadowsocks','trojan','anytls','tuic','naive','hysteria','hysteria2','l2tp','pptp','openvpn','openconnect','sstp','ikev2','ssh','wg-c','awg','wireguard','gre','mtproto'];
+ for(const protocol of protocols){
+  const expiry=Date.now()+86400000,client={id:'client-id',password:'password-key',auth:'auth-key',email:'customer',subId:'sid',enable:true,totalGB:10,expiryTime:expiry,custom:'preserved'},key=passwordKey.has(protocol)?client.password:authKey.has(protocol)?client.auth:protocol==='shadowsocks'?client.email:client.id;
+  const account={email:'customer',subId:'sid',enable:true,totalGB:10,expiryTime:expiry,up:1,down:2,memberships:[{inboundId:3,protocol,clientId:key}]};let edited=0;
+  globalThis.fetch=async(url,opt={})=>{const p=new URL(url).pathname;if(p.endsWith('/login'))return json({success:true},200,{'set-cookie':'vpn-ui=example'});if(p.endsWith('/resellerBalance'))return json({success:true,obj:{isReseller:false}});if(p.endsWith('/clients/list'))return json({success:true,obj:{rows:[account],total:1}});if(p.endsWith('/clients/inbounds'))return json({success:true,obj:[{id:3,protocol,settings:JSON.stringify({clients:[client]})}]});if(p.includes('/updateClient/')){assert.equal(decodeURIComponent(p.split('/').at(-1)),key,protocol);const next=JSON.parse(new URLSearchParams(opt.body).get('settings')).clients[0];assert.equal(next.custom,'preserved',protocol);assert.equal(next.password,client.password,protocol);assert.equal(next.auth,client.auth,protocol);Object.assign(account,{totalGB:next.totalGB,expiryTime:next.expiryTime,enable:next.enable});edited++;return json({success:true})}throw Error('unexpected endpoint')};
+  await panelRenew(env,{panel_email:'customer',sub_id:'sid'},5,7);assert.equal(edited,1,protocol);assert.equal(account.totalGB,15,protocol);
+ }
+});
+test('slash password uses email-based client edit after checking capability',async()=>{
+ const expiry=Date.now()+86400000,client={email:'customer',password:'secret/part',subId:'sid',enable:true,totalGB:10,expiryTime:expiry},account={email:'customer',subId:'sid',enable:true,totalGB:10,expiryTime:expiry,up:1,down:2,memberships:[{inboundId:3,protocol:'trojan',clientId:'secret/part'}]};let edits=0;
+ globalThis.fetch=async(url,opt={})=>{const p=new URL(url).pathname;if(p.endsWith('/login'))return json({success:true},200,{'set-cookie':'vpn-ui=example'});if(p.endsWith('/resellerBalance'))return json({success:true,obj:{isReseller:false}});if(p.endsWith('/clients/list'))return json({success:true,obj:{rows:[account],total:1}});if(p.endsWith('/clients/inbounds'))return json({success:true,obj:[{id:3,protocol:'trojan',settings:JSON.stringify({clients:[client]})}]});if(p.endsWith('/updateClientByEmailCapability'))return json({success:true,obj:{supported:true}});if(p.endsWith('/updateClientByEmail')){const next=JSON.parse(new URLSearchParams(opt.body).get('settings')).clients[0];assert.equal(next.password,'secret/part');Object.assign(account,{totalGB:next.totalGB,expiryTime:next.expiryTime,enable:next.enable});edits++;return json({success:true})}throw Error('unexpected '+p)};
+ await panelRenew(env,{panel_email:'customer',sub_id:'sid'},5,7);assert.equal(edits,1);assert.equal(account.totalGB,15);
+});
+test('slash password refuses an old panel before submitting the edit',async()=>{
+ const expiry=Date.now()+86400000,client={email:'customer',password:'secret/part',subId:'sid',enable:true,totalGB:10,expiryTime:expiry},account={email:'customer',subId:'sid',enable:true,totalGB:10,expiryTime:expiry,up:1,down:2,memberships:[{inboundId:3,protocol:'trojan',clientId:'secret/part'}]};let dispatched=false;
+ globalThis.fetch=async(url)=>{const p=new URL(url).pathname;if(p.endsWith('/login'))return json({success:true},200,{'set-cookie':'vpn-ui=example'});if(p.endsWith('/resellerBalance'))return json({success:true,obj:{isReseller:false}});if(p.endsWith('/clients/list'))return json({success:true,obj:{rows:[account],total:1}});if(p.endsWith('/clients/inbounds'))return json({success:true,obj:[{id:3,protocol:'trojan',settings:JSON.stringify({clients:[client]})}]});if(p.endsWith('/updateClientByEmailCapability'))return json({success:false},404);throw Error('unexpected '+p)};
+ await assert.rejects(panelRenew(env,{panel_email:'customer',sub_id:'sid'},5,7,()=>{dispatched=true}),/پنل باید/);assert.equal(dispatched,false);assert.equal(account.totalGB,10);
+});
+test('representative renewals require a guarded panel and send the expected expiry',async()=>{
+ const expiry=Date.now()+86400000,client={id:'client-id',email:'customer',subId:'sid',enable:true,totalGB:10,expiryTime:expiry},account={email:'customer',subId:'sid',enable:true,totalGB:10,expiryTime:expiry,up:1,down:2,memberships:[{inboundId:3,protocol:'vless',clientId:'client-id'}]};let guarded=false,edits=0;
+ globalThis.fetch=async(url,opt={})=>{const p=new URL(url).pathname;if(p.endsWith('/login'))return json({success:true},200,{'set-cookie':'vpn-ui=example'});if(p.endsWith('/resellerBalance'))return json({success:true,obj:{isReseller:true}});if(p.endsWith('/clients/list'))return json({success:true,obj:{rows:[account],total:1}});if(p.endsWith('/clients/inbounds'))return json({success:true,obj:[{id:3,protocol:'vless',settings:JSON.stringify({clients:[client]})}]});if(p.endsWith('/updateClientByEmailCapability'))return json({success:true,obj:{supported:true,guardedExpiry:guarded}});if(p.includes('/updateClient/')){const form=new URLSearchParams(opt.body),next=JSON.parse(form.get('settings')).clients[0];assert.equal(Number(form.get('expectedExpiry')),expiry+7*86400000);Object.assign(account,{totalGB:next.totalGB,expiryTime:next.expiryTime,enable:next.enable});edits++;return json({success:true})}throw Error('unexpected '+p)};
+ let dispatched=false;await assert.rejects(panelRenew(env,{panel_email:'customer',sub_id:'sid'},5,7,()=>{dispatched=true}),/پنل باید/);assert.equal(dispatched,false);guarded=true;
+ await panelRenew(env,{panel_email:'customer',sub_id:'sid'},5,7);assert.equal(edits,1);assert.equal(account.totalGB,15);
 });
 test('delete refuses missing/multiple memberships and unsuccessful panel response',async()=>{
  let svc={panel_email:'customer',inbound_id:3};let calls=server({account:{email:'customer',memberships:[{inboundId:3},{inboundId:4}]}});

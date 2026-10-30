@@ -18,15 +18,18 @@ function fixture(){
   const target=u.hostname==='panel-one.example'?'one':u.hostname==='panel-two.example'?'two':null;if(!target)throw Error('unexpected host '+u.hostname);
   const inbound=target==='one'?3:8;
   if(p.endsWith('/login'))return new Response(JSON.stringify({success:true}),{headers:{'set-cookie':'vpn-ui=session'}});
+  if(p.endsWith('/resellerBalance'))return Response.json({success:true,obj:{isReseller:false}});
   if(p.endsWith('/clients/groups'))return Response.json({success:true,obj:[{id:1,name:'Shared',inboundIds:[inbound]}]});
   if(p.endsWith('/clients/assignable'))return Response.json({success:true,obj:[{inboundId:inbound,protocol:'vless'}]});
   if(p.endsWith('/clients/list'))return Response.json({success:true,obj:{rows:accounts[target],total:accounts[target].length}});
+  if(p.endsWith('/clients/inbounds'))return Response.json({success:true,obj:[{id:inbound,protocol:'vless',settings:JSON.stringify({clients:accounts[target].filter(a=>a.memberships.some(m=>m.inboundId===inbound)).map(a=>({...a}))})}]});
   if(p.endsWith('/addClient')){const form=new URLSearchParams(opt.body),c=JSON.parse(form.get('settings')).clients[0];actions.push([target,'add',c.email]);accounts[target].push({...c,up:0,down:0,memberships:[{inboundId:inbound,enable:true}]});return Response.json({success:true})}
   if(p.includes('/migrationImportUsage/')){const email=decodeURIComponent(p.split('/').at(-1)),a=accounts[target].find(x=>x.email===email),v=JSON.parse(opt.body);if(!a||a.enable)return Response.json({success:false});Object.assign(a,{up:v.upload,down:v.download,allTime:v.allTime});return Response.json({success:true})}
   if(p.includes('/getClientTraffics/')){const email=decodeURIComponent(p.split('/').at(-1)),a=accounts[target].find(x=>x.email===email);return Response.json({success:!!a,obj:a})}
   if(p.endsWith('/migrationCapability'))return Response.json({success:true,obj:{usageImport:true}})
   if(p.endsWith('/bulkUpdateClients')){const data=JSON.parse(new URLSearchParams(opt.body).get('data'));for(const t of data.targets){const a=accounts[target].find(x=>x.email===t.email && x.memberships.some(m=>m.inboundId===t.inboundId));if(a)a.enable=data.op==='enable'}return Response.json({success:true,obj:{applied:data.targets.length}})}
   if(p.includes('/renewClient/')){actions.push([target,'renew']);return Response.json({success:true})}
+  if(p.includes('/updateClient/')){const c=JSON.parse(new URLSearchParams(opt.body).get('settings')).clients[0],a=accounts[target].find(x=>x.email===c.email);Object.assign(a,{totalGB:c.totalGB,expiryTime:c.expiryTime,enable:c.enable});actions.push([target,'renew']);return Response.json({success:true})}
   if(p.includes('/delClientByEmail/')){actions.push([target,'delete']);const email=decodeURIComponent(p.split('/').at(-1));accounts[target]=accounts[target].filter(a=>a.email!==email);return Response.json({success:true})}
   throw Error('unexpected '+u.href);
  };
@@ -87,7 +90,18 @@ test('customer location button respects the setting and moves only that customer
  await f.cb(3,'loc:go:1:1');assert.equal(f.accounts().one.length,1);
  await f.cb(2,'loc:list:1');assert.ok(JSON.stringify(f.last().reply_markup).includes('loc:choose:1:1'));
  await f.cb(2,'loc:choose:1:1');assert.match(f.last().text,/اختلاف/);
- await f.cb(2,'loc:go:1:1');assert.equal(f.accounts().one.length,0);assert.equal(f.accounts().two.length,1);assert.equal(f.sql.prepare('SELECT sub_id FROM services WHERE id=1').get().sub_id,f.accounts().two[0].subId);
+ await f.cb(2,'loc:go:1:1');assert.equal(f.accounts().one.length,0);assert.equal(f.accounts().two.length,1);assert.equal(f.sql.prepare('SELECT sub_id FROM services WHERE id=1').get().sub_id,f.accounts().two[0].subId);assert.equal(f.sql.prepare("SELECT value FROM settings WHERE key='service_category:1'").get().value,'1');
+});
+
+test('after moving, a different destination plan extends the same service',async()=>{
+ const f=fixture(),target=await panelAccountKey('https://panel-two.example/base','rep'),expiry=Date.now()+10*86400000;
+ f.sql.prepare('INSERT INTO settings(key,value) VALUES(?,?)').run('extra_panel:p123456789abc',await encryptPanel('token',{name:'پنل ۲',url:'https://panel-two.example/base',user:'rep',pass:'pass',sub:'https://sub-two.example/sub/'}));
+ f.sql.prepare('INSERT INTO bot_categories(id,name,group_ids,panel_identity) VALUES(1,?,?,?)').run('Germany','1',target);
+ f.sql.exec("INSERT INTO settings(key,value) VALUES('location_change_enabled','1'); INSERT INTO plans(key,gb,price,sort) VALUES('p5',5,70,1); INSERT INTO bot_plan_specs(plan_key,category_id,days) VALUES('p5',1,7); INSERT INTO services(id,user_id,name,panel_email,sub_id,duration,volume,volume_bytes) VALUES(1,2,'Alice','Alice','old','30 روزه','10 GB',10737418240); INSERT INTO wallet_entries(user_id,delta,reference,reason,created_at) VALUES(2,100,'seed','admin_adjustment','now')");
+ f.accounts().one.push({email:'Alice',subId:'old',enable:true,up:1024**3,down:1024**3,allTime:2*1024**3,totalGB:10*1024**3,expiryTime:expiry,renewalDuration:30*86400000,memberships:[{inboundId:3,enable:true}]});
+ await f.cb(2,'loc:go:1:1');assert.equal(f.accounts().two.length,1);
+ await f.cb(2,'renew_1');assert.ok(JSON.stringify(f.last().reply_markup).includes('rplan_p5'));await f.cb(2,'rplan_p5');await f.cb(2,'wallet:pay:1');
+ const account=f.accounts().two[0];assert.equal(account.totalGB,15*1024**3);assert.equal(account.expiryTime,expiry+7*86400000);assert.equal(account.up+account.down,2*1024**3);assert.equal(f.sql.prepare('SELECT status FROM orders').get().status,'approved');
 });
 
 test('lost source deletion response leaves the service locked without a blind retry',async()=>{
@@ -116,6 +130,7 @@ test('admin selects all source services and the persisted queue moves each once'
  await runBulkMigrations(f.env);await runBulkMigrations(f.env);
  const done=JSON.parse(f.sql.prepare("SELECT value FROM settings WHERE key LIKE 'bulk_migration:%'").get().value);
  assert.deepEqual(done.items.map(x=>x.status),['done','done']);assert.equal(f.accounts().one.length,0);assert.equal(f.accounts().two.length,2);
+ assert.equal(f.sql.prepare("SELECT value FROM settings WHERE key='service_category:1'").get().value,'1');
  assert.equal(f.accounts().two.find(x=>x.email==='Bob').enable,false);assert.equal(f.accounts().two.find(x=>x.email==='Bob').expiryTime,-86400000);
  await runBulkMigrations(f.env);assert.equal(f.actions.filter(x=>x[1]==='delete').length,2);
 });

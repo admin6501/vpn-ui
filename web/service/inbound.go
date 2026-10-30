@@ -2279,6 +2279,29 @@ func (s *InboundService) getClientPrimaryKey(protocol model.Protocol, client mod
 	return clientIdentity(protocol, client)
 }
 
+// ClientIdentityForEmail resolves a stored entry, never credentials supplied by
+// the caller. It lets the edit route handle identities containing URL slashes.
+func (s *InboundService) ClientIdentityForEmail(inbound *model.Inbound, email string) (string, error) {
+	if inbound == nil || accountKey(email) == "" {
+		return "", common.NewError("client not found")
+	}
+	clients, err := s.GetClients(inbound)
+	if err != nil {
+		return "", err
+	}
+	identity, matches := "", 0
+	for _, client := range clients {
+		if accountKey(client.Email) == accountKey(email) {
+			identity = clientIdentity(inbound.Protocol, client)
+			matches++
+		}
+	}
+	if matches != 1 || identity == "" {
+		return "", common.NewError("client not found or ambiguous")
+	}
+	return identity, nil
+}
+
 func (s *InboundService) writeBackClientSubID(sourceInboundID int, sourceProtocol model.Protocol, client model.Client, subID string) (bool, error) {
 	client.SubID = subID
 	client.UpdatedAt = time.Now().UnixMilli()
