@@ -39,7 +39,7 @@
                 <template v-else>
                     <a-tag v-for="item in balancerOutboundStatuses(balancer)" :key="item.tag"
                         :color="item.active ? 'green' : 'default'" :style="{ margin: '2px' }">
-                        [[ item.active ? 'فعال · ' : 'بدون ترافیک · ' ]][[ item.tag ]]
+                        [[ item.active ? 'دارای ترافیک · ' : 'بدون ترافیک اخیر · ' ]][[ item.tag ]]
                     </a-tag>
                     <span v-if="balancerOutboundStatuses(balancer).length === 0">خروجی مطابق Selector پیدا نشد</span>
                 </template>
