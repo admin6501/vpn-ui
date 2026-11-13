@@ -293,6 +293,7 @@ if (window.nodeXrayId) axios.interceptors.request.use(config => {
     { title: '{{ i18n "pages.xray.balancer.tag"}}', dataIndex: 'tag', align: 'center', width: 50 },
     { title: '{{ i18n "pages.xray.balancer.balancerStrategy"}}', align: 'center', width: 50, scopedSlots: { customRender: 'strategy' } },
     { title: '{{ i18n "pages.xray.balancer.balancerSelectors"}}', align: 'center', width: 100, scopedSlots: { customRender: 'selector' } },
+    { title: 'وضعیت زنده خروجی‌ها', align: 'center', width: 180, scopedSlots: { customRender: 'liveStatus' } },
   ];
 
   const dnsColumns = [
@@ -353,6 +354,11 @@ if (window.nodeXrayId) axios.interceptors.request.use(config => {
       // registered driver, sorted. null means the question could not be asked.
       vpnOutKindList: null,
       outboundsTraffic: [],
+      // Recent per-outbound traffic deltas, used to show which balancer members
+      // are actually carrying traffic without claiming one global selection.
+      outboundTrafficSnapshot: {},
+      outboundActivity: {},
+      activityNow: Date.now(),
       outboundTestStates: {}, // Track testing state and results for each outbound
       saveBtnDisable: true,
       refreshing: false,
@@ -643,7 +649,34 @@ if (window.nodeXrayId) axios.interceptors.request.use(config => {
         const msg = await HttpUtil.get("/panel/xray/getOutboundsTraffic");
         if (msg.success) {
           this.outboundsTraffic = msg.obj;
+          this.trackOutboundActivity(msg.obj, true);
         }
+      },
+      trackOutboundActivity(traffic, baseline = false) {
+        if (!Array.isArray(traffic)) return;
+        const nextSnapshot = {};
+        traffic.forEach(item => {
+          if (!item || !item.tag) return;
+          const total = Number(item.total ?? (Number(item.up || 0) + Number(item.down || 0)));
+          const previous = this.outboundTrafficSnapshot[item.tag];
+          if (!baseline && previous !== undefined && total > previous) {
+            this.$set(this.outboundActivity, item.tag, Date.now());
+          }
+          nextSnapshot[item.tag] = total;
+        });
+        this.outboundTrafficSnapshot = nextSnapshot;
+      },
+      balancerOutboundStatuses(balancer) {
+        const outbounds = this.templateSettings && Array.isArray(this.templateSettings.outbounds)
+          ? this.templateSettings.outbounds : [];
+        const selectors = Array.isArray(balancer.selector) ? balancer.selector : [];
+        return outbounds
+          .filter(outbound => outbound && outbound.tag && selectors.some(selector => outbound.tag.startsWith(selector)))
+          .map(outbound => ({
+            tag: outbound.tag,
+            active: !!this.outboundActivity[outbound.tag] &&
+              this.activityNow - this.outboundActivity[outbound.tag] <= 10000
+          }));
       },
       async getXraySetting() {
         if (this.nodeContext) return this.getNodeXraySetting();
@@ -1731,6 +1764,7 @@ if (window.nodeXrayId) axios.interceptors.request.use(config => {
           window.wsClient.connect();
           window.wsClient.on('outbounds', (payload) => {
             if (payload) {
+              this.trackOutboundActivity(payload);
               this.outboundsTraffic = payload;
               this.$forceUpdate();
             }
@@ -1747,6 +1781,7 @@ if (window.nodeXrayId) axios.interceptors.request.use(config => {
 
       while (true) {
         await PromiseUtil.sleep(800);
+        if (Date.now() - this.activityNow >= 1000) this.activityNow = Date.now();
         this.saveBtnDisable = this.oldXraySetting === this.xraySetting && this.oldOutboundTestUrl === this.outboundTestUrl;
       }
     },
