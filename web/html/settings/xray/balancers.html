@@ -4,6 +4,7 @@
         <a-button type="primary" icon="plus" @click="addBalancer()">
             <span>{{ i18n "pages.xray.balancer.addBalancer"}}</span>
         </a-button>
+        <a-alert type="info" show-icon message="این وضعیت بر اساس افزایش اخیر ترافیک هر خروجی است؛ در اتصال‌های هم‌زمان ممکن است چند خروجی فعال باشند و نشان‌دهنده یک خروجی منتخبِ واحد نیست." />
         <a-table :columns="balancerColumns" bordered :row-key="r => r.key" :data-source="balancersData"
             :scroll="isMobile ? {} : { x: 200 }" :pagination="false" :indent-size="0" :locale='{ filterConfirm: `{{ i18n "confirm" }}`, filterReset: `{{ i18n "reset" }}` }'>
             <template slot="action" slot-scope="text, balancer, index">
@@ -41,7 +42,7 @@
                         :color="item.active ? 'green' : 'default'" :style="{ margin: '2px' }">
                         [[ item.active ? 'دارای ترافیک · ' : 'بدون ترافیک اخیر · ' ]][[ item.tag ]]
                     </a-tag>
-                    <span v-if="balancerOutboundStatuses(balancer).length === 0">خروجی مطابق Selector پیدا نشد</span>
+                    <span v-if="(balancerOutboundStatuses[balancer.tag] || []).length === 0">خروجی مطابق Selector پیدا نشد</span>
                 </template>
             </template>
         </a-table>
