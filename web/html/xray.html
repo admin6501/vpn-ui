@@ -358,6 +358,8 @@ if (window.nodeXrayId) axios.interceptors.request.use(config => {
       // are actually carrying traffic without claiming one global selection.
       outboundTrafficSnapshot: {},
       outboundActivity: {},
+      outboundTrafficInitialized: false,
+      outboundActivityTimeoutMs: 10000,
       activityNow: Date.now(),
       outboundTestStates: {}, // Track testing state and results for each outbound
       saveBtnDisable: true,
@@ -649,7 +651,8 @@ if (window.nodeXrayId) axios.interceptors.request.use(config => {
         const msg = await HttpUtil.get("/panel/xray/getOutboundsTraffic");
         if (msg.success) {
           this.outboundsTraffic = msg.obj;
-          this.trackOutboundActivity(msg.obj, true);
+          this.trackOutboundActivity(msg.obj, !this.outboundTrafficInitialized);
+          this.outboundTrafficInitialized = true;
         }
       },
       trackOutboundActivity(traffic, baseline = false) {
@@ -675,7 +678,7 @@ if (window.nodeXrayId) axios.interceptors.request.use(config => {
           .map(outbound => ({
             tag: outbound.tag,
             active: !!this.outboundActivity[outbound.tag] &&
-              this.activityNow - this.outboundActivity[outbound.tag] <= 10000
+              this.activityNow - this.outboundActivity[outbound.tag] <= this.outboundActivityTimeoutMs
           }));
       },
       async getXraySetting() {
@@ -1766,7 +1769,6 @@ if (window.nodeXrayId) axios.interceptors.request.use(config => {
             if (payload) {
               this.trackOutboundActivity(payload);
               this.outboundsTraffic = payload;
-              this.$forceUpdate();
             }
           });
 
