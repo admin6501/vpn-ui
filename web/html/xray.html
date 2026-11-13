@@ -669,18 +669,6 @@ if (window.nodeXrayId) axios.interceptors.request.use(config => {
         });
         this.outboundTrafficSnapshot = nextSnapshot;
       },
-      balancerOutboundStatuses(balancer) {
-        const outbounds = this.templateSettings && Array.isArray(this.templateSettings.outbounds)
-          ? this.templateSettings.outbounds : [];
-        const selectors = Array.isArray(balancer.selector) ? balancer.selector : [];
-        return outbounds
-          .filter(outbound => outbound && outbound.tag && selectors.some(selector => outbound.tag.startsWith(selector)))
-          .map(outbound => ({
-            tag: outbound.tag,
-            active: !!this.outboundActivity[outbound.tag] &&
-              this.activityNow - this.outboundActivity[outbound.tag] <= this.outboundActivityTimeoutMs
-          }));
-      },
       async getXraySetting() {
         if (this.nodeContext) return this.getNodeXraySetting();
         const msg = await HttpUtil.post("/panel/xray/");
@@ -1888,6 +1876,24 @@ if (window.nodeXrayId) axios.interceptors.request.use(config => {
             });
           }
           return data;
+        }
+      },
+      balancerOutboundStatuses: {
+        get: function () {
+          const outbounds = Array.isArray(this.templateSettings?.outbounds) ? this.templateSettings.outbounds : [];
+          const balancers = Array.isArray(this.templateSettings?.routing?.balancers) ? this.templateSettings.routing.balancers : [];
+          const statuses = {};
+          balancers.forEach(balancer => {
+            const selectors = Array.isArray(balancer.selector) ? balancer.selector : [];
+            statuses[balancer.tag] = outbounds
+              .filter(outbound => outbound && outbound.tag && selectors.some(selector => outbound.tag.startsWith(selector)))
+              .map(outbound => ({
+                tag: outbound.tag,
+                active: !!this.outboundActivity[outbound.tag] &&
+                  this.activityNow - this.outboundActivity[outbound.tag] <= this.outboundActivityTimeoutMs
+              }));
+          });
+          return statuses;
         }
       },
       observatory: {
