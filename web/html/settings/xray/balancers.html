@@ -37,7 +37,7 @@
             <template slot="liveStatus" slot-scope="text, balancer">
                 <a-tag v-if="nodeContext" color="default">آمار زنده در صفحه نود در دسترس نیست</a-tag>
                 <template v-else>
-                    <a-tag v-for="item in balancerOutboundStatuses(balancer)" :key="item.tag"
+                    <a-tag v-for="item in (balancerOutboundStatuses[balancer.tag] || [])" :key="item.tag"
                         :color="item.active ? 'green' : 'default'" :style="{ margin: '2px' }">
                         [[ item.active ? 'دارای ترافیک · ' : 'بدون ترافیک اخیر · ' ]][[ item.tag ]]
                     </a-tag>
