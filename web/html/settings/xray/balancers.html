@@ -34,6 +34,16 @@
             <template slot="selector" slot-scope="text, balancer, index">
                 <a-tag class="info-large-tag" :style="{ margin: '1' }" v-for="sel in balancer.selector">[[ sel ]]</a-tag>
             </template>
+            <template slot="liveStatus" slot-scope="text, balancer">
+                <a-tag v-if="nodeContext" color="default">آمار زنده در صفحه نود در دسترس نیست</a-tag>
+                <template v-else>
+                    <a-tag v-for="item in balancerOutboundStatuses(balancer)" :key="item.tag"
+                        :color="item.active ? 'green' : 'default'" :style="{ margin: '2px' }">
+                        [[ item.active ? 'فعال · ' : 'بدون ترافیک · ' ]][[ item.tag ]]
+                    </a-tag>
+                    <span v-if="balancerOutboundStatuses(balancer).length === 0">خروجی مطابق Selector پیدا نشد</span>
+                </template>
+            </template>
         </a-table>
         <a-radio-group v-if="observatoryEnable || burstObservatoryEnable" v-model="obsSettings" @change="changeObsCode"
             button-style="solid" :size="isMobile ? 'small' : ''">
