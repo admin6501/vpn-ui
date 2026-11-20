@@ -60,8 +60,8 @@ diff --git a/go.sum b/go.sum
 index 3720e0fd..9b1b5e5c 100644
 --- a/go.sum
 +++ b/go.sum
-@@ -2,10 +2,6 @@ github.com/andybalholm/brotli v1.2.7 h1:UgafRPGMam5ySHfRkhthMqOFA6IFoeF3D7mWIDLjG5A=
- github.com/andybalholm/brotli v1.2.7/go.mod h1:rzTDkvFWvIrjDXZHkuS16NPggd91W3kUSvPlQ1pLaKY=
+@@ -2,10 +2,6 @@ github.com/andybalholm/brotli v1.0.6 h1:Yf9fFpf49Zrxb9NlQaluyE92/+X7UVHlhMNJN2sx
+ github.com/andybalholm/brotli v1.0.6/go.mod h1:fO7iG3H7G2nSZ7m0zPUDn85XEX2GTukHGRSepvi9Eig=
  github.com/anytls/sing-anytls v0.0.13 h1:FL+krjOmwpYYLpl5rrV/BrzDMfxbi05YgIQh+NAA37c=
  github.com/anytls/sing-anytls v0.0.13/go.mod h1:7rjN6IukwysmdusYsrV51Fgu1uW6vsrdd6ctjnEAln8=
 +github.com/andybalholm/brotli v1.2.7 h1:UgafRPGMam5ySHfRkhthMqOFA6IFoeF3D7mWIDLjG5A=
