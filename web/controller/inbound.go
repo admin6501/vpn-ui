@@ -1838,6 +1838,15 @@ func (a *InboundController) bulkClientMembership(c *gin.Context) {
 		jsonMsg(c, I18nWeb(c, "somethingWentWrong"), err)
 		return
 	}
+	if req.Op == "moveGroupMembers" {
+		moved, touched, err := (&service.GroupService{}).MoveMembers(session.GetLoginUser(c), req.SourceGroupID, req.DestinationGroupID)
+		if err == nil && moved > 0 {
+			a.reconcileForInbounds(touched, len(touched) > 0)
+			websocket.BroadcastInvalidate(websocket.MessageTypeInbounds)
+		}
+		jsonObj(c, bulkMembershipResult{Applied: moved}, err)
+		return
+	}
 	var adding bool
 	switch req.Op {
 	case "addInbounds":

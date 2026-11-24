@@ -6,19 +6,22 @@
     title='{{ i18n "pages.inbounds.bulkOperations" }}'
     :visible="bulkOps.visible"
     :confirm-loading="bulkOps.confirmLoading"
+    :ok-button-props="{ props: { disabled: bulkIsGroupMove() && !bulkCanMove() } }"
     ok-text='{{ i18n "pages.inbounds.apply" }}'
     cancel-text='{{ i18n "close" }}'
     :class="themeSwitcher.currentTheme"
-    :closable="true"
+    :closable="!bulkOps.confirmLoading"
+    :keyboard="!bulkOps.confirmLoading"
+    :cancel-button-props="{ props: { disabled: bulkOps.confirmLoading } }"
     :mask-closable="false"
     @ok="() => runBulkOps()"
     @cancel="() => bulkOps.visible = false">
     <a-form layout="vertical">
-      <a-form-item label='{{ i18n "pages.inbounds.bulkTargetCount" }}'>
+      <a-form-item v-if="!bulkIsGroupMove()" label='{{ i18n "pages.inbounds.bulkTargetCount" }}'>
         <a-tag color="purple">[[ selectedCount() ]]</a-tag>
       </a-form-item>
       <a-form-item label='{{ i18n "pages.inbounds.operation" }}'>
-        <a-select v-model="bulkOps.op"
+        <a-select v-model="bulkOps.op" :disabled="bulkOps.confirmLoading"
           :dropdown-class-name="themeSwitcher.currentTheme">
           <!-- Withheld from a reseller: subDays is refused by the server, and addDays
                is meaningless once their profile derives duration from traffic. See
@@ -26,20 +29,36 @@
                openBulkOps so the select can never point at a hidden one. -->
           <a-select-option v-if="bulkOpAllowed('addDays')" value="addDays">{{ i18n "pages.inbounds.opAddDays" }}</a-select-option>
           <a-select-option v-if="bulkOpAllowed('subDays')" value="subDays">{{ i18n "pages.inbounds.opSubDays" }}</a-select-option>
-          <a-select-option value="addTraffic">{{ i18n "pages.inbounds.opAddTraffic" }}</a-select-option>
-          <a-select-option value="subTraffic">{{ i18n "pages.inbounds.opSubTraffic" }}</a-select-option>
-          <a-select-option value="enable">{{ i18n "pages.inbounds.opEnable" }}</a-select-option>
-          <a-select-option value="disable">{{ i18n "pages.inbounds.opDisable" }}</a-select-option>
-          <a-select-option value="freeze">{{ i18n "pages.inbounds.opFreeze" }}</a-select-option>
-          <a-select-option value="unfreeze">{{ i18n "pages.inbounds.opUnfreeze" }}</a-select-option>
+          <a-select-option v-if="bulkOpAllowed('addTraffic')" value="addTraffic">{{ i18n "pages.inbounds.opAddTraffic" }}</a-select-option>
+          <a-select-option v-if="bulkOpAllowed('subTraffic')" value="subTraffic">{{ i18n "pages.inbounds.opSubTraffic" }}</a-select-option>
+          <a-select-option v-if="bulkOpAllowed('enable')" value="enable">{{ i18n "pages.inbounds.opEnable" }}</a-select-option>
+          <a-select-option v-if="bulkOpAllowed('disable')" value="disable">{{ i18n "pages.inbounds.opDisable" }}</a-select-option>
+          <a-select-option v-if="bulkOpAllowed('freeze')" value="freeze">{{ i18n "pages.inbounds.opFreeze" }}</a-select-option>
+          <a-select-option v-if="bulkOpAllowed('unfreeze')" value="unfreeze">{{ i18n "pages.inbounds.opUnfreeze" }}</a-select-option>
           <!-- Also withheld from a reseller, and for a different reason than the two
                above: which inbounds serve an account is the admin's call, not a lever
                their grant carries. The server refuses these outright for them. -->
           <a-select-option v-if="bulkOpAllowed('addInbounds')" value="addInbounds">{{ i18n "pages.groups.addMembership" }}</a-select-option>
           <a-select-option v-if="bulkOpAllowed('removeInbounds')" value="removeInbounds">{{ i18n "pages.groups.removeMembership" }}</a-select-option>
-          <a-select-option value="delete">{{ i18n "pages.inbounds.opDelete" }}</a-select-option>
+          <a-select-option v-if="bulkOpAllowed('moveGroupMembers')" value="moveGroupMembers">{{ i18n "pages.groups.moveMembers" }}</a-select-option>
+          <a-select-option v-if="bulkOpAllowed('delete')" value="delete">{{ i18n "pages.inbounds.opDelete" }}</a-select-option>
         </a-select>
       </a-form-item>
+      <template v-if="bulkIsGroupMove()">
+        <a-form-item data-testid="bulk-source-group" label='{{ i18n "pages.groups.sourceGroup" }}'>
+          <a-select v-model="bulkOps.sourceGroupId" :disabled="bulkOps.confirmLoading" :dropdown-class-name="themeSwitcher.currentTheme">
+            <a-select-option v-for="group in bulkAssignable()" :key="group.id" :value="group.id"
+              :disabled="group.id === bulkOps.destinationGroupId">[[ group.name ]]</a-select-option>
+          </a-select>
+        </a-form-item>
+        <a-form-item data-testid="bulk-destination-group" label='{{ i18n "pages.groups.destinationGroup" }}'>
+          <a-select v-model="bulkOps.destinationGroupId" :disabled="bulkOps.confirmLoading" :dropdown-class-name="themeSwitcher.currentTheme">
+            <a-select-option v-for="group in bulkAssignable()" :key="group.id" :value="group.id"
+              :disabled="group.id === bulkOps.sourceGroupId">[[ group.name ]]</a-select-option>
+          </a-select>
+        </a-form-item>
+        <a-alert type="info" show-icon message='{{ i18n "pages.groups.moveMembersHint" }}'></a-alert>
+      </template>
       <a-form-item v-if="bulkIsNumericOp()" label='{{ i18n "pages.inbounds.amount" }}'>
         <a-input-number v-model="bulkOps.amount" :min="0"
           :style="{ width: bulkIsTrafficOp() ? '58%' : '100%' }"></a-input-number>
@@ -84,7 +103,7 @@
       <!-- The three skips are filters on a CLIENT field (first use, unlimited quota,
            disabled), and the membership ops read none of them. Rendering them under
            an operation that ignores them would read as three settings that apply. -->
-      <template v-if="!bulkIsMembershipOp()">
+      <template v-if="!bulkIsMembershipOp() && !bulkIsGroupMove()">
         <a-divider :style="{ margin: '8px 0' }"></a-divider>
         <a-space direction="vertical" :size="10" :style="{ width: '100%' }">
           <div>

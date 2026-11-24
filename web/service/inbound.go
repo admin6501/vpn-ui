@@ -3080,13 +3080,15 @@ type BulkClientTarget struct {
 // many inbounds. Op is one of addDays/subDays/addTraffic/subTraffic/enable/disable.
 // Days is used by the day ops; AmountBytes by the traffic ops.
 type BulkClientUpdateRequest struct {
-	GroupIDs      []int  `json:"groupIds"`
-	Op            string `json:"op"`
-	Days          int64  `json:"days"`
-	AmountBytes   int64  `json:"amountBytes"`
-	SkipFirstUse  bool   `json:"skipFirstUse"`
-	SkipUnlimited bool   `json:"skipUnlimited"`
-	SkipDisabled  bool   `json:"skipDisabled"`
+	SourceGroupID      int    `json:"sourceGroupId"`
+	DestinationGroupID int    `json:"destinationGroupId"`
+	GroupIDs           []int  `json:"groupIds"`
+	Op                 string `json:"op"`
+	Days               int64  `json:"days"`
+	AmountBytes        int64  `json:"amountBytes"`
+	SkipFirstUse       bool   `json:"skipFirstUse"`
+	SkipUnlimited      bool   `json:"skipUnlimited"`
+	SkipDisabled       bool   `json:"skipDisabled"`
 	// InboundIds is the membership operations' own argument: the inbounds the
 	// selected accounts are being added TO or removed FROM. Every other op names
 	// its targets and nothing else, and leaves this empty.

@@ -109,6 +109,9 @@
                     </a-menu>
                   </a-dropdown>
 
+                  <a-button v-if="!selectedEmails.length && canMoveGroupMembers()" data-testid="group-bulk-operations" icon="tool"
+                    @click="openBulkOps()">{{ i18n "pages.inbounds.bulkOperations" }}</a-button>
+
                   <a-input-search
                     v-model="search"
                     placeholder='{{ i18n "pages.clients.searchPlaceholder" }}'

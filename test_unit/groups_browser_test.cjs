@@ -83,6 +83,30 @@ const {chromium}=require('playwright');
     await page.waitForFunction(enable=>app.clients.some(x=>x.email==='new-group-user'&&x.enable===enable&&x.memberships.length===2&&x.groupIds.length===1),enable);
    }
   }
+  await page.setExtraHTTPHeaders({});
+  await page.reload({waitUntil:'networkidle'});
+  for (const [source,destination,membershipCount] of [
+   ['Shared group','Original backup group',1],
+   ['Original backup group','Shared group',2],
+  ]) {
+   await page.getByTestId('group-bulk-operations').click();
+   const modal=page.locator('#bulk-ops-modal .ant-modal');
+   const apply=modal.locator('.ant-modal-footer .ant-btn-primary');
+   await modal.getByTestId('bulk-source-group').waitFor();
+   await modal.locator('.ant-modal-footer .ant-btn-primary:disabled').waitFor();
+   await modal.getByTestId('bulk-source-group').locator('.ant-select-selection').click();
+   await page.locator('.ant-select-dropdown:visible .ant-select-dropdown-menu-item').getByText(source,{exact:true}).click();
+   await page.locator('.ant-select-dropdown:visible').waitFor({state:'hidden'});
+   await modal.getByTestId('bulk-destination-group').locator('.ant-select-selection').click();
+   await page.locator('.ant-select-dropdown:visible .ant-select-dropdown-menu-item').getByText(destination,{exact:true}).click();
+   const moved=page.waitForResponse(r=>r.url().endsWith('/inbounds/bulkMembership'));
+   await apply.click();
+   const result=await(await moved).json();
+   assert.equal(result.success,true,JSON.stringify(result));
+   assert.equal(result.obj.applied,2);
+   await page.waitForFunction(count=>['existing-user','new-group-user'].every(email=>
+    app.clients.some(row=>row.email===email&&row.memberships.length===count&&row.groupIds.length===1)),membershipCount);
+  }
   const hostile="<b>[[constructor.constructor('window.brandExecuted=1')()]]</b>";
   await page.request.post(base+'fixtures/brand',{form:{brandName:hostile}});
   await page.setExtraHTTPHeaders({'X-Test-Actor':'anonymous'});

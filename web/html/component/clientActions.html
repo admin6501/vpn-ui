@@ -105,6 +105,8 @@
           // group would tick boxes that never re-render.
           inboundIds: [],
           groups: [],
+          sourceGroupId: null,
+          destinationGroupId: null,
           progress: { running: false, done: 0, total: 0, applied: 0, skipped: 0, etaText: '' },
         },
       };
@@ -164,20 +166,34 @@
         const response = await HttpUtil.get('/panel/api/clients/groups');
         if (!response || !response.success) return;
         this.bulkOps.groups = response.obj || [];
-        if (!this.selectedCount()) { this.$message.warning('{{ i18n "pages.inbounds.exportNoneSelected" }}'); return; }
+        if (!this.selectedCount() && !this.canMoveGroupMembers()) return;
         this.bulkOps.progress = { running: false, done: 0, total: 0, applied: 0, skipped: 0, etaText: '' };
         // The inbound picks do NOT survive the modal closing: they name a
         // destination for one specific batch, and re-opening on a different
         // selection with the last run's inbounds still ticked is how an operator
         // re-homes the wrong customers.
         this.bulkOps.inboundIds = [];
+        this.bulkOps.sourceGroupId = null;
+        this.bulkOps.destinationGroupId = null;
         // A previous run may have left a selection that is no longer offered, and
         // the value survives the modal closing. Snap it back to a rendered option.
-        if (!isBulkOpAllowed(this.bulkOps.op)) this.bulkOps.op = DEFAULT_BULK_OP;
+        if (!this.selectedCount()) {
+          this.bulkOps.op = 'moveGroupMembers';
+        } else if (!this.bulkOpAllowed(this.bulkOps.op) || this.bulkIsGroupMove()) {
+          this.bulkOps.op = DEFAULT_BULK_OP;
+        }
         this.bulkOps.visible = true;
       },
       // Template hook for the option filter; the rule itself lives in isBulkOpAllowed.
-      bulkOpAllowed(op) { return isBulkOpAllowed(op); },
+      canMoveGroupMembers() { return !!PERMS.bulkOperation && !RESELLER.isReseller; },
+      bulkOpAllowed(op) {
+        return op === 'moveGroupMembers' ? this.canMoveGroupMembers() : this.selectedCount() > 0 && isBulkOpAllowed(op);
+      },
+      bulkIsGroupMove() { return this.bulkOps.op === 'moveGroupMembers'; },
+      bulkCanMove() {
+        const { sourceGroupId, destinationGroupId } = this.bulkOps;
+        return !!sourceGroupId && !!destinationGroupId && sourceGroupId !== destinationGroupId;
+      },
       bulkIsTrafficOp() { return ['addTraffic', 'subTraffic'].includes(this.bulkOps.op); },
       bulkIsNumericOp() { return ['addDays', 'subDays', 'addTraffic', 'subTraffic'].includes(this.bulkOps.op); },
       // --- the inbound checklist the two membership ops render ------------
@@ -277,6 +293,8 @@
       },
       async runBulkOps() {
         const b = this.bulkOps;
+        if (b.confirmLoading) return;
+        if (this.bulkIsGroupMove()) return this.runGroupMove();
         // Delete removes whatever is checked: a selected INBOUND is deleted wholesale
         // (its accounts go with it, no per-client filtering), a selected ACCOUNT is
         // removed on its own. Separate flow from the in-place client update ops.
@@ -403,6 +421,27 @@
           }
           this.clearSelection();
           await this.getDBInbounds();
+        }
+      },
+      async runGroupMove() {
+        if (!this.canMoveGroupMembers() || !this.bulkCanMove()) return;
+        const b = this.bulkOps;
+        b.confirmLoading = true;
+        try {
+          const result = await HttpUtil.post('/panel/api/inbounds/bulkMembership', {
+            data: JSON.stringify({
+              op: 'moveGroupMembers',
+              sourceGroupId: b.sourceGroupId,
+              destinationGroupId: b.destinationGroupId,
+            }),
+          });
+          if (!result || !result.success) return;
+          b.visible = false;
+          this.$message.success('{{ i18n "pages.inbounds.bulkDone" }} {{ i18n "pages.inbounds.bulkAffected" }}: ' + result.obj.applied);
+          this.clearSelection();
+          await this.getDBInbounds();
+        } finally {
+          b.confirmLoading = false;
         }
       },
       bulkTickEta(start) {

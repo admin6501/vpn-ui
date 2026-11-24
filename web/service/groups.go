@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -11,6 +12,7 @@ import (
 	"github.com/mhsanaei/3x-ui/v2/database"
 	"github.com/mhsanaei/3x-ui/v2/database/model"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 const groupsMigrationKey = "clientGroupsMigrationV1"
@@ -172,6 +174,10 @@ func roleGroupIDs(tx *gorm.DB, user *model.User) (*[]int, error) {
 	return access.Allowed, nil
 }
 func (s *GroupService) List(user *model.User, management bool) ([]GroupView, error) {
+	return s.list(database.GetDB(), user, management)
+}
+
+func (s *GroupService) list(tx *gorm.DB, user *model.User, management bool) ([]GroupView, error) {
 	rows := []GroupView{}
 	if user == nil || !user.Enable {
 		return rows, errors.New("not found")
@@ -179,7 +185,7 @@ func (s *GroupService) List(user *model.User, management bool) ([]GroupView, err
 	if management && (user.IsRepresentativeAccount() || !user.Can(model.PermAccessGroups)) {
 		return rows, errors.New("not allowed")
 	}
-	visible, err := (&AccountService{}).AssignableInboundsFor(user)
+	visible, err := (&AccountService{}).assignableInboundsFor(tx, user)
 	if err != nil {
 		return nil, err
 	}
@@ -188,7 +194,6 @@ func (s *GroupService) List(user *model.User, management bool) ([]GroupView, err
 		scope[ib.InboundId] = true
 	}
 	var groups []model.ClientGroup
-	tx := database.GetDB()
 	if err := tx.Order("id").Find(&groups).Error; err != nil {
 		return nil, err
 	}
@@ -248,7 +253,11 @@ func (s *GroupService) List(user *model.User, management bool) ([]GroupView, err
 	return rows, nil
 }
 func (s *GroupService) Resolve(user *model.User, groupIDs []int) ([]int, error) {
-	groups, err := s.List(user, false)
+	return s.resolve(database.GetDB(), user, groupIDs)
+}
+
+func (s *GroupService) resolve(tx *gorm.DB, user *model.User, groupIDs []int) ([]int, error) {
+	groups, err := s.list(tx, user, false)
 	if err != nil {
 		return nil, err
 	}
@@ -625,6 +634,47 @@ func (s *GroupService) Apply(user *model.User, email string, anchor int, groupID
 		return err
 	})
 	return touched, err
+}
+
+// MoveMembers replaces the source association for every account in the group.
+func (s *GroupService) MoveMembers(user *model.User, source, destination int) (int, []int, error) {
+	if user == nil || user.IsRepresentativeAccount() || user.IsReseller || !user.Can(model.PermBulkOperation) {
+		return 0, nil, ErrBulkNoMembership
+	}
+	if source <= 0 || destination <= 0 || source == destination {
+		return 0, nil, errors.New("select two different groups")
+	}
+	var members []int
+	var touched []int
+	err := database.GetDB().Transaction(func(tx *gorm.DB) error {
+		if _, err := s.resolve(tx, user, []int{source, destination}); err != nil {
+			return err
+		}
+		if err := tx.Model(&model.AccountGroup{}).Where("group_id = ?", source).
+			Order("account_id").Pluck("account_id", &members).Error; err != nil {
+			return err
+		}
+		for _, id := range members {
+			if err := tx.Clauses(clause.OnConflict{DoNothing: true}).
+				Create(&model.AccountGroup{AccountID: id, GroupID: destination}).Error; err != nil {
+				return err
+			}
+			if err := tx.Delete(&model.AccountGroup{}, "account_id = ? AND group_id = ?", id, source).Error; err != nil {
+				return err
+			}
+			changed, err := projectGroups(tx, id)
+			if err != nil {
+				return err
+			}
+			touched = append(touched, changed...)
+		}
+		return nil
+	})
+	if err != nil {
+		return 0, nil, err
+	}
+	slices.Sort(touched)
+	return len(members), slices.Compact(touched), nil
 }
 
 // PreflightCreate checks the entire batch against every selected inbound before

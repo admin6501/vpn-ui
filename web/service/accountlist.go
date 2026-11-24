@@ -10,6 +10,7 @@ import (
 	"github.com/mhsanaei/3x-ui/v2/database"
 	"github.com/mhsanaei/3x-ui/v2/database/model"
 	"github.com/mhsanaei/3x-ui/v2/xray"
+	"gorm.io/gorm"
 )
 
 // The account-centric view behind the Clients page.
@@ -655,10 +656,13 @@ func settingsHoldClients(protocol model.Protocol, settings string) bool {
 }
 
 func (s *AccountService) AssignableInboundsFor(user *model.User) ([]AccountMembershipView, error) {
+	return s.assignableInboundsFor(database.GetDB(), user)
+}
+
+func (s *AccountService) assignableInboundsFor(db *gorm.DB, user *model.User) ([]AccountMembershipView, error) {
 	if user == nil {
 		return nil, nil
 	}
-	db := database.GetDB()
 	var inbounds []model.Inbound
 	if err := db.Model(&model.Inbound{}).
 		Select("id", "protocol", "remark", "port", "enable", "settings").
@@ -668,9 +672,8 @@ func (s *AccountService) AssignableInboundsFor(user *model.User) ([]AccountMembe
 
 	allowed := func(int) bool { return true }
 	if !user.IsSuperAdmin {
-		var adminService AdminService
-		ids, err := adminService.AccessibleInboundIds(user.Id)
-		if err != nil {
+		var ids []int
+		if err := effectiveInboundAccess(db).Where("user_id = ?", user.Id).Pluck("inbound_id", &ids).Error; err != nil {
 			return nil, err
 		}
 		granted := make(map[int]bool, len(ids))

@@ -357,3 +357,77 @@ func TestGroupsRepresentativeSelectionRequiresRoleAndInboundGrants(t *testing.T)
 	}
 
 }
+
+func TestMoveGroupMembersPreservesOtherGroupsAndRollsBack(t *testing.T) {
+	accounts := newAccountsDB(t)
+	source := seedInboundWithClients(t, model.VLESS, 43701, []map[string]any{
+		{"email": "a", "id": "11111111-1111-4111-8111-111111111111", "enable": true},
+		{"email": "b", "id": "22222222-2222-4222-8222-222222222222", "enable": true},
+	})
+	destination := seedInboundWithClients(t, model.Trojan, 43702, []map[string]any{})
+	other := seedInboundWithClients(t, model.VMESS, 43703, []map[string]any{})
+	accounts.MigrationAccounts()
+	gs := &GroupService{}
+	if err := gs.Migrate(); err != nil {
+		t.Fatal(err)
+	}
+	root := groupRoot(t)
+	groups := mustGroups(t)
+	sourceGroup, destinationGroup, otherGroup := groups[0].ID, groups[1].ID, groups[2].ID
+	if _, err := gs.Apply(root, "a", 0, []int{sourceGroup, destinationGroup, otherGroup}); err != nil {
+		t.Fatal(err)
+	}
+	a, err := accounts.GetAccountByEmail("a")
+	if err != nil || a == nil {
+		t.Fatalf("expected account a, got %+v, %v", a, err)
+	}
+
+	db := database.GetDB()
+	operator := model.User{Username: "group-mover", Enable: true, Permissions: model.PermBulkOperation}
+	if err := db.Create(&operator).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&model.InboundAccess{UserId: operator.Id, InboundId: source.Id}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := gs.MoveMembers(&operator, sourceGroup, destinationGroup); err == nil {
+		t.Fatal("accepted a destination outside the operator's scope")
+	}
+	if _, _, err := gs.MoveMembers(root, sourceGroup, sourceGroup); err == nil {
+		t.Fatal("accepted the same group twice")
+	}
+
+	trigger := fmt.Sprintf(`CREATE TRIGGER reject_group_move BEFORE INSERT ON account_inbounds
+		WHEN NEW.inbound_id=%d AND NEW.account_id=(SELECT id FROM accounts WHERE email='b')
+		BEGIN SELECT RAISE(ABORT,'admission failed'); END`, destination.Id)
+	if err := db.Exec(trigger).Error; err != nil {
+		t.Fatal(err)
+	}
+	before := membershipsInDB(t)
+	if moved, touched, err := gs.MoveMembers(root, sourceGroup, destinationGroup); err == nil || moved != 0 || len(touched) != 0 {
+		t.Fatalf("expected full rollback, got %d, %v, %v", moved, touched, err)
+	}
+	if !reflect.DeepEqual(before, membershipsInDB(t)) ||
+		!reflect.DeepEqual(groupIDsFor(t, a.Id), []int{sourceGroup, destinationGroup, otherGroup}) {
+		t.Fatal("failed transfer changed account links")
+	}
+	if err := db.Exec("DROP TRIGGER reject_group_move").Error; err != nil {
+		t.Fatal(err)
+	}
+
+	moved, touched, err := gs.MoveMembers(root, sourceGroup, destinationGroup)
+	if err != nil || moved != 2 || !reflect.DeepEqual(touched, []int{source.Id, destination.Id}) {
+		t.Fatalf("move result = %d, %v, %v", moved, touched, err)
+	}
+	if ids := groupIDsFor(t, a.Id); !reflect.DeepEqual(ids, []int{destinationGroup, otherGroup}) {
+		t.Fatalf("transfer changed other groups or duplicated the destination: %v", ids)
+	}
+	for email, want := range map[string][]int{"a": {destination.Id, other.Id}, "b": {destination.Id}} {
+		if ids, err := accounts.InboundIdsForEmail(email); err != nil || !reflect.DeepEqual(ids, want) {
+			t.Fatalf("inbounds for %s = %v, %v", email, ids, err)
+		}
+	}
+	if moved, _, err := gs.MoveMembers(root, sourceGroup, destinationGroup); err != nil || moved != 0 {
+		t.Fatalf("duplicate transfer moved %d accounts: %v", moved, err)
+	}
+}
