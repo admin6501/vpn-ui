@@ -7,10 +7,15 @@ on:
         required: true
         default: true
         type: boolean
+      verified_run:
+        description: Successful release run ID to publish without building again
+        required: false
+        type: string
 permissions:
   contents: read
 jobs:
   release:
+    if: inputs.verified_run == ''
     strategy:
       fail-fast: false
       matrix:
@@ -138,6 +143,7 @@ jobs:
           done
           sudo journalctl -u vpn-ui -n 60 --no-pager || true
   core_checks:
+    if: inputs.verified_run == ''
     strategy:
       fail-fast: false
       matrix:
@@ -181,6 +187,7 @@ jobs:
         working-directory: third_party/Xray-core
         run: go test -race ./common/speedlimit -count=1
   panel_checks:
+    if: inputs.verified_run == ''
     strategy:
       fail-fast: false
       matrix:
@@ -267,6 +274,7 @@ jobs:
           PREREQUISITE_SCRIPT=install-node.sh bash test_unit/offline_prerequisites_test.sh
           bash test_unit/node_menu_test.sh
   browser_checks:
+    if: inputs.verified_run == ''
     strategy:
       fail-fast: false
       matrix:
@@ -314,16 +322,39 @@ jobs:
           RUN_NODE_UI_BROWSER=1 go test -race ./web -run '^Test(GroupsBrowserRuntime|InboundCreateGroupsBrowserRuntime)$' -count=1 -timeout 240s
   publish:
     needs: [release, core_checks, panel_checks, browser_checks]
-    if: inputs.publish
+    if: >-
+      ${{ !cancelled() && inputs.publish &&
+          (inputs.verified_run != '' ||
+            (needs.release.result == 'success' && needs.core_checks.result == 'success' &&
+             needs.panel_checks.result == 'success' && needs.browser_checks.result == 'success')) }}
     permissions:
+      actions: read
       contents: write
     concurrency:
       group: vpn-ui-v1.0.0-publish
       cancel-in-progress: false
     runs-on: ubuntu-24.04
     steps:
+      - name: Select verified release run
+        id: source
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERIFIED_RUN: ${{ inputs.verified_run }}
+        run: |
+          run_id="${VERIFIED_RUN:-$GITHUB_RUN_ID}"
+          if [[ -n "$VERIFIED_RUN" ]]; then
+            [[ "$run_id" =~ ^[0-9]+$ ]]
+            gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run_id" |
+              jq -e --arg repo "$GITHUB_REPOSITORY" '
+                .path == ".github/workflows/release.yml" and .head_branch == "main" and
+                .head_repository.full_name == $repo and .status == "completed" and .conclusion == "success"
+              ' >/dev/null
+          fi
+          echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
       - uses: actions/download-artifact@v4
         with:
+          github-token: ${{ github.token }}
+          run-id: ${{ steps.source.outputs.run_id }}
           pattern: release-*
           path: dist
           merge-multiple: true
