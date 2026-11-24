@@ -1176,6 +1176,10 @@ vpnOutImportIgnored = "隧道表单中没有字段的键，省略："
 vpnOutImportKept = "不在文件中，因此保留存储的值："
 
 [pages.xray.balancer]
+"failover" = "故障转移"
+"failoverPrimary" = "主出站"
+"failoverBackups" = "备用出站"
+"failoverDesc" = "主出站正常时优先使用。主出站故障时，选择可用且延迟最低的备用出站。"
 "addBalancer" = "添加负载均衡"
 "editBalancer" = "编辑负载均衡"
 "balancerStrategy" = "策略"

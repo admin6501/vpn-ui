@@ -1420,8 +1420,9 @@ if (window.nodeXrayId) axios.interceptors.request.use(config => {
             let tmpBalancer = {
               'tag': balancer.tag,
               'selector': balancer.selector,
-              'fallbackTag': balancer.fallbackTag
+              'fallbackTag': balancer.strategy === 'failover' ? '' : balancer.fallbackTag
             };
+            if (balancer.strategy === 'failover') tmpBalancer.primaryTag = balancer.primaryTag;
             if (balancer.strategy && balancer.strategy != 'random') {
               tmpBalancer.strategy = {
                 'type': balancer.strategy
@@ -1450,7 +1451,7 @@ if (window.nodeXrayId) axios.interceptors.request.use(config => {
             let tmpBalancer = {
               'tag': balancer.tag,
               'selector': balancer.selector,
-              'fallbackTag': balancer.fallbackTag
+              'fallbackTag': balancer.strategy === 'failover' ? '' : balancer.fallbackTag
             };
 
             // Remove old tag
@@ -1461,6 +1462,7 @@ if (window.nodeXrayId) axios.interceptors.request.use(config => {
               newTemplateSettings.burstObservatory.subjectSelector = newTemplateSettings.burstObservatory.subjectSelector.filter(s => s != oldTag);
             }
 
+            if (balancer.strategy === 'failover') tmpBalancer.primaryTag = balancer.primaryTag;
             if (balancer.strategy && balancer.strategy != 'random') {
               tmpBalancer.strategy = {
                 'type': balancer.strategy
@@ -1486,18 +1488,21 @@ if (window.nodeXrayId) axios.interceptors.request.use(config => {
       },
       updateObservatorySelectors() {
         newTemplateSettings = this.templateSettings;
-        const leastPings = this.balancersData.filter((b) => b.strategy == 'leastPing');
+        const leastPings = this.balancersData.filter(b => b.strategy === 'leastPing' || b.strategy === 'failover');
         const leastLoads = this.balancersData.filter((b) =>
           b.strategy === 'leastLoad' ||
           b.strategy === 'roundRobin' ||
           b.strategy === 'random'
         );
         if (leastPings.length > 0) {
-          if (!newTemplateSettings.observatory)
-            newTemplateSettings.observatory = this.defaultObservatory;
+          if (!newTemplateSettings.observatory) {
+            const interval = leastPings.some(b => b.strategy === 'failover') ? '10s' : this.defaultObservatory.probeInterval;
+            newTemplateSettings.observatory = { ...this.defaultObservatory, probeInterval: interval };
+          }
           newTemplateSettings.observatory.subjectSelector = [];
           leastPings.forEach((b) => {
-            b.selector.forEach((s) => {
+            const tags = b.strategy === 'failover' ? [b.primaryTag, ...b.selector] : b.selector;
+            tags.forEach((s) => {
               if (!newTemplateSettings.observatory.subjectSelector.includes(s))
                 newTemplateSettings.observatory.subjectSelector.push(s);
             });
@@ -1847,6 +1852,7 @@ if (window.nodeXrayId) axios.interceptors.request.use(config => {
                 'strategy': o.strategy?.type ?? "random",
                 'selector': o.selector ? o.selector : [],
                 'fallbackTag': o.fallbackTag ?? '',
+                'primaryTag': o.primaryTag ?? '',
               });
             });
           }

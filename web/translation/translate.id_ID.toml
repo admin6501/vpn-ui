@@ -1175,6 +1175,10 @@ vpnOutImportIgnored = "Kunci yang formulir terowongannya tidak memiliki kolom, d
 vpnOutImportKept = "Tidak ada di file, jadi nilai yang disimpan disimpan:"
 
 [pages.xray.balancer]
+"failover" = "Failover"
+"failoverPrimary" = "Outbound utama"
+"failoverBackups" = "Outbound cadangan"
+"failoverDesc" = "Menggunakan outbound utama selama berfungsi. Jika gagal, memilih outbound cadangan yang berfungsi dengan latensi terendah."
 "addBalancer" = "Tambahkan Penyeimbang"
 "editBalancer" = "Sunting Penyeimbang"
 "balancerStrategy" = "Strategi"

@@ -112,7 +112,7 @@ func (s *XraySettingService) CheckXrayConfig(XrayTemplateConfig string) error {
 	if err != nil {
 		return common.NewError("xray template config invalid:", err)
 	}
-	return nil
+	return compileFailoverBalancers(xrayConfig)
 }
 
 // UnwrapXrayTemplateConfig returns the raw xray config JSON from `raw`,

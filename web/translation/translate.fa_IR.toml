@@ -1164,6 +1164,10 @@ brandNameDesc = "در صفحهٔ ورود، بخش‌های پنل و عنوان
 "vpnOutImportKept" = "این مقادیر در فایل نیستند؛ مقدار ذخیره‌شده حفظ شد:"
 
 [pages.xray.balancer]
+"failover" = "جابه‌جایی خودکار"
+"failoverPrimary" = "اوت‌باند اصلی"
+"failoverBackups" = "اوت‌باندهای پشتیبان"
+"failoverDesc" = "تا وقتی مسیر اصلی سالم است از آن استفاده می‌شود. در صورت قطع، مسیر پشتیبان سالم با کمترین تأخیر انتخاب می‌شود."
 "addBalancer" = "افزودن بالانسر"
 "editBalancer" = "ویرایش بالانسر"
 "balancerStrategy" = "استراتژی"

@@ -1,0 +1,164 @@
+diff --git a/app/observatory/observer.go b/app/observatory/observer.go
+index 02dbaf1..5b75799 100644
+--- a/app/observatory/observer.go
++++ b/app/observatory/observer.go
+@@ -39,7 +39,9 @@ type Observer struct {
+ }
+ 
+ func (o *Observer) GetObservation(ctx context.Context) (proto.Message, error) {
+-	return &ObservationResult{Status: o.status}, nil
++	o.statusLock.Lock()
++	defer o.statusLock.Unlock()
++	return &ObservationResult{Status: slices.Clone(o.status)}, nil
+ }
+ 
+ func (o *Observer) Type() interface{} {
+@@ -197,11 +199,12 @@ func (o *Observer) probe(outbound string) ProbeResult {
+ func (o *Observer) updateStatusForResult(outbound string, result *ProbeResult) {
+ 	o.statusLock.Lock()
+ 	defer o.statusLock.Unlock()
+-	var status *OutboundStatus
+-	if location := o.findStatusLocationLockHolderOnly(outbound); location != -1 {
+-		status = o.status[location]
++	status := &OutboundStatus{}
++	location := o.findStatusLocationLockHolderOnly(outbound)
++	if location >= 0 {
++		status.LastSeenTime = o.status[location].LastSeenTime
++		o.status[location] = status
+ 	} else {
+-		status = &OutboundStatus{}
+ 		o.status = append(o.status, status)
+ 	}
+ 
+diff --git a/app/router/config.go b/app/router/config.go
+index 0a76905..18efb5f 100644
+--- a/app/router/config.go
++++ b/app/router/config.go
+@@ -120,6 +120,16 @@ func (rr *RoutingRule) BuildCondition() (Condition, error) {
+ // Build builds the balancing rule
+ func (br *BalancingRule) Build(ohm outbound.Manager, dispatcher routing.Dispatcher) (*Balancer, error) {
+ 	switch strings.ToLower(br.Strategy) {
++	case "failover":
++		if len(br.OutboundSelector) < 2 {
++			return nil, errors.New("failover requires a primary and at least one backup")
++		}
++		return &Balancer{
++			selectors:   br.OutboundSelector,
++			strategy:    &LeastPingStrategy{failoverTags: br.OutboundSelector},
++			fallbackTag: br.FallbackTag,
++			ohm:         ohm,
++		}, nil
+ 	case "leastping":
+ 		return &Balancer{
+ 			selectors:   br.OutboundSelector,
+diff --git a/app/router/strategy_leastping.go b/app/router/strategy_leastping.go
+index ada3492..5fd48c5 100644
+--- a/app/router/strategy_leastping.go
++++ b/app/router/strategy_leastping.go
+@@ -2,6 +2,7 @@ package router
+ 
+ import (
+ 	"context"
++	"slices"
+ 
+ 	"github.com/xtls/xray-core/app/observatory"
+ 	"github.com/xtls/xray-core/common"
+@@ -13,6 +14,8 @@ import (
+ type LeastPingStrategy struct {
+ 	ctx         context.Context
+ 	observatory extension.Observatory
++	// For failover, the first tag is preferred and all tags are exact.
++	failoverTags []string
+ }
+ 
+ func (l *LeastPingStrategy) GetPrincipleTarget(strings []string) []string {
+@@ -37,31 +40,39 @@ func (l *LeastPingStrategy) PickOutbound(strings []string) string {
+ 		errors.LogInfoInner(l.ctx, err, "cannot get observer report")
+ 		return ""
+ 	}
+-	outboundsList := outboundList(strings)
+ 	if result, ok := observeReport.(*observatory.ObservationResult); ok {
+-		status := result.Status
+-		leastPing := int64(99999999)
+-		selectedOutboundName := ""
+-		for _, v := range status {
+-			if outboundsList.contains(v.OutboundTag) && v.Alive && v.Delay < leastPing {
+-				selectedOutboundName = v.OutboundTag
+-				leastPing = v.Delay
+-			}
+-		}
+-		return selectedOutboundName
++		return l.pickObservedOutbound(strings, result)
+ 	}
+ 
+ 	// No way to understand observeReport
+ 	return ""
+ }
+ 
++func (l *LeastPingStrategy) pickObservedOutbound(candidates []string, result *observatory.ObservationResult) string {
++	var selected string
++	var bestDelay int64
++	for _, status := range result.GetStatus() {
++		tag := status.GetOutboundTag()
++		if !status.GetAlive() || !slices.Contains(candidates, tag) {
++			continue
++		}
++		if len(l.failoverTags) > 0 {
++			if !slices.Contains(l.failoverTags, tag) {
++				continue
++			}
++			if tag == l.failoverTags[0] {
++				return tag
++			}
++		}
++		if selected == "" || status.GetDelay() < bestDelay {
++			selected, bestDelay = tag, status.GetDelay()
++		}
++	}
++	return selected
++}
++
+ type outboundList []string
+ 
+ func (o outboundList) contains(name string) bool {
+-	for _, v := range o {
+-		if v == name {
+-			return true
+-		}
+-	}
+-	return false
++	return slices.Contains(o, name)
+ }
+diff --git a/infra/conf/router.go b/infra/conf/router.go
+index af83c74..6b3637b 100644
+--- a/infra/conf/router.go
++++ b/infra/conf/router.go
+@@ -38,7 +38,7 @@ func (r *BalancingRule) Build() (*router.BalancingRule, error) {
+ 	switch r.Strategy.Type {
+ 	case "":
+ 		r.Strategy.Type = strategyRandom
+-	case strategyRandom, strategyLeastLoad, strategyLeastPing, strategyRoundRobin:
++	case strategyRandom, strategyLeastLoad, strategyLeastPing, strategyRoundRobin, strategyFailover:
+ 	default:
+ 		return nil, errors.New("unknown balancing strategy: " + r.Strategy.Type)
+ 	}
+diff --git a/infra/conf/router_strategy.go b/infra/conf/router_strategy.go
+index 464cbcf..f990e02 100644
+--- a/infra/conf/router_strategy.go
++++ b/infra/conf/router_strategy.go
+@@ -11,6 +11,7 @@ import (
+ 
+ const (
+ 	strategyRandom     string = "random"
++	strategyFailover   string = "failover"
+ 	strategyLeastPing  string = "leastping"
+ 	strategyRoundRobin string = "roundrobin"
+ 	strategyLeastLoad  string = "leastload"
+@@ -19,6 +20,7 @@ const (
+ var (
+ 	strategyConfigLoader = NewJSONConfigLoader(ConfigCreatorCache{
+ 		strategyRandom:     func() interface{} { return new(strategyEmptyConfig) },
++		strategyFailover:   func() interface{} { return new(strategyEmptyConfig) },
+ 		strategyLeastPing:  func() interface{} { return new(strategyEmptyConfig) },
+ 		strategyRoundRobin: func() interface{} { return new(strategyEmptyConfig) },
+ 		strategyLeastLoad:  func() interface{} { return new(strategyLeastLoadConfig) },

@@ -1155,6 +1155,10 @@ brandNameDesc = "Shown on the login page, panel pages and browser titles. Leave 
 "load" = "Load"
 
 [pages.xray.balancer]
+"failover" = "Failover"
+"failoverPrimary" = "Primary outbound"
+"failoverBackups" = "Backup outbounds"
+"failoverDesc" = "Uses the primary while it is healthy and selects the lowest-latency healthy backup if it fails."
 "addBalancer" = "Add Balancer"
 "editBalancer" = "Edit Balancer"
 "balancerStrategy" = "Strategy"

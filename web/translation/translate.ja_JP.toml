@@ -1175,6 +1175,10 @@ vpnOutImportIgnored = "トンネル フォームにフィールドがないた�
 vpnOutImportKept = "ファイルにないため、保存された値が保持されます。"
 
 [pages.xray.balancer]
+"failover" = "フェイルオーバー"
+"failoverPrimary" = "プライマリアウトバウンド"
+"failoverBackups" = "バックアップアウトバウンド"
+"failoverDesc" = "プライマリが正常な間は優先し、障害時は正常なバックアップのうち遅延が最も小さいものを選びます。"
 "addBalancer" = "負荷分散追加"
 "editBalancer" = "負荷分散編集"
 "balancerStrategy" = "戦略"

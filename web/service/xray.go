@@ -539,6 +539,9 @@ func (s *XrayService) GetXrayConfigWithTemplate(templateConfig string) (*xray.Co
 		return nil, err
 	}
 
+	if err := compileFailoverBalancers(xrayConfig); err != nil {
+		return nil, err
+	}
 	return xrayConfig, nil
 }
 

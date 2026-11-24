@@ -1176,6 +1176,10 @@ vpnOutImportIgnored = "Các khóa mà biểu mẫu đường hầm không có tr
 vpnOutImportKept = "Không có trong tệp nên giá trị được lưu trữ được giữ nguyên:"
 
 [pages.xray.balancer]
+"failover" = "Chuyển đổi dự phòng"
+"failoverPrimary" = "Kết nối đi chính"
+"failoverBackups" = "Kết nối đi dự phòng"
+"failoverDesc" = "Sử dụng kết nối chính khi còn hoạt động. Nếu kết nối chính gặp lỗi, chọn kết nối dự phòng khả dụng có độ trễ thấp nhất."
 "addBalancer" = "Thêm cân bằng"
 "editBalancer" = "Chỉnh sửa cân bằng"
 "balancerStrategy" = "Chiến lược"

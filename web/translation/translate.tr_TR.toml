@@ -1175,6 +1175,10 @@ vpnOutImportIgnored = "Tünel formunda alan bulunmayan anahtarlar, dışarıda b
 vpnOutImportKept = "Dosyada olmadığından saklanan değer korunur:"
 
 [pages.xray.balancer]
+"failover" = "Yük devretme"
+"failoverPrimary" = "Birincil çıkış"
+"failoverBackups" = "Yedek çıkışlar"
+"failoverDesc" = "Birincil çıkış çalıştığı sürece kullanılır. Kesinti olursa en düşük gecikmeye sahip çalışan yedek çıkış seçilir."
 "addBalancer" = "Dengeleyici Ekle"
 "editBalancer" = "Dengeleyiciyi Düzenle"
 "balancerStrategy" = "Strateji"

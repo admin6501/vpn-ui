@@ -1176,6 +1176,10 @@ vpnOutImportIgnored = "Claves para las que el formulario de túnel no tiene camp
 vpnOutImportKept = "No está en el archivo, por lo que se conserva el valor almacenado:"
 
 [pages.xray.balancer]
+"failover" = "Conmutación por error"
+"failoverPrimary" = "Salida principal"
+"failoverBackups" = "Salidas de respaldo"
+"failoverDesc" = "Usa la salida principal mientras esté operativa. Si falla, elige la salida de respaldo operativa con menor latencia."
 "addBalancer" = "Agregar equilibrador"
 "editBalancer" = "Editar balanceador"
 "balancerStrategy" = "Estrategia"
