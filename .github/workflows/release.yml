@@ -1,8 +1,14 @@
 name: Build release assets
 on:
   workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish the verified assets to v1.0.0
+        required: true
+        default: true
+        type: boolean
 permissions:
-  contents: write
+  contents: read
 jobs:
   release:
     strategy:
@@ -22,88 +28,37 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
-      - name: Verify optional apt prerequisite prompts without real package installation
-        run: |
-          bash test_unit/offline_prerequisites_test.sh
-          PREREQUISITE_SCRIPT=install-node.sh bash test_unit/offline_prerequisites_test.sh
-          bash test_unit/node_menu_test.sh
-      - name: Apply pinned Xray security dependency patch
-        run: bash build/core/apply-security.sh
-      - name: Verify optional TCP timeout does not abort TPROXY
-        working-directory: third_party/Xray-core
-        run: sudo env PATH="$PATH" go test ./transport/internet -run 'TestTCPUserTimeoutUnsupported|TestListenerExplicitTCP|TestListenerTPROXY|TestListenerRejects' -count=1
-      - name: Verify Hysteria account validation and revocation
-        working-directory: third_party/Xray-core
-        run: go test -race ./transport/internet/hysteria ./proxy/hysteria/account -run "TestManagedEmpty|TestRevokedHysteria|TestDuplicateHysteria|TestHysteriaAuth" -count=1
-      - name: Verify exact membership liveness and disconnect cleanup
-        working-directory: third_party/Xray-core
-        run: go test -race ./features/stats ./app/dispatcher ./app/stats ./app/stats/command -count=1
-      - name: Verify client online identity, expiry tooltips and quota ordering
-        run: |
-          go test ./web/service ./web/job ./xray -run 'TestMembershipOnline|TestMtprotoMetrics|TestAppendUnrecorded|TestWireguardHandshake|TestCoreTraffic|TestAccountSort|TestOverview' -count=1
-          go test -race ./xray ./web/job ./web/service -run 'TestMembershipTraffic|TestCoreTrafficExactSources|TestAppendUnrecorded|TestShadowsocksHotAddCompatibility' -count=1
-          go test ./web/service -run 'TestClientStatsForSeparatesSharedPool|TestAttachClientStats|TestAddClientTraffic|TestMigrationMembershipUsage|TestRepairMembershipUsage' -count=1
-          node test_unit/client_online_info_test.cjs
-          node test_unit/client_details_2fa_test.cjs
-          python3 test_unit/unlisted_xray_users_test.py
-          node test_unit/export_test/export.test.js
-          node test_unit/inbound_speed_units_test.cjs
-          go test ./web -run 'TestRepresentativeOverview|TestAdministratorSidebar' -count=1
-      - name: Verify authentication, sessions, origins and private backups
-        run: go test -race ./database ./web/session ./web/middleware ./web/controller ./web/service -run '^TestSecurity' -count=1
-      - name: Verify client renewal, preserved access and representative billing
-        run: go test -race ./web/service ./web/controller -run '^TestAccountRenew|^TestClientRenew' -count=1
-      - name: Verify group-free inbound creation, cipher changes and delete/recreate accounting
-        run: |
-          node test_unit/inbound_create_roster_test.cjs
-          go test -race ./web/controller -run '^TestGroupsFreshInboundAndDeleteRecreatePreserveAccount$' -count=1
-      - name: Verify repeated native restores, preserved account usage, outbound edits and rollback
-        run: go test -race ./web/service ./web/controller -run '^Test(Restore|MigrationPreservesCentralTrafficWithoutHomeInbound|MigrationCleanupPreservesParkedCanonicalTraffic|XrayOutboundEditPreservesCentralAndMembershipTraffic)' -count=1
-      - name: Verify six audit fixes and allowed certificate, SSH, overview and backup access
-        run: go test -race ./web/controller ./web/service ./web/session -run 'TestSecurityAudit' -count=1
-      - name: Verify explicit representative Overview grants, live revocation and concurrent logs
-        run: go test -race ./logger ./web/controller -run 'TestConcurrentLogBuffer|TestRepresentativeOverview|TestSecurityAuditWebsocket|TestInboundSpeedUnits' -count=1
-      - name: Verify complete delegated panel settings and owner-account isolation
-        run: go test -race ./web/controller -run 'TestDelegatedPanelSettings|TestSecurityNonOwnerCannotReplaceDatabaseAuthenticationOrExecutable|TestSecurityOtherSuperCannotEditProtectedOwnerOrAssignedRole' -count=1
-      - name: Verify administrator, representative and node access boundaries
-        run: go test ./web/controller ./web/service ./web ./nodeagent -run 'TestCrossAdminIsolation|TestResellerIsolation|TestRepresentativeInbound|TestRepresentativeBoundaryPreservesAdministratorAccess|TestRepresentativeUpdate|TestRepresentativeClientRead|TestPasarGuardReadAllDoesNotWidenOwnWrite|TestPasarGuardMissingResetPermission|TestNodeAgentHTTPAuthenticationAndScope|TestNodeAdministrationRejectsRepresentative|TestNodeManagement|TestRepresentativeRoleWritesDeny|TestRepresentativeOverview|TestMigratedGlobalTwoFactorSecretIsNotServed' -count=1
-      - name: Verify bounded QUIC trailer decoding
-        working-directory: third_party/quic-go
-        run: go test ./http3 -run TestResponseTrailer -count=1
-      - name: Verify pinned CA names and transport destination fallback
-        working-directory: third_party/Xray-core
-        run: go test -race ./transport/internet/tls ./transport/internet/hysteria ./transport/internet/grpc -run 'TestPinnedCA|TestVerifyPeer|TestHysteriaTLS' -count=1
-      - name: Scan panel and embedded Xray dependencies
-        run: |
-          go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./web/... ./nodeagent/...
-          cd third_party/Xray-core
-          go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./main/...
-      - name: Build patched Xray and complete geodata
-        run: GEO_LEAN=0 bash build/core/build.sh ${{ matrix.arch }}
-      - name: Verify exact account usage over concurrent VMess and Shadowsocks TCP and UDP
-        run: RUN_CORE_TRAFFIC_INTEGRATION=1 XRAY_TRAFFIC_BINARY="$PWD/corebundle/core/${{ matrix.arch }}/xray" go test -race ./web/service -run '^TestCoreTrafficRealConcurrentProtocols$' -count=1 -timeout 90s
-      - name: Verify all six bundled geodata files
-        run: |
-          for file in geoip.dat geosite.dat geoip_IR.dat geosite_IR.dat geoip_RU.dat geosite_RU.dat; do
-            test -s "corebundle/core/$file"
-            test "$(stat -c %s "corebundle/core/$file")" -gt 1048576
-          done
       - name: Cache portable VPN backends
         id: backend-cache
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: backend/bin/${{ matrix.arch }}
           key: backend-${{ matrix.arch }}-${{ hashFiles('build/backend/**', '.gitmodules') }}-v1
       - name: Build all portable VPN backends
         if: steps.backend-cache.outputs.cache-hit != 'true'
         run: bash build/backend/build.sh ${{ matrix.arch }}
-      - name: Verify complete panel, account, node and subscription regression suite
-        run: go test -p 2 ./... -count=1 -timeout 10m
-      - name: Verify IP admission, eviction, reload and concurrent connection safety
-        working-directory: third_party/Xray-core
-        run: go test -race ./common/speedlimit -count=1
-      - name: Verify speed policies, reset admission and central node period usage
-        run: go test -race ./web/service ./web/controller ./nodeagent -run 'TestReset|TestSpeed|TestCompute|TestNodeSpeedThreshold|TestConfigChange|TestIndependent|TestIsRestartDue' -count=1
+      - name: Save portable VPN backends after build
+        if: steps.backend-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: backend/bin/${{ matrix.arch }}
+          key: ${{ steps.backend-cache.outputs.cache-primary-key }}
+      - name: Identify pinned Xray source
+        id: xray-source
+        run: echo "commit=$(git -C third_party/Xray-core rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+      - name: Cache patched Xray binary
+        uses: actions/cache@v4
+        with:
+          path: corebundle/core/${{ matrix.arch }}/
+          key: xray-${{ matrix.arch }}-${{ steps.xray-source.outputs.commit }}-${{ hashFiles('build/core/**', 'third_party/quic-go/**', 'go.mod') }}
+      - name: Build patched Xray and complete geodata
+        run: GEO_LEAN=0 bash build/core/build.sh ${{ matrix.arch }}
+      - name: Verify all six bundled geodata files
+        run: |
+          for file in geoip.dat geosite.dat geoip_IR.dat geosite_IR.dat geoip_RU.dat geosite_RU.dat; do
+            test -s "corebundle/core/$file"
+            test "$(stat -c %s "corebundle/core/$file")" -gt 1048576
+          done
       - name: Build panel
         run: |
           mkdir -p dist
@@ -113,58 +68,6 @@ jobs:
           test "$(dist/vpn-ui-node-${{ matrix.arch }} -v)" = "1.0.0"
           file dist/vpn-ui-${{ matrix.arch }} dist/vpn-ui-node-${{ matrix.arch }}
           go test ./corebundle -run TestExtractXray -count=1
-      - name: Verify dedicated node authentication, billing, subscriptions and real data plane
-        run: |
-          go test -race ./nodeagent ./web/service -run 'TestNodeProvision|TestNodeTag|TestNodeDuplicateIncoming|TestNodeSnapshotHistory|TestNodeLegacyZero|TestNodeReportConflict|TestNodeSnapshotRefresh|TestNodeReportAvoids|TestNodeUnchanged|TestNodeBatch|TestNodeIPsec|TestIpsecIsShared|TestDerivedCores' -count=1
-          go test ./nodeagent ./web/service ./web/controller ./sub -run 'TestNode' -count=1
-          RUN_NODE_INTEGRATION=1 go test ./nodeagent -run '^TestNodeRealDataPlane$' -count=1 -timeout 420s
-      - name: Verify node page creation, runtime controls and shared graphical/file editors in Chromium (all thirteen languages)
-        run: |
-          npm install --prefix /tmp/vpn-ui-browser-tests playwright@1.62.1 --no-audit --no-fund
-          /tmp/vpn-ui-browser-tests/node_modules/.bin/playwright install --with-deps chromium
-          export NODE_PATH=/tmp/vpn-ui-browser-tests/node_modules
-          export NODE_UI_CHROME=$(node -e 'console.log(require("playwright").chromium.executablePath())')
-          node test_unit/client_details_browser_test.cjs
-          node test_unit/gre_peer_browser_test.cjs
-          node test_unit/client_renew_browser_test.cjs
-          node test_unit/account_usage_breakdown_browser_test.cjs
-          node test_unit/refresh_queue_test.cjs
-          RUN_NODE_UI_BROWSER=1 go test ./web/middleware -run '^TestSecurityBrowserPanelNavigationRuntime$' -count=1 -timeout 60s
-          RUN_NODE_UI_BROWSER=1 go test ./sub -run '^TestSubscriptionPageBrowserRuntime$' -count=1 -timeout 300s
-          RUN_NODE_UI_BROWSER=1 go test ./web -run '^Test(NodePageBrowserRuntime|OverviewSSLBrowserRuntime|RepresentativeOverviewHidesInboundManagementAndUpdates|AdminRolesBrowserRuntime|DelegatedSettingsBrowserRuntime|RepresentativeEditBrowserRuntime|OutboundTableBrowserRuntime|InboundProtocolFormsBrowserRuntime|OutboundProtocolFormsBrowserRuntime)$' -count=1 -timeout 1200s
-          RUN_NODE_UI_BROWSER=1 go test -race ./web -run '^Test(GroupsBrowserRuntime|InboundCreateGroupsBrowserRuntime)$' -count=1 -timeout 240s
-      - name: Verify ownership transfer and online counts
-        run: go test -tags netgo,osusergo ./web/service ./web/controller -run 'TestSaveAccount|TestLeavingAnAccount|TestIndependentAccount|TestMembershipEnable|TestDisabledMembership|TestRemovingTheLastMembership|TestToggleClientEnableByEmail|TestRenameAccount|TestSortAccountRows|TestAccountSort|TestClientLimit|TestResolveUserLimitOverride|TestAllocateBlockIP|TestOldestBlockSession|TestAdmit|TestSpeedLimit|TestAdminRoles|TestAdminOwner|TestAccountOwnershipTransfer|TestPasarGuard|TestOverview|TestVerifiedProvisioned|TestOffline|TestMigrationAccountsVerifiesExistingImported'
-      - name: Verify imported subscription quotas and legacy credentials
-        run: go test ./sub ./compat/pasarguard -run 'TestConfigNamesMatchInfoCopyQRAndSubscription|TestPasarGuard|TestGetSubs|TestExistingSubscriptionFormats|TestInvalidTokens|TestDisplayToken|TestHysteria' -count=1
-      - name: Verify offline refresh guard
-        run: |
-          go test ./web/job -run 'TestOffline' -count=1
-          go test ./database ./xray -run 'TestIdentityIndexes|TestHandlerCallsBoundStalledCore' -count=1 -timeout 30s
-          go test ./web/service -run 'TestSSL|TestOverviewRequiredCores|TestOverviewCentralXrayTags' -count=1
-      - name: Verify representative role management
-        run: go test ./web/service ./web/controller ./web -run 'TestRepresentativeRole|TestRepresentativeEdit|TestGroups' -count=1
-      - name: Verify GRE and L2TP coexistence and branding settings
-        run: |
-          go test -race ./web/service -run 'TestGre|TestL2tp|TestBranding' -count=1 -timeout 120s
-          go test -race ./web/controller -run '^TestGrePeerIP' -count=1 -timeout 120s
-      - name: Verify complete translation catalogs, component locales and Telegram language reload
-        run: |
-          go test ./web -run 'TestPersianInboundFormsRender|TestAllTemplatesParse|TestEditedTemplatesParse|TestTranslationsAreValidToml|TestTranslationKeyParity|TestAllLocaleMessagesRenderAndPreserveVariables|TestComponentLocaleCoverage|TestTranslationTemplateReferencesAndConfigurationLiterals'
-          go test -race ./web/locale ./web/service -run 'TestEnglishFallback|TestPersianBot|TestBotLocaleReload|TestTelegram|TestHTMLLocale|TestRequestLanguage' -count=1
-      - name: Verify thirteen-language README instructions, guide links and browser language selection
-        run: |
-          python3 test_unit/documentation_test.py
-          node test_unit/language_selection_test.cjs
-      - name: Verify actual TCP and UDP socket lifetimes
-        run: |
-          go test ./util/sys ./web/service -run 'TestSocketCounts|TestConnection' -count=1
-          node test_unit/hysteria_link_test.cjs
-          node test_unit/client_edit_regression_test.cjs
-          node test_unit/inbound_stats_test.js
-          node test_unit/overview_ssl_stats_test.cjs
-          node --check web/assets/js/model/inbound.js
-          node --check web/assets/js/model/outbound.js
       - name: Package migration and checksums
         run: |
           mkdir -p dist/migration
@@ -177,6 +80,23 @@ jobs:
           cp ../install-offline.sh ../install-node.sh .
           bash -n install-offline.sh install-node.sh
           sha256sum vpn-ui-${{ matrix.arch }} vpn-ui-node-${{ matrix.arch }} vpn-ui-auto-migration.zip install-offline.sh install-node.sh > SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.arch }}
+          path: dist/*
+          retention-days: 7
+          overwrite: true
+      - name: Verify complete panel, account, node and subscription regression suite
+        run: go test -p 2 ./... -count=1 -timeout 10m
+      - name: Verify exact account usage over concurrent VMess and Shadowsocks TCP and UDP
+        run: RUN_CORE_TRAFFIC_INTEGRATION=1 XRAY_TRAFFIC_BINARY="$PWD/corebundle/core/${{ matrix.arch }}/xray" go test -race ./web/service -run '^TestCoreTrafficRealConcurrentProtocols$' -count=1 -timeout 90s
+      - name: Verify failover against the bundled Xray binary
+        run: VPNUI_TEST_FAILOVER_XRAY="$PWD/corebundle/core/${{ matrix.arch }}/xray" go test ./web/service -run '^TestFailoverRoutesWithPatchedXray$' -count=1 -timeout 30s
+      - name: Verify dedicated node authentication, billing, subscriptions and real data plane
+        run: |
+          go test -race ./nodeagent ./web/service -run 'TestNodeProvision|TestNodeTag|TestNodeDuplicateIncoming|TestNodeSnapshotHistory|TestNodeLegacyZero|TestNodeReportConflict|TestNodeSnapshotRefresh|TestNodeReportAvoids|TestNodeUnchanged|TestNodeBatch|TestNodeIPsec|TestIpsecIsShared|TestDerivedCores' -count=1
+          go test ./nodeagent ./web/service ./web/controller ./sub -run 'TestNode' -count=1
+          RUN_NODE_INTEGRATION=1 go test ./nodeagent -run '^TestNodeRealDataPlane$' -count=1 -timeout 420s
       - name: Verify node uninstall cancellation, guards and real systemd cleanup
         run: |
           bash test_unit/node_uninstall_test.sh
@@ -217,13 +137,189 @@ jobs:
             if test -f "$logfile"; then sudo tail -50 "$logfile" | sed -E 's/(Password:).*/\1 [redacted]/'; fi
           done
           sudo journalctl -u vpn-ui -n 60 --no-pager || true
-      - uses: actions/upload-artifact@v4
+  core_checks:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
         with:
-          name: release-${{ matrix.arch }}
-          path: dist/*
-          retention-days: 2
+          submodules: recursive
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Apply pinned Xray security dependency patch
+        run: bash build/core/apply-security.sh
+      - name: Verify optional TCP timeout does not abort TPROXY
+        working-directory: third_party/Xray-core
+        run: sudo env PATH="$PATH" go test ./transport/internet -run 'TestTCPUserTimeoutUnsupported|TestListenerExplicitTCP|TestListenerTPROXY|TestListenerRejects' -count=1
+      - name: Verify Hysteria account validation and revocation
+        working-directory: third_party/Xray-core
+        run: go test -race ./transport/internet/hysteria ./proxy/hysteria/account -run "TestManagedEmpty|TestRevokedHysteria|TestDuplicateHysteria|TestHysteriaAuth" -count=1
+      - name: Verify exact membership liveness and disconnect cleanup
+        working-directory: third_party/Xray-core
+        run: go test -race ./features/stats ./app/dispatcher ./app/stats ./app/stats/command -count=1
+      - name: Verify bounded QUIC trailer decoding
+        working-directory: third_party/quic-go
+        run: go test ./http3 -run TestResponseTrailer -count=1
+      - name: Verify pinned CA names and transport destination fallback
+        working-directory: third_party/Xray-core
+        run: go test -race ./transport/internet/tls ./transport/internet/hysteria ./transport/internet/grpc -run 'TestPinnedCA|TestVerifyPeer|TestHysteriaTLS' -count=1
+      - name: Scan panel and embedded Xray dependencies
+        run: |
+          go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./web/... ./nodeagent/...
+          cd third_party/Xray-core
+          go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./main/...
+      - name: Verify IP admission, eviction, reload and concurrent connection safety
+        working-directory: third_party/Xray-core
+        run: go test -race ./common/speedlimit -count=1
+  panel_checks:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Verify speed policies, reset admission and central node period usage
+        run: go test -race ./web/service ./web/controller ./nodeagent -run 'TestReset|TestSpeed|TestCompute|TestNodeSpeedThreshold|TestConfigChange|TestIndependent|TestIsRestartDue' -count=1
+      - name: Verify client online identity, expiry tooltips and quota ordering
+        run: |
+          go test ./web/service ./web/job ./xray -run 'TestMembershipOnline|TestMtprotoMetrics|TestAppendUnrecorded|TestWireguardHandshake|TestCoreTraffic|TestAccountSort|TestOverview' -count=1
+          go test -race ./xray ./web/job ./web/service -run 'TestMembershipTraffic|TestCoreTrafficExactSources|TestAppendUnrecorded|TestShadowsocksHotAddCompatibility' -count=1
+          go test ./web/service -run 'TestClientStatsForSeparatesSharedPool|TestAttachClientStats|TestAddClientTraffic|TestMigrationMembershipUsage|TestRepairMembershipUsage' -count=1
+          node test_unit/client_online_info_test.cjs
+          node test_unit/client_details_2fa_test.cjs
+          python3 test_unit/unlisted_xray_users_test.py
+          node test_unit/export_test/export.test.js
+          node test_unit/inbound_speed_units_test.cjs
+          go test ./web -run 'TestRepresentativeOverview|TestAdministratorSidebar' -count=1
+      - name: Verify authentication, sessions, origins and private backups
+        run: go test -race ./database ./web/session ./web/middleware ./web/controller ./web/service -run '^TestSecurity' -count=1
+      - name: Verify client renewal, preserved access and representative billing
+        run: go test -race ./web/service ./web/controller -run '^TestAccountRenew|^TestClientRenew' -count=1
+      - name: Verify group-free inbound creation, cipher changes and delete/recreate accounting
+        run: |
+          node test_unit/inbound_create_roster_test.cjs
+          go test -race ./web/controller -run '^TestGroupsFreshInboundAndDeleteRecreatePreserveAccount$' -count=1
+      - name: Verify repeated native restores, preserved account usage, outbound edits and rollback
+        run: go test -race ./web/service ./web/controller -run '^Test(Restore|MigrationPreservesCentralTrafficWithoutHomeInbound|MigrationCleanupPreservesParkedCanonicalTraffic|XrayOutboundEditPreservesCentralAndMembershipTraffic)' -count=1
+      - name: Verify six audit fixes and allowed certificate, SSH, overview and backup access
+        run: go test -race ./web/controller ./web/service ./web/session -run 'TestSecurityAudit' -count=1
+      - name: Verify explicit representative Overview grants, live revocation and concurrent logs
+        run: go test -race ./logger ./web/controller -run 'TestConcurrentLogBuffer|TestRepresentativeOverview|TestSecurityAuditWebsocket|TestInboundSpeedUnits' -count=1
+      - name: Verify complete delegated panel settings and owner-account isolation
+        run: go test -race ./web/controller -run 'TestDelegatedPanelSettings|TestSecurityNonOwnerCannotReplaceDatabaseAuthenticationOrExecutable|TestSecurityOtherSuperCannotEditProtectedOwnerOrAssignedRole' -count=1
+      - name: Verify administrator, representative and node access boundaries
+        run: go test ./web/controller ./web/service ./web ./nodeagent -run 'TestCrossAdminIsolation|TestResellerIsolation|TestRepresentativeInbound|TestRepresentativeBoundaryPreservesAdministratorAccess|TestRepresentativeUpdate|TestRepresentativeClientRead|TestPasarGuardReadAllDoesNotWidenOwnWrite|TestPasarGuardMissingResetPermission|TestNodeAgentHTTPAuthenticationAndScope|TestNodeAdministrationRejectsRepresentative|TestNodeManagement|TestRepresentativeRoleWritesDeny|TestRepresentativeOverview|TestMigratedGlobalTwoFactorSecretIsNotServed' -count=1
+      - name: Verify ownership transfer and online counts
+        run: go test -tags netgo,osusergo ./web/service ./web/controller -run 'TestSaveAccount|TestLeavingAnAccount|TestIndependentAccount|TestMembershipEnable|TestDisabledMembership|TestRemovingTheLastMembership|TestToggleClientEnableByEmail|TestRenameAccount|TestSortAccountRows|TestAccountSort|TestClientLimit|TestResolveUserLimitOverride|TestAllocateBlockIP|TestOldestBlockSession|TestAdmit|TestSpeedLimit|TestAdminRoles|TestAdminOwner|TestAccountOwnershipTransfer|TestPasarGuard|TestOverview|TestVerifiedProvisioned|TestOffline|TestMigrationAccountsVerifiesExistingImported'
+      - name: Verify imported subscription quotas and legacy credentials
+        run: go test ./sub ./compat/pasarguard -run 'TestConfigNamesMatchInfoCopyQRAndSubscription|TestPasarGuard|TestGetSubs|TestExistingSubscriptionFormats|TestInvalidTokens|TestDisplayToken|TestHysteria' -count=1
+      - name: Verify offline refresh guard
+        run: |
+          go test ./web/job -run 'TestOffline' -count=1
+          go test ./database ./xray -run 'TestIdentityIndexes|TestHandlerCallsBoundStalledCore' -count=1 -timeout 30s
+          go test ./web/service -run 'TestSSL|TestOverviewRequiredCores|TestOverviewCentralXrayTags' -count=1
+      - name: Verify representative role management
+        run: go test ./web/service ./web/controller ./web -run 'TestRepresentativeRole|TestRepresentativeEdit|TestGroups' -count=1
+      - name: Verify GRE and L2TP coexistence and branding settings
+        run: |
+          go test -race ./web/service -run 'TestGre|TestL2tp|TestBranding' -count=1 -timeout 120s
+          go test -race ./web/controller -run '^TestGrePeerIP' -count=1 -timeout 120s
+      - name: Verify complete translation catalogs, component locales and Telegram language reload
+        run: |
+          go test ./web -run 'TestPersianInboundFormsRender|TestAllTemplatesParse|TestEditedTemplatesParse|TestTranslationsAreValidToml|TestTranslationKeyParity|TestAllLocaleMessagesRenderAndPreserveVariables|TestComponentLocaleCoverage|TestTranslationTemplateReferencesAndConfigurationLiterals'
+          go test -race ./web/locale ./web/service -run 'TestEnglishFallback|TestPersianBot|TestBotLocaleReload|TestTelegram|TestHTMLLocale|TestRequestLanguage' -count=1
+      - name: Verify thirteen-language README instructions, guide links and browser language selection
+        run: |
+          python3 test_unit/documentation_test.py
+          node test_unit/language_selection_test.cjs
+      - name: Verify actual TCP and UDP socket lifetimes
+        run: |
+          go test ./util/sys ./web/service -run 'TestSocketCounts|TestConnection' -count=1
+          node test_unit/hysteria_link_test.cjs
+          node test_unit/client_edit_regression_test.cjs
+          node test_unit/inbound_stats_test.js
+          node test_unit/overview_ssl_stats_test.cjs
+          node --check web/assets/js/model/inbound.js
+          node --check web/assets/js/model/outbound.js
+      - name: Verify optional apt prerequisite prompts without real package installation
+        run: |
+          bash test_unit/offline_prerequisites_test.sh
+          PREREQUISITE_SCRIPT=install-node.sh bash test_unit/offline_prerequisites_test.sh
+          bash test_unit/node_menu_test.sh
+  browser_checks:
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: [navigation, roles, forms]
+        arch: [amd64, arm64]
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Prepare Chromium
+        run: |
+          npm install --prefix /tmp/vpn-ui-browser-tests playwright@1.62.1 --no-audit --no-fund
+          /tmp/vpn-ui-browser-tests/node_modules/.bin/playwright install --with-deps chromium
+          echo "NODE_PATH=/tmp/vpn-ui-browser-tests/node_modules" >> "$GITHUB_ENV"
+          NODE_PATH=/tmp/vpn-ui-browser-tests/node_modules node -e 'console.log("NODE_UI_CHROME=" + require("playwright").chromium.executablePath())' >> "$GITHUB_ENV"
+      - name: Verify navigation and subscriptions
+        if: matrix.suite == 'navigation'
+        run: |
+          node test_unit/client_details_browser_test.cjs
+          node test_unit/gre_peer_browser_test.cjs
+          node test_unit/client_renew_browser_test.cjs
+          node test_unit/account_usage_breakdown_browser_test.cjs
+          node test_unit/refresh_queue_test.cjs
+          RUN_NODE_UI_BROWSER=1 go test ./web/middleware -run '^TestSecurityBrowserPanelNavigationRuntime$' -count=1 -timeout 60s
+          RUN_NODE_UI_BROWSER=1 go test ./sub -run '^TestSubscriptionPageBrowserRuntime$' -count=1 -timeout 300s
+          RUN_NODE_UI_BROWSER=1 go test ./web -run '^Test(NodePageBrowserRuntime|OverviewSSLBrowserRuntime|RepresentativeOverviewHidesInboundManagementAndUpdates)$' -count=1 -timeout 600s
+      - name: Verify administrator and representative roles
+        if: matrix.suite == 'roles'
+        run: |
+          RUN_NODE_UI_BROWSER=1 go test ./web -run '^Test(AdminRolesBrowserRuntime|DelegatedSettingsBrowserRuntime|RepresentativeEditBrowserRuntime)$' -count=1 -timeout 600s
+      - name: Verify inbound and outbound forms
+        if: matrix.suite == 'forms'
+        run: |
+          RUN_NODE_UI_BROWSER=1 go test ./web -run '^Test(OutboundTableBrowserRuntime|InboundProtocolFormsBrowserRuntime|OutboundProtocolFormsBrowserRuntime)$' -count=1 -timeout 600s
+          RUN_NODE_UI_BROWSER=1 go test -race ./web -run '^Test(GroupsBrowserRuntime|InboundCreateGroupsBrowserRuntime)$' -count=1 -timeout 240s
   publish:
-    needs: release
+    needs: [release, core_checks, panel_checks, browser_checks]
+    if: inputs.publish
+    permissions:
+      contents: write
+    concurrency:
+      group: vpn-ui-v1.0.0-publish
+      cancel-in-progress: false
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/download-artifact@v4
