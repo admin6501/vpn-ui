@@ -940,3 +940,17 @@ func TestPasarGuardSubscriptionQuotaAfterMissingMarkerRepair(t *testing.T) {
 		t.Fatalf("ten GB account reported unlimited or expiry lost: total=%d expiry=%d err=%v", traffic.Total, traffic.ExpiryTime, err)
 	}
 }
+
+func TestTelegramRendererFiltersSharedSubscriptionByAccount(t *testing.T) {
+	newSubTestDB(t)
+	const token = "shared-token"
+	seedSubInbound(t, model.Trojan, 20443, "first", subClient("owner", token), subClient("other", token))
+	seedSubInbound(t, model.Trojan, 21443, "second", subClient("owner", token))
+	links, err := (&Server{}).TelegramAccountLinks(token, "owner", "vpn.example.org")
+	if err != nil || len(links) != 2 {
+		t.Fatalf("expected two links for the selected account: %v, %v", links, err)
+	}
+	if !strings.Contains(links[0], "pw-owner") || !strings.Contains(links[1], "pw-owner") {
+		t.Fatal("renderer returned a different account's credential")
+	}
+}

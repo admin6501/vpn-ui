@@ -121,17 +121,17 @@ func (s *SubService) resolveTraffic(inbound *model.Inbound, email string) (traff
 
 // GetSubs retrieves subscription links for a given subscription ID and host.
 func (s *SubService) GetSubs(subId string, host string) ([]string, int64, xray.ClientTraffic, error) {
-	return s.getSubs(subId, host, false)
+	return s.getSubs(subId, host, false, "")
 }
 
 // GetPageSubs retains the customer's connection details when their representative
 // has run out of allowance. This only changes the browser view, not core admission
 // or the enabled-only exports consumed by subscription clients.
 func (s *SubService) GetPageSubs(subId string, host string) ([]string, int64, xray.ClientTraffic, error) {
-	return s.getSubs(subId, host, true)
+	return s.getSubs(subId, host, true, "")
 }
 
-func (s *SubService) getSubs(subId string, host string, page bool) ([]string, int64, xray.ClientTraffic, error) {
+func (s *SubService) getSubs(subId string, host string, page bool, onlyEmail string) ([]string, int64, xray.ClientTraffic, error) {
 	s = s.forResponse()
 	s.address = host
 	var result []string
@@ -164,7 +164,7 @@ func (s *SubService) getSubs(subId string, host string, page bool) ([]string, in
 			}
 		}
 		for _, client := range clients {
-			if client.SubID == subId {
+			if client.SubID == subId && (onlyEmail == "" || strings.EqualFold(strings.TrimSpace(client.Email), strings.TrimSpace(onlyEmail))) {
 				// Count every matching client's usage so the subscriber page shows the
 				// account's remaining traffic/days for ALL protocols, including ones with
 				// no raw link (wg-c/awg deliver via the Clash sub and gre via the page's

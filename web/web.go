@@ -730,3 +730,7 @@ func (s *Server) getOrCreateRadiusSecret() string {
 func (s *Server) RestartXray() error {
 	return s.xrayService.RestartXray(true)
 }
+
+func (s *Server) ReconcileTelegramMemberships(ids []int) {
+	controller.ReconcileTelegramMemberships(ids)
+}

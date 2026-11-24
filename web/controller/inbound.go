@@ -3510,3 +3510,9 @@ func (a *InboundController) renameUnservedAccount(c *gin.Context) {
 	}
 	jsonMsg(c, I18nWeb(c, "pages.inbounds.toasts.inboundClientUpdateSuccess"), nil)
 }
+
+// ReconcileTelegramMemberships applies group-derived client changes to the same
+// protocol runtimes as a panel client edit.
+func ReconcileTelegramMemberships(ids []int) {
+	(&InboundController{}).reconcileForInbounds(ids, len(ids) > 0)
+}

@@ -396,3 +396,14 @@ func (s *Server) Stop() error {
 func (s *Server) GetCtx() context.Context {
 	return s.ctx
 }
+
+// TelegramAccountLinks renders the account's live links with the subscription
+// renderer, including the current group projection.
+func (s *Server) TelegramAccountLinks(subID, email, host string) ([]string, error) {
+	remark, err := s.settingService.GetRemarkModel()
+	if err != nil {
+		return nil, err
+	}
+	links, _, _, err := NewSubService(false, remark).getSubs(subID, host, false, email)
+	return links, err
+}
