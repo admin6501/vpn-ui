@@ -842,7 +842,8 @@ brandNameDesc = "يظهر في صفحة تسجيل الدخول وصفحات ا�
 "telegramToken" = "توكن Telegram"
 "telegramTokenDesc" = "توكن البوت اللي جبت من '@BotFather'."
 "telegramProxy" = "بروكسي SOCKS"
-"telegramProxyDesc" = "يفعل بروكسي SOCKS5 للاتصال بـ Telegram. (اضبط الإعدادات حسب الدليل)"
+"telegramProxyDesc" = "اتصل بتيليجرام عبر وكيل SOCKS5 أو مسار Xray الصادر المحدد. أعد تشغيل اللوحة بعد الحفظ."
+"telegramOutbound" = "مسار Xray الصادر"
 "telegramAPIServer" = "سيرفر Telegram API"
 "telegramAPIServerDesc" = "سيرفر Telegram API المستخدم. سيبه فاضي لاستخدام الافتراضي."
 "telegramChatId" = "ID شات الأدمن"
@@ -1681,6 +1682,7 @@ allUsers = "كافة المستخدمين"
 "FinishProcess" = "🔚 عملية إعادة ضبط الترافيك خلصت لكل العملاء."
 
 [tgbot.buttons]
+"mainMenu" = "القائمة الرئيسية"
 "closeKeyboard" = "❌ اقفل الكيبورد"
 "cancel" = "❌ إلغاء"
 "cancelReset" = "❌ إلغاء إعادة الضبط"

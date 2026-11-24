@@ -703,19 +703,24 @@ func (a *ServerController) importDB(c *gin.Context) {
 		jsonMsg(c, I18nWeb(c, "pages.index.importDatabaseError"), err)
 		return
 	}
-	// The imported credentials can invalidate the current session immediately.
-	// Schedule this inside the authorized restore request; a follow-up browser
-	// request to /setting/restartPanel may no longer be authenticated/authorized.
-	restart := a.restartAfterRestore
-	if restart == nil {
-		restart = (&service.PanelService{}).RestartPanel
-	}
-	if err = restart(3 * time.Second); err != nil {
-		jsonMsg(c, I18nWeb(c, "pages.index.importDatabaseError"), fmt.Errorf("database restored but panel restart failed: %w", err))
+	if err := a.schedulePanelRestartAfterRestore(); err != nil {
+		jsonMsg(c, I18nWeb(c, "pages.index.importDatabaseError"), err)
 		return
 	}
 	message := I18nWeb(c, "pages.index.importDatabaseSuccess")
 	jsonMsgObj(c, message, message, nil)
+}
+
+// Once the database is replaced, the original browser session may no longer be valid.
+func (a *ServerController) schedulePanelRestartAfterRestore() error {
+	restart := a.restartAfterRestore
+	if restart == nil {
+		restart = (&service.PanelService{}).RestartPanel
+	}
+	if err := restart(3 * time.Second); err != nil {
+		return fmt.Errorf("database restored but panel restart failed: %w", err)
+	}
+	return nil
 }
 
 // importForeignDB imports a stock 3x-ui (or vpn-ui) backup over the current
@@ -733,6 +738,10 @@ func (a *ServerController) importForeignDB(c *gin.Context) {
 	defer file.Close()
 	report, err := a.serverService.ImportForeignDB(file, true)
 	if err != nil {
+		jsonMsg(c, I18nWeb(c, "pages.index.importDatabaseError"), err)
+		return
+	}
+	if err := a.schedulePanelRestartAfterRestore(); err != nil {
 		jsonMsg(c, I18nWeb(c, "pages.index.importDatabaseError"), err)
 		return
 	}

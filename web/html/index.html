@@ -3441,13 +3441,8 @@
               this.$message.success('{{ i18n "pages.index.importDatabaseSuccess" }} (' +
                 (r.inbounds || 0) + ' / ' + (r.clients || 0) + ' / ' + (r.admins || 0) + ')');
               this.loading(true);
-              const restartMsg = await HttpUtil.post("/panel/setting/restartPanel");
-              this.loading(false);
-              if (restartMsg.success) {
-                this.loading(true);
-                await PromiseUtil.sleep(5000);
-                location.reload();
-              }
+              await PromiseUtil.sleep(5000);
+              location.reload();
             });
             fileInput.click();
           },

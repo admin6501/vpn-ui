@@ -842,7 +842,8 @@ brandNameDesc = "Se muestra en el inicio de sesión, el panel y el título del n
 "telegramToken" = "Token de Telegram"
 "telegramTokenDesc" = "Debe obtener el token del administrador de bots de Telegram @botfather."
 "telegramProxy" = "Socks5 Proxy"
-"telegramProxyDesc" = "Si necesita el proxy Socks5 para conectarse a Telegram. Ajuste su configuración según la guía."
+"telegramProxyDesc" = "Conecta con Telegram mediante un proxy SOCKS5 o una salida de Xray seleccionada. Reinicia el panel después de guardar."
+"telegramOutbound" = "Salida de Xray"
 "telegramAPIServer" = "API Server de Telegram"
 "telegramAPIServerDesc" = "El servidor API de Telegram a utilizar. Déjelo en blanco para utilizar el servidor predeterminado."
 "telegramChatId" = "IDs de Chat de Telegram para Administradores"
@@ -1681,6 +1682,7 @@ allUsers = "Todos los usuarios"
 "FinishProcess" = "🔚 Proceso de reinicio de tráfico finalizado para todos los clientes."
 
 [tgbot.buttons]
+"mainMenu" = "Menú principal"
 "closeKeyboard" = "❌ Cerrar Teclado"
 "cancel" = "❌ Cancelar"
 "cancelReset" = "❌ Cancelar Reinicio"

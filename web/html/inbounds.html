@@ -1927,6 +1927,13 @@
           }
         });
 
+        this._onInboundInvalidation = (payload) => {
+          if (this.isRefreshEnabled && payload?.type === 'inbounds') {
+            this.getDBInbounds().catch(error => console.warn('Inbound refresh failed', error));
+          }
+        };
+        window.wsClient.on('invalidate', this._onInboundInvalidation);
+
         // Full data refresh uses one polling chain below. This also covers lost
         // invalidations, proxy outages and browsers that cannot use WebSockets.
 
@@ -1998,6 +2005,7 @@
       if (this.isRefreshEnabled) this.startDataRefreshLoop();
     },
     beforeDestroy() {
+      if (this._onInboundInvalidation) window.wsClient.off('invalidate', this._onInboundInvalidation);
       clearInterval(this.accountSummaryTimer);
       if (this._dataRefreshLoop) this._dataRefreshLoop.stop();
     },

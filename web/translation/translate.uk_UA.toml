@@ -841,7 +841,8 @@ brandNameDesc = "Відображається на сторінці входу, 
 "telegramToken" = "Telegram Токен"
 "telegramTokenDesc" = "Токен бота Telegram, отриманий від '@BotFather'."
 "telegramProxy" = "SOCKS Проксі"
-"telegramProxyDesc" = "Вмикає проксі-сервер SOCKS5 для підключення до Telegram. (відкоригуйте параметри відповідно до посібника)"
+"telegramProxyDesc" = "Підключайтеся до Telegram через проксі SOCKS5 або вибране вихідне з’єднання Xray. Після збереження перезапустіть панель."
+"telegramOutbound" = "Вихідне з’єднання Xray"
 "telegramAPIServer" = "Сервер Telegram API"
 "telegramAPIServerDesc" = "Сервер Telegram API для використання. Залиште поле порожнім, щоб використовувати сервер за умовчанням."
 "telegramChatId" = "Ідентифікатор чату адміністратора"
@@ -1680,6 +1681,7 @@ allUsers = "Усі користувачі"
 "FinishProcess" = "🔚 Процес скидання трафіку завершено для всіх клієнтів."
 
 [tgbot.buttons]
+"mainMenu" = "Головне меню"
 "closeKeyboard" = "❌ Закрити клавіатуру"
 "cancel" = "❌ Скасувати"
 "cancelReset" = "❌ Скасувати скидання"

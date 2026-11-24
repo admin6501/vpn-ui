@@ -842,7 +842,8 @@ brandNameDesc = "Отображается на странице входа, в �
 "telegramToken" = "Токен Telegram бота"
 "telegramTokenDesc" = "Необходимо получить токен у менеджера ботов Telegram @botfather"
 "telegramProxy" = "Прокси-сервер Socks5"
-"telegramProxyDesc" = "Если для подключения к Telegram вам нужен прокси Socks5, настройте его параметры согласно руководству."
+"telegramProxyDesc" = "Подключайтесь к Telegram через прокси SOCKS5 или выбранное исходящее подключение Xray. После сохранения перезапустите панель."
+"telegramOutbound" = "Исходящее подключение Xray"
 "telegramAPIServer" = "API-сервер Telegram"
 "telegramAPIServerDesc" = "Используемый API-сервер Telegram. Оставьте пустым, чтобы использовать сервер по умолчанию."
 "telegramChatId" = "User ID администратора бота"
@@ -1681,6 +1682,7 @@ allUsers = "Все пользователи"
 "FinishProcess" = "🔚 Сброс трафика завершён для всех клиентов."
 
 [tgbot.buttons]
+"mainMenu" = "Главное меню"
 "closeKeyboard" = "❌ Закрыть клавиатуру"
 "cancel" = "❌ Отмена"
 "cancelReset" = "❌ Отменить сброс"

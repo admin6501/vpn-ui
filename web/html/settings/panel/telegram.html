@@ -70,7 +70,14 @@
             <template #title>{{ i18n "pages.settings.telegramProxy"}}</template>
             <template #description>{{ i18n "pages.settings.telegramProxyDesc"}}</template>
             <template #control>
-                <a-input type="text" placeholder="socks5://user:pass@host:port"
+                <a-select show-search allow-clear option-filter-prop="children" style="width:100%;margin-bottom:8px"
+                    placeholder='{{ i18n "pages.settings.telegramOutbound" }}'
+                    :value="selectedTelegramOutbound()" @change="setTelegramOutbound">
+                    <a-select-option v-for="tag in telegramOutboundTags" :key="tag" :value="telegramOutboundValue(tag)">[[ tag ]]</a-select-option>
+                    <a-select-option v-if="selectedTelegramOutbound() && !telegramOutboundTags.some(tag => telegramOutboundValue(tag) === selectedTelegramOutbound())"
+                        :value="selectedTelegramOutbound()">[[ selectedTelegramOutbound().slice(5) ]]</a-select-option>
+                </a-select>
+                <a-input v-if="!selectedTelegramOutbound()" type="text" placeholder="socks5://user:pass@host:port"
                     v-model="allSetting.tgBotProxy"></a-input>
             </template>
         </a-setting-list-item>

@@ -16,6 +16,10 @@ var databaseImportMu sync.Mutex
 // file back. Keep the fallback on disk if replacement fails; never delete the
 // only remaining copy of the previous database on an error path.
 func (s *ServerService) rollbackDBRestore(fallbackPath string, cause error) error {
+	return s.rollbackDatabaseImport(fallbackPath, cause, true)
+}
+
+func (s *ServerService) rollbackDatabaseImport(fallbackPath string, cause error, activate bool) error {
 	if err := database.CloseDB(); err != nil {
 		return fmt.Errorf("restore failed (%v); could not close rejected database (%v); previous database retained at %s", cause, err, fallbackPath)
 	}
@@ -26,6 +30,9 @@ func (s *ServerService) rollbackDBRestore(fallbackPath string, cause error) erro
 	}
 	if err := database.InitDB(dbPath); err != nil {
 		return fmt.Errorf("restore failed (%v); previous database is back on disk but could not be opened: %w", cause, err)
+	}
+	if !activate {
+		return fmt.Errorf("restore failed; previous database restored: %w", cause)
 	}
 	s.l2tpService.InitL2tp()
 	s.pptpService.InitPptp()

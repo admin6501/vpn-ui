@@ -841,7 +841,8 @@ brandNameDesc = "顯示於登入頁、面板及瀏覽器標題。留空以使用
 "telegramToken" = "Telegram 機器人令牌（token）"
 "telegramTokenDesc" = "從 '@BotFather' 獲取的 Telegram 機器人令牌"
 "telegramProxy" = "SOCKS5 Proxy"
-"telegramProxyDesc" = "啟用 SOCKS5 代理連線到 Telegram（根據指南調整設定）"
+"telegramProxyDesc" = "透過 SOCKS5 代理或選取的 Xray 出站連線至 Telegram。儲存後請重新啟動面板。"
+"telegramOutbound" = "Xray 出站"
 "telegramAPIServer" = "電報 API 伺服器"
 "telegramAPIServerDesc" = "要使用的 Telegram API 伺服器。留空以使用預設伺服器。"
 "telegramChatId" = "管理員聊天 ID"
@@ -1680,6 +1681,7 @@ allUsers = "所有用戶"
 "FinishProcess" = "🔚 所有客戶的流量重置已完成。"
 
 [tgbot.buttons]
+"mainMenu" = "主選單"
 "closeKeyboard" = "❌ 關閉鍵盤"
 "cancel" = "❌ 取消"
 "cancelReset" = "❌ 取消重置"

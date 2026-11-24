@@ -1,6 +1,7 @@
 package service
 
 import (
+	"database/sql"
 	"os"
 	"path/filepath"
 	"testing"
@@ -125,5 +126,148 @@ func TestImportForeignDBBringsDataAndPreservesPanelSettings(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("report should list webPort as preserved: %+v", report.PreservedSettings)
+	}
+}
+
+// This fixture uses the upstream 3x-ui table layout and deliberately has no
+// clients in inbound.settings. A VPN-UI-created fixture misses this regression.
+func TestImportForeignDBProjectsStockClientMemberships(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("VPNUI_DB_FOLDER", dir)
+	t.Setenv("VPNUI_OFFLINE", "1")
+	t.Setenv("VPNUI_NODE_AGENT", "1")
+	srcPath := filepath.Join(dir, "stock.db")
+	stock, err := sql.Open("sqlite3", srcPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = stock.Exec(`
+		CREATE TABLE users (id INTEGER PRIMARY KEY, username TEXT, password TEXT);
+		INSERT INTO users VALUES (1, 'stock-admin', 'stock-password');
+		CREATE TABLE settings (id INTEGER PRIMARY KEY, key TEXT, value TEXT);
+		INSERT INTO settings VALUES (1, 'webPort', '2053'), (2, 'nodeCorePaused:xray', 'true');
+		CREATE TABLE inbounds (
+			id INTEGER PRIMARY KEY, user_id INTEGER, port INTEGER, protocol TEXT,
+			tag TEXT UNIQUE, settings TEXT, stream_settings TEXT, sniffing TEXT, enable NUMERIC
+		);
+		INSERT INTO inbounds VALUES
+			(1, 1, 5443, 'vless', 'in-5443-tcp', '{"decryption":"none"}', '{}', '{}', 1),
+			(2, 1, 5444, 'vless', 'in-5444-tcp', '{"clients":[],"decryption":"none"}', '{}', '{}', 1);
+		CREATE TABLE clients (
+			id INTEGER PRIMARY KEY, email TEXT UNIQUE, uuid TEXT, sub_id TEXT, flow TEXT,
+			total_gb INTEGER, expiry_time INTEGER, enable NUMERIC, tg_id INTEGER, comment TEXT
+		);
+		INSERT INTO clients VALUES
+			(7, 'stock-client', '12345678-1234-4234-9234-123456789abc', 'stock-sub', '',
+			 10737418240, 1900000000000, 1, 123456789, 'stock comment');
+		CREATE TABLE client_inbounds (client_id INTEGER, inbound_id INTEGER, flow_override TEXT);
+		INSERT INTO client_inbounds VALUES (7, 1, 'xtls-rprx-vision'), (7, 2, '');
+		CREATE TABLE client_traffics (
+			id INTEGER PRIMARY KEY, inbound_id INTEGER, email TEXT UNIQUE,
+			up INTEGER, down INTEGER, total INTEGER, expiry_time INTEGER, enable NUMERIC
+		);
+		INSERT INTO client_traffics VALUES (1, 1, 'stock-client', 335, 445, 10737418240, 1900000000000, 1);
+	`)
+	if err != nil {
+		_ = stock.Close()
+		t.Fatal(err)
+	}
+	if err := stock.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.InitDB(config.GetDBPath()); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = database.CloseDB() })
+	upsertSetting(t, database.GetDB(), "webPort", "8443")
+	src, err := os.Open(srcPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer src.Close()
+	report, err := (&ServerService{}).ImportForeignDB(src, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Inbounds != 2 || report.Clients != 1 || getSetting(t, database.GetDB(), "webPort") != "8443" {
+		t.Fatalf("unexpected import report or settings: %+v", report)
+	}
+	for id, wantFlow := range map[int]string{1: "xtls-rprx-vision", 2: ""} {
+		svc := &InboundService{}
+		inbound, err := svc.GetInbound(id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		clients, err := svc.GetClients(inbound)
+		if err != nil || len(clients) != 1 {
+			t.Fatalf("inbound %d: projected clients = %v, err = %v", id, clients, err)
+		}
+		client := clients[0]
+		if client.Email != "stock-client" || client.ID != "12345678-1234-4234-9234-123456789abc" ||
+			client.Flow != wantFlow || client.SubID != "stock-sub" || client.TgID != 123456789 || client.TotalGB != 10737418240 {
+			t.Fatalf("inbound %d: unexpected projected client %+v", id, client)
+		}
+	}
+	stats, err := (&InboundService{}).GetClientTrafficByEmail("stock-client")
+	if err != nil || stats == nil || stats.Up != 335 || stats.Down != 445 {
+		t.Fatalf("traffic was not preserved: %+v, %v", stats, err)
+	}
+	accounts := &AccountService{}
+	account, err := accounts.GetAccountByEmail("stock-client")
+	if err != nil || account == nil {
+		t.Fatalf("imported client missing from accounts: %+v, %v", account, err)
+	}
+
+	// A broken membership is rejected before the live DB is touched.
+	stock, err = sql.Open("sqlite3", srcPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = stock.Exec("INSERT INTO client_inbounds VALUES (999, 1, '')")
+	_ = stock.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := (&ServerService{}).ImportForeignDB(src, false); err == nil {
+		t.Fatal("expected malformed backup to be rejected")
+	}
+	if getSetting(t, database.GetDB(), "webPort") != "8443" {
+		t.Fatal("the original database was changed on rejection")
+	}
+}
+
+func TestImportForeignDBRollsBackWhenSchemaMigrationFails(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("VPNUI_DB_FOLDER", dir)
+	if err := database.InitDB(config.GetDBPath()); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = database.CloseDB() })
+	upsertSetting(t, database.GetDB(), "webPort", "8443")
+	path := filepath.Join(dir, "broken.db")
+	broken, err := sql.Open("sqlite3", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = broken.Exec(`
+		CREATE TABLE users (id INTEGER PRIMARY KEY, username TEXT, password TEXT);
+		CREATE TABLE settings (id INTEGER PRIMARY KEY, key TEXT, value TEXT);
+		CREATE TABLE inbounds (id INTEGER PRIMARY KEY);
+		CREATE VIEW accounts AS SELECT id FROM users;
+	`)
+	_ = broken.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	src, err := os.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer src.Close()
+	if _, err := (&ServerService{}).ImportForeignDB(src, false); err == nil {
+		t.Fatal("expected the incompatible schema migration to fail")
+	}
+	if getSetting(t, database.GetDB(), "webPort") != "8443" {
+		t.Fatal("the prior database was not restored and opened")
 	}
 }

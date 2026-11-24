@@ -841,7 +841,8 @@ brandNameDesc = "Exibido no login, no painel e no título do navegador. Deixe va
 "telegramToken" = "Token do Telegram"
 "telegramTokenDesc" = "O token do bot do Telegram obtido de '@BotFather'."
 "telegramProxy" = "Proxy SOCKS"
-"telegramProxyDesc" = "Ativa o proxy SOCKS5 para conectar ao Telegram. (ajuste as configurações conforme o guia)"
+"telegramProxyDesc" = "Conecte-se ao Telegram por um proxy SOCKS5 ou pela saída selecionada do Xray. Reinicie o painel após salvar."
+"telegramOutbound" = "Saída do Xray"
 "telegramAPIServer" = "API Server do Telegram"
 "telegramAPIServerDesc" = "O servidor API do Telegram a ser usado. Deixe em branco para usar o servidor padrão."
 "telegramChatId" = "ID de Chat do Administrador"
@@ -1680,6 +1681,7 @@ allUsers = "Todos os usuários"
 "FinishProcess" = "🔚 Processo de redefinição de tráfego concluído para todos os clientes."
 
 [tgbot.buttons]
+"mainMenu" = "Menu principal"
 "closeKeyboard" = "❌ Fechar teclado"
 "cancel" = "❌ Cancelar"
 "cancelReset" = "❌ Cancelar redefinição"

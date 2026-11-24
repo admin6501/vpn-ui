@@ -779,6 +779,18 @@ func (s *XrayService) RestartXray(isForce bool) error {
 		return err
 	}
 
+	if enabled, _ := s.settingService.GetTgbotEnabled(); enabled {
+		if proxy, _ := s.settingService.GetTgBotProxy(); strings.HasPrefix(proxy, telegramOutboundPrefix) {
+			tag, err := telegramOutboundTag(proxy)
+			if err == nil {
+				err = addTelegramOutboundBridge(xrayConfig, tag)
+			}
+			if err != nil {
+				logger.Warning("Telegram outbound proxy:", err)
+			}
+		}
+	}
+
 	// Top up the geo data files the config names before handing it over. Saving a
 	// routing rule already fetches them (SaveXraySetting), but a config can arrive
 	// by other roads that never passed through that check: a restored backup, an

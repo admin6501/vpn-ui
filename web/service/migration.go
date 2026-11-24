@@ -16,7 +16,7 @@ import (
 )
 
 // Importing a stock 3x-ui database is a wholesale swap, not a row-by-row merge:
-// vpn-ui's schema is a strict superset of stock 3x-ui, and InitDB already carries
+// VPN-UI stages compatibility changes before opening the backup. InitDB carries
 // the adopt migrations (promote the lone admin to super admin, adopt ownerless
 // inbounds, move global 2FA onto the user) that turn a single-admin stock DB into
 // this fork's model. So the whole file replaces the current one and InitDB does
@@ -93,7 +93,10 @@ func (s *ServerService) ImportForeignDB(src dbFile, activate bool) (*ImportRepor
 	// Snapshot the settings that must survive the swap, from the live DB, while it
 	// is still the current one. Effective values (a DB row, else the built-in
 	// default) so a key that was never written still overwrites the backup's copy.
-	preserved := s.snapshotPreservedSettings()
+	preserved, err := s.snapshotPreservedSettings()
+	if err != nil {
+		return nil, fmt.Errorf("reading current panel settings: %w", err)
+	}
 
 	dbPath := config.GetDBPath()
 	tempPath := fmt.Sprintf("%s.temp", dbPath)
@@ -103,7 +106,7 @@ func (s *ServerService) ImportForeignDB(src dbFile, activate bool) (*ImportRepor
 			return nil, common.NewErrorf("Error removing existing temporary db file: %v", errRemove)
 		}
 	}
-	tempFile, err := os.Create(tempPath)
+	tempFile, err := os.OpenFile(tempPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
 	if err != nil {
 		return nil, common.NewErrorf("Error creating temporary db file: %v", err)
 	}
@@ -133,55 +136,51 @@ func (s *ServerService) ImportForeignDB(src dbFile, activate bool) (*ImportRepor
 		return nil, common.NewErrorf("Invalid or corrupt db file: %v", err)
 	}
 
-	if errStop := s.StopXrayService(); errStop != nil {
-		logger.Warningf("import: failed to stop Xray before DB import: %v", errStop)
-	}
-	if errClose := database.CloseDB(); errClose != nil {
-		logger.Warningf("import: failed to close existing DB before replacement: %v", errClose)
+	if err := prepareStock3xUIDatabase(tempPath); err != nil {
+		return nil, fmt.Errorf("preparing 3x-ui backup: %w", err)
 	}
 
 	fallbackPath := fmt.Sprintf("%s.backup", dbPath)
-	if _, err := os.Stat(fallbackPath); err == nil {
-		if errRemove := os.Remove(fallbackPath); errRemove != nil {
-			return nil, common.NewErrorf("Error removing existing fallback db file: %v", errRemove)
+	if _, err := os.Stat(dbPath); err != nil {
+		return nil, fmt.Errorf("locating current database: %w", err)
+	}
+	if err = os.Remove(fallbackPath); err != nil && !os.IsNotExist(err) {
+		return nil, fmt.Errorf("removing previous fallback: %w", err)
+	}
+	if activate && s.xrayService.IsXrayRunning() {
+		if err := s.StopXrayService(); err != nil {
+			return nil, fmt.Errorf("stopping Xray before import: %w", err)
 		}
 	}
-	if err = os.Rename(dbPath, fallbackPath); err != nil {
-		return nil, common.NewErrorf("Error backing up current db file: %v", err)
+	if err := database.CloseDB(); err != nil {
+		if activate {
+			_ = s.RestartXrayService()
+		}
+		return nil, fmt.Errorf("closing database before import: %w", err)
 	}
-	// See the identical call in ServerService.ImportDB: the sidecars stay at the
-	// old path and must not be inherited by the imported database.
+	if err := os.Rename(dbPath, fallbackPath); err != nil {
+		if reopenErr := database.InitDB(dbPath); reopenErr != nil {
+			return nil, fmt.Errorf("backing up database: %v; reopening current database: %w", err, reopenErr)
+		}
+		if activate {
+			_ = s.RestartXrayService()
+		}
+		return nil, fmt.Errorf("backing up database: %w", err)
+	}
 	database.RemoveSidecars(dbPath)
-	defer func() {
-		// Only fires on the success path; the fallback is consumed by an error return.
-		if _, err := os.Stat(fallbackPath); err == nil {
-			if rerr := os.Remove(fallbackPath); rerr != nil {
-				logger.Warningf("import: failed to remove fallback file: %v", rerr)
-			}
-		}
-	}()
-
-	if err = os.Rename(tempPath, dbPath); err != nil {
-		if errRename := os.Rename(fallbackPath, dbPath); errRename != nil {
-			return nil, common.NewErrorf("Error moving db file and restoring fallback: %v", errRename)
-		}
-		return nil, common.NewErrorf("Error moving db file: %v", err)
+	rollback := func(cause error) (*ImportReport, error) {
+		return nil, s.rollbackDatabaseImport(fallbackPath, cause, activate)
 	}
-
-	// AutoMigrate the superset schema onto the backup and run the adopt migrations.
-	if err = database.InitDB(dbPath); err != nil {
-		if errRename := os.Rename(fallbackPath, dbPath); errRename != nil {
-			return nil, common.NewErrorf("Error migrating db and restoring fallback: %v", errRename)
-		}
-		if errReinit := database.InitDB(dbPath); errReinit != nil {
-			logger.Errorf("import: restored fallback but re-init failed: %v", errReinit)
-		}
-		return nil, common.NewErrorf("Error migrating db: %v", err)
+	if err := os.Rename(tempPath, dbPath); err != nil {
+		return rollback(fmt.Errorf("moving uploaded database: %w", err))
+	}
+	if err := database.InitDB(dbPath); err != nil {
+		return rollback(fmt.Errorf("migrating uploaded database: %w", err))
 	}
 
 	// Put this panel's reachability/identity settings back over the backup's.
 	if err = s.restorePreservedSettings(preserved); err != nil {
-		return nil, common.NewErrorf("Imported DB but failed to preserve panel settings: %v", err)
+		return rollback(fmt.Errorf("preserving panel settings: %w", err))
 	}
 
 	s.inboundService.MigrateDB()
@@ -207,7 +206,7 @@ func (s *ServerService) ImportForeignDB(src dbFile, activate bool) (*ImportRepor
 		accountService := &AccountService{}
 		accountService.MigrationAccounts()
 		if err := (&GroupService{}).Migrate(); err != nil {
-			return nil, err
+			return rollback(fmt.Errorf("preparing restored accounts and groups: %w", err))
 		}
 		// Imported wireguard inbounds get their clients array and their device
 		// address here for the same reason: until they have one they cannot be
@@ -222,10 +221,13 @@ func (s *ServerService) ImportForeignDB(src dbFile, activate bool) (*ImportRepor
 		s.l2tpService.InitL2tp()
 		s.pptpService.InitPptp()
 		if err = s.RestartXrayService(); err != nil {
-			return report, common.NewErrorf("Imported DB but failed to start Xray: %v", err)
+			return rollback(fmt.Errorf("starting restored Xray: %w", err))
 		}
 	}
 
+	if err := os.Remove(fallbackPath); err != nil {
+		logger.Warning("import: failed to remove fallback file: ", err)
+	}
 	return report, nil
 }
 
@@ -233,11 +235,11 @@ func (s *ServerService) ImportForeignDB(src dbFile, activate bool) (*ImportRepor
 // stored row if present, else the built-in default. A key with neither (e.g.
 // radiusSecret on a never-provisioned box) is simply absent from the snapshot and
 // is left as the backup has it.
-func (s *ServerService) snapshotPreservedSettings() map[string]string {
+func (s *ServerService) snapshotPreservedSettings() (map[string]string, error) {
 	db := database.GetDB()
 	var rows []model.Setting
 	if err := db.Where("key IN ?", preservedSettingKeys).Find(&rows).Error; err != nil {
-		logger.Warningf("import: could not read current settings to preserve: %v", err)
+		return nil, err
 	}
 	stored := make(map[string]string, len(rows))
 	for _, r := range rows {
@@ -251,7 +253,7 @@ func (s *ServerService) snapshotPreservedSettings() map[string]string {
 			out[key] = v
 		}
 	}
-	return out
+	return out, nil
 }
 
 // restorePreservedSettings upserts the snapshot into the freshly imported DB.

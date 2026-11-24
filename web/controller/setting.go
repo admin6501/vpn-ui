@@ -76,6 +76,7 @@ func (a *SettingController) initRouter(g *gin.RouterGroup) {
 	g.POST("/inboundForm", a.setLegacyInboundForm)
 	g.GET("/getDefaultJsonConfig", a.getDefaultXrayConfig)
 	g.GET("/inboundTags", a.getInboundTags)
+	g.GET("/telegramOutboundTags", a.getTelegramOutboundTags)
 	g.GET("/service", a.serviceStatus)
 	g.GET("/service/log", a.serviceLog)
 	// The panel-settings grant intentionally includes systemd and SSL management.
@@ -117,6 +118,11 @@ func (a *SettingController) getInboundTags(c *gin.Context) {
 	}, 0)
 	err := database.GetDB().Model(&model.Inbound{}).Select("tag, protocol, port").Order("tag").Find(&rows).Error
 	jsonObj(c, rows, err)
+}
+
+func (a *SettingController) getTelegramOutboundTags(c *gin.Context) {
+	tags, err := (&service.XrayService{}).TelegramOutboundTags()
+	jsonObj(c, tags, err)
 }
 
 // serviceStatus returns the current systemd unit state for the panel.

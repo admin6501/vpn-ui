@@ -841,7 +841,8 @@ brandNameDesc = "Ditampilkan di halaman masuk, panel dan judul peramban. Kosongk
 "telegramToken" = "Token Telegram"
 "telegramTokenDesc" = "Token bot Telegram yang diperoleh dari '@BotFather'."
 "telegramProxy" = "Proxy SOCKS"
-"telegramProxyDesc" = "Mengaktifkan proxy SOCKS5 untuk terhubung ke Telegram. (sesuaikan pengaturan sesuai panduan)"
+"telegramProxyDesc" = "Hubungkan ke Telegram melalui proksi SOCKS5 atau outbound Xray yang dipilih. Mulai ulang panel setelah menyimpan."
+"telegramOutbound" = "Outbound Xray"
 "telegramAPIServer" = "Server API Telegram"
 "telegramAPIServerDesc" = "Server API Telegram yang akan digunakan. Biarkan kosong untuk menggunakan server default."
 "telegramChatId" = "ID Obrolan Admin"
@@ -1680,6 +1681,7 @@ allUsers = "Semua pengguna"
 "FinishProcess" = "🔚 Proses reset traffic selesai untuk semua klien."
 
 [tgbot.buttons]
+"mainMenu" = "Menu utama"
 "closeKeyboard" = "❌ Tutup Papan Ketik"
 "cancel" = "❌ Batal"
 "cancelReset" = "❌ Batal Reset"

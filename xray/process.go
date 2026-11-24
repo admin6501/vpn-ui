@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -313,7 +312,7 @@ func (p *process) Start() (err error) {
 	if p.configPath != "" {
 		configPath = p.configPath
 	}
-	err = os.WriteFile(configPath, data, fs.ModePerm)
+	err = writePrivateXrayConfig(configPath, data)
 	if err != nil {
 		return common.NewErrorf("Failed to write configuration file: %v", err)
 	}
@@ -370,6 +369,21 @@ func (p *process) Stop() error {
 	}
 
 	return p.cmd.Process.Signal(syscall.SIGTERM)
+}
+
+// Keep client credentials and internal proxy authentication private, including
+// when replacing a config created with older, more permissive file modes.
+func writePrivateXrayConfig(path string, data []byte) error {
+	file, err := os.CreateTemp(filepath.Dir(path), ".xray-config-*")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(file.Name())
+	_, writeErr := file.Write(data)
+	if err := errors.Join(writeErr, file.Close()); err != nil {
+		return err
+	}
+	return os.Rename(file.Name(), path)
 }
 
 // writeCrashReport writes a crash report to the binary folder with a timestamped filename.

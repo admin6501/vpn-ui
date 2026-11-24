@@ -2011,16 +2011,16 @@ func (s *InboundService) updateClientTraffics(tx *gorm.DB, oldInbound *model.Inb
 }
 
 func (s *InboundService) AddInboundClient(data *model.Inbound) (bool, error) {
-	return s.addInboundClient(data, 0)
+	return s.addInboundClient(data, 0, false)
 }
 
 // AddInboundClientForAdmin records the creating super administrator together
 // with the account rows; representative ownership remains in the billing ledger.
 func (s *InboundService) AddInboundClientForAdmin(data *model.Inbound, ownerID int) (bool, error) {
-	return s.addInboundClient(data, ownerID)
+	return s.addInboundClient(data, ownerID, ownerID > 0)
 }
 
-func (s *InboundService) addInboundClient(data *model.Inbound, ownerID int) (bool, error) {
+func (s *InboundService) addInboundClient(data *model.Inbound, ownerID int, syncAccount bool) (needRestart bool, err error) {
 	// Before anything parses the settings: interfaceClients below is spliced into the
 	// inbound's stored JSON verbatim, so an email left untrimmed here is persisted.
 	data.Settings = normalizeClientEmails(data.Settings)
@@ -2189,11 +2189,11 @@ func (s *InboundService) addInboundClient(data *model.Inbound, ownerID int) (boo
 		if err != nil {
 			tx.Rollback()
 		} else {
-			tx.Commit()
+			err = tx.Commit().Error
 		}
 	}()
 
-	needRestart := false
+	needRestart = false
 	s.xrayApi.Init(p.GetAPIPort())
 	for _, client := range clients {
 		if len(client.Email) > 0 {
@@ -2231,10 +2231,12 @@ func (s *InboundService) addInboundClient(data *model.Inbound, ownerID int) (boo
 	if err = tx.Save(oldInbound).Error; err != nil {
 		return false, err
 	}
-	if ownerID > 0 {
+	if syncAccount {
 		if err = (&AccountService{}).SyncInboundAccounts(tx, data.Id); err != nil {
 			return false, err
 		}
+	}
+	if ownerID > 0 {
 		for _, client := range clients {
 			result := tx.Model(&model.Account{}).Where("LOWER(TRIM(email)) = ?", accountKey(client.Email)).Update("owner_admin_id", ownerID)
 			if err = result.Error; err != nil {
@@ -2731,6 +2733,10 @@ func dropMembershipAfterDelete(db *gorm.DB, inboundId int, email string) {
 }
 
 func (s *InboundService) UpdateInboundClient(data *model.Inbound, clientId string) (bool, error) {
+	return s.updateInboundClient(data, clientId, false)
+}
+
+func (s *InboundService) updateInboundClient(data *model.Inbound, clientId string, syncAccount bool) (needRestart bool, err error) {
 	// TODO: check if TrafficReset field is updating
 	// Before anything parses the settings: interfaceClients[0] below replaces the
 	// stored client verbatim, so an email left untrimmed here is persisted.
@@ -2908,7 +2914,7 @@ func (s *InboundService) UpdateInboundClient(data *model.Inbound, clientId strin
 		if err != nil {
 			tx.Rollback()
 		} else {
-			tx.Commit()
+			err = tx.Commit().Error
 		}
 	}()
 
@@ -2937,7 +2943,7 @@ func (s *InboundService) UpdateInboundClient(data *model.Inbound, clientId strin
 			return false, err
 		}
 	}
-	needRestart := false
+	needRestart = false
 	if len(oldEmail) > 0 {
 		s.xrayApi.Init(p.GetAPIPort())
 		if oldClients[clientIndex].Enable {
@@ -2980,7 +2986,27 @@ func (s *InboundService) UpdateInboundClient(data *model.Inbound, clientId strin
 		logger.Debug("Client old email not found")
 		needRestart = true
 	}
-	return needRestart, tx.Save(oldInbound).Error
+	if err := tx.Save(oldInbound).Error; err != nil {
+		return needRestart, err
+	}
+	if syncAccount {
+		accounts := &AccountService{}
+		if err := accounts.SyncInboundAccounts(tx, data.Id); err != nil {
+			return needRestart, err
+		}
+		account, err := accounts.GetAccountByEmailTx(tx, clients[0].Email)
+		if err != nil {
+			return needRestart, err
+		}
+		if account != nil {
+			changed, err := accounts.ProjectAccount(tx, account.Id)
+			if err != nil {
+				return needRestart, err
+			}
+			needRestart = needRestart || len(changed) > 0
+		}
+	}
+	return needRestart, nil
 }
 
 // AdmitAccount reports whether one more account can be placed on an inbound.
@@ -4571,7 +4597,7 @@ func (s *InboundService) SetClientTelegramUserID(trafficId int, tgId int64) (boo
 		return false, err
 	}
 	inbound.Settings = string(modifiedSettings)
-	needRestart, err := s.UpdateInboundClient(inbound, clientId)
+	needRestart, err := s.updateInboundClient(inbound, clientId, true)
 	return needRestart, err
 }
 
@@ -4762,7 +4788,7 @@ func (s *InboundService) ResetClientIpLimitByEmail(clientEmail string, count int
 		return false, err
 	}
 	inbound.Settings = string(modifiedSettings)
-	needRestart, err := s.UpdateInboundClient(inbound, clientId)
+	needRestart, err := s.updateInboundClient(inbound, clientId, true)
 	return needRestart, err
 }
 
@@ -4814,7 +4840,7 @@ func (s *InboundService) ResetClientExpiryTimeByEmail(clientEmail string, expiry
 		return false, err
 	}
 	inbound.Settings = string(modifiedSettings)
-	needRestart, err := s.UpdateInboundClient(inbound, clientId)
+	needRestart, err := s.updateInboundClient(inbound, clientId, true)
 	return needRestart, err
 }
 
@@ -4869,7 +4895,7 @@ func (s *InboundService) ResetClientTrafficLimitByEmail(clientEmail string, tota
 		return false, err
 	}
 	inbound.Settings = string(modifiedSettings)
-	needRestart, err := s.UpdateInboundClient(inbound, clientId)
+	needRestart, err := s.updateInboundClient(inbound, clientId, true)
 	return needRestart, err
 }
 
@@ -5164,8 +5190,13 @@ func (s *InboundService) GetClientTrafficTgBot(tgId int64) ([]*xray.ClientTraffi
 	db := database.GetDB()
 	var inbounds []*model.Inbound
 
-	// Retrieve inbounds where settings contain the given tgId
-	err := db.Model(model.Inbound{}).Where("settings LIKE ?", fmt.Sprintf(`%%"tgId": %d%%`, tgId)).Find(&inbounds).Error
+	// JSON written by different panel paths can use different whitespace.
+	err := db.Model(model.Inbound{}).Where(`EXISTS (
+		SELECT 1 FROM json_each(CASE WHEN json_valid(inbounds.settings)
+			THEN json_extract(inbounds.settings, '$.clients') END) AS client
+		WHERE CASE WHEN client.type = 'object'
+			THEN CAST(json_extract(client.value, '$.tgId') AS INTEGER) END = ?
+	)`, tgId).Find(&inbounds).Error
 	if err != nil && err != gorm.ErrRecordNotFound {
 		logger.Errorf("Error retrieving inbounds with tgId %d: %v", tgId, err)
 		return nil, err
@@ -5430,7 +5461,7 @@ func (s *InboundService) MigrationRequirements() {
 
 	// Fix inbounds based problems
 	var inbounds []*model.Inbound
-	err = tx.Model(model.Inbound{}).Where("protocol IN (?)", []string{"vmess", "vless", "trojan"}).Find(&inbounds).Error
+	err = tx.Model(model.Inbound{}).Where("protocol IN (?)", []string{"vmess", "vless", "trojan", "shadowsocks"}).Find(&inbounds).Error
 	if err != nil && err != gorm.ErrRecordNotFound {
 		return
 	}
@@ -5442,7 +5473,10 @@ func (s *InboundService) MigrationRequirements() {
 			// Fix Client configuration problems
 			var newClients []any
 			for client_index := range clients {
-				c := clients[client_index].(map[string]any)
+				c, ok := clients[client_index].(map[string]any)
+				if !ok {
+					continue
+				}
 
 				// Add email='' if it is not exists
 				if _, ok := c["email"]; !ok {
@@ -5454,9 +5488,10 @@ func (s *InboundService) MigrationRequirements() {
 					var tgId any = c["tgId"]
 					if tgIdStr, ok2 := tgId.(string); ok2 {
 						tgIdInt64, err := strconv.ParseInt(strings.ReplaceAll(tgIdStr, " ", ""), 10, 64)
-						if err == nil {
-							c["tgId"] = tgIdInt64
+						if err != nil {
+							tgIdInt64 = 0
 						}
+						c["tgId"] = tgIdInt64
 					}
 				}
 

@@ -841,7 +841,8 @@ brandNameDesc = "Girişte, panelde ve tarayıcı başlığında gösterilir. Var
 "telegramToken" = "Telegram Tokenı"
 "telegramTokenDesc" = "'@BotFather'dan alınan Telegram bot token."
 "telegramProxy" = "SOCKS Proxy"
-"telegramProxyDesc" = "Telegram'a bağlanmak için SOCKS5 proxy'sini etkinleştirir. (ayarları kılavuzda belirtilen şekilde ayarlayın)"
+"telegramProxyDesc" = "Telegram’a bir SOCKS5 proxy veya seçilen Xray çıkışı üzerinden bağlanın. Kaydettikten sonra paneli yeniden başlatın."
+"telegramOutbound" = "Xray çıkışı"
 "telegramAPIServer" = "Telegram API Sunucusu"
 "telegramAPIServerDesc" = "Kullanılacak Telegram API sunucusu. Varsayılan sunucuyu kullanmak için boş bırakın."
 "telegramChatId" = "Yönetici Sohbet Kimliği"
@@ -1680,6 +1681,7 @@ allUsers = "Tüm kullanıcılar"
 "FinishProcess" = "🔚 Tüm müşteriler için trafik sıfırlama işlemi tamamlandı."
 
 [tgbot.buttons]
+"mainMenu" = "Ana menü"
 "closeKeyboard" = "❌ Klavyeyi Kapat"
 "cancel" = "❌ İptal"
 "cancelReset" = "❌ Sıfırlamayı İptal Et"

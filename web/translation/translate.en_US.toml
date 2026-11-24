@@ -842,7 +842,8 @@ brandNameDesc = "Shown on the login page, panel pages and browser titles. Leave 
 "telegramToken" = "Telegram Token"
 "telegramTokenDesc" = "The Telegram bot token obtained from '@BotFather'."
 "telegramProxy" = "SOCKS Proxy"
-"telegramProxyDesc" = "Enables SOCKS5 proxy for connecting to Telegram. (adjust settings as per guide)"
+"telegramProxyDesc" = "Connect to Telegram through a SOCKS5 proxy or a selected Xray outbound. Restart the panel after saving."
+"telegramOutbound" = "Xray outbound"
 "telegramAPIServer" = "Telegram API Server"
 "telegramAPIServerDesc" = "The Telegram API server to use. Leave blank to use the default server."
 "telegramChatId" = "Admin Chat ID"
@@ -1486,6 +1487,7 @@ brandNameDesc = "Shown on the login page, panel pages and browser titles. Leave 
 "FinishProcess" = "🔚 Traffic reset process finished for all clients."
 
 [tgbot.buttons]
+"mainMenu" = "Main menu"
 "closeKeyboard" = "❌ Close Keyboard"
 "cancel" = "❌ Cancel"
 "cancelReset" = "❌ Cancel Reset"

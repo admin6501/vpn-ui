@@ -847,7 +847,8 @@ brandNameDesc = "در صفحهٔ ورود، بخش‌های پنل و عنوان
 "telegramToken" = "توکن تلگرام"
 "telegramTokenDesc" = "دریافت کنید @botfather توکن را می‌توانید از"
 "telegramProxy" = "SOCKS پراکسی"
-"telegramProxyDesc" = "را برای اتصال به تلگرام فعال می کند SOCKS5 پراکسی"
+"telegramProxyDesc" = "برای اتصال به تلگرام از پروکسی SOCKS5 یا اوت‌باند انتخابی ایکس‌ری استفاده کنید. پس از ذخیره، پنل را راه‌اندازی مجدد کنید."
+"telegramOutbound" = "اوت‌باند ایکس‌ری"
 "telegramAPIServer" = "سرور API تلگرام"
 "telegramAPIServerDesc" = "API سرور تلگرام برای اتصال را تغییر میدهد. برای استفاده از سرور پیش فرض خالی بگذارید"
 "telegramChatId" = "آی‌دی چت مدیر"
@@ -1474,6 +1475,7 @@ brandNameDesc = "در صفحهٔ ورود، بخش‌های پنل و عنوان
 "FinishProcess" = "🔚 فرآیند بازنشانی ترافیک برای همه مشتریان به پایان رسید."
 
 [tgbot.buttons]
+"mainMenu" = "منوی اصلی"
 "closeKeyboard" = "❌ بستن کیبورد"
 "cancel" = "❌ لغو"
 "cancelReset" = "❌ لغو تنظیم مجدد"

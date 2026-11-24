@@ -209,6 +209,7 @@
       },
       oldAllSetting: new AllSetting(),
       allSetting: new AllSetting(),
+      telegramOutboundTags: [],
       saveBtnDisable: true,
       entryHost: null,
       entryPort: null,
@@ -413,7 +414,21 @@
           this.settingKeys = Object.keys(msg.obj);
           app.changeRemarkSample();
           this.saveBtnDisable = true;
+          const outbounds = await HttpUtil.get("/panel/setting/telegramOutboundTags");
+          if (outbounds && outbounds.success) {
+            this.telegramOutboundTags = outbounds.obj || [];
+          }
         }
+      },
+      telegramOutboundValue(tag) {
+        return 'xray:' + encodeURIComponent(tag);
+      },
+      selectedTelegramOutbound() {
+        const proxy = this.allSetting.tgBotProxy || '';
+        return proxy.startsWith('xray:') ? proxy : undefined;
+      },
+      setTelegramOutbound(value) {
+        this.allSetting.tgBotProxy = value || '';
       },
       async loadServiceState() {
         const msg = await HttpUtil.get("/panel/setting/service");

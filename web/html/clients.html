@@ -1385,6 +1385,15 @@
       },
     },
     async mounted() {
+      if (window.wsClient) {
+        this._onInboundInvalidation = (payload) => {
+          if (this.isRefreshEnabled && payload?.type === 'inbounds') {
+            this.getDBInbounds().catch(error => console.warn('Client refresh failed', error));
+          }
+        };
+        window.wsClient.on('invalidate', this._onInboundInvalidation);
+        window.wsClient.connect();
+      }
       this.liveStateTimer = setInterval(() => this.refreshLiveState(), 10000);
       try {
         await Promise.all([this.getDefaultSettings(), this.reload(true)]);
@@ -1393,6 +1402,7 @@
       if (this.isRefreshEnabled) this.startDataRefreshLoop();
     },
     beforeDestroy() {
+      if (this._onInboundInvalidation) window.wsClient.off('invalidate', this._onInboundInvalidation);
       clearInterval(this.liveStateTimer);
       if (this._dataRefreshLoop) this._dataRefreshLoop.stop();
     },

@@ -841,7 +841,8 @@ brandNameDesc = "ログイン画面、パネル、ブラウザーのタイトル
 "telegramToken" = "Telegramボットトークン"
 "telegramTokenDesc" = "'@BotFather'から取得したTelegramボットトークン"
 "telegramProxy" = "SOCKS5プロキシ"
-"telegramProxyDesc" = "SOCKS5プロキシを有効にしてTelegramに接続する（ガイドに従って設定を調整）"
+"telegramProxyDesc" = "SOCKS5 プロキシまたは選択した Xray アウトバウンド経由で Telegram に接続します。保存後にパネルを再起動してください。"
+"telegramOutbound" = "Xray アウトバウンド"
 "telegramAPIServer" = "Telegram APIサーバー"
 "telegramAPIServerDesc" = "使用するTelegram APIサーバー。空白の場合はデフォルトサーバーを使用する"
 "telegramChatId" = "管理者チャットID"
@@ -1680,6 +1681,7 @@ allUsers = "すべてのユーザー"
 "FinishProcess" = "🔚 すべてのクライアントのトラフィックリセットが完了しました。"
 
 [tgbot.buttons]
+"mainMenu" = "メインメニュー"
 "closeKeyboard" = "❌ キーボードを閉じる"
 "cancel" = "❌ キャンセル"
 "cancelReset" = "❌ リセットをキャンセル"
