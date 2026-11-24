@@ -169,8 +169,15 @@ func TestTelegramClientChangesReachPanelAccounts(t *testing.T) {
 	if err := database.GetDB().Create(&inbound).Error; err != nil {
 		t.Fatal(err)
 	}
+	group := model.ClientGroup{Name: "test-telegram"}
+	if err := database.GetDB().Create(&group).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := database.GetDB().Create(&model.GroupInbound{GroupID: group.ID, InboundID: inbound.Id}).Error; err != nil {
+		t.Fatal(err)
+	}
 	bot := &Tgbot{draft: &telegramClientDraft{
-		inboundID: inbound.Id,
+		groupIDs: []int{group.ID},
 		Client: model.Client{
 			ID: "12345678-1234-4234-9234-123456789abc", Email: "bot-account", SubID: "bot-sub", Enable: true,
 		},
@@ -184,14 +191,17 @@ func TestTelegramClientChangesReachPanelAccounts(t *testing.T) {
 		t.Fatalf("account missing after Telegram creation: %+v, %v", account, err)
 	}
 	const telegramID = 102030405
-	usage, err := bot.inboundService.GetClientTrafficByEmail("bot-account")
-	if err != nil || usage == nil {
+	usage, err := bot.telegramAccountTraffic("bot-account")
+	if err != nil || usage == nil || usage.Id == 0 {
 		t.Fatalf("traffic record missing: %+v, %v", usage, err)
 	}
-	if _, err := bot.inboundService.SetClientTelegramUserID(usage.Id, telegramID); err != nil {
+	if _, err := bot.assignTelegramAccountUser("bot-account", telegramID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := bot.inboundService.ResetClientTrafficLimitByEmail("bot-account", 3); err != nil {
+	if _, err := bot.editTelegramAccount("bot-account", func(account *model.Account) error {
+		account.TotalGB = 3 * (1 << 30)
+		return nil
+	}, nil); err != nil {
 		t.Fatal(err)
 	}
 	account, err = accounts.GetAccountByEmail("bot-account")
@@ -201,7 +211,7 @@ func TestTelegramClientChangesReachPanelAccounts(t *testing.T) {
 	if !bot.canAccessTelegramClient(telegramID, "bot-account") || bot.canAccessTelegramClient(telegramID+1, "bot-account") {
 		t.Fatal("subscription access does not follow the assigned Telegram identity")
 	}
-	traffics, err := bot.inboundService.GetClientTrafficTgBot(telegramID)
+	traffics, err := bot.telegramUserAccounts(telegramID)
 	if err != nil || len(traffics) != 1 || traffics[0].Email != "bot-account" {
 		t.Fatalf("Telegram identity could not find its account: %+v, %v", traffics, err)
 	}

@@ -51,7 +51,7 @@ func (t *Tgbot) draftInbound() (*model.Inbound, error) {
 	if len(t.draft.groupIDs) > 0 {
 		return &model.Inbound{Remark: t.I18nBot("pages.groups.title"), Protocol: model.VLESS}, nil
 	}
-	return t.inboundService.GetInbound(t.draft.inboundID)
+	return nil, errors.New(t.I18nBot("tgbot.commands.pleaseChoose"))
 }
 
 func (t *Tgbot) createGroupedTelegramAccount() ([]int, error) {
@@ -129,38 +129,44 @@ func (t *Tgbot) telegramAccountTraffic(email string) (*xray.ClientTraffic, error
 		return nil, err
 	}
 	if account == nil {
-		return t.inboundService.GetClientTrafficByEmail(email)
+		accounts, err := t.telegramReportAccounts()
+		if err != nil {
+			return nil, err
+		}
+		for _, legacy := range accounts {
+			if accountKey(legacy.traffic.Email) == accountKey(email) {
+				return &legacy.traffic, nil
+			}
+		}
+		return nil, nil
 	}
 	var usage xray.ClientTraffic
 	err = database.GetDB().Where("LOWER(TRIM(email)) = ?", accountKey(email)).First(&usage).Error
 	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, err
 	}
-	usage.Email, usage.SubId, usage.UUID = account.Email, account.SubID, account.UUID
-	usage.Total, usage.ExpiryTime = account.TotalGB, account.ExpiryTime
-	usage.Enable = account.Enable && !account.RepresentativeBlocked && (usage.Id == 0 || usage.Enable)
+	usage = telegramEffectiveTraffic(account, usage)
 	return &usage, nil
 }
 
-func (t *Tgbot) telegramEmails() ([]string, error) {
-	var accounts, legacy []string
-	db := database.GetDB()
-	if err := db.Model(&model.Account{}).Order("email").Pluck("email", &accounts).Error; err != nil {
-		return nil, err
+func telegramEffectiveTraffic(account *model.Account, usage xray.ClientTraffic) xray.ClientTraffic {
+	usage.Email, usage.SubId, usage.UUID = account.Email, account.SubID, account.UUID
+	if usage.Id == 0 {
+		usage.Total, usage.ExpiryTime = account.TotalGB, account.ExpiryTime
+		usage.Enable = account.Enable && !account.RepresentativeBlocked
 	}
-	if err := db.Model(&xray.ClientTraffic{}).Order("email").Pluck("email", &legacy).Error; err != nil {
+	return usage
+}
+
+func (t *Tgbot) telegramEmails() ([]string, error) {
+	accounts, err := t.telegramReportAccounts()
+	if err != nil {
 		return nil, err
 	}
 	emails := make([]string, 0, len(accounts))
-	seen := make(map[string]bool)
-	for _, email := range append(accounts, legacy...) {
-		key := accountKey(email)
-		if key != "" && !seen[key] {
-			seen[key] = true
-			emails = append(emails, email)
-		}
+	for _, account := range accounts {
+		emails = append(emails, account.traffic.Email)
 	}
-	slices.Sort(emails)
 	return emails, nil
 }
 
@@ -266,9 +272,16 @@ func (t *Tgbot) editTelegramAccount(email string, edit func(*model.Account) erro
 		if err := tx.Save(account).Error; err != nil {
 			return err
 		}
-		if account.TotalGB != previous.TotalGB || account.ExpiryTime != previous.ExpiryTime {
+		usageUpdates := map[string]any{}
+		if account.TotalGB != previous.TotalGB {
+			usageUpdates["total"] = account.TotalGB
+		}
+		if account.ExpiryTime != previous.ExpiryTime {
+			usageUpdates["expiry_time"] = account.ExpiryTime
+		}
+		if len(usageUpdates) != 0 {
 			if err := tx.Model(&xray.ClientTraffic{}).Where("LOWER(TRIM(email)) = ?", accountKey(email)).
-				Updates(map[string]any{"total": account.TotalGB, "expiry_time": account.ExpiryTime}).Error; err != nil {
+				Updates(usageUpdates).Error; err != nil {
 				return err
 			}
 		}
@@ -285,47 +298,55 @@ func (t *Tgbot) editTelegramAccount(email string, edit func(*model.Account) erro
 	return len(touched) != 0, nil
 }
 
-func (t *Tgbot) assignTelegramAccountUser(trafficID int, telegramID int64) (bool, error) {
-	var traffic xray.ClientTraffic
-	if err := database.GetDB().First(&traffic, trafficID).Error; err != nil {
-		return false, err
-	}
-	return t.editTelegramAccount(traffic.Email, func(a *model.Account) error {
+func (t *Tgbot) assignTelegramAccountUser(email string, telegramID int64) (bool, error) {
+	return t.editTelegramAccount(email, func(a *model.Account) error {
 		a.TgID = telegramID
 		return nil
-	}, func() (bool, error) { return t.inboundService.SetClientTelegramUserID(trafficID, telegramID) })
+	}, func() (bool, error) {
+		traffic, err := t.inboundService.GetClientTrafficByEmail(email)
+		if err != nil {
+			return false, err
+		}
+		if traffic == nil {
+			return false, errors.New(t.I18nBot("tgbot.noResult"))
+		}
+		return t.inboundService.SetClientTelegramUserID(traffic.Id, telegramID)
+	})
 }
 
 func (t *Tgbot) telegramUserAccounts(telegramID int64) ([]*xray.ClientTraffic, error) {
 	if telegramID <= 0 {
 		return nil, nil
 	}
-	var emails []string
-	if err := database.GetDB().Model(&model.Account{}).Where("tg_id = ?", telegramID).Order("email").Pluck("email", &emails).Error; err != nil {
-		return nil, err
-	}
-	legacy, err := t.inboundService.GetClientTrafficTgBot(telegramID)
+	accounts, err := t.telegramReportAccounts()
 	if err != nil {
 		return nil, err
 	}
-	for _, row := range legacy {
-		emails = append(emails, row.Email)
-	}
-	seen := make(map[string]bool)
 	var rows []*xray.ClientTraffic
-	for _, email := range emails {
-		key := accountKey(email)
-		if seen[key] || !t.canAccessTelegramClient(telegramID, email) {
-			continue
-		}
-		seen[key] = true
-		row, err := t.telegramAccountTraffic(email)
-		if err != nil {
-			return nil, err
-		}
-		if row != nil {
-			rows = append(rows, row)
+	for _, account := range accounts {
+		if account.telegramID == telegramID {
+			rows = append(rows, &account.traffic)
 		}
 	}
 	return rows, nil
+}
+
+func (t *Tgbot) telegramUserLinkMenu(chatID, telegramID int64, action string) {
+	accounts, err := t.telegramUserAccounts(telegramID)
+	if err != nil {
+		t.SendMsgToTgbot(chatID, t.I18nBot("tgbot.answers.errorOperation"))
+		return
+	}
+	if len(accounts) == 0 {
+		t.SendMsgToTgbot(chatID, t.I18nBot("tgbot.answers.askToAddUserId", "TgUserID=="+strconv.FormatInt(telegramID, 10)))
+		return
+	}
+	for page := range slices.Chunk(accounts, 90) {
+		var buttons []telego.InlineKeyboardButton
+		for _, account := range page {
+			buttons = append(buttons, tu.InlineKeyboardButton(account.Email).
+				WithCallbackData(t.encodeQuery(action+" "+account.Email)))
+		}
+		t.SendMsgToTgbot(chatID, t.I18nBot("tgbot.commands.pleaseChoose"), tu.InlineKeyboard(tu.InlineKeyboardCols(2, buttons...)...))
+	}
 }
