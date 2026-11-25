@@ -16,7 +16,10 @@
                    there is still one write path. -->
               <a-card hoverable :style="{ marginBottom: '16px' }">
                 <div :style="{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '8px' }">
-                  <a-button type="primary" icon="plus" @click="openAdd()">
+                  {{ if .expiredOwned }}
+                  <a-button :href="basePath + 'panel/clients'" icon="arrow-left">{{ i18n "menu.clients" }}</a-button>
+                  {{ end }}
+                  <a-button v-if="!expiredOwned" type="primary" icon="plus" @click="openAdd()">
                     {{ i18n "pages.clients.add" }}
                   </a-button>
 
@@ -25,7 +28,7 @@
                        add is the same act as a single add repeated - including
                        landing the batch on several inbounds at once, which the
                        pick-first menu could never express. -->
-                  <a-button icon="usergroup-add" v-if="assignable.length"
+                  <a-button icon="usergroup-add" v-if="!expiredOwned && assignable.length"
                     @click="openBulkAdd()">{{ i18n "pages.client.bulk" }}</a-button>
 
                   <!-- Row density. Reads as a toggle rather than a button because
@@ -219,7 +222,7 @@
                       <template v-if="row.memberships && row.memberships.length">
                         <span>{{ i18n "pages.clients.protocolCount" }}: [[ protocolCount(row) ]]</span>
                         <a-popover trigger="click" placement="bottomRight" :overlay-class-name="themeSwitcher.currentTheme">
-                          <a-button size="small" icon="info-circle">{{ i18n "pages.inbounds.info" }}</a-button>
+                          <a-button class="bo-info-button" size="small" icon="info-circle">{{ i18n "pages.inbounds.info" }}</a-button>
                           <template slot="content">
                             <div class="bo-protocol-details">
                               <div v-for="m in row.memberships" :key="m.inboundId">
@@ -265,8 +268,8 @@
                            membership. Left of the menu because it only reads. -->
                       <a-tooltip>
                         <template slot="title">{{ i18n "pages.clients.accountInfo" }}</template>
-                        <a-button size="small" icon="info-circle"
-                          @click="showAccountInfo(row)"></a-button>
+                        <a-button class="bo-info-button" size="small" icon="info-circle"
+                          aria-label='{{ i18n "pages.clients.accountInfo" }}' @click="showAccountInfo(row)"></a-button>
                       </a-tooltip>
                       <a-dropdown :trigger="['click']">
                         <a-button size="small" icon="more" @click="e => e.preventDefault()"></a-button>
@@ -501,7 +504,8 @@
       // page/shell_start. Omitting any of them makes the WHOLE #app render throw,
       // which leaves the page blank behind v-cloak with a valid 200 on the wire.
       themeSwitcher,
-      pageTitle: '{{ i18n "pages.clients.title" }}',
+      pageTitle: '{{ if .expiredOwned }}{{ i18n "pages.activity.expired" }}{{ else }}{{ i18n "pages.clients.title" }}{{ end }}',
+      expiredOwned: {{ if .expiredOwned }}true{{ else }}false{{ end }},
       // Not cosmetic: custom.css keys the table ring and several ant overrides off
       // the page class, and the portalled modals are reached through sibling
       // selectors on it. Without one this page rendered a table nobody had styled.
@@ -930,14 +934,25 @@
           if (msg && msg.success) { this.ownerTransfer.visible = false; await this.loadClients(); }
         } finally { this.ownerTransfer.loading = false; }
       },
+      async markVisibleExpiry(through) {
+        if (through && await panelActivityWrite('notices/dismiss', { kind: 'expired', through })) {
+          window.dispatchEvent(new Event('panel-activity-refresh'));
+        }
+      },
       async loadClients(liveOnly = false) {
         const generation = this._clientLoadGeneration = (this._clientLoadGeneration || 0) + (liveOnly ? 0 : 1);
         const countGeneration = this._clientCountGeneration = (this._clientCountGeneration || 0) + 1;
-        const q = `?page=${this.pagination.current}&size=${this.pagination.pageSize}`
+        const q = (this.expiredOwned ? '?scope=expired-own&' : '?') + `page=${this.pagination.current}&size=${this.pagination.pageSize}`
           + `&search=${encodeURIComponent(this.search || '')}`
           + `&sort=${encodeURIComponent(this.sortKey)}`;
+        const readExpiry = this.expiredOwned && !liveOnly && !this.expiryNoticeRead;
+        const notices = readExpiry ? await HttpUtil.get('/panel/api/activity/notices') : null;
         const msg = await HttpUtil.get('/panel/api/clients/list' + q);
         if (!msg || !msg.success || !msg.obj || generation !== this._clientLoadGeneration) return;
+        if (readExpiry && notices?.success) {
+          this.expiryNoticeRead = true;
+          this.markVisibleExpiry(notices.obj?.expired?.through);
+        }
         if (countGeneration === this._clientCountGeneration) {
           this.clientCounts = { online: msg.obj.online || 0, enabled: msg.obj.enabled || 0, disabled: msg.obj.disabled || 0 };
         }

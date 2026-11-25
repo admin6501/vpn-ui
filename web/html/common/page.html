@@ -1,6 +1,6 @@
 {{ define "page/head_start" }}
 <!DOCTYPE html>
-<html lang="{{ or .lang "en-US" }}">
+<html lang="{{ or .lang "en-US" }}"{{ if .sId }} data-subscription-locale{{ end }}>
 <head>
   <meta charset="UTF-8">
   <meta name="renderer" content="webkit">
@@ -182,6 +182,7 @@
         <div class="bo-topbar-left">
           <h1 class="bo-topbar-title" v-text="pageTitle"></h1>
         </div>
+        {{ if .me }}<panel-activity></panel-activity>{{ end }}
       </div>
     </header>
     <main class="bo-content">
@@ -209,6 +210,36 @@
   axios.defaults.baseURL = basePath;
 </script>
 <script src="{{ .base_path }}assets/js/websocket.js?{{ .asset_ver }}"></script>
+{{ if .me }}
+<script type="text/x-template" id="panel-activity-template">
+  <div class="panel-activity-bar">
+    <div class="panel-activity-badge" v-if="notices.expired && notices.expired.count">
+      <a :href="basePath + 'panel/activity/expired'"
+        :title="(notices.expired.names || []).join('\n')">{{ i18n "pages.activity.expired" }} <b v-text="notices.expired.count"></b></a>
+      <button type="button" @click="dismiss('expired')" aria-label='{{ i18n "close" }}'><a-icon type="close"></a-icon></button>
+    </div>
+    <div class="panel-activity-badge panel-activity-badge--renewal" v-if="notices.renewals && notices.renewals.count">
+      <a :href="basePath + 'panel/activity/renewals'">{{ i18n "pages.activity.renewals" }} <b v-text="notices.renewals.count"></b></a>
+      <button type="button" @click="dismiss('renewals')" aria-label='{{ i18n "close" }}'><a-icon type="close"></a-icon></button>
+    </div>
+    <a-dropdown :trigger="['click']">
+      <a-button size="small" icon="bell">{{ i18n "pages.activity.title" }}</a-button>
+      <a-menu slot="overlay">
+        <a-menu-item key="logins"><a :href="basePath + 'panel/activity/logins'">{{ i18n "pages.activity.logins" }}</a></a-menu-item>
+        {{ if .perms.accessInbounds }}
+        <a-menu-item key="expired"><a :href="basePath + 'panel/activity/expired'">{{ i18n "pages.activity.expired" }}</a></a-menu-item>
+        {{ end }}
+        <a-menu-item key="renewals"><a :href="basePath + 'panel/activity/renewals'">{{ i18n "pages.activity.renewals" }}</a></a-menu-item>
+        {{ if .perms.panelOwner }}
+        <a-menu-item key="changes"><a :href="basePath + 'panel/activity/changes'">{{ i18n "pages.activity.changes" }}</a></a-menu-item>
+        <a-menu-item key="apps"><a :href="basePath + 'panel/activity/apps'">{{ i18n "pages.activity.apps" }}</a></a-menu-item>
+        {{ end }}
+      </a-menu>
+    </a-dropdown>
+  </div>
+</script>
+<script src="{{ .base_path }}assets/js/panel-activity.js?{{ .asset_ver }}"></script>
+{{ end }}
 {{ end }}
 
 {{ define "page/body_end" }}

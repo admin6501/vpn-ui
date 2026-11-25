@@ -43,6 +43,7 @@ func (a *APIController) initRouter(g *gin.RouterGroup, customGeo *service.Custom
 	// Main API group
 	api := g.Group("/panel/api")
 	api.Use(a.checkAPIAuth)
+	registerActivityRoutes(api)
 
 	// Inbounds API
 	inbounds := api.Group("/inbounds")

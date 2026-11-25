@@ -41,6 +41,10 @@ func initModels() error {
 		// what it does not know) and keeps reading settings.clients exactly as before.
 		&model.Account{},
 		&model.AccountEvent{},
+		&model.PanelLoginEvent{},
+		&model.PanelClientEvent{},
+		&model.PanelExpiry{},
+		&model.PanelActivityRead{},
 		&model.AccountInbound{},
 		&model.ClientGroup{},
 		&model.GroupInbound{},
@@ -67,6 +71,9 @@ func initModels() error {
 		}
 	}
 	if err := initAccountHistory(db); err != nil {
+		return err
+	}
+	if err := initPanelActivity(db); err != nil {
 		return err
 	}
 	// Plain email indexes cannot serve LOWER(TRIM(email)) lookups. Traffic

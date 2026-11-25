@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/mhsanaei/3x-ui/v2/config"
+	"github.com/mhsanaei/3x-ui/v2/logger"
 	"github.com/mhsanaei/3x-ui/v2/web/locale"
 	"github.com/mhsanaei/3x-ui/v2/web/service"
 
@@ -109,16 +110,14 @@ func (a *SUBController) subs(c *gin.Context) {
 	subId := c.Param("subid")
 	scheme, host, hostWithPort, hostHeader := a.subService.ResolveRequest(c)
 	accept := c.GetHeader("Accept")
-	pageRequest := strings.Contains(strings.ToLower(accept), "text/html") || c.Query("html") == "1" || strings.EqualFold(c.Query("view"), "html")
-	getSubs := a.subService.GetSubs
+	pageRequest := !strings.HasSuffix(c.FullPath(), "/raw") && (strings.Contains(strings.ToLower(accept), "text/html") ||
+		c.Query("html") == "1" || strings.EqualFold(c.Query("view"), "html"))
+	var native []nativeConnection
+	var cards *[]nativeConnection
 	if pageRequest {
-		getSubs = a.subService.GetPageSubs
+		cards = &native
 	}
-	subs, lastOnline, traffic, err := getSubs(subId, host)
-	// An empty link list is NOT an error: an account whose only inbounds are wg-c/awg
-	// has real usage and a real expiry to report, but no single-line raw form (its
-	// config comes from the Clash sub). Erroring here would hide the traffic/days page
-	// from exactly those accounts. GetSubs already errors when the subId matches nothing.
+	subs, lastOnline, traffic, err := a.subService.getSubs(subId, host, pageRequest, "", cards)
 	if err != nil {
 		c.String(400, "Error!")
 	} else {
@@ -154,7 +153,35 @@ func (a *SUBController) subs(c *gin.Context) {
 			// OpenVPN and WireGuard cannot be set up from a link: the page offers their
 			// config files as downloads. Rendered only for the browser view, since a
 			// subscription client has no use for them.
-			page.Configs = a.subService.ConfigLinks(subId, host, scheme, hostWithPort, a.subPath)
+			profiles := a.subService.ConfigLinks(subId, host, scheme, hostWithPort, a.subPath)
+			profilesByInbound := make(map[int][]SubConfigLink)
+			for _, profile := range profiles {
+				profilesByInbound[profile.inboundID] = append(profilesByInbound[profile.inboundID], profile)
+			}
+			for i := range native {
+				card := &native[i]
+				for _, profile := range profilesByInbound[card.inboundID] {
+					if profile.account == "" || profile.account == card.account {
+						card.Downloads = append(card.Downloads, profile)
+					}
+				}
+			}
+			settings := &service.SettingService{}
+			apps, err := settings.SubscriptionApps()
+			if err != nil {
+				logger.Warning("Could not load subscription apps:", err)
+			}
+			var androidApps, iosApps []service.SubscriptionApp
+			for _, app := range apps {
+				switch app.Platform {
+				case "android":
+					androidApps = append(androidApps, app)
+				case "ios":
+					iosApps = append(iosApps, app)
+				}
+			}
+			c.Header("Cache-Control", "no-store")
+			c.Header("Referrer-Policy", "no-referrer")
 			c.HTML(200, "subpage.html", gin.H{
 				"brand_name":   (&service.SettingService{}).GetBrandName(),
 				"lang":         locale.RequestLanguage(c),
@@ -180,7 +207,10 @@ func (a *SUBController) subs(c *gin.Context) {
 				"subJsonUrl":   page.SubJsonUrl,
 				"subClashUrl":  page.SubClashUrl,
 				"result":       page.Result,
-				"configs":      page.Configs,
+				"native":       native,
+				"apps":         apps,
+				"androidApps":  androidApps,
+				"iosApps":      iosApps,
 			})
 			return
 		}

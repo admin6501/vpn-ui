@@ -1,8 +1,7 @@
 {{define "settings/xray/outbounds"}}
-<a-space direction="vertical" size="middle">
-    <a-row>
-        <a-col :xs="12" :sm="12" :lg="12">
-            <a-space direction="horizontal" size="small">
+<section class="ob-section">
+    <div class="ob-toolbar">
+        <div class="ob-toolbar-primary">
                 <a-button type="primary" icon="plus" @click="addOutbound">
                     <span v-if="!isMobile">{{ i18n
                         "pages.xray.outbound.addOutbound" }}</span>
@@ -15,9 +14,8 @@
                      Outbound picker now, which is where an operator looks for
                      one. WARP and NordVPN stay because neither is a protocol,
                      they are account setup flows for a specific provider. -->
-            </a-space>
-        </a-col>
-        <a-col :xs="12" :sm="12" :lg="12" :style="{ textAlign: 'right' }">
+        </div>
+        <div class="ob-toolbar-secondary">
             <a-button-group v-if="!nodeContext">
                 <a-button icon="sync" @click="refreshOutboundTraffic()"
                     :loading="refreshing"></a-button>
@@ -32,8 +30,9 @@
                     <a-button icon="retweet"></a-button>
                 </a-popconfirm>
             </a-button-group>
-        </a-col>
-    </a-row>
+        </div>
+    </div>
+    <div class="ob-scroll" tabindex="0" aria-label='{{ i18n "pages.xray.Outbounds" }}'>
     <a-table class="ob-table" :columns="outboundColumns" bordered :row-key="r => r.key"
         :data-source="outboundData"
         :scroll="{ x: 800 }" table-layout="fixed" :pagination="false"
@@ -185,5 +184,6 @@
             <span v-else>-</span>
         </template>
     </a-table>
-</a-space>
+    </div>
+</section>
 {{end}}

@@ -1,6 +1,7 @@
 package locale
 
 import (
+	"net/http"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -40,4 +41,23 @@ func RequestLanguage(c *gin.Context) string {
 	}
 	code, _ := resolveLanguage(c.GetHeader("Accept-Language"))
 	return code
+}
+
+// SubscriptionLanguage keeps a subscriber's preference separate from the panel.
+func SubscriptionLanguage() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		lang := "fa-IR"
+		if cookie, err := c.Cookie("subscription_lang"); err == nil {
+			if code, ok := resolveLanguage(cookie); ok {
+				lang = code
+			}
+		}
+		if code, ok := resolveLanguage(c.Query("lang")); ok {
+			lang = code
+			c.SetSameSite(http.SameSiteLaxMode)
+			c.SetCookie("subscription_lang", code, 31536000, "/", "", c.Request.TLS != nil, true)
+		}
+		c.Set("language", lang)
+		c.Next()
+	}
 }

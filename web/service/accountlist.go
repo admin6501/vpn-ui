@@ -184,6 +184,14 @@ const (
 //   - an ordinary admin sees accounts with at least one membership on an inbound
 //     they hold, which is exactly what the Inbounds page already shows them.
 func (s *AccountService) ListAccounts(user *model.User, page, size int, search, sortKey string) (*AccountListResult, error) {
+	return s.listAccounts(user, page, size, search, sortKey, false)
+}
+
+func (s *AccountService) ListExpiredOwnedAccounts(user *model.User, page, size int, search, sortKey string) (*AccountListResult, error) {
+	return s.listAccounts(user, page, size, search, sortKey, true)
+}
+
+func (s *AccountService) listAccounts(user *model.User, page, size int, search, sortKey string, expiredOwned bool) (*AccountListResult, error) {
 	if user == nil {
 		// No identity, no rows. Never an unscoped list.
 		return &AccountListResult{Rows: []AccountRow{}, Sort: AccountSortNewest}, nil
@@ -260,6 +268,7 @@ func (s *AccountService) ListAccounts(user *model.User, page, size int, search, 
 		groupIDs[link.AccountID] = append(groupIDs[link.AccountID], link.GroupID)
 	}
 	createdAt := make(map[int]int64, len(accounts))
+	now := time.Now().UnixMilli()
 	for i := range accounts {
 		account := &accounts[i]
 		key := accountKey(account.Email)
@@ -314,6 +323,11 @@ func (s *AccountService) ListAccounts(user *model.User, page, size int, search, 
 			row.Enable = t.Enable
 			row.TotalGB = t.Total
 			row.ExpiryTime = t.ExpiryTime
+		}
+		if expiredOwned && (row.OwnerID != user.Id || !renewalDepleted(&xray.ClientTraffic{
+			ExpiryTime: row.ExpiryTime, Total: row.TotalGB, Up: row.Up, Down: row.Down,
+		}, now)) {
+			continue
 		}
 		createdAt[account.Id] = account.CreatedAt
 		rows = append(rows, row)

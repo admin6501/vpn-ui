@@ -461,10 +461,11 @@ func (s *Server) startRuntimeTasks() {
 		ids, err := (&service.AccountService{}).RenewDueAccounts()
 		if err != nil {
 			logger.Warning("automatic client renewal check:", err)
-			return
-		}
-		if len(ids) > 0 {
+		} else if len(ids) > 0 {
 			controller.ReconcileClientMemberships(ids)
+		}
+		if err := (&service.ActivityService{}).ScanExpired(time.Now()); err != nil {
+			logger.Warning("client expiry notices:", err)
 		}
 	})))
 

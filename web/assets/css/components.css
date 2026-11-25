@@ -2772,3 +2772,71 @@ html[data-theme-animations='off'] .log-live-dot { animation:none; }
 .bo-lg-name { position:relative; }
 .bo-lg-name:has(.bo-comment-toggle) { padding-inline-end:24px; }
 .bo-lg-name .bo-comment-toggle { position:absolute; inset-inline-end:0; top:0; }
+
+.bo-info-button.ant-btn, .bo-info-icon.anticon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  vertical-align: middle;
+  line-height: 1;
+}
+.bo-info-button.ant-btn-icon-only { padding: 0; }
+.bo-info-button .anticon, .bo-info-icon svg { display: block; line-height: 1; }
+.bo-info-button svg { display: block; }
+.bo-topbar-title { min-width: 0; overflow-wrap: anywhere; }
+.bo-content, .xray-page .ant-card-body, .xray-page [data-section] { min-width: 0; }
+.ob-section { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
+.ob-toolbar, .ob-toolbar-primary { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.ob-toolbar { justify-content: space-between; }
+.ob-scroll { overflow-x: auto; min-width: 0; max-width: 100%; touch-action: pan-x pan-y; }
+.ob-table .ant-table-body {
+  overflow-x: auto !important;
+  overscroll-behavior-x: contain;
+  touch-action: pan-x pan-y;
+  -webkit-overflow-scrolling: touch;
+}
+.ob-toolbar button { max-width: 100%; white-space: normal; height: auto; min-height: 32px; }
+
+.panel-activity-bar, .panel-activity-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.panel-activity-badge {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  border-radius: 6px;
+  background: var(--warn-weak);
+  color: var(--warn);
+}
+.panel-activity-badge--renewal { background: var(--ok-weak); color: var(--ok); }
+.panel-activity-badge a { color: inherit; padding: 4px 8px; overflow-wrap: anywhere; }
+.panel-activity-badge b { margin-inline-start: 4px; }
+.panel-activity-badge button {
+  flex: 0 0 auto;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  padding: 6px 8px;
+  font-size: 12px;
+}
+.panel-activity-card .panel-activity-controls { align-items: end; margin-bottom: 16px; }
+.panel-activity-card label { display: grid; gap: 4px; min-width: 0; }
+.panel-activity-card label.panel-activity-inline { display: inline-flex; align-items: center; align-self: center; gap: 8px; }
+.panel-activity-note { flex: 1 0 100%; margin: 0; color: var(--text-3); }
+.panel-activity-app { display: grid; grid-template-columns: minmax(0, 110px) minmax(0, 1fr) minmax(0, 2fr) auto; gap: 8px; align-items: end; margin-bottom: 10px; }
+.panel-activity-table { overflow-x: auto; }
+.panel-activity-table table { width: 100%; border-collapse: collapse; }
+.panel-activity-table th, .panel-activity-table td { text-align: start; vertical-align: top; padding: 8px 12px; border-bottom: 1px solid var(--border); }
+.panel-activity-table th { background: var(--surface-2); }
+.panel-activity-date { white-space: nowrap; }
+.panel-activity-card .panel-activity-paging { align-items: center; margin: 16px 0 0; }
+@media (max-width: 600px) {
+  .panel-activity-app { grid-template-columns: minmax(0, 1fr); padding-block: 8px; border-bottom: 1px solid var(--border); }
+  .panel-activity-bar { width: 100%; }
+  .bo-topbar-title { white-space: normal; }
+}

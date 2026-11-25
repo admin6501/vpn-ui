@@ -6,14 +6,17 @@ const assert = require('node:assert/strict');
   try {
     const expected = JSON.parse(process.env.SUBSCRIPTION_EXPECT);
     const context = await browser.newContext({locale: expected.lang, viewport: {width: 390, height: 844}});
-    await context.addCookies([{name: 'lang', value: expected.lang, url: process.env.SUBSCRIPTION_BROWSER_URL}]);
+    await context.addCookies([{name: 'lang', value: 'en-US', url: process.env.SUBSCRIPTION_BROWSER_URL}]);
     const page = await context.newPage();
     const errors = [];
     const failures = [];
     page.on('pageerror', error => errors.push(error.message));
     page.on('response', response => { if (response.status() >= 400) failures.push([response.status(), new URL(response.url()).pathname]); });
     page.on('console', message => { if (message.type() === 'error') errors.push(message.text()); });
-    await page.goto(process.env.SUBSCRIPTION_BROWSER_URL, {waitUntil: 'networkidle'});
+    const url = new URL(process.env.SUBSCRIPTION_BROWSER_URL);
+    if (expected.lang !== 'fa-IR') url.searchParams.set('lang', expected.lang);
+    await page.goto(url.href, {waitUntil: 'networkidle'});
+    assert.equal(await page.locator('html').getAttribute('lang'), expected.lang);
     assert.deepEqual(failures, [], 'all subscription assets must load');
     assert.deepEqual(errors, [], 'subscription must render without JavaScript errors');
     await page.locator('#app').waitFor({state: 'visible', timeout: 3000});
@@ -31,7 +34,9 @@ const assert = require('node:assert/strict');
     assert.equal(status.trim(), label, 'status must reflect enable, expiry and exhausted quota');
     assert.ok(!text.includes('[['), 'no unrendered bindings remain');
     if (expected.links) {
-      for (const scheme of ['vmess://', 'ss://', 'wireguard://']) assert.ok(text.includes(scheme), scheme + ' is visible');
+      for (const scheme of ['vmess://', 'ss://']) assert.ok(text.includes(scheme), scheme + ' is visible');
+      assert.ok(!text.includes('wireguard://'), 'AWG must not be rendered as a plain WireGuard link');
+      assert.equal(await page.locator('.sub-native-card').filter({hasText: 'AmneziaWG'}).count(), 1);
       const downloads = page.locator('a.sub-config-btn');
       assert.equal(await downloads.count(), 1, 'AWG config file is offered');
       const response = await context.request.get(await downloads.first().getAttribute('href'));
@@ -42,6 +47,8 @@ const assert = require('node:assert/strict');
       for (const scheme of ['vmess://', 'ss://', 'wireguard://']) assert.ok(!text.includes(scheme), 'disabled membership stays out of config exports');
       assert.equal(await page.locator('a.sub-config-btn').count(), 0, 'manually disabled profiles cannot be downloaded');
     }
+    assert.equal(await page.getByRole('link', {name: 'v2rayNG'}).getAttribute('href'), 'https://github.com/2dust/v2rayNG/releases');
+    assert.equal((await context.cookies()).find(cookie => cookie.name === 'lang').value, 'en-US');
     console.log('Subscription page: visible account-wide traffic, quota, status, three protocols, config downloads, locale and mobile rendering passed.');
   } finally {
     await browser.close();

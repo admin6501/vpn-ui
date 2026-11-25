@@ -188,7 +188,7 @@ func (s *Server) initRouter() (*gin.Engine, error) {
 	}
 
 	// set per-request localizer from headers/cookies
-	engine.Use(locale.LocalizerMiddleware())
+	engine.Use(locale.SubscriptionLanguage(), locale.LocalizerMiddleware())
 
 	// register i18n function similar to web server
 	i18nWebFunc := func(key string, params ...string) string {
@@ -404,6 +404,6 @@ func (s *Server) TelegramAccountLinks(subID, email, host string) ([]string, erro
 	if err != nil {
 		return nil, err
 	}
-	links, _, _, err := NewSubService(false, remark).getSubs(subID, host, false, email)
+	links, _, _, err := NewSubService(false, remark).getSubs(subID, host, false, email, nil)
 	return links, err
 }

@@ -717,7 +717,7 @@ func (a *InboundController) addInbound(c *gin.Context) {
 		jsonMsg(c, I18nWeb(c, "somethingWentWrong"), err)
 		return
 	}
-	a.syncInboundAccounts(inbound.Id)
+	a.syncInboundAccounts(inbound.Id, user.Id)
 	jsonMsgObj(c, I18nWeb(c, "pages.inbounds.toasts.inboundCreateSuccess"), inbound, nil)
 	if inbound.Protocol == model.L2TP {
 		a.onL2tpChanged()
@@ -915,7 +915,7 @@ func (a *InboundController) updateInbound(c *gin.Context) {
 		jsonMsg(c, I18nWeb(c, "somethingWentWrong"), err)
 		return
 	}
-	a.syncInboundAccounts(inbound.Id)
+	a.syncInboundAccounts(inbound.Id, currentUserId(c))
 	jsonMsgObj(c, I18nWeb(c, "pages.inbounds.toasts.inboundUpdateSuccess"), inbound, nil)
 	if inbound.Protocol == model.L2TP {
 		a.onL2tpChanged()
@@ -1070,7 +1070,7 @@ func (a *InboundController) addInboundClient(c *gin.Context) {
 	}
 
 	var needRestart bool
-	if user := session.GetLoginUser(c); user != nil && (user.IsSuperAdmin || user.IsPanelOwner) {
+	if user := session.GetLoginUser(c); user != nil && !isRepresentative(user) {
 		needRestart, err = a.inboundService.AddInboundClientForAdmin(data, user.Id)
 	} else {
 		needRestart, err = a.inboundService.AddInboundClient(data)
@@ -1217,7 +1217,7 @@ func (a *InboundController) saveAccountClient(c *gin.Context) {
 	}
 
 	ownerID := 0
-	if user := session.GetLoginUser(c); user != nil && (user.IsSuperAdmin || user.IsPanelOwner) {
+	if user := session.GetLoginUser(c); user != nil && !isRepresentative(user) {
 		ownerID = user.Id
 	}
 	if _, err := accountService.SaveAccountWithoutInbound(entry, ownerID); err != nil {
@@ -2263,6 +2263,9 @@ func (a *InboundController) importInbound(c *gin.Context) {
 			logger.Warning("granting the creator access to their imported inbound: ", gerr)
 		}
 	}
+	if err == nil && inbound != nil {
+		a.syncInboundAccounts(inbound.Id, user.Id)
+	}
 	jsonMsgObj(c, I18nWeb(c, "pages.inbounds.toasts.inboundCreateSuccess"), inbound, err)
 	if err == nil && needRestart {
 		a.xrayService.SetToNeedRestart()
@@ -3157,8 +3160,8 @@ func distinctInboundIds(targets []service.BulkClientTarget) []int {
 // no membership, so one call is correct for all of them, including the removal of
 // the inbound itself (where it drops every membership pointing at an id that is
 // gone).
-func (a *InboundController) syncInboundAccounts(inboundId int) {
-	if err := accountService.SyncInboundAccounts(database.GetDB(), inboundId); err != nil {
+func (a *InboundController) syncInboundAccounts(inboundId int, creatorID ...int) {
+	if err := accountService.SyncInboundAccounts(database.GetDB(), inboundId, creatorID...); err != nil {
 		logger.Warning("syncing the accounts layer for inbound ", inboundId, ": ", err)
 	}
 }

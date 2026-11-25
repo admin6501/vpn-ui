@@ -1,6 +1,7 @@
 package sub
 
 import (
+	"crypto/sha256"
 	"fmt"
 	"strconv"
 	"strings"
@@ -31,13 +32,17 @@ type SubConfigFile struct {
 	Filename    string
 	ContentType string
 	Content     string
+	inboundID   int
+	account     string
 }
 
 // SubConfigLink is the page-facing half: what to show and where to fetch it.
 type SubConfigLink struct {
-	Label    string
-	Filename string
-	Url      string
+	Label     string
+	Filename  string
+	Url       string
+	inboundID int
+	account   string
 }
 
 // ConfigFiles renders every downloadable config the subscription's accounts have, in
@@ -69,9 +74,14 @@ func (s *SubService) ConfigFiles(subId string, host string) []SubConfigFile {
 				continue
 			}
 			for _, cfg := range s.inboundConfigFiles(inbound, client.Email, host) {
-				// An OpenVPN profile is per inbound, not per account (it carries no
-				// credentials, the client is prompted), so two accounts of one inbound
-				// sharing a subId would otherwise offer the same file twice.
+				cfg.inboundID = inbound.Id
+				// OpenVPN prompts for credentials: the profile is shared by the
+				// inbound. Other files can contain per-account keys and peers.
+				if inbound.Protocol != model.OPENVPN {
+					cfg.account = strings.ToLower(strings.TrimSpace(client.Email))
+					digest := sha256.Sum256([]byte(cfg.account))
+					cfg.Key += fmt.Sprintf("~%x", digest[:8])
+				}
 				if seen[cfg.Key] {
 					continue
 				}
@@ -87,7 +97,8 @@ func (s *SubService) ConfigFiles(subId string, host string) []SubConfigFile {
 // caching, so a download always reflects the inbound as it stands now.
 func (s *SubService) ConfigFile(subId string, host string, key string) (SubConfigFile, bool) {
 	for _, cfg := range s.ConfigFiles(subId, host) {
-		if cfg.Key == key {
+		base, _, _ := strings.Cut(cfg.Key, "~")
+		if cfg.Key == key || base == key {
 			return cfg, true
 		}
 	}
@@ -108,9 +119,11 @@ func (s *SubService) ConfigLinks(subId, host, scheme, hostWithPort, subPath stri
 	links := make([]SubConfigLink, 0, len(files))
 	for _, f := range files {
 		links = append(links, SubConfigLink{
-			Label:    f.Label,
-			Filename: f.Filename,
-			Url:      strings.TrimRight(base, "/") + "/configs/" + f.Key,
+			Label:     f.Label,
+			Filename:  f.Filename,
+			Url:       strings.TrimRight(base, "/") + "/configs/" + f.Key,
+			inboundID: f.inboundID,
+			account:   f.account,
 		})
 	}
 	return links

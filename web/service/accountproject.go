@@ -442,7 +442,11 @@ func removeAccountFromInbound(inbound *model.Inbound, email string) (string, boo
 // is deliberate: an account row that disagrees with settings.clients is repaired on
 // the next start anyway (MigrationAccounts re-checks the counts on every boot), so a
 // missed call degrades to a delay rather than to a wrong data plane.
-func (s *AccountService) SyncInboundAccounts(tx *gorm.DB, inboundId int) error {
+func (s *AccountService) SyncInboundAccounts(tx *gorm.DB, inboundId int, creatorID ...int) error {
+	ownerID := 0
+	if len(creatorID) > 0 {
+		ownerID = creatorID[0]
+	}
 	var inbound model.Inbound
 	if err := tx.Model(&model.Inbound{}).Where("id = ?", inboundId).First(&inbound).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
@@ -479,7 +483,7 @@ func (s *AccountService) SyncInboundAccounts(tx *gorm.DB, inboundId int) error {
 		if accountKey(email) == "" {
 			continue
 		}
-		account, err := s.upsertAccountFromEntry(tx, entry, &inbound)
+		account, err := s.upsertAccountFromEntry(tx, entry, &inbound, ownerID)
 		if err != nil {
 			return err
 		}
@@ -531,7 +535,7 @@ func (s *AccountService) SyncInboundAccounts(tx *gorm.DB, inboundId int) error {
 // rather than leaving the addressed protocol's own to the switch that follows it.
 // That is exactly right for an account whose credentials are not yet keyed to
 // anything.
-func (s *AccountService) upsertAccountFromEntry(tx *gorm.DB, entry map[string]any, inbound *model.Inbound) (*model.Account, error) {
+func (s *AccountService) upsertAccountFromEntry(tx *gorm.DB, entry map[string]any, inbound *model.Inbound, creatorID int) (*model.Account, error) {
 	protocol := model.Protocol("")
 	inboundId := 0
 	if inbound != nil {
@@ -552,6 +556,7 @@ func (s *AccountService) upsertAccountFromEntry(tx *gorm.DB, entry map[string]an
 	switch {
 	case err == gorm.ErrRecordNotFound:
 		fresh := newAccountFromEntry(entry)
+		fresh.OwnerAdminID = creatorID
 		if err := captureRenewalDuration(fresh, nil, entry); err != nil {
 			return nil, err
 		}
@@ -1256,15 +1261,13 @@ func (s *AccountService) SaveAccountWithoutInbound(entry map[string]any, ownerAd
 			return common.NewErrorf("the email %q is already in use", email)
 		}
 
-		account, err := s.upsertAccountFromEntry(tx, entry, nil)
+		ownerID := 0
+		if len(ownerAdminID) > 0 {
+			ownerID = ownerAdminID[0]
+		}
+		account, err := s.upsertAccountFromEntry(tx, entry, nil, ownerID)
 		if err != nil {
 			return err
-		}
-		if existing == nil && len(ownerAdminID) > 0 && ownerAdminID[0] > 0 {
-			account.OwnerAdminID = ownerAdminID[0]
-			if err := tx.Model(account).Update("owner_admin_id", account.OwnerAdminID).Error; err != nil {
-				return err
-			}
 		}
 
 		if !hasTraffic {

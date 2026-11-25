@@ -166,8 +166,8 @@ func TestGetSubsReportsAccountQuotaAcrossThreeInbounds(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetSubs: %v", err)
 	}
-	if len(links) != 3 {
-		t.Fatalf("links = %d, want 3 (one per membership): %q", len(links), links)
+	if len(links) != 2 {
+		t.Fatalf("links = %d, want only the two proxy memberships: %q", len(links), links)
 	}
 
 	if traffic.Total != 100*gb {
@@ -547,17 +547,13 @@ func TestGetSubsGivesEveryMembershipItsOwnName(t *testing.T) {
 	}
 }
 
-// The constraint that matters on upgrade: a name that is not a duplicate is never
-// rewritten, so nobody's existing subscription entries are renamed (a renamed node
-// reads as a brand-new server in every client). An account on ONE inbound cannot be
-// affected at all, whatever its remark is.
-func TestSingleMembershipRemarksAreByteIdentical(t *testing.T) {
+func TestSubscriptionUsesInboundNameAndFallsBackToEmail(t *testing.T) {
 	cases := []struct {
 		name   string
 		remark string
 		want   string
 	}{
-		{name: "with a remark", remark: "Germany", want: "Germany-alice@example.com"},
+		{name: "with a remark", remark: "Germany", want: "Germany"},
 		{name: "with no remark", remark: "", want: "alice@example.com"},
 	}
 
@@ -584,10 +580,7 @@ func TestSingleMembershipRemarksAreByteIdentical(t *testing.T) {
 	}
 }
 
-// Two DIFFERENT accounts on two inbounds that share a remark do not collide (the
-// email is part of the name), so nothing is renamed there either. This is the case
-// that would have been renamed by a blunter fix keyed on the inbound remark alone.
-func TestDistinctAccountsOnEquallyRemarkedInboundsKeepTheirNames(t *testing.T) {
+func TestEquallyNamedInboundsInASharedSubscriptionAreDisambiguated(t *testing.T) {
 	newSubTestDB(t)
 	const subId = "sub-shared"
 
@@ -599,9 +592,9 @@ func TestDistinctAccountsOnEquallyRemarkedInboundsKeepTheirNames(t *testing.T) {
 		t.Fatalf("GetSubs: %v", err)
 	}
 	names := fragments(t, links)
-	want := []string{"Germany-alice@example.com", "Germany-bob@example.com"}
+	want := []string{"Germany", "Germany-inbound-41202"}
 	if len(names) != 2 || names[0] != want[0] || names[1] != want[1] {
-		t.Fatalf("names = %q, want %q untouched", names, want)
+		t.Fatalf("names = %q, want %q", names, want)
 	}
 }
 

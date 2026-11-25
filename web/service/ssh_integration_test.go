@@ -149,15 +149,24 @@ func TestSshServerTCPPath(t *testing.T) {
 		t.Errorf("echo mismatch: got %q want %q", got, msg)
 	}
 
-	// accounting: bytes should have been counted for alice@t
+	// Reading the echo can finish before the server goroutine records its last
+	// write. CollectTraffic drains the counters, so accumulate all samples.
 	var up, down int64
-	for _, tr := range svc.CollectTraffic() {
-		if tr.Email == "alice@t" {
-			up, down = tr.Up, tr.Down
+	deadline := time.Now().Add(time.Second)
+	for {
+		for _, tr := range svc.CollectTraffic() {
+			if tr.Email == "alice@t" {
+				up += tr.Up
+				down += tr.Down
+			}
 		}
-	}
-	if up == 0 || down == 0 {
-		t.Errorf("expected non-zero accounting, got up=%d down=%d", up, down)
+		if up > 0 && down > 0 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("expected non-zero accounting, got up=%d down=%d", up, down)
+		}
+		time.Sleep(5 * time.Millisecond)
 	}
 
 	// wrong password must be rejected

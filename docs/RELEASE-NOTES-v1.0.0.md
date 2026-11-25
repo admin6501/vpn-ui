@@ -6,6 +6,25 @@ migration tools together with a complete, current documentation set. This page d
 stable release as a whole; older version numbers and dated live-test reports in retained design
 records describe upstream development, not previous stable releases of this fork.
 
+## فعالیت‌های پنل و صفحهٔ اشتراک / Panel activity and subscriptions
+
+### فارسی
+
+- **ظاهر پنل** — آیکن‌های Info در فهرست کلاینت‌ها وسط‌چین شدند و جدول اوت‌باند روی موبایل اسکرول افقی دارد تا دکمهٔ تست پینگ در دسترس باشد.
+- **ورود و خروج** — مدیران و نمایندگان تاریخچهٔ حساب خودشان را با نام کاربری، IP و سیستم‌عامل می‌بینند. مالک پنل به تاریخچهٔ همه دسترسی دارد و می‌تواند لاگ قدیمی را حذف کند. ۶۰ رویداد آخر و همهٔ رویدادهای ۲۴ ساعت گذشته از حذف محافظت می‌شوند.
+- **انقضای کلاینت‌ها** — اتمام حجم یا زمان به مالک ثبت‌شدهٔ کلاینت اعلام می‌شود. اعلان، تعداد موارد دیده‌نشده و پیش‌نمایش نام‌ها را نشان می‌دهد و قابل بستن است. صفحهٔ جداگانهٔ انقضا همهٔ موارد منقضی همان حساب را برای ویرایش و تمدید نشان می‌دهد.
+- **تمدید خودکار** — اعلان و تاریخچهٔ جداگانه برای مالک کلاینت و مالک پنل اضافه شد.
+- **تاریخچهٔ تغییرات کلاینت** — مالک پنل می‌تواند ثبت تغییرات را روشن یا خاموش کند، تاریخچه را بر اساس ماه و مالک کلاینت ببیند و لاگ ماه انتخابی را حذف کند.
+- **اشتراک‌ها** — زبان پیش‌فرض فارسی است و امکان انتخاب هر ۱۳ زبان وجود دارد. نام کانفیگ از اینباند می‌آید. اطلاعات اتصال و فایل‌های VPNهای بومی در کارت‌های جدا نمایش داده می‌شوند و لینک‌های ساختگی Trojan وارد فهرست v2ray نمی‌شوند. مالک پنل می‌تواند لینک دانلود برنامه‌های Android و iOS را از منوی فعالیت‌ها مدیریت کند.
+
+ثبت لاگ‌های جدید از زمان نصب این به‌روزرسانی شروع می‌شود.
+
+### English
+
+- Centered the client and protocol Info icons and made the mobile outbound table scroll horizontally to reach its ping controls.
+- Added separate pages for sign-in and sign-out history, expired clients, client changes, and automatic renewals. Account visibility follows recorded ownership, with owner-wide access to sign-in and sign-out logs, client changes, and renewal history. Sign-in and sign-out log cleanup preserves both the latest 60 entries and all entries from the past 24 hours.
+- Added dismissible, per-owner expiry notices and separate automatic renewal notices for the client owner and panel owner. Client change logging can be configured and cleared by month.
+- Made Persian the default subscription language, retained all 13 language choices, and used inbound names as configuration names. Native VPN credentials and profiles have separate browser cards. The panel owner can manage download links for Android and iOS apps.
 
 ## Sales bot updates / به‌روزرسانی ربات فروش
 

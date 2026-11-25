@@ -2014,7 +2014,7 @@ func (s *InboundService) AddInboundClient(data *model.Inbound) (bool, error) {
 	return s.addInboundClient(data, 0, false)
 }
 
-// AddInboundClientForAdmin records the creating super administrator together
+// AddInboundClientForAdmin records the creating administrator together
 // with the account rows; representative ownership remains in the billing ledger.
 func (s *InboundService) AddInboundClientForAdmin(data *model.Inbound, ownerID int) (bool, error) {
 	return s.addInboundClient(data, ownerID, ownerID > 0)
@@ -2232,7 +2232,7 @@ func (s *InboundService) addInboundClient(data *model.Inbound, ownerID int, sync
 		return false, err
 	}
 	if syncAccount {
-		if err = (&AccountService{}).SyncInboundAccounts(tx, data.Id); err != nil {
+		if err = (&AccountService{}).SyncInboundAccounts(tx, data.Id, ownerID); err != nil {
 			return false, err
 		}
 	}

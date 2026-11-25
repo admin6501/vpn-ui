@@ -111,6 +111,7 @@ func (a *IndexController) login(c *gin.Context) {
 		return
 	}
 
+	recordPanelLogin(c, user, "login")
 	logger.Infof("%s logged in successfully", safeUser)
 	jsonMsg(c, I18nWeb(c, "pages.login.toasts.successLogin"), nil)
 }
@@ -124,6 +125,8 @@ func (a *IndexController) logout(c *gin.Context) {
 	session.ClearSession(c)
 	if err := sessions.Default(c).Save(); err != nil {
 		logger.Warning("Unable to save session after clearing:", err)
+	} else if user != nil {
+		recordPanelLogin(c, user, "logout")
 	}
 	c.Redirect(http.StatusTemporaryRedirect, c.GetString("base_path"))
 }

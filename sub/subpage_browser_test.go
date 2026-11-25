@@ -240,7 +240,7 @@ func TestSubscriptionPageBrowserRuntime(t *testing.T) {
 				saveEnable(true)
 				runBrowser(true, true)
 				links, _, restored, err := subSvc().GetSubs(sid, "vpn.example.com")
-				if err != nil || len(links) != 3 || !restored.Enable || restored.Up != gb || restored.Down != 2*gb {
+				if err != nil || len(links) != 2 || !restored.Enable || restored.Up != gb || restored.Down != 2*gb {
 					t.Fatal("replenishing representative did not restore normal exports with unchanged usage", err)
 				}
 				// The raw export's encoded form must also recover.
@@ -250,7 +250,7 @@ func TestSubscriptionPageBrowserRuntime(t *testing.T) {
 				if decoded, err := base64.StdEncoding.DecodeString(body); err == nil {
 					body = string(decoded)
 				}
-				if recorder.Code != 200 || !strings.Contains(body, "vmess://") || !strings.Contains(body, "ss://") || !strings.Contains(body, "wireguard://") {
+				if recorder.Code != 200 || !strings.Contains(body, "vmess://") || !strings.Contains(body, "ss://") || strings.Contains(body, "wireguard://") {
 					t.Fatal("raw export did not recover after replenishment")
 				}
 			}

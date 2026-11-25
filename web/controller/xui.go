@@ -41,6 +41,13 @@ func (a *XUIController) initRouter(g *gin.RouterGroup) {
 	g.GET("/clients", requirePerm(model.PermAccessInbounds), a.clients)
 	g.GET("/settings", requirePerm(model.PermPanelSettings), a.settings)
 	g.GET("/security", a.security)
+	g.GET("/activity/logins", activityPage("logins"))
+	g.GET("/activity/renewals", activityPage("renewals"))
+	g.GET("/activity/changes", requirePanelOwner(), activityPage("changes"))
+	g.GET("/activity/apps", requirePanelOwner(), activityPage("apps"))
+	g.GET("/activity/expired", requirePerm(model.PermAccessInbounds), func(c *gin.Context) {
+		html(c, "clients.html", "pages.activity.expired", gin.H{"expiredOwned": true})
+	})
 	g.GET("/xray", requirePerm(model.PermXraySettings), a.xraySettings)
 	g.GET("/core", requirePerm(model.PermCoreSettings), a.coreSettings)
 	g.GET("/admins", requireAdminManagement(), a.admins)

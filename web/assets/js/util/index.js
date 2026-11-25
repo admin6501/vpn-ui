@@ -920,6 +920,9 @@ class LanguageManager {
     }
 
     static getLanguage() {
+        if (typeof document !== 'undefined' && document.documentElement.hasAttribute('data-subscription-locale')) {
+            return this.normalizeLanguage(document.documentElement.lang) || 'fa-IR';
+        }
         const stored = CookieManager.getCookie('lang');
         let selected = this.normalizeLanguage(stored);
         if (!selected && typeof document !== 'undefined') {
