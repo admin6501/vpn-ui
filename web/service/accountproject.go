@@ -616,6 +616,9 @@ func (s *AccountService) upsertAccountFromEntry(tx *gorm.DB, entry map[string]an
 	updated.Secret = account.Secret
 	updated.NaiveUser = account.NaiveUser
 	updated.CreatedAt = account.CreatedAt
+	updated.LastRenewedAt = account.LastRenewedAt
+	updated.LastRenewalAutomatic = account.LastRenewalAutomatic
+	updated.AutoRenew = account.AutoRenew
 	// subId is not a credential, but it is carried forward for the same reason and
 	// only when the entry does not mention it AT ALL. A caller that omits the key
 	// (any script posting a partial client) was blanking the account's subId, and

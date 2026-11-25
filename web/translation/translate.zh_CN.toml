@@ -612,6 +612,13 @@ unfreeze = "解冻"
 frozen = "冻结"
 
 [pages.clients]
+"lastRenewal" = "最近续期"
+"historyUpdated" = "账户已更新"
+"historyUnavailable" = "暂无已记录事件。开始记录前的更改无法显示。"
+"historyMore" = "更早的事件"
+"autoRenew" = "自动续期"
+"autoRenewHelp" = "立即生效。到期或流量用尽后续期已保存的套餐。"
+"liveRate" = "下载和上传速率（约 10 秒）"
 "renew" = "续期"
 "renewHint" = "清零上传和下载，从现在重新计算套餐期限并启用用户。保留流量上限、连接信息、入站权限及累计记录。"
 "renewUnknown" = "未记录原套餐期限。请首次输入套餐天数，后续续期将沿用此期限。"

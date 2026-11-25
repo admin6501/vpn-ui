@@ -43,6 +43,11 @@
         <span class="ai-chip warn" v-if="frozen">{{ i18n "pages.client.frozen" }}</span>
       </div>
 
+      <div class="ai-kv" v-if="isOnline && app && app.rateText" title="{{ i18n "pages.clients.liveRate" }}">
+        <span class="k">{{ i18n "pages.clients.liveRate" }}</span>
+        <span class="v">↓ [[ app.rateText(row, 'down') ]] · ↑ [[ app.rateText(row, 'up') ]]</span>
+      </div>
+
       <!-- The account's one subscription. It is per ACCOUNT, not per membership:
            a single subId is projected onto every inbound serving it. -->
       <template v-if="subSettings.enable && row.subId">
@@ -80,6 +85,27 @@
       <div class="ai-kv">
         <span class="k">{{ i18n "pages.clients.summaryInbounds" }}</span>
         <span class="v">[[ memberships.length ]]</span>
+      </div>
+      <div class="ai-kv">
+        <span class="k">{{ i18n "pages.inbounds.createdAt" }}</span>
+        <span class="v">[[ eventDate(row.createdAt) ]]</span>
+      </div>
+      <div class="ai-kv">
+        <span class="k">{{ i18n "pages.clients.lastRenewal" }}</span>
+        <span class="v">[[ eventDate(row.lastRenewedAt) ]]</span>
+      </div>
+      <a-button size="small" type="default" icon="history"
+        :loading="accountInfoModal.history.loading" @click="toggleHistory">{{ i18n "pages.index.logs" }}</a-button>
+      <div class="ai-kv" v-if="accountInfoModal.history.visible" style="display: block">
+        <div v-if="!accountInfoModal.history.events.length && !accountInfoModal.history.loading">
+          {{ i18n "pages.clients.historyUnavailable" }}
+        </div>
+        <div v-for="event in accountInfoModal.history.events" :key="event.id" class="ai-sep">
+          <div>[[ eventDate(event.at) ]] · [[ eventName(event.kind) ]]</div>
+          <small v-if="event.changes">[[ eventChanges(event.changes) ]]</small>
+        </div>
+        <a-button v-if="accountInfoModal.history.next" size="small"
+          :loading="accountInfoModal.history.loading" @click="loadHistory(true)">{{ i18n "pages.clients.historyMore" }}</a-button>
       </div>
       <div class="ai-kv" v-if="row.limitIp > 0">
         <span class="k">{{ i18n "pages.clients.ipLimit" }}</span>
@@ -273,6 +299,7 @@
     // already present does not make it reactive, and these keys arrive over time.
     cards: {},
     loading: {},
+    history: { visible: false, loading: false, events: [], next: 0 },
     // The enlarged QR. Declared up front so it is reactive from the start.
     zoom: { visible: false, value: '', title: '' },
 
@@ -281,6 +308,7 @@
       this.open = null;
       this.cards = {};
       this.loading = {};
+      this.history = { visible: false, loading: false, events: [], next: 0 };
       this.zoom = { visible: false, value: '', title: '' };
       this.visible = true;
     },
@@ -403,6 +431,46 @@
       },
     },
     methods: {
+      eventDate(value) { return value > 0 ? new Date(value).toLocaleString() : '—'; },
+      eventName(kind) {
+        const labels = {
+          created: '{{ i18n "pages.inbounds.createdAt" }}',
+          updated: '{{ i18n "pages.clients.historyUpdated" }}',
+          renewed: '{{ i18n "pages.clients.renewSuccess" }}',
+          autoRenewed: '{{ i18n "pages.clients.autoRenew" }}',
+        };
+        return labels[kind] || labels.updated;
+      },
+      eventChanges(value) {
+        const labels = {
+          email: '{{ i18n "pages.clients.email" }}', quota: '{{ i18n "pages.clients.quota" }}',
+          expiry: '{{ i18n "pages.clients.expiry" }}', enable: '{{ i18n "enabled" }}',
+          autoRenew: '{{ i18n "pages.clients.autoRenew" }}', reset: '{{ i18n "pages.clients.renewEvery" }}',
+          limits: '{{ i18n "pages.clients.tabLimits" }}', owner: '{{ i18n "pages.client.owner" }}',
+          credentials: '{{ i18n "pages.clients.credentials" }}', inbounds: '{{ i18n "pages.clients.inbounds" }}',
+          comment: '{{ i18n "comment" }}', groups: '{{ i18n "pages.groups.title" }}',
+        };
+        return value.split(',').map(key => labels[key]).filter(Boolean).join(' · ');
+      },
+      toggleHistory() {
+        const history = this.accountInfoModal.history;
+        history.visible = !history.visible;
+        if (history.visible && !history.events.length) this.loadHistory(false);
+      },
+      async loadHistory(more) {
+        const history = this.accountInfoModal.history;
+        if (history.loading || !this.row) return;
+        history.loading = true;
+        try {
+          const url = '/panel/api/clients/history/' + encodeURIComponent(this.row.email) +
+              (more ? '?before=' + history.next : '');
+          const msg = await HttpUtil.get(url);
+          if (msg && msg.success && msg.obj && history === this.accountInfoModal.history) {
+            history.events = (more ? history.events : []).concat(msg.obj.events || []);
+            history.next = msg.obj.next || 0;
+          }
+        } finally { history.loading = false; }
+      },
       ovpnTransports(record) { return AccountExport.ovpnTransports(record); },
       downloadOvpn(record, proto) { AccountExport.downloadOvpn(record, proto); },
       async refreshOnline() {

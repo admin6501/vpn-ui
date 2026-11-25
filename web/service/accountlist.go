@@ -1,6 +1,7 @@
 package service
 
 import (
+	"cmp"
 	"encoding/json"
 	"math/bits"
 	"sort"
@@ -84,20 +85,26 @@ type AccountCredentials struct {
 
 // AccountRow is one line of the Clients table.
 type AccountRow struct {
-	GroupIDs        []int  `json:"groupIds"`
-	OwnerID         int    `json:"ownerId"`
-	OwnerUsername   string `json:"ownerUsername"`
-	Id              int    `json:"id"`
-	Email           string `json:"email"`
-	Enable          bool   `json:"enable"`
-	SubID           string `json:"subId"`
-	LegacySubID     string `json:"legacySubId,omitempty"`
-	Comment         string `json:"comment"`
-	TotalGB         int64  `json:"totalGB"`    // bytes, despite the name
-	ExpiryTime      int64  `json:"expiryTime"` // ms; negative = delayed start
-	RenewalDuration int64  `json:"renewalDuration"`
-	Reset           int    `json:"reset"`
-	LimitIP         int    `json:"limitIp"`
+	GroupIDs        []int        `json:"groupIds"`
+	OwnerID         int          `json:"ownerId"`
+	OwnerUsername   string       `json:"ownerUsername"`
+	Id              int          `json:"id"`
+	Email           string       `json:"email"`
+	Enable          bool         `json:"enable"`
+	SubID           string       `json:"subId"`
+	LegacySubID     string       `json:"legacySubId,omitempty"`
+	Comment         string       `json:"comment"`
+	TotalGB         int64        `json:"totalGB"`    // bytes, despite the name
+	ExpiryTime      int64        `json:"expiryTime"` // ms; negative = delayed start
+	RenewalDuration int64        `json:"renewalDuration"`
+	CreatedAt       int64        `json:"createdAt"`
+	LastRenewedAt   int64        `json:"lastRenewedAt"`
+	AutoRenew       bool         `json:"autoRenew"`
+	LastOnline      int64        `json:"lastOnline"`
+	OnlineSince     int64        `json:"onlineSince"`
+	LiveRate        *AccountRate `json:"liveRate,omitempty"`
+	Reset           int          `json:"reset"`
+	LimitIP         int          `json:"limitIp"`
 	// TgID is the Telegram chat the bot notifies. Reported so the Clients form can
 	// edit it without a second read; 0 means the account is not linked.
 	TgID int64 `json:"tgId"`
@@ -144,22 +151,24 @@ type AccountListResult struct {
 	Sort string `json:"sort"`
 }
 
-// The orderings the Clients table offers. Each one is a COMPLETE ordering, not a
-// field to be combined with a direction: "newest" already says which way it runs.
-// That is why there is no dir parameter and no ascending/descending toggle - an
-// operator picks an answer, not a column plus an arrow.
-//
-// Named constants because they cross the wire; clients.html uses these exact
-// strings as its menu keys.
+// Sort keys identify a complete order and are shared by the menu and column headers.
 const (
-	AccountSortTraffic  = "traffic"
-	AccountSortDays     = "days"
-	AccountSortName     = "name"
-	AccountSortNewest   = "newest"
-	AccountSortOldest   = "oldest"
-	AccountSortOnline   = "online"
-	AccountSortEnabled  = "enable"
-	AccountSortDisabled = "disable"
+	AccountSortTraffic         = "traffic"
+	AccountSortDays            = "days"
+	AccountSortName            = "name"
+	AccountSortNewest          = "newest"
+	AccountSortOldest          = "oldest"
+	AccountSortOnline          = "online"
+	AccountSortEnabled         = "enable"
+	AccountSortDisabled        = "disable"
+	AccountSortNameReverse     = "name-desc"
+	AccountSortTrafficLow      = "traffic-low"
+	AccountSortDaysLongest     = "days-longest"
+	AccountSortOffline         = "offline"
+	AccountSortOwner           = "owner"
+	AccountSortOwnerReverse    = "owner-desc"
+	AccountSortInbounds        = "inbounds"
+	AccountSortInboundsReverse = "inbounds-desc"
 )
 
 // ListAccounts returns the accounts the caller may see, filtered and paged.
@@ -242,10 +251,6 @@ func (s *AccountService) ListAccounts(user *model.User, page, size int, search, 
 
 	needle := strings.ToLower(strings.TrimSpace(search))
 	rows := make([]AccountRow, 0, len(accounts))
-	// When each account was created, for the newest/oldest orderings. Kept beside
-	// the rows rather than added to AccountRow because nothing on the page renders
-	// it: the table has no created column, and a field the browser never reads is a
-	// field that goes stale without anyone noticing.
 	groupIDs := map[int][]int{}
 	var groupLinks []model.AccountGroup
 	if err := db.Order("group_id").Find(&groupLinks).Error; err != nil {
@@ -269,8 +274,9 @@ func (s *AccountService) ListAccounts(user *model.User, page, size int, search, 
 			Id: account.Id, Email: account.Email, Enable: account.Enable,
 			SubID: account.SubID, Comment: account.Comment,
 			TotalGB: account.TotalGB, ExpiryTime: account.ExpiryTime,
-			RenewalDuration: account.RenewalDuration,
-			Reset:           account.Reset, LimitIP: account.LimitIP, TgID: account.TgID,
+			RenewalDuration: account.RenewalDuration, CreatedAt: account.CreatedAt,
+			LastRenewedAt: account.LastRenewedAt, AutoRenew: account.AutoRenew,
+			Reset: account.Reset, LimitIP: account.LimitIP, TgID: account.TgID,
 			SpeedLimitDown: account.SpeedLimitDown, SpeedLimitUp: account.SpeedLimitUp,
 			UserLimitOverride: account.UserLimitOverride,
 			Memberships:       mine, OwnedByReseller: owner[key],
@@ -304,7 +310,7 @@ func (s *AccountService) ListAccounts(user *model.User, page, size int, search, 
 		// the account row showed a depleted account as still on, days after the
 		// data plane had cut it off.
 		if t := usage[key]; t != nil {
-			row.Up, row.Down = t.Up, t.Down
+			row.Up, row.Down, row.LastOnline = t.Up, t.Down, t.LastOnline
 			row.Enable = t.Enable
 			row.TotalGB = t.Total
 			row.ExpiryTime = t.ExpiryTime
@@ -316,16 +322,15 @@ func (s *AccountService) ListAccounts(user *model.User, page, size int, search, 
 	// Ordered BEFORE paging, which is the whole reason this is server-side. The
 	// page only ever holds one slice of the list, so sorting in the browser would
 	// order fifty rows out of two hundred and call it a sort.
-	// The online set is fetched only when it is the ordering being asked for. It
-	// reads the running core's in-memory session list, which is cheap but not free
-	// of meaning: on a box where Xray never started it is empty, and every account
-	// then sorts as offline rather than the call failing.
-	online := map[string]bool{}
-	{
-		var inboundService InboundService
-		for _, email := range inboundService.GetOnlineClients() {
-			online[accountKey(email)] = true
-		}
+	// The online snapshot also supplies the connected count for the filtered list.
+	var inboundService InboundService
+	online := make(map[string]bool)
+	for _, email := range inboundService.GetOnlineClients() {
+		online[accountKey(email)] = true
+	}
+	firstSeen := accountOnlineStart.snapshot()
+	for i := range rows {
+		rows[i].OnlineSince = firstSeen[accountKey(rows[i].Email)]
 	}
 	sortKey = sortAccountRows(rows, createdAt, online, sortKey)
 
@@ -346,6 +351,13 @@ func (s *AccountService) ListAccounts(user *model.User, page, size int, search, 
 	end := start + size
 	if end > total {
 		end = total
+	}
+	rates := CurrentAccountRates()
+	for i := start; i < end; i++ {
+		key := accountKey(rows[i].Email)
+		if rate, ok := rates[key]; ok && online[key] {
+			rows[i].LiveRate = &rate
+		}
 	}
 	if err := attachImportedSubscriptionTokens(db, rows[start:end]); err != nil {
 		return nil, err
@@ -374,39 +386,29 @@ func (s *AccountService) ListAccounts(user *model.User, page, size int, search, 
 // the order they were made.
 func sortAccountRows(rows []AccountRow, createdAt map[int]int64, online map[string]bool, sortKey string) string {
 	switch sortKey {
-	case AccountSortName, AccountSortNewest, AccountSortOldest, AccountSortOnline,
-		AccountSortEnabled, AccountSortDisabled, AccountSortTraffic, AccountSortDays:
+	case AccountSortName, AccountSortNameReverse, AccountSortNewest, AccountSortOldest,
+		AccountSortOnline, AccountSortOffline, AccountSortEnabled, AccountSortDisabled,
+		AccountSortTraffic, AccountSortTrafficLow, AccountSortDays, AccountSortDaysLongest,
+		AccountSortOwner, AccountSortOwnerReverse, AccountSortInbounds, AccountSortInboundsReverse:
 	default:
 		sortKey = AccountSortNewest
 	}
-
-	// Each case returns "is a before b" outright. Written as a full comparison per
-	// ordering rather than a shared key function plus a direction flag, because these
-	// are five different questions and only two of them are about the same value.
 	now := time.Now().UnixMilli()
 	remaining := func(expiry int64) int64 {
 		if expiry < 0 {
-			if expiry == -1<<63 {
-				return 1<<63 - 1
-			}
-			return -expiry
+			return -max(expiry, -1<<63+1)
 		}
 		return expiry - now
 	}
 	usage := func(row *AccountRow) uint64 {
-		var n uint64
-		if row.Up > 0 {
-			n += uint64(row.Up)
-		}
-		if row.Down > 0 {
-			n += uint64(row.Down)
-		}
-		return n
+		return uint64(max(row.Up, 0)) + uint64(max(row.Down, 0))
 	}
-	less := func(a, b *AccountRow) bool {
+	sort.Slice(rows, func(i, j int) bool {
+		a, b := &rows[i], &rows[j]
+		ae, be := accountKey(a.Email), accountKey(b.Email)
+		order := 0
 		switch sortKey {
-		case AccountSortTraffic:
-			// Unlimited accounts have no depletion percentage and sort last.
+		case AccountSortTraffic, AccountSortTrafficLow:
 			if (a.TotalGB > 0) != (b.TotalGB > 0) {
 				return a.TotalGB > 0
 			}
@@ -414,69 +416,65 @@ func sortAccountRows(rows []AccountRow, createdAt map[int]int64, online map[stri
 				ua, ub := min(usage(a), uint64(a.TotalGB)), min(usage(b), uint64(b.TotalGB))
 				ah, al := bits.Mul64(ua, uint64(b.TotalGB))
 				bh, bl := bits.Mul64(ub, uint64(a.TotalGB))
-				if ah != bh {
-					return ah > bh
+				order = cmp.Compare(bh, ah)
+				if order == 0 {
+					order = cmp.Compare(bl, al)
 				}
-				if al != bl {
-					return al > bl
+				if sortKey == AccountSortTrafficLow {
+					order = -order
 				}
 			}
-			if accountKey(a.Email) != accountKey(b.Email) {
-				return accountKey(a.Email) < accountKey(b.Email)
-			}
-			return a.Id < b.Id
-		case AccountSortDays:
+		case AccountSortDays, AccountSortDaysLongest:
 			if (a.ExpiryTime == 0) != (b.ExpiryTime == 0) {
 				return a.ExpiryTime != 0
 			}
-			if a.ExpiryTime != 0 && remaining(a.ExpiryTime) != remaining(b.ExpiryTime) {
-				return remaining(a.ExpiryTime) < remaining(b.ExpiryTime)
+			order = cmp.Compare(remaining(a.ExpiryTime), remaining(b.ExpiryTime))
+			if sortKey == AccountSortDaysLongest {
+				order = -order
 			}
-			if accountKey(a.Email) != accountKey(b.Email) {
-				return accountKey(a.Email) < accountKey(b.Email)
+		case AccountSortNameReverse:
+			order = cmp.Compare(be, ae)
+		case AccountSortOldest, AccountSortNewest:
+			order = cmp.Or(cmp.Compare(createdAt[a.Id], createdAt[b.Id]), cmp.Compare(a.Id, b.Id))
+			if sortKey == AccountSortNewest {
+				order = -order
 			}
-			return a.Id < b.Id
-		case AccountSortName:
-			if accountKey(a.Email) != accountKey(b.Email) {
-				return accountKey(a.Email) < accountKey(b.Email)
-			}
-			return a.Id < b.Id
-		case AccountSortOldest:
-			if createdAt[a.Id] != createdAt[b.Id] {
-				return createdAt[a.Id] < createdAt[b.Id]
-			}
-			return a.Id < b.Id
-		case AccountSortOnline:
-			// Connected right now first. Not a health question: an account can be
-			// online AND nearly out of data, and this ordering answers only the
-			// first half.
-			ao, bo := online[accountKey(a.Email)], online[accountKey(b.Email)]
+		case AccountSortOnline, AccountSortOffline:
+			ao, bo := online[ae], online[be]
 			if ao != bo {
-				return ao
+				return ao == (sortKey == AccountSortOnline)
 			}
-			return accountKey(a.Email) < accountKey(b.Email)
-		case AccountSortEnabled:
+			at, bt := a.LastOnline, b.LastOnline
+			if ao {
+				at, bt = a.OnlineSince, b.OnlineSince
+			}
+			if (at == 0) != (bt == 0) {
+				return at != 0
+			}
+			order = cmp.Compare(bt, at)
+			if ao {
+				order = -order
+			} // Earliest observed connection has been online longest.
+			if sortKey == AccountSortOffline {
+				order = -order
+			}
+		case AccountSortEnabled, AccountSortDisabled:
 			if a.Enable != b.Enable {
-				return a.Enable
+				return a.Enable == (sortKey == AccountSortEnabled)
 			}
-			return accountKey(a.Email) < accountKey(b.Email)
-		case AccountSortDisabled:
-			// The mirror of the one above, and the more useful of the pair: a
-			// disabled account is the one an operator is looking for, because the
-			// panel switches accounts off by itself when they expire or run out.
-			if a.Enable != b.Enable {
-				return b.Enable
+		case AccountSortOwner, AccountSortOwnerReverse:
+			order = cmp.Compare(accountKey(a.OwnerUsername), accountKey(b.OwnerUsername))
+			if sortKey == AccountSortOwnerReverse {
+				order = -order
 			}
-			return accountKey(a.Email) < accountKey(b.Email)
-		default: // AccountSortNewest
-			if createdAt[a.Id] != createdAt[b.Id] {
-				return createdAt[a.Id] > createdAt[b.Id]
+		case AccountSortInbounds, AccountSortInboundsReverse:
+			order = cmp.Compare(len(a.Memberships), len(b.Memberships))
+			if sortKey == AccountSortInboundsReverse {
+				order = -order
 			}
-			return a.Id > b.Id
 		}
-	}
-
-	sort.SliceStable(rows, func(i, j int) bool { return less(&rows[i], &rows[j]) })
+		return cmp.Or(order, cmp.Compare(ae, be), cmp.Compare(a.Id, b.Id)) < 0
+	})
 	return sortKey
 }
 

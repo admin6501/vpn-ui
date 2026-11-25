@@ -283,6 +283,10 @@ func (s *AccountService) runAccountsPass(tx *gorm.DB, report *AccountsMigrationR
 			account, exists := byKey[key]
 			if !exists {
 				account = newAccountFromEntry(entry)
+				// Preserve a recorded client creation time from the legacy settings.
+				if createdAt, ok := entry["created_at"].(float64); ok && createdAt > 0 && createdAt <= float64(time.Now().UnixMilli()) {
+					account.CreatedAt = int64(createdAt)
+				}
 				if err := tx.Create(account).Error; err != nil {
 					return fmt.Errorf("creating account %q: %w", email, err)
 				}

@@ -39,6 +39,7 @@ func (a *ClientsController) initRouter(g *gin.RouterGroup) {
 	// accounts from the other side, so a caller who may see one may see the other.
 	// The rows are then narrowed per caller inside ListAccounts.
 	g.GET("/list", a.list)
+	g.GET("/history/:email", a.history)
 	g.GET("/assignable", a.assignable)
 	g.GET("/groups", func(c *gin.Context) {
 		rows, err := (&service.GroupService{}).List(session.GetLoginUser(c), false)
@@ -119,4 +120,10 @@ func (a *ClientsController) inbounds(c *gin.Context) {
 		return
 	}
 	jsonObj(c, rows, nil)
+}
+
+func (a *ClientsController) history(c *gin.Context) {
+	before, _ := strconv.ParseInt(c.Query("before"), 10, 64)
+	result, err := accountService.AccountHistory(session.GetLoginUser(c), c.Param("email"), before)
+	jsonObj(c, result, err)
 }

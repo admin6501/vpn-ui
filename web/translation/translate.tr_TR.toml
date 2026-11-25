@@ -611,6 +611,13 @@ unfreeze = "Çözme"
 frozen = "Dondurulmuş"
 
 [pages.clients]
+"lastRenewal" = "Son yenileme"
+"historyUpdated" = "Hesap güncellendi"
+"historyUnavailable" = "Kayıtlı olay yok. Kayıt başlamadan önceki değişiklikler kullanılamaz."
+"historyMore" = "Önceki olaylar"
+"autoRenew" = "Otomatik yenileme"
+"autoRenewHelp" = "Hemen uygulanır. Süre veya kota bittiğinde kayıtlı paketi yeniler."
+"liveRate" = "İndirme ve yükleme hızı (~10 saniye)"
 "renew" = "Yenile"
 "renewHint" = "Yükleme ve indirmeyi sıfırlar, süreyi şimdi yeniden başlatır ve istemciyi etkinleştirir. Kota, bağlantılar, erişim ve toplam geçmiş korunur."
 "renewUnknown" = "İlk süre kaydedilmemiş. Sonraki yenilemelerde kullanılacak gün sayısını bir kez girin."

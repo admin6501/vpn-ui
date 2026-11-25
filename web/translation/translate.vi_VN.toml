@@ -612,6 +612,13 @@ unfreeze = "Giải phóng"
 frozen = "Đông lạnh"
 
 [pages.clients]
+"lastRenewal" = "Lần gia hạn cuối"
+"historyUpdated" = "Đã cập nhật tài khoản"
+"historyUnavailable" = "Không có sự kiện đã ghi. Các thay đổi trước khi bắt đầu ghi không khả dụng."
+"historyMore" = "Sự kiện cũ hơn"
+"autoRenew" = "Tự động gia hạn"
+"autoRenewHelp" = "Áp dụng ngay. Gia hạn gói đã lưu khi hết thời hạn hoặc dung lượng."
+"liveRate" = "Tốc độ tải xuống và tải lên (~10 giây)"
 "renew" = "Gia hạn"
 "renewHint" = "Đặt lại tải lên và tải xuống, bắt đầu thời hạn từ bây giờ và bật khách. Giữ hạn mức, kết nối, quyền truy cập và lịch sử tổng."
 "renewUnknown" = "Chưa lưu thời hạn gốc. Nhập số ngày một lần để dùng cho các lần gia hạn sau."

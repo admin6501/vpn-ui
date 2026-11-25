@@ -611,6 +611,13 @@ unfreeze = "Mencairkan"
 frozen = "Beku"
 
 [pages.clients]
+"lastRenewal" = "Perpanjangan terakhir"
+"historyUpdated" = "Akun diperbarui"
+"historyUnavailable" = "Tidak ada kejadian tercatat. Perubahan sebelum pencatatan dimulai tidak tersedia."
+"historyMore" = "Kejadian lebih lama"
+"autoRenew" = "Perpanjangan otomatis"
+"autoRenewHelp" = "Berlaku segera. Memperpanjang paket yang tersimpan saat waktu atau kuota habis."
+"liveRate" = "Kecepatan unduh dan unggah (~10 detik)"
 "renew" = "Perpanjang"
 "renewHint" = "Nolkan unggahan dan unduhan, mulai ulang masa paket sekarang, dan aktifkan klien. Kuota, koneksi, akses dan riwayat total tetap."
 "renewUnknown" = "Durasi awal belum tersimpan. Masukkan jumlah hari sekali untuk perpanjangan berikutnya."

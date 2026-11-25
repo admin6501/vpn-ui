@@ -1,0 +1,117 @@
+package service
+
+import (
+	"errors"
+	"sort"
+	"time"
+
+	"github.com/mhsanaei/3x-ui/v2/database"
+	"github.com/mhsanaei/3x-ui/v2/database/model"
+	"github.com/mhsanaei/3x-ui/v2/logger"
+	"github.com/mhsanaei/3x-ui/v2/util/common"
+	"github.com/mhsanaei/3x-ui/v2/xray"
+	"gorm.io/gorm"
+)
+
+func (s *AccountService) SetAutoRenew(email string, enabled bool) error {
+	return database.GetDB().Transaction(func(tx *gorm.DB) error {
+		account, err := s.GetAccountByEmailTx(tx, email)
+		if err != nil {
+			return err
+		}
+		if account == nil {
+			return gorm.ErrRecordNotFound
+		}
+		if enabled {
+			if _, err := renewalPeriod(account, nil); err != nil {
+				return err
+			}
+			if account.TotalGB <= 0 && account.ExpiryTime == 0 {
+				return common.NewError("automatic renewal requires a quota or expiration")
+			}
+		}
+		return tx.Model(account).Update("auto_renew", enabled).Error
+	})
+}
+
+func renewalDepleted(traffic *xray.ClientTraffic, now int64) bool {
+	return (traffic.ExpiryTime > 0 && traffic.ExpiryTime <= now) ||
+		(traffic.Total > 0 && traffic.Up >= traffic.Total-traffic.Down)
+}
+
+// RenewDueAccounts rechecks eligibility and billing inside each transaction.
+// The account's Enable represents manual intent; traffic.Enable may already be
+// false from depletion and must not prevent a permitted renewal.
+func (s *AccountService) RenewDueAccounts() ([]int, error) {
+	db := database.GetDB()
+	now := time.Now().UnixMilli()
+	var ids []int
+	err := db.Model(&model.Account{}).
+		Joins("JOIN client_traffics t ON LOWER(TRIM(t.email)) = LOWER(TRIM(accounts.email))").
+		Where("accounts.auto_renew = ? AND accounts.enable = ? AND accounts.representative_blocked = ?", true, true, false).
+		Where("(t.expiry_time > 0 AND t.expiry_time <= ?) OR (t.total > 0 AND t.up >= t.total-t.down)", now).
+		Order("accounts.id").Pluck("accounts.id", &ids).Error
+	if err != nil {
+		return nil, err
+	}
+	touched := map[int]bool{}
+	for _, id := range ids {
+		var inbounds []int
+		err := db.Transaction(func(tx *gorm.DB) error {
+			var account model.Account
+			if err := tx.First(&account, id).Error; err != nil {
+				return err
+			}
+			if !account.AutoRenew || !account.Enable || account.RepresentativeBlocked {
+				return nil
+			}
+			var traffic xray.ClientTraffic
+			if err := tx.Where("LOWER(TRIM(email)) = ?", accountKey(account.Email)).First(&traffic).Error; err != nil {
+				return err
+			}
+			if !renewalDepleted(&traffic, now) {
+				return nil
+			}
+
+			// A representative's plan must use the same transactional quota ledger
+			// as their manual renewal, regardless of who enabled the switch.
+			var ownership model.ResellerClient
+			owner := &model.User{}
+			err := tx.Where("LOWER(TRIM(email)) = ?", accountKey(account.Email)).First(&ownership).Error
+			if err == nil {
+				if err = tx.First(owner, ownership.UserId).Error; err != nil {
+					return err
+				}
+				if !owner.Enable {
+					return nil
+				}
+				owner.IsReseller = true
+			} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+				return err
+			}
+
+			inbounds, err = s.renewAccountTx(tx, owner, &account, &traffic, nil, now, true)
+			return err
+		})
+		if err != nil {
+			// A failed or unaffordable renewal has no partial billing/usage effects.
+			if !errors.Is(err, ErrInsufficientBalance) && !errors.Is(err, ErrRenewalDurationUnknown) && !errors.Is(err, gorm.ErrRecordNotFound) {
+				logger.Warning("automatic client renewal:", err)
+			}
+			continue
+		}
+		for _, inbound := range inbounds {
+			touched[inbound] = true
+		}
+	}
+	out := make([]int, 0, len(touched))
+	for id := range touched {
+		out = append(out, id)
+	}
+	sort.Ints(out)
+	if len(out) > 0 {
+		MarkSpeedLimitsDirty()
+		RequestAdmissionRefresh()
+	}
+	return out, nil
+}

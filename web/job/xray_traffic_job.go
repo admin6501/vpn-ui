@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"sync/atomic"
+	"time"
 
 	"github.com/mhsanaei/3x-ui/v2/logger"
 	"github.com/mhsanaei/3x-ui/v2/web/service"
@@ -16,6 +18,7 @@ import (
 
 // XrayTrafficJob collects and processes traffic statistics from Xray, updating the database and optionally informing external APIs.
 type XrayTrafficJob struct {
+	lastSample      atomic.Int64
 	adminService    service.AdminService
 	settingService  service.SettingService
 	xrayService     service.XrayService
@@ -291,9 +294,18 @@ func (j *XrayTrafficJob) Run() {
 	// its User Limit. The server owns every net.Conn, so this is an in-process close.
 	j.sshService.KillDisabledSessions()
 
+	sampledAt := time.Now()
+	previous := j.lastSample.Swap(sampledAt.UnixNano())
+	interval := 10 * time.Second
+	if previous != 0 {
+		interval = sampledAt.Sub(time.Unix(0, previous))
+	}
+	service.ObserveLocalAccountRates(clientTraffics, sampledAt, interval)
+
 	// Skip DB update if no traffic to process
 	if len(traffics) == 0 && len(clientTraffics) == 0 {
 		j.inboundService.ClearOnlineStatus()
+		service.ObserveOnlineAccounts(j.inboundService.GetOnlineClients())
 		return
 	}
 
@@ -344,14 +356,15 @@ func (j *XrayTrafficJob) Run() {
 		j.xrayService.SetToNeedRestart()
 	}
 
+	onlineClients := j.inboundService.GetOnlineClients()
+	service.ObserveOnlineAccounts(onlineClients)
+
 	// If no frontend client is connected, skip all WebSocket broadcasting routines,
 	// including expensive DB queries for online clients and JSON marshaling.
 	if !websocket.HasClients() {
 		return
 	}
 
-	// Update online clients list and map
-	onlineClients := j.inboundService.GetOnlineClients()
 	// And WHICH inbound each of them was seen on. The pages count their online
 	// tallies per inbound from this; without it in the push they would recompute
 	// from whatever membership set the last REST fetch left behind, and a session
@@ -447,6 +460,13 @@ func (j *XrayTrafficJob) broadcastTrafficScoped(
 		}
 	}
 
+	rates := service.CurrentAccountRates()
+	onlineRates := make(map[string]service.AccountRate)
+	for _, email := range onlineClients {
+		if rate, ok := rates[service.AccountKeyOf(email)]; ok {
+			onlineRates[email] = rate
+		}
+	}
 	for _, userId := range userIds {
 		if supers[userId] {
 			websocket.BroadcastTrafficToUser(userId, map[string]any{
@@ -455,6 +475,7 @@ func (j *XrayTrafficJob) broadcastTrafficScoped(
 				"onlineClients":     onlineClients,
 				"onlineMemberships": onlineMemberships,
 				"lastOnlineMap":     lastOnlineMap,
+				"clientRates":       onlineRates,
 			})
 			continue
 		}
@@ -465,9 +486,13 @@ func (j *XrayTrafficJob) broadcastTrafficScoped(
 			}
 		}
 		myOnline := make([]string, 0, len(onlineClients))
+		myRates := map[string]service.AccountRate{}
 		for _, email := range onlineClients {
 			if access[email][userId] {
 				myOnline = append(myOnline, email)
+				if rate, ok := onlineRates[email]; ok {
+					myRates[email] = rate
+				}
 			}
 		}
 		// Scoped on the email half of the pair, exactly as the list above is: the
@@ -493,6 +518,7 @@ func (j *XrayTrafficJob) broadcastTrafficScoped(
 			"onlineClients":     myOnline,
 			"onlineMemberships": myMemberships,
 			"lastOnlineMap":     myLastOnline,
+			"clientRates":       myRates,
 		})
 	}
 }

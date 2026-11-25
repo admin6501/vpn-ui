@@ -379,6 +379,8 @@ func (s *NodeService) AcceptReport(id int, report nodewire.Report) error {
 		return errors.New("Invalid node report")
 	}
 	needRestart := false
+	var rateTime time.Time
+	rates := map[string]AccountRate{}
 	err := database.GetDB().Transaction(func(tx *gorm.DB) error {
 		var n model.RemoteNode
 		if e := tx.First(&n, id).Error; e != nil {
@@ -415,7 +417,9 @@ func (s *NodeService) AcceptReport(id int, report nodewire.Report) error {
 			membersByAccount[m.AccountId] = append(membersByAccount[m.AccountId], byInbound[m.InboundId])
 		}
 		seen := map[string]bool{}
-		now := time.Now().UnixMilli()
+		rateTime = time.Now()
+		now := rateTime.UnixMilli()
+		interval := float64(now-n.LastSeen) / 1000
 		for _, record := range report.Counters {
 			if record.Up < 0 || record.Down < 0 || record.Up > math.MaxInt64/2048 || record.Down > math.MaxInt64/2048 {
 				return errors.New("Invalid counter value")
@@ -465,6 +469,9 @@ func (s *NodeService) AcceptReport(id int, report nodewire.Report) error {
 				var a model.Account
 				e := tx.First(&a, record.AccountID).Error
 				if e == nil {
+					if scoped && known && n.LastSeen > 0 && interval > 0 && interval <= 25 {
+						rates[accountKey(a.Email)] = AccountRate{Up: float64(up) / interval, Down: float64(down) / interval, At: now}
+					}
 					var t xray.ClientTraffic
 					if e := tx.Where("email = ?", a.Email).First(&t).Error; e != nil {
 						return errors.New("Missing central account traffic; repair accounting first")
@@ -532,6 +539,9 @@ func (s *NodeService) AcceptReport(id int, report nodewire.Report) error {
 		raw, _ := json.Marshal(online)
 		return tx.Model(&n).Updates(map[string]any{"last_sequence": report.Sequence, "last_seen": now, "online": string(raw), "core_report": string(report.CoreReport), "last_error": report.LastError}).Error
 	})
+	if err == nil && !rateTime.IsZero() {
+		recordAccountRates(id, rateTime, rates)
+	}
 	if err == nil && needRestart {
 		(&XrayService{}).SetToNeedRestart()
 	}

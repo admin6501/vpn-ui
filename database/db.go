@@ -40,6 +40,7 @@ func initModels() error {
 		// back onto a migrated database ignores both tables (AutoMigrate never drops
 		// what it does not know) and keeps reading settings.clients exactly as before.
 		&model.Account{},
+		&model.AccountEvent{},
 		&model.AccountInbound{},
 		&model.ClientGroup{},
 		&model.GroupInbound{},
@@ -64,6 +65,9 @@ func initModels() error {
 			log.Printf("Error auto migrating model: %v", err)
 			return err
 		}
+	}
+	if err := initAccountHistory(db); err != nil {
+		return err
 	}
 	// Plain email indexes cannot serve LOWER(TRIM(email)) lookups. Traffic
 	// attribution and account edits use this identity expression on every tick;

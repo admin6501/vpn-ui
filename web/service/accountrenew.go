@@ -80,42 +80,11 @@ func (s *AccountService) RenewAccount(user *model.User, email string, requested 
 		if account == nil {
 			return gorm.ErrRecordNotFound
 		}
-		period, err := renewalPeriod(account, requested)
-		if err != nil {
-			return err
-		}
-		now := time.Now().UnixMilli()
-		expiry := int64(0)
-		if period > 0 {
-			expiry = now + period
-		}
 		var traffic xray.ClientTraffic
 		if err := tx.Where("LOWER(TRIM(email)) = ?", accountKey(email)).First(&traffic).Error; err != nil {
 			return err
 		}
-		if err := chargeAccountRenewal(tx, user, account, &traffic, expiry, now); err != nil {
-			return err
-		}
-		// Representative blocking is separate from the customer's manual switch.
-		// The normal representative sweep retains authority over that block.
-		if err := tx.Model(account).Updates(map[string]any{
-			"enable": true, "expiry_time": expiry, "renewal_duration": period,
-			"imported_reset_disabled": false, "imported_last_reset_at": now,
-		}).Error; err != nil {
-			return err
-		}
-		account.Enable, account.ExpiryTime, account.RenewalDuration = true, expiry, period
-		if err := tx.Model(&traffic).Updates(map[string]any{
-			"up": 0, "down": 0, "enable": !account.RepresentativeBlocked,
-			"expiry_time": expiry, "total": account.TotalGB,
-		}).Error; err != nil {
-			return err
-		}
-		if err := tx.Model(&model.AccountInbound{}).Where("account_id = ?", account.Id).
-			Updates(map[string]any{"up": 0, "down": 0}).Error; err != nil {
-			return err
-		}
-		_, err = s.ProjectAccount(tx, account.Id)
+		_, err = s.renewAccountTx(tx, user, account, &traffic, requested, time.Now().UnixMilli(), false)
 		return err
 	})
 	if err == nil {
@@ -123,6 +92,39 @@ func (s *AccountService) RenewAccount(user *model.User, email string, requested 
 		RequestAdmissionRefresh()
 	}
 	return err
+}
+
+func (s *AccountService) renewAccountTx(tx *gorm.DB, user *model.User, account *model.Account, traffic *xray.ClientTraffic, requested *int64, now int64, automatic bool) ([]int, error) {
+	period, err := renewalPeriod(account, requested)
+	if err != nil {
+		return nil, err
+	}
+	expiry := int64(0)
+	if period > 0 {
+		expiry = now + period
+	}
+	if err := chargeAccountRenewal(tx, user, account, traffic, expiry, now); err != nil {
+		return nil, err
+	}
+
+	if err := tx.Model(account).Updates(map[string]any{
+		"enable": true, "expiry_time": expiry, "renewal_duration": period,
+		"last_renewed_at": max(now, account.LastRenewedAt+1), "last_renewal_automatic": automatic,
+		"imported_reset_disabled": false, "imported_last_reset_at": now,
+	}).Error; err != nil {
+		return nil, err
+	}
+	if err := tx.Model(traffic).Updates(map[string]any{
+		"up": 0, "down": 0, "enable": !account.RepresentativeBlocked,
+		"expiry_time": expiry, "total": account.TotalGB,
+	}).Error; err != nil {
+		return nil, err
+	}
+	if err := tx.Model(&model.AccountInbound{}).Where("account_id = ?", account.Id).
+		Updates(map[string]any{"up": 0, "down": 0}).Error; err != nil {
+		return nil, err
+	}
+	return s.ProjectAccount(tx, account.Id)
 }
 
 // Match traffic-reset pricing without a separate reservation/rollback window.

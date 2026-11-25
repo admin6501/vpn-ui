@@ -122,6 +122,7 @@ func (a *InboundController) initRouter(g *gin.RouterGroup) {
 	g.POST("/:id/resetClientTraffic/:email", requirePerm(model.PermEditClient), owns, ownsClient, a.resetClientTraffic)
 	// Account-addressed so an unassigned client can be renewed too.
 	g.POST("/renewClient/:email", requirePerm(model.PermEditClient), requireRenewResetPermission(), ownsClient, a.renewClient)
+	g.POST("/autoRenewClient/:email", requirePerm(model.PermEditClient), requireRenewResetPermission(), ownsClient, a.setClientAutoRenew)
 	g.POST("/resetAllTraffics", requirePerm(model.PermBulkOperation), a.resetAllTraffics)
 	g.POST("/resetAllClientTraffics/:id", requirePerm(model.PermBulkOperation), owns, a.resetAllClientTraffics)
 	g.POST("/delDepletedClients/:id", requirePerm(model.PermDeleteClient), owns, a.delDepletedClients)
@@ -3520,8 +3521,8 @@ func (a *InboundController) renameUnservedAccount(c *gin.Context) {
 	jsonMsg(c, I18nWeb(c, "pages.inbounds.toasts.inboundClientUpdateSuccess"), nil)
 }
 
-// ReconcileTelegramMemberships applies group-derived client changes to the same
+// ReconcileClientMemberships applies account changes to the same
 // protocol runtimes as a panel client edit.
-func ReconcileTelegramMemberships(ids []int) {
+func ReconcileClientMemberships(ids []int) {
 	(&InboundController{}).reconcileForInbounds(ids, len(ids) > 0)
 }

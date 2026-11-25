@@ -685,7 +685,10 @@ type Account struct {
 	ExpiryTime int64 `json:"expiryTime" gorm:"column:expiry_time"`
 	// Kept independently of the moving deadline and remaining frozen time.
 	// Zero with a nonzero expiry means a legacy period has not been recorded yet.
-	RenewalDuration int64 `json:"renewalDuration" gorm:"not null;default:0"`
+	RenewalDuration      int64 `json:"renewalDuration" gorm:"not null;default:0"`
+	LastRenewedAt        int64 `json:"lastRenewedAt" gorm:"not null;default:0"`
+	LastRenewalAutomatic bool  `json:"-" gorm:"not null;default:false"`
+	AutoRenew            bool  `json:"autoRenew" gorm:"not null;default:false;index"`
 	// NO gorm default, deliberately. `default:1` makes GORM treat Go's false as
 	// "unset" and write 1 instead, so a DISABLED client migrated to an ENABLED
 	// account. The projection then rendered enable:true over the stored false, the
@@ -753,6 +756,14 @@ type Account struct {
 // TableName pins the table name so it does not collide with anything GORM would
 // infer, and so a future rename of the Go type cannot silently orphan live data.
 func (Account) TableName() string { return "accounts" }
+
+type AccountEvent struct {
+	Id        int64  `json:"id" gorm:"primaryKey;autoIncrement;index:idx_account_events_cursor,priority:2"`
+	AccountID int    `json:"-" gorm:"not null;index:idx_account_events_cursor,priority:1"`
+	At        int64  `json:"at" gorm:"not null"`
+	Kind      string `json:"kind" gorm:"not null"`
+	Changes   string `json:"changes" gorm:"not null;default:''"`
+}
 
 // AccountInbound is ONE membership: this account is served on this inbound.
 // Composite primary key, so the same pair cannot be inserted twice.

@@ -70,14 +70,7 @@
                   <a-tag color="green">{{ i18n "online" }}: [[ clientCounts.online ]]</a-tag>
                   <a-tag>{{ i18n "enabled" }}: [[ clientCounts.enabled ]]</a-tag>
                   <a-tag>{{ i18n "disabled" }}: [[ clientCounts.disabled ]]</a-tag>
-                  <!-- The order. The only sort control on the page: none of these
-                       five is a column, so there are no header arrows to compete
-                       with. The button keeps a fixed label and the menu carries the
-                       tick, because the chosen ordering is a state of the LIST and
-                       reads better beside the other items than as a button that
-                       renames itself.
-                       :trigger="['click']" for the same reason as the row menu: an
-                       a-dropdown opens on HOVER by default. -->
+                  <!-- The menu also offers creation-date orders with no visible column. -->
                   <a-dropdown :trigger="['click']">
                     <a-button icon="sort-ascending">
                       {{ i18n "pages.clients.sortBy" }}
@@ -245,6 +238,9 @@
                     <span class="bo-lg-seen" :class="{ 'bo-lg-seen--live': isClientOnline(row.email) }">
                       [[ lastSeen(row) ]]
                     </span>
+                    <small class="bo-lg-abs" v-if="isClientOnline(row.email)" title="{{ i18n "pages.clients.liveRate" }}">
+                      ↓ [[ rateText(row, 'down') ]] · ↑ [[ rateText(row, 'up') ]]
+                    </small>
                   </template>
 
                   <!-- Account-level only, and two controls rather than five. Enable
@@ -541,6 +537,8 @@
       // indexes it once per refresh rather than scanning it per rendered block.
       onlineMemberships: [],
       lastOnlineMap: {},
+      liveRates: {},
+      rateClock: Date.now(),
       expireDiff: 0,
       trafficDiff: 0,
       remarkModel: '-ieo',
@@ -574,9 +572,6 @@
       // one admin sorting by disabled accounts would silently reorder the list for
       // the next person to log in on that browser.
       sortKey: localStorage.getItem('clientsSort:{{ .me }}') || 'newest',
-      // Five complete orderings, not a field plus a direction. "Newest" already says
-      // which way it runs, so there is nothing for an ascending/descending toggle to
-      // do and the menu is one click rather than two.
       sortOptions: [
         { key: 'traffic', label: '{{ i18n "pages.clients.sortTraffic" }}' },
         { key: 'days', label: '{{ i18n "pages.clients.sortDays" }}' },
@@ -596,30 +591,55 @@
       // that, so a three-inbound account wrapped onto two lines and stood a head
       // taller than every row around it.
       //
-      // No column carries a sorter. The orderings this page offers are not columns:
-      // three of the five are about state, and "newest" has no column at all. Header
-      // arrows alongside them would be a second sort control that could put the list
-      // in an order the menu has no item for, leaving the menu ticking nothing.
+      columnSorts() {
+        return {
+          email: ['name', 'name-desc', 'ascend'],
+          owner: ['owner', 'owner-desc', 'ascend'],
+          used: ['traffic-low', 'traffic', 'descend'],
+          expiry: ['days', 'days-longest', 'descend'],
+          inbounds: ['inbounds', 'inbounds-desc', 'ascend'],
+          lastOnline: ['offline', 'online', 'descend'],
+          actions: ['disable', 'enable', 'descend'],
+        };
+      },
       columns() {
-        const col = (key, title, slot, extra) => Object.assign({
-          title, key, scopedSlots: { customRender: slot },
-        }, extra || {});
+        const col = (key, title, slot, extra) => {
+          const [asc, desc, first] = this.columnSorts[key];
+          return Object.assign({
+            title, key, scopedSlots: { customRender: slot }, sorter: true,
+            sortOrder: this.sortKey === asc ? 'ascend' : this.sortKey === desc ? 'descend' : false,
+            sortDirections: first === 'ascend' ? ['ascend', 'descend', 'ascend'] : ['descend', 'ascend', 'descend'],
+          }, extra || {});
+        };
         return [
           col('email', '{{ i18n "pages.clients.email" }}', 'accountCol', { width: 230 }),
           col('owner', '{{ i18n "pages.client.owner" }}', 'ownerCol', { width: 180 }),
           col('used', '{{ i18n "pages.clients.quota" }}', 'dataCol', { width: 170 }),
           col('expiry', '{{ i18n "pages.clients.expiry" }}', 'expiresCol', { width: 150 }),
           col('inbounds', '{{ i18n "pages.clients.inbounds" }}', 'servingCol'),
-          col('lastOnline', '{{ i18n "lastOnline" }}', 'seenCol', { width: 100 }),
-          // 104 fitted a switch and a menu button. The Account Info button made three
-          // controls, which overflowed the cell and gave the whole table a horizontal
-          // scrollbar. Measured, not guessed: switch 28 + gap 6 + button 24 + gap 6 +
-          // button 24 = 88, plus the cell's own padding.
-          { title: '', key: 'actions', scopedSlots: { customRender: 'rowCol' }, width: 132, align: 'right' },
+          col('lastOnline', '{{ i18n "lastOnline" }}', 'seenCol', { width: 162 }),
+          col('actions', '{{ i18n "enabled" }} / {{ i18n "disabled" }}', 'rowCol', { width: 155, align: 'right' }),
         ];
       },
     },
     methods: {
+      rateText(row, direction) {
+        const email = String(row.email || '').trim().toLowerCase();
+        const live = this.liveRates[email];
+        const snapshot = row.liveRate;
+        const rate = live && (!snapshot || live.at >= snapshot.at) ? live : snapshot;
+        return rate && this.rateClock - rate.at <= 25000 ? this.sizeFormat(rate[direction]) + '/s' : '—';
+      },
+      rememberRates(rates) {
+        const visible = new Set(this.clients.map(row => String(row.email || '').trim().toLowerCase()));
+        const next = Object.create(null);
+        for (const [email, rate] of Object.entries(rates || {})) {
+          const key = email.trim().toLowerCase();
+          if (visible.has(key)) next[key] = rate;
+        }
+        this.liveRates = next;
+        this.rateClock = Date.now();
+      },
       sizeFormat(b) { return SizeFormatter.sizeFormat(b || 0); },
       usedPercent(row) {
         if (!row.totalGB) return 0;
@@ -922,7 +942,10 @@
           this.clientCounts = { online: msg.obj.online || 0, enabled: msg.obj.enabled || 0, disabled: msg.obj.disabled || 0 };
         }
         // Keep rows, selection and ordering stable when full table refresh is off.
-        if (liveOnly) return;
+        if (liveOnly) {
+          this.rememberRates(Object.fromEntries((msg.obj.rows || []).filter(row => row.liveRate).map(row => [row.email, row.liveRate])));
+          return;
+        }
         this.canTransferOwnership = !!msg.obj.canTransferOwnership;
         this.clients = msg.obj.rows || [];
         this.pagination.total = (msg.obj && msg.obj.total) || 0;
@@ -1094,18 +1117,17 @@
         this.selInbounds = [];
       },
 
-      onTableChange(pag) {
+      onTableChange(pag, filters, sorter) {
+        const order = sorter && this.columnSorts[sorter.columnKey];
+        if (order && sorter.order) {
+          const key = order[sorter.order === 'ascend' ? 0 : 1];
+          if (key !== this.sortKey) return this.pickSort(key);
+        }
         this.pagination.current = pag.current;
         this.pagination.pageSize = pag.pageSize;
         this.loadClients();
       },
-      // Picking an ordering. Re-picking the one already applied does nothing rather
-      // than toggling a direction: each item IS a direction, so there is no second
-      // state for a second click to reach.
-      //
-      // Back to page 1, always. Page 3 of a list ordered by newest has nothing to do
-      // with page 3 of the same list ordered by disabled, so keeping the page number
-      // across a change lands the operator somewhere arbitrary.
+      // Any new ordering starts on the first page of the resulting list.
       pickSort(key) {
         if (key === this.sortKey) return;
         this.sortKey = key;
@@ -1395,9 +1417,16 @@
           }
         };
         window.wsClient.on('invalidate', this._onInboundInvalidation);
+        this._onClientRates = payload => {
+          if (payload && payload.clientRates) this.rememberRates(payload.clientRates);
+        };
+        window.wsClient.on('traffic', this._onClientRates);
         window.wsClient.connect();
       }
-      this.liveStateTimer = setInterval(() => this.refreshLiveState(), 10000);
+      this.liveStateTimer = setInterval(() => {
+        this.rateClock = Date.now();
+        this.refreshLiveState();
+      }, 10000);
       try {
         await Promise.all([this.getDefaultSettings(), this.reload(true)]);
       } catch (error) { console.warn('Client initial refresh failed', error); }
@@ -1406,6 +1435,7 @@
     },
     beforeDestroy() {
       if (this._onInboundInvalidation) window.wsClient.off('invalidate', this._onInboundInvalidation);
+      if (this._onClientRates) window.wsClient.off('traffic', this._onClientRates);
       clearInterval(this.liveStateTimer);
       if (this._dataRefreshLoop) this._dataRefreshLoop.stop();
     },

@@ -611,6 +611,13 @@ kernelRuntime = "OS kernel"
 "renewDesc" = "Auto-renewal after expiration. (0 = disable)(unit: day)"
 
 [pages.clients]
+"lastRenewal" = "Last renewal"
+"historyUpdated" = "Account updated"
+"historyUnavailable" = "No recorded events. Changes before tracking began are unavailable."
+"historyMore" = "Older events"
+"autoRenew" = "Automatic renewal"
+"autoRenewHelp" = "Applies immediately. Renews the saved package when time or quota runs out."
+"liveRate" = "Download / upload rate (~10 seconds)"
 "renew" = "Renew"
 "renewHint" = "Reset upload and download, restart the package duration from now, and enable the client. Keep the quota, connection details and inbound access unchanged. Lifetime accounting is retained."
 "renewUnknown" = "The original duration is not recorded. Enter the package duration in days once; future renewals will reuse it."

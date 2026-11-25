@@ -611,6 +611,13 @@ unfreeze = "解凍"
 frozen = "凍結"
 
 [pages.clients]
+"lastRenewal" = "上次續期"
+"historyUpdated" = "帳戶已更新"
+"historyUnavailable" = "沒有已記錄的事件。開始記錄前的變更無法顯示。"
+"historyMore" = "較早的事件"
+"autoRenew" = "自動續期"
+"autoRenewHelp" = "立即生效。到期或流量用完後續期已儲存的方案。"
+"liveRate" = "下載與上傳速率（約 10 秒）"
 "renew" = "續期"
 "renewHint" = "清零上傳和下載，從現在重新計算方案期限並啟用使用者。保留流量上限、連線資訊、入站權限及累計記錄。"
 "renewUnknown" = "未記錄原方案期限。請首次輸入方案天數，後續續期將沿用此期限。"

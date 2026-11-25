@@ -447,7 +447,7 @@ func (s *Server) startRuntimeTasks() {
 	go func() {
 		time.Sleep(time.Second * 5)
 		// Statistics every 10 seconds, start the delay for 5 seconds for the first time, and staggered with the time to restart xray
-		s.cron.AddJob("@every 10s", job.NewXrayTrafficJob(&s.radiusService))
+		s.cron.AddJob("@every 10s", cron.SkipIfStillRunning(cron.DefaultLogger)(job.NewXrayTrafficJob(&s.radiusService)))
 	}()
 
 	// Clean stale RADIUS sessions every 60 seconds
@@ -457,6 +457,16 @@ func (s *Server) startRuntimeTasks() {
 
 	// check client ips from log file every 10 sec
 	s.cron.AddJob("@every 10s", job.NewCheckClientIpJob())
+	s.cron.AddJob("@every 10s", cron.SkipIfStillRunning(cron.DefaultLogger)(cron.FuncJob(func() {
+		ids, err := (&service.AccountService{}).RenewDueAccounts()
+		if err != nil {
+			logger.Warning("automatic client renewal check:", err)
+			return
+		}
+		if len(ids) > 0 {
+			controller.ReconcileClientMemberships(ids)
+		}
+	})))
 
 }
 
@@ -732,5 +742,5 @@ func (s *Server) RestartXray() error {
 }
 
 func (s *Server) ReconcileTelegramMemberships(ids []int) {
-	controller.ReconcileTelegramMemberships(ids)
+	controller.ReconcileClientMemberships(ids)
 }

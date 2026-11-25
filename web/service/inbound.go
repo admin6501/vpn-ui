@@ -3859,7 +3859,9 @@ func (s *InboundService) autoRenewClients(tx *gorm.DB) (bool, int64, error) {
 	now := time.Now().Unix() * 1000
 	var err, err1 error
 
-	err = tx.Model(xray.ClientTraffic{}).Where("reset > 0 and expiry_time > 0 and expiry_time <= ?", now).Find(&traffics).Error
+	err = tx.Model(xray.ClientTraffic{}).Where(`reset > 0 and expiry_time > 0 and expiry_time <= ?
+		AND NOT EXISTS (SELECT 1 FROM accounts WHERE LOWER(TRIM(accounts.email))=LOWER(TRIM(client_traffics.email)) AND auto_renew=1)`,
+		now).Find(&traffics).Error
 	if err != nil {
 		return false, 0, err
 	}
@@ -3984,6 +3986,14 @@ func (s *InboundService) autoRenewClients(tx *gorm.DB) (bool, int64, error) {
 			return false, 0, err
 		}
 	}
+	for email, expiry := range renewedByEmail {
+		if err := tx.Model(&model.Account{}).Where("LOWER(TRIM(email)) = ?", email).Updates(map[string]any{
+			"expiry_time": expiry, "last_renewed_at": time.Now().UnixMilli(), "last_renewal_automatic": true,
+		}).Error; err != nil {
+			return false, 0, err
+		}
+	}
+
 	if p != nil {
 		err1 = s.xrayApi.Init(p.GetAPIPort())
 		if err1 != nil {

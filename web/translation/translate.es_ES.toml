@@ -612,6 +612,13 @@ unfreeze = "Descongelar"
 frozen = "Congelado"
 
 [pages.clients]
+"lastRenewal" = "Última renovación"
+"historyUpdated" = "Cuenta actualizada"
+"historyUnavailable" = "No hay eventos registrados. Los cambios anteriores al registro no están disponibles."
+"historyMore" = "Eventos anteriores"
+"autoRenew" = "Renovación automática"
+"autoRenewHelp" = "Se aplica inmediatamente. Renueva el plan guardado al agotarse el tiempo o la cuota."
+"liveRate" = "Velocidad de descarga y subida (~10 segundos)"
 "renew" = "Renovar"
 "renewHint" = "Reinicia el consumo y la duración desde ahora y activa el cliente. Conserva la cuota, las conexiones, los accesos y el historial total."
 "renewUnknown" = "No se registró la duración original. Indica los días una vez para futuras renovaciones."

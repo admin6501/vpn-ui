@@ -210,6 +210,14 @@
           <a-input-number v-model="clientMembershipModal.client.reset" :min="0"
             :style="{ width: '96px' }"></a-input-number>
         </div>
+        <div class="bo-cf-switch" v-if="clientMembershipModal.isEdit && clientMembershipModal.row">
+          <div>
+            <div class="bo-cf-t">{{ i18n "pages.clients.autoRenew" }}</div>
+            <div class="bo-cf-d">{{ i18n "pages.clients.autoRenewHelp" }}</div>
+          </div>
+          <a-switch :checked="!!clientMembershipModal.row.autoRenew" :loading="clientMembershipModal.autoRenewBusy"
+            @change="v => clientMembershipModal.toggleAutoRenew(v)"></a-switch>
+        </div>
         <div class="bo-cf-switch">
           <div>
             <div class="bo-cf-t">{{ i18n "pages.inbounds.enable" }}</div>
@@ -496,6 +504,7 @@
     // ends up as the anchor. Empty on add, where the server mints the credentials.
     storedBy: {},
     onDone: null,
+    autoRenewBusy: false,
 
     // Only these three cannot tell two of their own inbounds apart (bare
     // NAS-Identifier), which is exactly the set the server refuses.
@@ -557,6 +566,16 @@
         id: '', password: '', vpnUsername: '', auth: '', secret: '',
         naiveUsername: '', security: '',
       };
+    },
+
+    async toggleAutoRenew(enabled) {
+      if (!this.row || this.autoRenewBusy) return;
+      const current = this.row;
+      this.autoRenewBusy = true;
+      try {
+        const msg = await HttpUtil.post('/panel/api/inbounds/autoRenewClient/' + encodeURIComponent(current.email), { enabled });
+        if (msg && msg.success) current.autoRenew = enabled;
+      } finally { this.autoRenewBusy = false; }
     },
 
     async show({ row = null, storedBy = {}, assignable = [], onDone = null }) {

@@ -611,6 +611,13 @@ unfreeze = "凍結解除"
 frozen = "冷凍"
 
 [pages.clients]
+"lastRenewal" = "最終更新日"
+"historyUpdated" = "アカウントを更新しました"
+"historyUnavailable" = "記録されたイベントはありません。記録開始前の変更は表示できません。"
+"historyMore" = "過去のイベント"
+"autoRenew" = "自動更新"
+"autoRenewHelp" = "すぐに適用されます。期限切れまたは通信量の上限に達したときに保存済みプランを更新します。"
+"liveRate" = "ダウンロード・アップロード速度（約10秒）"
 "renew" = "更新"
 "renewHint" = "送受信量をゼロにし、今から契約期間を再開して利用者を有効にします。容量上限、接続情報、アクセス権と累計履歴は保持します。"
 "renewUnknown" = "元の期間は未記録です。日数を一度入力すると次回以降の更新に使われます。"

@@ -26,3 +26,15 @@ func (a *InboundController) renewClient(c *gin.Context) {
 	a.reconcileForInbounds(ids, len(ids) > 0)
 	jsonMsg(c, I18nWeb(c, "pages.clients.renewSuccess"), nil)
 }
+
+func (a *InboundController) setClientAutoRenew(c *gin.Context) {
+	var body struct {
+		Enabled *bool `form:"enabled" json:"enabled" binding:"required"`
+	}
+	if err := c.ShouldBind(&body); err != nil {
+		jsonMsg(c, I18nWeb(c, "somethingWentWrong"), err)
+		return
+	}
+	err := accountService.SetAutoRenew(c.Param("email"), *body.Enabled)
+	jsonMsg(c, I18nWeb(c, "pages.clients.autoRenew"), err)
+}
