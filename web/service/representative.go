@@ -102,6 +102,9 @@ func resetImportedUsage(tx *gorm.DB) (bool, error) {
 		if err := tx.Model(&model.AccountInbound{}).Where("account_id = ?", account.Id).Updates(map[string]any{"up": 0, "down": 0}).Error; err != nil {
 			return false, err
 		}
+		if err := database.RecordAccountTrafficReset(tx, account.Id); err != nil {
+			return false, err
+		}
 		if _, err := (&AccountService{}).ProjectAccount(tx, account.Id); err != nil {
 			return false, err
 		}

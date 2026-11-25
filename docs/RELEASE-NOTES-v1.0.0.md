@@ -6,6 +6,22 @@ migration tools together with a complete, current documentation set. This page d
 stable release as a whole; older version numbers and dated live-test reports in retained design
 records describe upstream development, not previous stable releases of this fork.
 
+## اصلاحات پنل و صفحهٔ اشتراک / Panel and subscription fixes
+
+### فارسی
+
+- نوشته‌های منوی «فعالیت‌ها» و کارت‌های ساب در تم تیره خواناتر شدند. عنوان «مشخصات اتصال پروتکل‌های VPN» در نسخهٔ فارسی با ترتیب درست راست‌به‌چپ نمایش داده می‌شود.
+- سرعت دانلود و آپلود در فهرست کلاینت‌ها همیشه زیر وضعیت آنلاین قرار می‌گیرد و با بزرگ‌نمایی روی وضعیت نمی‌افتد.
+- لاگ تغییرات کلاینت، حجم قبل و بعد، اختلاف حجم، انقضای قبلی و جدید، مدت تمدید و صفر شدن مصرف را ثبت می‌کند. ثبت این جزئیات از زمان نصب شروع می‌شود.
+- کارت‌های L2TP، PPTP، IKEv2، OpenVPN، OpenConnect و SSTP نام کاربری اتصال را نشان می‌دهند و در صورت تنظیم External Proxy، از آدرس و پورت آن استفاده می‌کنند.
+
+### English
+
+- Improved dark-theme text contrast for the Activity menu and subscription cards, and isolated the Persian native VPN heading so it reads right-to-left.
+- Stacked download and upload rates below client status to prevent overlap at narrow widths and higher zoom.
+- Added before-and-after quota and expiry, renewal duration, and usage-reset details to newly recorded client activity.
+- Fixed the VPN login name and advertised external proxy endpoints shown on L2TP, PPTP, IKEv2, OpenVPN, OpenConnect, and SSTP subscription cards.
+
 ## فعالیت‌های پنل و صفحهٔ اشتراک / Panel activity and subscriptions
 
 ### فارسی

@@ -139,7 +139,7 @@ func (ActivityService) ScanExpired(now time.Time) error {
 type ActivityNotice struct {
 	Count   int64    `json:"count"`
 	Through int64    `json:"through"`
-	Names   []string `json:"names"`
+	Names   []string `json:"names" gorm:"-"`
 }
 
 func noticeEvents(user *model.User, kind string) *gorm.DB {

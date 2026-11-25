@@ -33,18 +33,25 @@ const { chromium } = require('playwright');
             } else if (path === 'activity/changes/settings') {
                 obj = { enabled: true, months: ['2026-11'] };
             } else if (path === 'activity/changes') {
-                obj = { rows: [{ ...renewal, kind: 'updated', changes: 'quota' }], owners: ['test-representative'] };
+                obj = { rows: [{
+                    ...renewal, kind: 'renewed', changes: 'quota,expiry',
+                    details: { quota: { before: 2 ** 30, after: 2 * 2 ** 30 },
+                        expiry: { before: at, after: at + 864000000 }, renewalPeriod: { before: 86400000, after: 864000000 },
+                        usageReset: true },
+                }], owners: ['test-representative'] };
             } else if (path === 'activity/apps' && method === 'POST') {
                 assert.match(route.request().headers()['content-type'], /^application\/json/);
                 appChanges = route.request().postDataJSON().apps;
             } else if (path === 'activity/notices/dismiss') {
                 const payload = route.request().postDataJSON();
                 if (payload.kind === 'expired' && payload.through === 7) expiryUnread = false;
+            } else if (path === 'inbounds/onlines') {
+                obj = ['test-expired'];
             } else if (path === 'clients/list') {
                 expiryScoped = url.searchParams.get('scope') === 'expired-own';
                 obj = { rows: [{
                     id: 1, email: 'test-expired', groupIds: [], enable: false, expiryTime: at - 86400000,
-                    up: 0, down: 0, totalGB: 100, memberships: [{ inboundId: 1, port: 443, protocol: 'vless', remark: 'Test inbound' }],
+                    up: 0, down: 0, totalGB: 100, liveRate: { at, down: 137027403, up: 923 }, memberships: [{ inboundId: 1, port: 443, protocol: 'vless', remark: 'Test inbound' }],
                 }], total: 1 };
             }
             await route.fulfill({ json: { success: true, obj } });
@@ -63,6 +70,18 @@ const { chromium } = require('playwright');
         assert.ok(expiryScoped, 'the expired page must load only the logged-in owner’s expired clients');
         assert.equal(expiryUnread, false, 'viewing the expiry list marks the badge as read');
         await page.locator('.bo-info-button').last().waitFor();
+        await page.locator('.bo-lg-rates').waitFor();
+        for (const zoom of [1, 1.25, 1.5]) {
+            await page.evaluate(zoom => { document.documentElement.style.zoom = zoom; }, zoom);
+            const presence = await page.locator('.bo-lg-presence').evaluate(el => {
+                const status = el.querySelector('.bo-lg-seen').getBoundingClientRect();
+                const rate = el.querySelector('.bo-lg-rates').getBoundingClientRect();
+                const cell = el.closest('td').getBoundingClientRect();
+                return { stacked: status.bottom <= rate.top, contained: rate.bottom <= cell.bottom &&
+                    [...el.querySelectorAll('bdi')].every(item => item.getBoundingClientRect().right <= cell.right) };
+            });
+            assert.ok(presence.stacked && presence.contained, `live download and upload fit under Online at zoom ${zoom}`);
+        }
         for (const zoom of [1, 1.25]) {
             const positions = await page.evaluate(zoom => {
                 document.documentElement.style.zoom = zoom;
@@ -82,11 +101,27 @@ const { chromium } = require('playwright');
         }
         await page.evaluate(() => { document.documentElement.style.zoom = 1; });
         await page.getByRole('button', { name: 'Activity' }).click();
-        await page.getByRole('link', { name: 'Automatic renewals' }).click();
+        const renewalLink = page.getByRole('link', { name: 'Automatic renewals' });
+        await renewalLink.waitFor();
+        await page.mouse.move(0, 0);
+        const menuColor = await renewalLink.evaluate(link => {
+            const reference = document.createElement('span');
+            reference.style.color = 'var(--text-2)';
+            document.body.append(reference);
+            const result = { actual: getComputedStyle(link).color, gray: getComputedStyle(reference).color };
+            reference.remove();
+            return result;
+        });
+        assert.equal(menuColor.actual, menuColor.gray, 'Activity uses the same gray as other panel labels');
+        await renewalLink.click();
         await page.getByRole('cell', { name: 'test-renewed' }).waitFor();
         await page.getByRole('button', { name: 'Activity' }).click();
         await page.getByRole('link', { name: 'Client change history' }).click();
         await page.getByRole('cell', { name: 'test-representative' }).waitFor();
+        const details = await page.locator('.panel-activity-details').innerText();
+        assert.match(details, /1(?:[.,]00)?\s*GB.*2(?:[.,]00)?\s*GB/);
+        assert.match(details, /Renewal period.*10 days/);
+        assert.match(details, /Current usage reset to zero/);
         await page.getByRole('button', { name: 'Activity' }).click();
         await page.getByRole('link', { name: 'Subscription app downloads' }).click();
         await page.getByRole('button', { name: 'Create' }).click();

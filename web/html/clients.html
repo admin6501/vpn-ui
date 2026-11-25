@@ -238,12 +238,13 @@
                   </template>
 
                   <template slot="seenCol" slot-scope="text, row">
-                    <span class="bo-lg-seen" :class="{ 'bo-lg-seen--live': isClientOnline(row.email) }">
-                      [[ lastSeen(row) ]]
-                    </span>
-                    <small class="bo-lg-abs" v-if="isClientOnline(row.email)" title="{{ i18n "pages.clients.liveRate" }}">
-                      ↓ [[ rateText(row, 'down') ]] · ↑ [[ rateText(row, 'up') ]]
-                    </small>
+                    <div class="bo-lg-presence">
+                      <span class="bo-lg-seen" :class="{ 'bo-lg-seen--live': isClientOnline(row.email) }" v-text="lastSeen(row)"></span>
+                      <small class="bo-lg-rates" v-if="isClientOnline(row.email)" title="{{ i18n "pages.clients.liveRate" }}">
+                        <bdi dir="ltr">↓ [[ rateText(row, 'down') ]]</bdi>
+                        <bdi dir="ltr">↑ [[ rateText(row, 'up') ]]</bdi>
+                      </small>
+                    </div>
                   </template>
 
                   <!-- Account-level only, and two controls rather than five. Enable

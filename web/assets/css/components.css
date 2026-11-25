@@ -1628,7 +1628,13 @@ html[data-theme-animations='off'] .log-live-dot { animation:none; }
   font-weight:400; opacity:.72; margin-inline-start:3px;
 }
 
-.bo-lg-seen { font-size:12px; color:var(--text-3); white-space:nowrap; }
+.bo-lg-presence { display:flex; flex-direction:column; gap:3px; min-width:0; }
+.bo-lg-seen { font-size:12px; color:var(--text-3); overflow-wrap:anywhere; }
+.bo-lg-rates {
+  display:flex; flex-wrap:wrap; gap:2px 8px; min-width:0;
+  font-size:11px; color:var(--text-2); font-variant-numeric:tabular-nums;
+}
+.bo-lg-rates bdi { max-width:100%; overflow-wrap:anywhere; }
 /* The word "Online" in the Last Online cell, on the same row as a lamp that is
    now --info for exactly this state. Green here and blue two cells to the left
    would be two colours for one fact. */
@@ -2804,6 +2810,11 @@ html[data-theme-animations='off'] .log-live-dot { animation:none; }
   gap: 8px;
   min-width: 0;
 }
+.panel-activity-trigger.ant-btn,
+.panel-activity-dropdown .ant-dropdown-menu-item > a { color:var(--text-2); }
+.panel-activity-dropdown .ant-dropdown-menu { background:var(--surface); }
+.panel-activity-dropdown .ant-dropdown-menu-item:hover > a,
+.panel-activity-dropdown .ant-dropdown-menu-item > a:focus-visible { color:var(--accent); }
 .panel-activity-badge {
   display: inline-flex;
   align-items: center;
@@ -2834,6 +2845,8 @@ html[data-theme-animations='off'] .log-live-dot { animation:none; }
 .panel-activity-table th, .panel-activity-table td { text-align: start; vertical-align: top; padding: 8px 12px; border-bottom: 1px solid var(--border); }
 .panel-activity-table th { background: var(--surface-2); }
 .panel-activity-date { white-space: nowrap; }
+.panel-activity-details { margin:0; padding:0; list-style:none; }
+.panel-activity-details > li + li { margin-top:4px; }
 .panel-activity-card .panel-activity-paging { align-items: center; margin: 16px 0 0; }
 @media (max-width: 600px) {
   .panel-activity-app { grid-template-columns: minmax(0, 1fr); padding-block: 8px; border-bottom: 1px solid var(--border); }

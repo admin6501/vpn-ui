@@ -65,7 +65,7 @@
             <th v-if="mode === 'logins'">{{ i18n "pages.activity.os" }}</th>
             <th v-if="mode === 'changes' || (mode === 'renewals' && owner)">{{ i18n "pages.activity.clientOwner" }}</th>
             <th>{{ i18n "pages.activity.event" }}</th>
-            <th v-if="mode === 'changes'">{{ i18n "pages.activity.fields" }}</th>
+            <th v-if="mode !== 'logins'">{{ i18n "pages.activity.fields" }}</th>
             <th>{{ i18n "pages.activity.date" }}</th>
           </tr></thead>
           <tbody>
@@ -75,7 +75,11 @@
               <td v-if="mode === 'logins'" v-text="row.os || '—'"></td>
               <td v-if="mode === 'changes' || (mode === 'renewals' && owner)" dir="auto" v-text="row.owner || '—'"></td>
               <td v-text="kinds[row.kind] || row.kind"></td>
-              <td v-if="mode === 'changes'" v-text="fieldNames(row.changes)"></td>
+              <td v-if="mode !== 'logins'">
+                <ul class="panel-activity-details">
+                  <li v-for="(line, index) in changeLines(row)" :key="index" v-text="line"></li>
+                </ul>
+              </td>
               <td class="panel-activity-date" v-text="formatTime(row.at)"></td>
             </tr>
           </tbody>
@@ -114,13 +118,66 @@
         credentials: '{{ i18n "pages.activity.credentials" }}', inbounds: '{{ i18n "menu.inbounds" }}',
         groups: '{{ i18n "pages.activity.groups" }}',
       },
+      auditLabels: {
+        noExpiry: '{{ i18n "subscription.noExpiry" }}', unlimited: '{{ i18n "unlimited" }}',
+        frozen: '{{ i18n "pages.client.frozen" }}', delayedStart: '{{ i18n "pages.client.delayedStart" }}',
+        renewalPeriod: '{{ i18n "pages.activity.renewalPeriod" }}', usageCleared: '{{ i18n "pages.activity.usageCleared" }}',
+      },
     },
     methods: {
       formatTime(at) {
-        return new Intl.DateTimeFormat(document.documentElement.lang, { dateStyle: 'medium', timeStyle: 'medium' }).format(at);
+        const timestamp = new Date(at);
+        return Number.isFinite(timestamp.getTime())
+          ? new Intl.DateTimeFormat(document.documentElement.lang, { dateStyle: 'medium', timeStyle: 'medium' }).format(timestamp)
+          : '—';
       },
-      fieldNames(changes) {
-        return changes ? changes.split(',').map(field => this.fields[field] || field).join(' · ') : '—';
+      duration(milliseconds) {
+        const units = [[86400000, 'day'], [3600000, 'hour'], [60000, 'minute'], [1000, 'second']];
+        const [scale, unit] = units.find(([scale]) => milliseconds >= scale) || units[units.length - 1];
+        return new Intl.NumberFormat(document.documentElement.lang, {
+          style: 'unit', unit, unitDisplay: 'long', maximumFractionDigits: 2,
+        }).format(milliseconds / scale);
+      },
+      expiryValue(value) {
+        if (!value) return this.auditLabels.noExpiry;
+        if (value === -1) return this.auditLabels.frozen;
+        if (value < 0) return this.auditLabels.delayedStart + ' · ' + this.duration(-value);
+        return this.formatTime(value);
+      },
+      quotaValue(bytes) {
+        return bytes > 0 ? SizeFormatter.sizeFormat(bytes) : this.auditLabels.unlimited;
+      },
+      changeLines(row) {
+        const details = row.details || {};
+        const fields = new Set((row.changes || '').split(',').filter(Boolean));
+        const lines = [];
+        if (details.quota) {
+          const { before, after } = details.quota;
+          const delta = after - before;
+          const difference = before > 0 && after > 0 && delta !== 0
+            ? ` (${delta > 0 ? '+' : '−'}${SizeFormatter.sizeFormat(Math.abs(delta))})` : '';
+          lines.push(`${this.fields.quota} · ${this.quotaValue(before)} → ${this.quotaValue(after)}${difference}`);
+          fields.delete('quota');
+        }
+        if (details.expiry) {
+          const { before, after } = details.expiry;
+          const extension = row.kind === 'updated' && before > 0 && after > before
+            ? ` (+${this.duration(after - before)})` : '';
+          lines.push(`${this.fields.expiry} · ${this.expiryValue(before)} → ${this.expiryValue(after)}${extension}`);
+        }
+        if (details.renewalPeriod) {
+          const { before, after } = details.renewalPeriod;
+          const value = period => period > 0 ? this.duration(period) : this.auditLabels.noExpiry;
+          const text = row.kind === 'updated' && before !== after ? `${value(before)} → ${value(after)}` : value(after);
+          lines.push(`${this.auditLabels.renewalPeriod} · ${text}`);
+        }
+        if (details.expiry || details.renewalPeriod) fields.delete('expiry');
+        if (details.usageReset) {
+          lines.push(this.auditLabels.usageCleared);
+          fields.delete('trafficUsage');
+        }
+        if (fields.size) lines.push([...fields].map(field => this.fields[field] || field).join(' · '));
+        return lines.length ? lines : ['—'];
       },
       async get(path, params) {
         const result = await HttpUtil.get('/panel/api/activity/' + path, params);

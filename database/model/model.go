@@ -758,11 +758,12 @@ type Account struct {
 func (Account) TableName() string { return "accounts" }
 
 type AccountEvent struct {
-	Id        int64  `json:"id" gorm:"primaryKey;autoIncrement;index:idx_account_events_cursor,priority:2"`
-	AccountID int    `json:"-" gorm:"not null;index:idx_account_events_cursor,priority:1"`
-	At        int64  `json:"at" gorm:"not null"`
-	Kind      string `json:"kind" gorm:"not null"`
-	Changes   string `json:"changes" gorm:"not null;default:''"`
+	Id        int64                `json:"id" gorm:"primaryKey;autoIncrement;index:idx_account_events_cursor,priority:2"`
+	AccountID int                  `json:"-" gorm:"not null;index:idx_account_events_cursor,priority:1"`
+	At        int64                `json:"at" gorm:"not null"`
+	Kind      string               `json:"kind" gorm:"not null"`
+	Changes   string               `json:"changes" gorm:"not null;default:''"`
+	Details   *ClientChangeDetails `json:"details,omitempty" gorm:"serializer:json;type:text"`
 }
 
 // AccountInbound is ONE membership: this account is served on this inbound.

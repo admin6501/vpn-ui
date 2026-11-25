@@ -197,3 +197,53 @@ func TestSubscriptionAppSettingsCanRemoveDefaultsAndRejectBadURL(t *testing.T) {
 		t.Fatalf("deleted defaults reappeared: %+v, %v", apps, err)
 	}
 }
+
+func TestPanelClientChangeDetailsRecordQuotaExpiryAndTrafficReset(t *testing.T) {
+	accounts := newAccountsDB(t)
+	db := database.GetDB()
+	activity := ActivityService{}
+	now := time.Now().UTC()
+	oldExpiry := now.Add(5 * 24 * time.Hour).UnixMilli()
+	period := int64(10 * dayMillis)
+	account := renewFixture(t, accounts, 10*gb, oldExpiry, period, true)
+	newExpiry := oldExpiry + 10*dayMillis
+	legacy := model.PanelClientEvent{AccountID: account.Id, Email: account.Email, At: now.UnixMilli(), Kind: "updated", Changes: "quota"}
+	if err := db.Create(&legacy).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(account).Updates(map[string]any{"total_gb": 11 * gb, "expiry_time": newExpiry}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := (&InboundService{}).ResetClientTrafficByEmail(account.Email); err != nil {
+		t.Fatal(err)
+	}
+	if err := accounts.RenewAccount(&model.User{}, account.Email, nil); err != nil {
+		t.Fatal(err)
+	}
+	month := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)
+	events, err := activity.ChangeEvents(month, "", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var old, changed, reset, renewed bool
+	for _, event := range events {
+		switch {
+		case event.Id == legacy.Id:
+			old = event.Details == nil && event.Changes == "quota"
+		case event.Kind == "renewed":
+			details := event.Details
+			renewed = details != nil && details.UsageReset && details.RenewalPeriod != nil &&
+				details.RenewalPeriod.After == period
+		case event.Changes == "trafficUsage":
+			reset = event.Details != nil && event.Details.UsageReset
+		case event.Changes == "quota,expiry":
+			details := event.Details
+			changed = details != nil && details.Quota != nil && details.Expiry != nil && !details.UsageReset &&
+				*details.Quota == (model.ClientValueChange{Before: 10 * gb, After: 11 * gb}) &&
+				*details.Expiry == (model.ClientValueChange{Before: oldExpiry, After: newExpiry})
+		}
+	}
+	if !old || !changed || !reset || !renewed {
+		t.Fatalf("missing expected audit details: old=%t change=%t reset=%t renewal=%t", old, changed, reset, renewed)
+	}
+}

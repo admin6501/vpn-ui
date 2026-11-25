@@ -461,22 +461,31 @@ func (s *SubService) nativeConnection(inbound *model.Inbound, client model.Clien
 	}
 	switch inbound.Protocol {
 	case model.OPENVPN, model.OPENCONNECT, model.L2TP, model.PPTP, model.IKEV2, model.SSTP:
-		card.Username, card.Password = client.Email, client.Password
-		var settings map[string]any
+		card.Username, card.Password = client.ID, client.Password
+		if card.Username == "" {
+			card.Username = client.Email // Older RADIUS entries can log in with their email.
+		}
+		var settings struct {
+			ExternalProxy []model.ClientExternalProxy `json:"externalProxy"`
+			IPsecEnable   bool                        `json:"ipsecEnable"`
+			IPsecPSK      string                      `json:"ipsecPsk"`
+			AuthMode      string                      `json:"authMode"`
+			PSK           string                      `json:"psk"`
+		}
 		_ = json.Unmarshal([]byte(inbound.Settings), &settings)
+		card.setAdvertisedEndpoints(settings.ExternalProxy)
 		switch inbound.Protocol {
 		case model.L2TP:
-			if enabled, _ := settings["ipsecEnable"].(bool); enabled {
-				card.PSK, _ = settings["ipsecPsk"].(string)
+			if settings.IPsecEnable {
+				card.PSK = settings.IPsecPSK
 			}
 		case model.IKEV2:
-			mode, _ := settings["authMode"].(string)
-			if mode == "psk" {
-				card.PSK, _ = settings["psk"].(string)
+			switch settings.AuthMode {
+			case "psk":
+				card.PSK = settings.PSK
 				card.Username, card.Password = "", ""
-			}
-			if mode == "eap-tls" {
-				card.Password = ""
+			case "eap-tls":
+				card.Username, card.Password = "", ""
 			}
 		}
 	case model.SSH:
@@ -497,6 +506,29 @@ func (s *SubService) nativeConnection(inbound *model.Inbound, client model.Clien
 		return nativeConnection{}, false
 	}
 	return card, true
+}
+
+// setAdvertisedEndpoints matches the native VPN export: the first configured
+// relay replaces the direct address. Later relays are shown as alternatives.
+func (card *nativeConnection) setAdvertisedEndpoints(proxies []model.ClientExternalProxy) {
+	defaultPort := card.Port
+	haveEndpoint := false
+	for _, proxy := range proxies {
+		host := strings.TrimSpace(proxy.Dest)
+		if host == "" {
+			continue
+		}
+		port := proxy.Port
+		if port <= 0 || port > 65535 {
+			port = defaultPort
+		}
+		if !haveEndpoint {
+			card.Host, card.Port = host, port
+			haveEndpoint = true
+		} else {
+			card.OtherEndpoints = append(card.OtherEndpoints, net.JoinHostPort(strings.Trim(host, "[]"), strconv.Itoa(port)))
+		}
+	}
 }
 
 // genWireguardLink renders a plain WireGuard URI per device and endpoint.

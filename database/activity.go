@@ -15,13 +15,14 @@ const ClientActivitySetting = "clientActivityLogging"
 func initPanelActivity(db *gorm.DB) error {
 	statements := []string{
 		`CREATE INDEX IF NOT EXISTS idx_reseller_clients_email_key ON reseller_clients(LOWER(TRIM(email)))`,
+		`DROP TRIGGER IF EXISTS panel_client_activity`,
 		`CREATE TRIGGER IF NOT EXISTS panel_client_activity AFTER INSERT ON account_events
 		WHEN NEW.at > 0 AND (NEW.kind='autoRenewed' OR COALESCE(
 			(SELECT value FROM settings WHERE key='` + ClientActivitySetting + `' ORDER BY id LIMIT 1), 'true')='true')
 		BEGIN
-			INSERT INTO panel_client_events(account_id,owner_id,owner,email,kind,changes,at)
+			INSERT INTO panel_client_events(account_id,owner_id,owner,email,kind,changes,details,at)
 			SELECT a.id,` + ActivityOwnerSQL + `,COALESCE((SELECT username FROM users WHERE id=` + ActivityOwnerSQL + `),''),
-				a.email,NEW.kind,COALESCE(NEW.changes,''),NEW.at
+				a.email,NEW.kind,COALESCE(NEW.changes,''),NEW.details,NEW.at
 			FROM accounts a WHERE a.id=NEW.account_id;
 		END`,
 		`CREATE TRIGGER IF NOT EXISTS panel_client_activity_delete BEFORE DELETE ON accounts

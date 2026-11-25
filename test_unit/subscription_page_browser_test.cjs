@@ -37,6 +37,23 @@ const assert = require('node:assert/strict');
       for (const scheme of ['vmess://', 'ss://']) assert.ok(text.includes(scheme), scheme + ' is visible');
       assert.ok(!text.includes('wireguard://'), 'AWG must not be rendered as a plain WireGuard link');
       assert.equal(await page.locator('.sub-native-card').filter({hasText: 'AmneziaWG'}).count(), 1);
+      const title = page.locator('.ant-divider bdi');
+      if (expected.lang === 'fa-IR') {
+        const heading = await title.evaluate(element => {
+          const label = element.textContent.trim();
+          const range = document.createRange();
+          range.setStart(element.firstChild, 0);
+          range.setEnd(element.firstChild, 1);
+          const first = range.getBoundingClientRect();
+          const vpn = label.indexOf('VPN');
+          range.setStart(element.firstChild, vpn);
+          range.setEnd(element.firstChild, vpn + 3);
+          return { label, direction: getComputedStyle(element).direction, vpnBeforeReadingStart: range.getBoundingClientRect().right < first.left };
+        });
+        assert.deepEqual(heading, { label: 'مشخصات اتصال پروتکل‌های VPN', direction: 'rtl', vpnBeforeReadingStart: true });
+      } else if (expected.lang === 'en-US') {
+        assert.equal(await title.evaluate(element => getComputedStyle(element).direction), 'ltr');
+      }
       const downloads = page.locator('a.sub-config-btn');
       assert.equal(await downloads.count(), 1, 'AWG config file is offered');
       const response = await context.request.get(await downloads.first().getAttribute('href'));
@@ -48,6 +65,17 @@ const assert = require('node:assert/strict');
       assert.equal(await page.locator('a.sub-config-btn').count(), 0, 'manually disabled profiles cannot be downloaded');
     }
     assert.equal(await page.getByRole('link', {name: 'v2rayNG'}).getAttribute('href'), 'https://github.com/2dust/v2rayNG/releases');
+    const themeColors = await page.locator('.sub-native-card').first().evaluate(card => {
+      const reference = document.createElement('span');
+      reference.style.color = 'var(--text-2)';
+      document.body.append(reference);
+      const actual = [card, card.querySelector('h3')].map(element => getComputedStyle(element).color);
+      const gray = getComputedStyle(reference).color;
+      reference.remove();
+      return { actual, gray, dark: document.body.classList.contains('dark') };
+    });
+    assert.ok(themeColors.dark && themeColors.actual.every(color => color === themeColors.gray),
+      'card and heading use readable gray on the default dark theme');
     assert.equal((await context.cookies()).find(cookie => cookie.name === 'lang').value, 'en-US');
     console.log('Subscription page: visible account-wide traffic, quota, status, three protocols, config downloads, locale and mobile rendering passed.');
   } finally {

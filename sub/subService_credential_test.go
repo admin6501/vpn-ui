@@ -64,3 +64,39 @@ func TestNativeSSHCardUsesAdvertisedEndpoints(t *testing.T) {
 		t.Fatalf("unexpected advertised endpoints: %+v", card)
 	}
 }
+
+func TestNativeVPNCardsUseLoginAndExternalProxy(t *testing.T) {
+	s := &SubService{address: "panel.example.com"}
+	for _, protocol := range []model.Protocol{model.L2TP, model.PPTP, model.IKEV2, model.OPENVPN, model.OPENCONNECT, model.SSTP} {
+		t.Run(string(protocol), func(t *testing.T) {
+			inbound := &model.Inbound{Protocol: protocol, Port: 1443, Settings: `{
+				"authMode":"eap-mschapv2",
+				"externalProxy":[{"dest":" "},{"dest":" edge.example.com ","port":8443},{"dest":"2001:db8::2"}]
+			}`}
+			client := model.Client{Email: "account-label", ID: "actual-vpn-login", Password: "pw"}
+			card, ok := s.nativeConnection(inbound, client)
+			if !ok || card.Username != client.ID || card.Password != client.Password ||
+				card.Host != "edge.example.com" || card.Port != 8443 ||
+				len(card.OtherEndpoints) != 1 || card.OtherEndpoints[0] != "[2001:db8::2]:1443" {
+				t.Fatalf("wrong card: %+v", card)
+			}
+			inbound.Settings = `{"externalProxy":[{"dest":""}]}`
+			client.ID = ""
+			card, ok = s.nativeConnection(inbound, client)
+			if !ok || card.Username != client.Email || card.Host != "panel.example.com" || card.Port != 1443 {
+				t.Fatalf("wrong legacy fallback: %+v", card)
+			}
+		})
+	}
+}
+
+func TestIKEv2CertificateAndPSKModesDoNotExposeUnusedLogin(t *testing.T) {
+	s := &SubService{address: "panel.example.com"}
+	for _, mode := range []string{"psk", "eap-tls"} {
+		inbound := &model.Inbound{Protocol: model.IKEV2, Settings: `{"authMode":"` + mode + `","psk":"shared-key"}`}
+		card, ok := s.nativeConnection(inbound, model.Client{Email: "account", ID: "login", Password: "pw"})
+		if !ok || card.Username != "" || card.Password != "" {
+			t.Fatalf("%s showed unused login credentials: %+v", mode, card)
+		}
+	}
+}

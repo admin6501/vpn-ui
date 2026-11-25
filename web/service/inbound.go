@@ -4933,6 +4933,9 @@ func (s *InboundService) resetAccountTraffic(tx *gorm.DB, email string) error {
 		return err
 	}
 	resetMembershipUsage(tx, []string{traffic.Email})
+	if account != nil {
+		return database.RecordAccountTrafficReset(tx, account.Id)
+	}
 	return nil
 }
 

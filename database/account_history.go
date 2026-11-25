@@ -2,7 +2,9 @@ package database
 
 import (
 	"strings"
+	"time"
 
+	"github.com/mhsanaei/3x-ui/v2/database/model"
 	"gorm.io/gorm"
 )
 
@@ -27,17 +29,30 @@ func initAccountHistory(db *gorm.DB) error {
 		predicates = append(predicates, check)
 		changes = append(changes, "CASE WHEN "+check+" THEN '"+field.label+",' ELSE '' END")
 	}
+	const renewal = "OLD.last_renewed_at IS NOT NEW.last_renewed_at"
+	const quotaChanged = "OLD.total_gb IS NOT NEW.total_gb"
+	const expiryChanged = "OLD.expiry_time IS NOT NEW.expiry_time"
+	const periodChanged = "OLD.renewal_duration IS NOT NEW.renewal_duration"
+	details := `CASE WHEN ` + quotaChanged + ` OR ` + expiryChanged + ` OR ` + periodChanged + ` OR ` + renewal + `
+		THEN json_object(
+			'quota', CASE WHEN ` + quotaChanged + ` THEN json_object('before', OLD.total_gb, 'after', NEW.total_gb) END,
+			'expiry', CASE WHEN ` + expiryChanged + ` THEN json_object('before', OLD.expiry_time, 'after', NEW.expiry_time) END,
+			'renewalPeriod', CASE WHEN ` + periodChanged + ` OR ` + renewal + `
+				THEN json_object('before', OLD.renewal_duration, 'after', NEW.renewal_duration) END,
+			'usageReset', json(CASE WHEN ` + renewal + ` THEN 'true' ELSE 'false' END)
+		) END`
 	triggers := []string{
+		`DROP TRIGGER IF EXISTS client_history_updated`,
 		`CREATE TRIGGER IF NOT EXISTS client_history_created AFTER INSERT ON accounts BEGIN
 			INSERT INTO account_events(account_id,at,kind) VALUES(NEW.id,NEW.created_at,'created');
 		END`,
 		`CREATE TRIGGER IF NOT EXISTS client_history_updated AFTER UPDATE ON accounts
-		WHEN OLD.last_renewed_at IS NOT NEW.last_renewed_at OR ` + strings.Join(predicates, " OR ") + `
+		WHEN ` + renewal + ` OR ` + strings.Join(predicates, " OR ") + `
 		BEGIN
-			INSERT INTO account_events(account_id,at,kind,changes) VALUES(NEW.id,` + now + `,
+			INSERT INTO account_events(account_id,at,kind,changes,details) VALUES(NEW.id,` + now + `,
 			    CASE WHEN OLD.last_renewed_at IS NEW.last_renewed_at THEN 'updated'
 			         WHEN NEW.last_renewal_automatic THEN 'autoRenewed' ELSE 'renewed' END,
-			    rtrim(` + strings.Join(changes, " || ") + `, ','));
+			    rtrim(` + strings.Join(changes, " || ") + `, ','), ` + details + `);
 		END`,
 		`CREATE TRIGGER IF NOT EXISTS client_history_remove AFTER DELETE ON accounts BEGIN
 			DELETE FROM account_events WHERE account_id=OLD.id;
@@ -67,4 +82,13 @@ func initAccountHistory(db *gorm.DB) error {
 				SELECT 1 FROM account_events e WHERE e.account_id=a.id AND e.kind='created'
 			)`).Error
 	})
+}
+
+// RecordAccountTrafficReset records an explicit reset in the same transaction
+// as the counters. Renewal operations already capture the reset with their expiry.
+func RecordAccountTrafficReset(tx *gorm.DB, accountID int) error {
+	return tx.Create(&model.AccountEvent{
+		AccountID: accountID, At: time.Now().UnixMilli(), Kind: "updated", Changes: "trafficUsage",
+		Details: &model.ClientChangeDetails{UsageReset: true},
+	}).Error
 }

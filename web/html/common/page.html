@@ -222,8 +222,8 @@
       <a :href="basePath + 'panel/activity/renewals'">{{ i18n "pages.activity.renewals" }} <b v-text="notices.renewals.count"></b></a>
       <button type="button" @click="dismiss('renewals')" aria-label='{{ i18n "close" }}'><a-icon type="close"></a-icon></button>
     </div>
-    <a-dropdown :trigger="['click']">
-      <a-button size="small" icon="bell">{{ i18n "pages.activity.title" }}</a-button>
+    <a-dropdown :trigger="['click']" overlay-class-name="panel-activity-dropdown">
+      <a-button class="panel-activity-trigger" size="small" icon="bell">{{ i18n "pages.activity.title" }}</a-button>
       <a-menu slot="overlay">
         <a-menu-item key="logins"><a :href="basePath + 'panel/activity/logins'">{{ i18n "pages.activity.logins" }}</a></a-menu-item>
         {{ if .perms.accessInbounds }}

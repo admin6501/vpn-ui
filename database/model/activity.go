@@ -11,14 +11,29 @@ type PanelLoginEvent struct {
 }
 
 type PanelClientEvent struct {
-	Id        int64  `json:"id" gorm:"primaryKey;autoIncrement"`
-	AccountID int    `json:"-" gorm:"not null;index"`
-	OwnerID   int    `json:"-" gorm:"not null;index"`
-	Owner     string `json:"owner" gorm:"not null"`
-	Email     string `json:"email" gorm:"not null"`
-	Kind      string `json:"kind" gorm:"not null;index"`
-	Changes   string `json:"changes" gorm:"not null;default:''"`
-	At        int64  `json:"at" gorm:"not null;index"`
+	Id        int64                `json:"id" gorm:"primaryKey;autoIncrement"`
+	AccountID int                  `json:"-" gorm:"not null;index"`
+	OwnerID   int                  `json:"-" gorm:"not null;index"`
+	Owner     string               `json:"owner" gorm:"not null"`
+	Email     string               `json:"email" gorm:"not null"`
+	Kind      string               `json:"kind" gorm:"not null;index"`
+	Changes   string               `json:"changes" gorm:"not null;default:''"`
+	Details   *ClientChangeDetails `json:"details,omitempty" gorm:"serializer:json;type:text"`
+	At        int64                `json:"at" gorm:"not null;index"`
+}
+
+// ClientChangeDetails holds only the quota and period information safe to
+// retain in an audit log. Credentials and free-form account notes stay out.
+type ClientChangeDetails struct {
+	Quota         *ClientValueChange `json:"quota,omitempty"`
+	Expiry        *ClientValueChange `json:"expiry,omitempty"`
+	RenewalPeriod *ClientValueChange `json:"renewalPeriod,omitempty"`
+	UsageReset    bool               `json:"usageReset,omitempty"`
+}
+
+type ClientValueChange struct {
+	Before int64 `json:"before"`
+	After  int64 `json:"after"`
 }
 
 type PanelExpiry struct {

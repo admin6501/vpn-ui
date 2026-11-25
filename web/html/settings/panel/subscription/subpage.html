@@ -93,8 +93,13 @@
     }
 
     .sub-native-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(230px, 100%), 1fr)); gap: 12px; margin: 12px 0; }
-    .sub-native-card { min-width: 0; padding: 12px; border: 1px solid var(--border); border-radius: 10px; overflow-wrap: anywhere; }
-    .sub-native-card h3 { margin: 0 0 8px; }
+    .sub-native-card {
+        min-width: 0; padding: 12px; border: 1px solid var(--border); border-radius: 10px;
+        color: var(--text-2); overflow-wrap: anywhere;
+    }
+    .sub-native-card h3 { margin: 0 0 8px; color: var(--text-2); }
+    .sub-native-card a { color: var(--text-2); }
+    .sub-native-card a:hover, .sub-native-card a:focus-visible { color: var(--accent); }
     .sub-native-card dl { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); gap: 6px 10px; margin: 0; }
     .sub-native-card dd { margin: 0; text-align: start; }
     .sub-native-card ul { padding: 0; margin: 0; list-style: none; display: flex; flex-wrap: wrap; gap: 8px; }
@@ -254,7 +259,7 @@
                     <br />
 
                     {{ if .native }}
-                    <a-divider>{{ i18n "pages.activity.nativeVPN" }}</a-divider>
+                    <a-divider><bdi dir="auto">{{ i18n "pages.activity.nativeVPN" }}</bdi></a-divider>
                     <div class="sub-native-grid" v-pre>
                         {{ range .native }}
                         <section class="sub-native-card">
