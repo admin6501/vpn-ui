@@ -1144,7 +1144,7 @@ func (s *AccountService) ApplyMembershipsFrom(email string, anchorInboundId int,
 		return nil, nil
 	}
 	var touched []int
-	err := database.GetDB().Transaction(func(tx *gorm.DB) error {
+	err := database.SnapshotTransaction(database.GetDB(), func(tx *gorm.DB) error {
 		// Mirror the inbound the legacy write just touched, so the account row and
 		// its first membership exist before memberships are set.
 		if anchorInboundId > 0 {

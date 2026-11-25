@@ -595,7 +595,7 @@ func (s *GroupService) Apply(user *model.User, email string, anchor int, groupID
 		}
 	}
 	touched := []int{}
-	err = database.GetDB().Transaction(func(tx *gorm.DB) error {
+	err = database.SnapshotTransaction(database.GetDB(), func(tx *gorm.DB) error {
 		accounts := &AccountService{}
 		if anchor > 0 {
 			if err := accounts.SyncInboundAccounts(tx, anchor); err != nil {

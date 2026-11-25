@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"gorm.io/gorm"
 )
 
 // The whole point of the DSN change: a freshly opened DB must be in WAL.
@@ -58,4 +60,37 @@ func TestRemoveSidecars(t *testing.T) {
 		t.Fatal("the database itself must not be removed")
 	}
 	RemoveSidecars(p) // idempotent
+}
+
+func TestSnapshotTransactionReadsAgainAfterConcurrentWrite(t *testing.T) {
+	if err := InitDB(filepath.Join(t.TempDir(), "vpn-ui.db")); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec("CREATE TABLE snapshot_test(value INTEGER); INSERT INTO snapshot_test VALUES (1)").Error; err != nil {
+		t.Fatal(err)
+	}
+	attempts := 0
+	err := SnapshotTransaction(db, func(tx *gorm.DB) error {
+		attempts++
+		var value int
+		if err := tx.Raw("SELECT value FROM snapshot_test").Scan(&value).Error; err != nil {
+			return err
+		}
+		if attempts == 1 {
+			if err := db.Exec("UPDATE snapshot_test SET value=10").Error; err != nil {
+				return err
+			}
+		}
+		return tx.Exec("UPDATE snapshot_test SET value=?", value+1).Error
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var value int
+	if err := db.Raw("SELECT value FROM snapshot_test").Scan(&value).Error; err != nil {
+		t.Fatal(err)
+	}
+	if attempts != 2 || value != 11 {
+		t.Fatalf("attempts=%d value=%d, want 2 attempts and value 11", attempts, value)
+	}
 }
