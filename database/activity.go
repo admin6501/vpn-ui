@@ -42,6 +42,7 @@ func initPanelActivity(db *gorm.DB) error {
 			DELETE FROM panel_client_hiddens WHERE event_id=OLD.id;
 		END`,
 	}
+	statements = append(statements, paymentReminderStatements()...)
 	return db.Transaction(func(tx *gorm.DB) error {
 		for _, statement := range statements {
 			if err := tx.Exec(statement).Error; err != nil {

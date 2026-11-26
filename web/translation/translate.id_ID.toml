@@ -2435,6 +2435,15 @@ theBuiltInWindowsSSTPClientRejectsSelf = "Klien SSTP Windows bawaan menolak sert
 theNativeWindowsIOSAndroidIKEv2ClientsReject = "Klien asli Windows/iOS/Android IKEv2 menolak sertifikat yang ditandatangani sendiri kecuali Anda mengimpor CA yang dihasilkan ke akar tepercaya perangkat. Lebih memilih sertifikat bertanda tangan CA yang terikat pada nama host untuk pengguna sebenarnya. Tetap hasilkan sertifikat server CA + yang ditandatangani sendiri?"
 
 [pages.activity]
+payments = "Pembayaran menunggu konfirmasi"
+paymentReminders = "Ingatkan saya tentang pembayaran klien"
+paymentReminderHelp = "Klien baru, perpanjangan, dan penambahan kuota atau masa aktif tetap tertunda sampai pembayaran dikonfirmasi."
+confirmPayment = "Konfirmasi pembayaran"
+confirmPaymentPrompt = "Apakah klien sudah membayar perubahan terakhir?"
+paymentUnavailable = "Pengingat pembayaran ini telah berubah atau tidak lagi tersedia."
+paymentRecorded = "Pembayaran dikonfirmasi."
+paymentExtension = "Kuota atau masa aktif ditambah"
+noPendingPayments = "Tidak ada pembayaran yang menunggu konfirmasi"
 initialPeriod = "Masa berlaku awal"
 autoPurge = "Hapus otomatis log aktivitas lama"
 retentionDays = "Masa penyimpanan dalam hari"

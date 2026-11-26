@@ -2436,6 +2436,15 @@ theBuiltInWindowsSSTPClientRejectsSelf = "内置 Windows SSTP 客户端会拒绝
 theNativeWindowsIOSAndroidIKEv2ClientsReject = "本机 Windows/iOS/Android IKEv2 客户端拒绝自签名证书，除非您将生成的 CA 导入到设备的受信任根中。对于真实用户，首选将 CA 签名的证书绑定到主机名。无论如何生成自签名 CA + 服务器证书？"
 
 [pages.activity]
+payments = "待确认付款"
+paymentReminders = "提醒我核对客户付款"
+paymentReminderHelp = "新增客户、续期或增加流量及有效期后，提醒会保留，直到你确认收到付款。"
+confirmPayment = "确认收款"
+confirmPaymentPrompt = "是否已收到该客户为最近一次变更支付的款项？"
+paymentUnavailable = "此付款提醒已变更或不再可用。"
+paymentRecorded = "已确认收款。"
+paymentExtension = "流量或有效期已增加"
+noPendingPayments = "没有待确认的付款"
 initialPeriod = "初始有效期"
 autoPurge = "自动删除旧活动日志"
 retentionDays = "保留天数"

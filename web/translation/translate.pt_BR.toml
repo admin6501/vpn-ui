@@ -2435,6 +2435,15 @@ theBuiltInWindowsSSTPClientRejectsSelf = "O cliente SSTP interno do Windows reje
 theNativeWindowsIOSAndroidIKEv2ClientsReject = "Os clientes IKEv2 nativos do Windows/iOS/Android rejeitam certificados autoassinados, a menos que você importe a CA gerada para as raízes confiáveis ​​do dispositivo. Prefira um certificado assinado por uma CA vinculado a um nome de host para usuários reais. Gerar um certificado de servidor CA + autoassinado mesmo assim?"
 
 [pages.activity]
+payments = "Pagamentos pendentes"
+paymentReminders = "Lembrar dos pagamentos dos meus clientes"
+paymentReminderHelp = "Novos clientes, renovações e aumentos de cota ou validade ficam pendentes até você confirmar o pagamento."
+confirmPayment = "Confirmar pagamento"
+confirmPaymentPrompt = "O cliente pagou pela última alteração?"
+paymentUnavailable = "Este lembrete de pagamento foi alterado ou não está mais disponível."
+paymentRecorded = "Pagamento confirmado."
+paymentExtension = "Cota ou validade ampliada"
+noPendingPayments = "Nenhum pagamento aguarda confirmação"
 initialPeriod = "Validade inicial"
 autoPurge = "Excluir automaticamente os registros antigos de atividade"
 retentionDays = "Dias de retenção"

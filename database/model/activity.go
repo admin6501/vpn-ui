@@ -61,3 +61,13 @@ type PanelActivityRead struct {
 	Kind    string `gorm:"primaryKey"`
 	Through int64  `gorm:"not null"`
 }
+
+// PanelPaymentReminder keeps the latest billable change independently of audit retention.
+type PanelPaymentReminder struct {
+	AccountID   int   `gorm:"primaryKey;autoIncrement:false"`
+	Revision    int64 `gorm:"not null"`
+	Kind        string
+	At          int64
+	ConfirmedAt int64 `gorm:"not null;default:0"`
+	ConfirmedBy int   `gorm:"not null;default:0"`
+}

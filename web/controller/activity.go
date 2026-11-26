@@ -12,6 +12,7 @@ import (
 	"github.com/mhsanaei/3x-ui/v2/logger"
 	"github.com/mhsanaei/3x-ui/v2/web/service"
 	"github.com/mhsanaei/3x-ui/v2/web/session"
+	"gorm.io/gorm"
 )
 
 var activityService service.ActivityService
@@ -90,7 +91,12 @@ func registerActivityRoutes(api *gin.RouterGroup) {
 			}
 		}
 		renewals, err := activityService.Notifications(user, "renewals")
-		jsonObj(c, gin.H{"expired": expired, "renewals": renewals}, err)
+		if err != nil {
+			jsonObj(c, nil, err)
+			return
+		}
+		payments, err := activityService.PaymentNotice(user)
+		jsonObj(c, gin.H{"expired": expired, "renewals": renewals, "payments": payments}, err)
 	})
 	g.POST("/notices/dismiss", func(c *gin.Context) {
 		var input struct {
@@ -107,6 +113,7 @@ func registerActivityRoutes(api *gin.RouterGroup) {
 		}
 		jsonMsg(c, "", activityService.DismissNotice(user, input.Kind, input.Through))
 	})
+	registerPaymentReminderRoutes(g.Group("/payments", requirePerm(model.PermAccessInbounds)))
 	owner := g.Group("", requirePanelOwner())
 	g.GET("/changes/settings", func(c *gin.Context) {
 		enabled, err := activityService.ChangeLogging()
@@ -190,6 +197,45 @@ func registerActivityRoutes(api *gin.RouterGroup) {
 		jsonMsg(c, "", activityService.PurgeChangeEvents(month))
 	})
 	registerSubscriptionAppRoutes(owner)
+}
+
+func registerPaymentReminderRoutes(g *gin.RouterGroup) {
+	g.GET("", func(c *gin.Context) {
+		user := session.GetLoginUser(c)
+		rows, err := activityService.PendingPayments(user, activityBefore(c))
+		more := len(rows) > service.ActivityPageSize
+		if more {
+			rows = rows[:service.ActivityPageSize]
+		}
+		jsonObj(c, gin.H{"rows": rows, "more": more, "enabled": user.PaymentReminders}, err)
+	})
+	g.POST("/settings", func(c *gin.Context) {
+		var input struct{ Enabled *bool }
+		if !bindActivity(c, &input) {
+			return
+		}
+		if input.Enabled == nil {
+			jsonMsg(c, I18nWeb(c, "somethingWentWrong"), errors.New("missing payment reminder setting"))
+			return
+		}
+		jsonMsg(c, "", activityService.SetPaymentReminders(session.GetLoginUser(c), *input.Enabled))
+	})
+	g.POST("/confirm", func(c *gin.Context) {
+		var input struct{ ID int64 }
+		if !bindActivity(c, &input) {
+			return
+		}
+		err := activityService.ConfirmPayment(session.GetLoginUser(c), input.ID)
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			pureJsonMsg(c, http.StatusOK, false, I18nWeb(c, "pages.activity.paymentUnavailable"))
+			return
+		}
+		if err != nil {
+			jsonMsg(c, "", err)
+			return
+		}
+		pureJsonMsg(c, http.StatusOK, true, I18nWeb(c, "pages.activity.paymentRecorded"))
+	})
 }
 
 func activityBefore(c *gin.Context) int64 {

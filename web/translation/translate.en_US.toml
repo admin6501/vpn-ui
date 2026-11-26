@@ -2439,6 +2439,15 @@ theBuiltInWindowsSSTPClientRejectsSelf = "The built-in Windows SSTP client rejec
 theNativeWindowsIOSAndroidIKEv2ClientsReject = "The native Windows/iOS/Android IKEv2 clients reject self-signed certificates unless you import the generated CA into the device's trusted roots. Prefer a CA-signed cert bound to a hostname for real users. Generate a self-signed CA + server cert anyway?"
 
 [pages.activity]
+payments = "Pending payments"
+paymentReminders = "Remind me about client payments"
+paymentReminderHelp = "New clients, renewals, and quota or validity extensions stay pending until you confirm payment."
+confirmPayment = "Confirm payment"
+confirmPaymentPrompt = "Has the client paid for the latest change?"
+paymentUnavailable = "This payment reminder has changed or is no longer available."
+paymentRecorded = "Payment confirmed."
+paymentExtension = "Quota or validity extended"
+noPendingPayments = "No payments awaiting confirmation"
 initialPeriod = "Initial validity"
 autoPurge = "Automatically delete old activity logs"
 retentionDays = "Keep logs for this many days"

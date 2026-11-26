@@ -23,6 +23,7 @@ func TestClientActivityDetailsUpgradePreservesExistingRows(t *testing.T) {
 		"DROP TRIGGER client_history_updated",
 		"DROP TRIGGER client_history_created",
 		"DROP TRIGGER panel_client_activity",
+		"DROP TRIGGER panel_payment_reminder_changed",
 		"ALTER TABLE account_events DROP COLUMN details",
 		"ALTER TABLE panel_client_events DROP COLUMN details",
 		`CREATE TRIGGER client_history_updated AFTER UPDATE ON accounts BEGIN

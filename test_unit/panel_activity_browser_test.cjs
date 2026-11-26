@@ -6,6 +6,7 @@ const { chromium } = require('playwright');
     try {
         const base = process.env.PANEL_ACTIVITY_BASE;
         const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
+        page.setDefaultTimeout(10000);
         await page.routeWebSocket('**/ws', () => {});
         const errors = [];
         page.on('pageerror', error => errors.push(error.message));
@@ -14,9 +15,12 @@ const { chromium } = require('playwright');
         let expiryScoped = false;
         let appChanges;
         let retention;
+        let paymentReminders = false;
+        let pendingPayment;
         const at = Date.now();
         const login = { id: 2, kind: 'login', at, username: 'panel-owner', os: 'Windows', ip: '203.0.113.19' };
         const renewal = { id: 3, kind: 'autoRenewed', at, email: 'test-renewed', owner: 'test-representative' };
+        pendingPayment = { id: 15, kind: 'created', at, email: 'payment-client' };
         await page.route('**/test/panel/api/**', async route => {
             const url = new URL(route.request().url());
             const method = route.request().method();
@@ -26,7 +30,16 @@ const { chromium } = require('playwright');
                 obj = {
                     expired: expiryUnread ? { count: 1, through: 7, names: ['test-expired'] } : {},
                     renewals: {},
+                    payments: paymentReminders && pendingPayment ? { count: 1, names: [pendingPayment.email] } : {},
                 };
+            } else if (path === 'activity/payments') {
+                obj = { enabled: paymentReminders, rows: paymentReminders && pendingPayment ? [pendingPayment] : [], more: false };
+            } else if (path === 'activity/payments/settings') {
+                paymentReminders = route.request().postDataJSON().enabled;
+            } else if (path === 'activity/payments/confirm') {
+                assert.ok(paymentReminders);
+                assert.equal(route.request().postDataJSON().id, pendingPayment.id);
+                pendingPayment = null;
             } else if (path === 'activity/logins') {
                 obj = url.searchParams.get('before') === '2'
                     ? { rows: [{ ...login, id: 1, kind: 'logout', os: 'Android' }], more: false }
@@ -169,6 +182,39 @@ const { chromium } = require('playwright');
         await page.getByRole('button', { name: 'Save' }).click();
         await saved;
         assert.deepEqual(appChanges, [{ platform: 'android', name: 'Test App', url: 'https://example.com/download' }]);
+        await page.getByRole('button', { name: 'Activity' }).click();
+        await page.getByRole('link', { name: 'Pending payments', exact: true }).click();
+        const payments = page.getByRole('link', { name: 'Pending payments 1' });
+        const preference = page.getByRole('switch', { name: 'Remind me about client payments' });
+        const customer = page.getByRole('cell', { name: 'payment-client' });
+        await preference.waitFor();
+        await payments.waitFor({ state: 'hidden' });
+        await preference.click();
+        await customer.waitFor();
+        await payments.waitFor();
+        assert.equal(await payments.getAttribute('title'), 'payment-client');
+        await page.getByRole('link', { name: 'Close', exact: true }).click();
+        await page.waitForURL('**/panel/clients');
+        assert.equal(pendingPayment.id, 15, 'leaving the page never approves a payment');
+        await page.goto(base + 'panel/activity/logins');
+        await payments.click();
+        await customer.waitFor();
+        const confirm = page.getByRole('button', { name: 'Confirm payment', exact: true });
+        await confirm.click();
+        const prompt = page.locator('.ant-popover:visible').filter({ hasText: 'Has the client paid for the latest change?' });
+        await prompt.getByRole('button', { name: 'Cancel' }).click();
+        await prompt.waitFor({ state: 'hidden' });
+        assert.equal(pendingPayment.id, 15);
+        await confirm.click();
+        await prompt.getByRole('button', { name: 'Confirm payment', exact: true }).click();
+        await page.getByText('No payments awaiting confirmation').waitFor();
+        await payments.waitFor({ state: 'hidden' });
+        assert.equal(pendingPayment, null);
+        const preferenceSaved = page.waitForResponse(response => response.url().endsWith('/activity/payments/settings'));
+        await preference.click();
+        await preferenceSaved;
+        await page.getByRole('switch', { name: 'Remind me about client payments', checked: false }).waitFor();
+        assert.equal(paymentReminders, false);
         assert.deepEqual(errors, []);
     } finally {
         await browser.close();

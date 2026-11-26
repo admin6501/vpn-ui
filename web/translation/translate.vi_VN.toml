@@ -2436,6 +2436,15 @@ theBuiltInWindowsSSTPClientRejectsSelf = "Ứng dụng khách SSTP Windows tích
 theNativeWindowsIOSAndroidIKEv2ClientsReject = "Máy khách IKEv2 Windows/iOS/Android gốc từ chối chứng chỉ tự ký trừ khi bạn nhập CA được tạo vào nguồn gốc đáng tin cậy của thiết bị. Ưu tiên chứng chỉ do CA ký được liên kết với tên máy chủ cho người dùng thực. Vẫn tạo chứng chỉ máy chủ CA + tự ký?"
 
 [pages.activity]
+payments = "Thanh toán chờ xác nhận"
+paymentReminders = "Nhắc tôi về khoản thanh toán của khách hàng"
+paymentReminderHelp = "Khách hàng mới, lượt gia hạn và lần tăng dung lượng hoặc thời hạn vẫn ở trạng thái chờ cho đến khi bạn xác nhận thanh toán."
+confirmPayment = "Xác nhận thanh toán"
+confirmPaymentPrompt = "Khách hàng đã thanh toán cho thay đổi gần nhất chưa?"
+paymentUnavailable = "Lời nhắc thanh toán này đã thay đổi hoặc không còn khả dụng."
+paymentRecorded = "Đã xác nhận thanh toán."
+paymentExtension = "Đã tăng dung lượng hoặc thời hạn"
+noPendingPayments = "Không có khoản thanh toán nào chờ xác nhận"
 initialPeriod = "Thời hạn ban đầu"
 autoPurge = "Tự động xóa nhật ký hoạt động cũ"
 retentionDays = "Thời gian lưu giữ (ngày)"

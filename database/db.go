@@ -46,6 +46,7 @@ func initModels() error {
 		&model.PanelClientHidden{},
 		&model.PanelExpiry{},
 		&model.PanelActivityRead{},
+		&model.PanelPaymentReminder{},
 		&model.AccountInbound{},
 		&model.ClientGroup{},
 		&model.GroupInbound{},

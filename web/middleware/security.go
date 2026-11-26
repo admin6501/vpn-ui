@@ -90,7 +90,7 @@ func panelDocumentNavigation(c *gin.Context, basePath string) bool {
 	}
 	for _, page := range []string{
 		"/", "/panel/", "/panel/inbounds", "/panel/clients", "/panel/settings",
-		"/panel/security", "/panel/groups",
+		"/panel/security", "/panel/groups", "/panel/activity/payments",
 		"/panel/xray", "/panel/core", "/panel/admins", "/panel/resellers",
 		"/panel/nodes/", "/panel/nodes/:id/xray",
 	} {

@@ -2435,6 +2435,15 @@ theBuiltInWindowsSSTPClientRejectsSelf = "CA をマシンの信頼されたル�
 theNativeWindowsIOSAndroidIKEv2ClientsReject = "ネイティブ Windows/iOS/Android IKEv2 クライアントは、生成された CA をデバイスの信頼されたルートにインポートしない限り、自己署名証明書を拒否します。実際のユーザーのホスト名にバインドされた CA 署名証明書を優先します。とにかく自己署名 CA + サーバー証明書を生成しますか?"
 
 [pages.activity]
+payments = "支払い確認待ち"
+paymentReminders = "クライアントの支払いを通知"
+paymentReminderHelp = "クライアントの新規作成、更新、通信量の追加、有効期間の延長は、支払いを確認するまで保留になります。"
+confirmPayment = "支払いを確認"
+confirmPaymentPrompt = "このクライアントの最新の変更分の支払いを受け取りましたか？"
+paymentUnavailable = "この支払い通知は更新されたか、利用できなくなりました。"
+paymentRecorded = "支払いを確認しました。"
+paymentExtension = "通信量または有効期間を追加"
+noPendingPayments = "確認待ちの支払いはありません"
 initialPeriod = "初回の有効期間"
 autoPurge = "古いアクティビティログを自動削除"
 retentionDays = "保存日数"

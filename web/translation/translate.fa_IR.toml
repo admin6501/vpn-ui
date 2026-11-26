@@ -2450,6 +2450,15 @@ theBuiltInWindowsSSTPClientRejectsSelf = "سرویس گیرنده Windows SSTP �
 theNativeWindowsIOSAndroidIKEv2ClientsReject = "کلاینت‌های اصلی Windows/iOS/Android IKEv2 گواهی‌های خودامضا را رد می‌کنند مگر اینکه CA تولید شده را به ریشه‌های مورد اعتماد دستگاه وارد کنید. برای کاربران واقعی یک گواهی امضا شده با CA که به نام میزبان متصل شده است را ترجیح دهید. به هر حال یک گواهی CA + سرور با امضای خود ایجاد کنید؟"
 
 [pages.activity]
+payments = "پرداخت‌های در انتظار تأیید"
+paymentReminders = "یادآوری پرداخت کلاینت‌های من"
+paymentReminderHelp = "پس از ساخت کلاینت، تمدید یا افزایش حجم و اعتبار، یادآوری تا زمان تأیید دریافت پرداخت فعال می‌ماند."
+confirmPayment = "تأیید دریافت پرداخت"
+confirmPaymentPrompt = "آیا پرداخت مربوط به آخرین تغییر این کلاینت را دریافت کرده‌اید؟"
+paymentUnavailable = "این یادآوری تغییر کرده یا دیگر در دسترس نیست."
+paymentRecorded = "دریافت پرداخت تأیید شد."
+paymentExtension = "افزایش حجم یا اعتبار"
+noPendingPayments = "پرداختی در انتظار تأیید نیست"
 initialPeriod = "اعتبار اولیه"
 autoPurge = "حذف خودکار لاگ‌های قدیمی فعالیت"
 retentionDays = "مدت نگهداری به روز"
