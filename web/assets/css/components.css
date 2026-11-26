@@ -1598,7 +1598,7 @@ html[data-theme-animations='off'] .log-live-dot { animation:none; }
 .bo-clients-toolbar, .bo-clients-tools, .bo-clients-counts { display:flex; flex-wrap:wrap; gap:6px; }
 .bo-clients-toolbar { align-items:flex-start; }
 .bo-clients-tools { flex:1 1 680px; align-items:center; min-width:0; }
-.bo-clients-tools > .ant-btn:not(.ant-btn-icon-only) { padding-inline:10px; }
+.bo-clients-tools > .ant-btn:not(.ant-btn-icon-only) { font-size:var(--fs-sm); padding-inline:8px; }
 .bo-clients-counts > .ant-tag { margin:0; }
 .bo-clients-search.ant-input-search {
   flex:0 1 clamp(160px, 17%, 280px); min-width:0; margin-inline-start:auto;

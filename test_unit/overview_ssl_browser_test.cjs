@@ -2,6 +2,7 @@ const {chromium}=require('playwright');
 const assert=require('node:assert/strict');
 
 async function checkClientsLayout(page) {
+ const originalViewport = page.viewportSize();
  const actions = page.locator('.bo-lg-acts').first();
  await actions.waitFor();
  const measure = () => actions.evaluate(element => {
@@ -40,7 +41,7 @@ async function checkClientsLayout(page) {
    await actions.scrollIntoViewIfNeeded();
    assert.ok((await measure()).controlsVisible, `client controls must be reachable at ${width}px`);
  }
- await page.setViewportSize({width: 1280, height: 900});
+ await page.setViewportSize(originalViewport);
 }
 
 (async()=>{const browser=await chromium.launch({executablePath:process.env.NODE_UI_CHROME||'/usr/bin/chromium',headless:true,args:['--no-sandbox']});try{
@@ -83,9 +84,12 @@ async function checkClientsLayout(page) {
  await page.locator('.bo-comment-toggle').click();
  if(await comment.isVisible())throw Error('Comment arrow did not collapse its own comment');
  if(!await page.evaluate(()=>app.protocolCount(app.clients[0])===3))throw Error('Repeated protocols inflate the protocol count');
- await page.locator('.bo-lg-serving button').first().click();
+ const protocolInfo=page.locator('.bo-lg-serving button').first();
+ await protocolInfo.click();
  await page.locator('.bo-protocol-details').waitFor({state:'visible'});
  if(await page.locator('.bo-protocol-details > div').count()!==5)throw Error('INFO omitted a location/protocol membership');
+ await protocolInfo.click();
+ await page.locator('.bo-protocol-details').waitFor({state:'hidden'});
  await page.evaluate(async()=>{await clientMembershipModal.show({});clientMembershipModal.tab='limits';await app.$nextTick();});
  await page.locator('.ant-modal .ant-input-group-addon').filter({hasText:'KB/s'}).first().waitFor({state:'visible'});
  const speedSelector=page.locator('.ant-modal .ant-input-group-addon .ant-select').first();
