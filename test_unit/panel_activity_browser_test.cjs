@@ -6,11 +6,14 @@ const { chromium } = require('playwright');
     try {
         const base = process.env.PANEL_ACTIVITY_BASE;
         const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
+        await page.routeWebSocket('**/ws', () => {});
         const errors = [];
         page.on('pageerror', error => errors.push(error.message));
+        page.on('console', entry => { if (entry.type() === 'error') errors.push(entry.text()); });
         let expiryUnread = true;
         let expiryScoped = false;
         let appChanges;
+        let retention;
         const at = Date.now();
         const login = { id: 2, kind: 'login', at, username: 'panel-owner', os: 'Windows', ip: '203.0.113.19' };
         const renewal = { id: 3, kind: 'autoRenewed', at, email: 'test-renewed', owner: 'test-representative' };
@@ -32,6 +35,12 @@ const { chromium } = require('playwright');
                 obj = { rows: [renewal], more: false };
             } else if (path === 'activity/changes/settings') {
                 obj = { enabled: true, months: ['2026-11'] };
+            } else if (path === 'activity/changes/retention') {
+                retention = route.request().postDataJSON().days;
+            } else if (path === 'clients/history/test-expired') {
+                obj = { next: 0, events: [{ id: 1, kind: 'created', at,
+                    details: { created: { quota: 5 * 2 ** 30, expiry: at + 864000000, period: 864000000 } }
+                }] };
             } else if (path === 'activity/changes') {
                 obj = { rows: [{
                     ...renewal, kind: 'renewed', changes: 'quota,expiry',
@@ -71,17 +80,25 @@ const { chromium } = require('playwright');
         assert.equal(expiryUnread, false, 'viewing the expiry list marks the badge as read');
         await page.locator('.bo-info-button').last().waitFor();
         await page.locator('.bo-lg-rates').waitFor();
-        for (const zoom of [1, 1.25, 1.5]) {
-            await page.evaluate(zoom => { document.documentElement.style.zoom = zoom; }, zoom);
-            const presence = await page.locator('.bo-lg-presence').evaluate(el => {
-                const status = el.querySelector('.bo-lg-seen').getBoundingClientRect();
-                const rate = el.querySelector('.bo-lg-rates').getBoundingClientRect();
-                const cell = el.closest('td').getBoundingClientRect();
-                return { stacked: status.bottom <= rate.top, contained: rate.bottom <= cell.bottom &&
-                    [...el.querySelectorAll('bdi')].every(item => item.getBoundingClientRect().right <= cell.right) };
-            });
-            assert.ok(presence.stacked && presence.contained, `live download and upload fit under Online at zoom ${zoom}`);
+        for (const width of [390, 1440]) {
+            await page.setViewportSize({ width, height: 844 });
+            for (const zoom of [0.9, 1, 1.25, 1.5]) {
+                await page.evaluate(zoom => { document.documentElement.style.zoom = zoom; }, zoom);
+                const presence = await page.locator('.bo-lg-presence').evaluate(el => {
+                    const status = el.querySelector('.bo-lg-seen').getBoundingClientRect();
+                    const rate = el.querySelector('.bo-lg-rates').getBoundingClientRect();
+                    const cell = el.closest('td').getBoundingClientRect();
+                    const protocol = el.closest('tr').querySelector('.bo-lg-serving').closest('td').getBoundingClientRect();
+                    const labels = [status, ...Array.from(el.querySelectorAll('bdi'), item => item.getBoundingClientRect())];
+                    return { stacked: status.bottom <= rate.top + 1, contained: rate.bottom <= cell.bottom + 1 &&
+                        labels.every(item => item.left >= cell.left - 1 && item.right <= cell.right + 1),
+                        separated: labels.every(item => item.right <= protocol.left + 1 || item.left >= protocol.right - 1) };
+                });
+                assert.ok(presence.stacked && presence.contained && presence.separated,
+                    `presence has its own cell at width ${width}, zoom ${zoom}: ${JSON.stringify(presence)}`);
+            }
         }
+        await page.setViewportSize({ width: 390, height: 844 });
         for (const zoom of [1, 1.25]) {
             const positions = await page.evaluate(zoom => {
                 document.documentElement.style.zoom = zoom;
@@ -100,6 +117,18 @@ const { chromium } = require('playwright');
             }
         }
         await page.evaluate(() => { document.documentElement.style.zoom = 1; });
+        await page.setViewportSize({ width: 1440, height: 900 });
+        await page.getByRole('button', { name: 'Account Info', exact: true }).click();
+        await page.getByRole('button', { name: /Logs/ }).click();
+        const history = page.locator('.account-client-history');
+        await history.locator('summary').waitFor();
+        assert.match(await history.locator('summary').innerText(), /5(?:[.,]00)?\s*GB.*10 days/);
+        await history.locator('summary').click();
+        assert.match(await history.locator('.panel-activity-details').innerText(), /Initial validity.*10 days/);
+        await page.locator('.ant-modal').filter({ has: history }).locator('.ant-modal-close').click();
+        await history.waitFor({ state: 'hidden' });
+        await page.locator('.ant-modal:visible').filter({ has: page.getByRole('button', { name: /Logs/ }) })
+            .locator('.ant-modal-close').click();
         await page.getByRole('button', { name: 'Activity' }).click();
         const renewalLink = page.getByRole('link', { name: 'Automatic renewals' });
         await renewalLink.waitFor();
@@ -118,10 +147,19 @@ const { chromium } = require('playwright');
         await page.getByRole('button', { name: 'Activity' }).click();
         await page.getByRole('link', { name: 'Client change history' }).click();
         await page.getByRole('cell', { name: 'test-representative' }).waitFor();
+        const detailBox = page.locator('.panel-activity-detail-box');
+        assert.equal(await detailBox.getAttribute('open'), null, 'details start collapsed');
+        await detailBox.locator('summary').click();
         const details = await page.locator('.panel-activity-details').innerText();
         assert.match(details, /1(?:[.,]00)?\s*GB.*2(?:[.,]00)?\s*GB/);
         assert.match(details, /Renewal period.*10 days/);
         assert.match(details, /Current usage reset to zero/);
+        await page.getByRole('switch').last().click();
+        await page.getByRole('spinbutton', { name: 'Keep logs for this many days' }).fill('60');
+        const retentionSaved = page.waitForResponse(response => response.url().endsWith('/activity/changes/retention'));
+        await page.getByRole('button', { name: 'Save' }).click();
+        await retentionSaved;
+        assert.equal(retention, 60);
         await page.getByRole('button', { name: 'Activity' }).click();
         await page.getByRole('link', { name: 'Subscription app downloads' }).click();
         await page.getByRole('button', { name: 'Create' }).click();

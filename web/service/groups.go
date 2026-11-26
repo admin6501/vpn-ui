@@ -367,7 +367,7 @@ func (s *GroupService) Save(user *model.User, id int, name string, inboundIDs []
 	}
 	group := model.ClientGroup{ID: id, Name: name}
 	touched := []int{}
-	err = database.GetDB().Transaction(func(tx *gorm.DB) error {
+	err = database.AccountAuditTransaction(database.GetDB(), func(tx *gorm.DB) error {
 		oldDisabled := false
 		if id > 0 {
 			if err := tx.First(&group, id).Error; err != nil {
@@ -529,7 +529,7 @@ func (s *GroupService) Delete(user *model.User, id int) error {
 
 // Apply writes account-to-group links and their inbound union in one transaction.
 // Invisible existing groups are retained for delegated editors.
-func (s *GroupService) Apply(user *model.User, email string, anchor int, groupIDs []int) ([]int, error) {
+func (s *GroupService) Apply(user *model.User, email string, anchor int, groupIDs []int, operation ...string) ([]int, error) {
 	if _, err := s.Resolve(user, groupIDs); err != nil {
 		return nil, err
 	}
@@ -595,7 +595,7 @@ func (s *GroupService) Apply(user *model.User, email string, anchor int, groupID
 		}
 	}
 	touched := []int{}
-	err = database.SnapshotTransaction(database.GetDB(), func(tx *gorm.DB) error {
+	err = database.AccountAuditTransaction(database.GetDB(), func(tx *gorm.DB) error {
 		accounts := &AccountService{}
 		if anchor > 0 {
 			if err := accounts.SyncInboundAccounts(tx, anchor); err != nil {
@@ -617,13 +617,17 @@ func (s *GroupService) Apply(user *model.User, email string, anchor int, groupID
 		for _, id := range groupIDs {
 			keep[id] = true
 		}
+		var remove []int
 		for _, g := range existing {
-			if !editable[g.GroupID] {
-				keep[g.GroupID] = true
+			if !keep[g.GroupID] && editable[g.GroupID] {
+				remove = append(remove, g.GroupID)
 			}
+			delete(keep, g.GroupID)
 		}
-		if err := tx.Where("account_id = ?", account.Id).Delete(&model.AccountGroup{}).Error; err != nil {
-			return err
+		if len(remove) > 0 {
+			if err := tx.Where("account_id = ? AND group_id IN ?", account.Id, remove).Delete(&model.AccountGroup{}).Error; err != nil {
+				return err
+			}
 		}
 		for id := range keep {
 			if err := tx.Create(&model.AccountGroup{AccountID: account.Id, GroupID: id}).Error; err != nil {
@@ -632,7 +636,7 @@ func (s *GroupService) Apply(user *model.User, email string, anchor int, groupID
 		}
 		touched, err = projectGroups(tx, account.Id)
 		return err
-	})
+	}, operation...)
 	return touched, err
 }
 
@@ -646,7 +650,7 @@ func (s *GroupService) MoveMembers(user *model.User, source, destination int) (i
 	}
 	var members []int
 	var touched []int
-	err := database.GetDB().Transaction(func(tx *gorm.DB) error {
+	err := database.AccountAuditTransaction(database.GetDB(), func(tx *gorm.DB) error {
 		if _, err := s.resolve(tx, user, []int{source, destination}); err != nil {
 			return err
 		}

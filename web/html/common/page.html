@@ -230,8 +230,8 @@
         <a-menu-item key="expired"><a :href="basePath + 'panel/activity/expired'">{{ i18n "pages.activity.expired" }}</a></a-menu-item>
         {{ end }}
         <a-menu-item key="renewals"><a :href="basePath + 'panel/activity/renewals'">{{ i18n "pages.activity.renewals" }}</a></a-menu-item>
-        {{ if .perms.panelOwner }}
         <a-menu-item key="changes"><a :href="basePath + 'panel/activity/changes'">{{ i18n "pages.activity.changes" }}</a></a-menu-item>
+        {{ if .perms.panelOwner }}
         <a-menu-item key="apps"><a :href="basePath + 'panel/activity/apps'">{{ i18n "pages.activity.apps" }}</a></a-menu-item>
         {{ end }}
       </a-menu>

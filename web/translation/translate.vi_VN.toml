@@ -2436,6 +2436,10 @@ theBuiltInWindowsSSTPClientRejectsSelf = "Ứng dụng khách SSTP Windows tích
 theNativeWindowsIOSAndroidIKEv2ClientsReject = "Máy khách IKEv2 Windows/iOS/Android gốc từ chối chứng chỉ tự ký trừ khi bạn nhập CA được tạo vào nguồn gốc đáng tin cậy của thiết bị. Ưu tiên chứng chỉ do CA ký được liên kết với tên máy chủ cho người dùng thực. Vẫn tạo chứng chỉ máy chủ CA + tự ký?"
 
 [pages.activity]
+initialPeriod = "Thời hạn ban đầu"
+autoPurge = "Tự động xóa nhật ký hoạt động cũ"
+retentionDays = "Thời gian lưu giữ (ngày)"
+hideEvent = "Ẩn khỏi lịch sử của tôi"
 title = "Hoạt động"
 logins = "Lịch sử đăng nhập và đăng xuất"
 expired = "Máy khách đã hết hạn"

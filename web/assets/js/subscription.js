@@ -62,25 +62,23 @@
   // Try to extract a human label (email/ps) from different link types
   function linkName(link, idx) {
     try {
+      const fragment = link.indexOf('#');
+      if (fragment >= 0 && fragment < link.length - 1) return decodeURIComponent(link.slice(fragment + 1));
       if (link.startsWith('vmess://')) {
-        const json = JSON.parse(atob(link.replace('vmess://', '')));
+        const encoded = atob(link.slice('vmess://'.length));
+        const json = JSON.parse(new TextDecoder().decode(Uint8Array.from(encoded, char => char.charCodeAt(0))));
         if (json.ps) return json.ps;
         if (json.add && json.id) return json.add; // fallback host
       } else if (link.startsWith('vless://') || link.startsWith('trojan://')) {
-        const hashIdx = link.indexOf('#');
-        if (hashIdx !== -1) return decodeURIComponent(link.substring(hashIdx + 1));
         const qIdx = link.indexOf('?');
         if (qIdx !== -1) {
-          const qs = new URL('http://x/?' + link.substring(qIdx + 1, hashIdx !== -1 ? hashIdx : undefined)).searchParams;
+          const qs = new URL('http://x/?' + link.substring(qIdx + 1, fragment !== -1 ? fragment : undefined)).searchParams;
           if (qs.get('remark')) return qs.get('remark');
           if (qs.get('email')) return qs.get('email');
         }
         const at = link.indexOf('@');
         const protSep = link.indexOf('://');
         if (at !== -1 && protSep !== -1) return link.substring(protSep + 3, at);
-      } else if (link.startsWith('ss://')) {
-        const hashIdx = link.indexOf('#');
-        if (hashIdx !== -1) return decodeURIComponent(link.substring(hashIdx + 1));
       } else if (link.startsWith('tg://')) {
         // tg://proxy?server=HOST&port=..&secret=.. -> label with the server host.
         const qs = new URL('http://x/?' + link.substring(link.indexOf('?') + 1)).searchParams;
@@ -88,16 +86,12 @@
         return host ? 'MTProto (' + host + ')' : 'MTProto';
       } else if (link.startsWith('ssh://')) {
         // ssh://base64(user:pass@host:port)[#label] -> prefer the #label, else the host.
-        const hashIdx = link.indexOf('#');
-        if (hashIdx !== -1) return decodeURIComponent(link.substring(hashIdx + 1));
         const decoded = atob(link.substring('ssh://'.length));
         const at = decoded.lastIndexOf('@');
         return 'SSH' + (at !== -1 ? ' (' + decoded.substring(at + 1) + ')' : '');
       } else if (link.startsWith('wireguard://')) {
         // wg-c/awg: wireguard://<privkey>@host:port?..#remark -> the remark names the
         // device; fall back to the endpoint so a link without one still reads.
-        const hashIdx = link.indexOf('#');
-        if (hashIdx !== -1) return decodeURIComponent(link.substring(hashIdx + 1));
         const at = link.indexOf('@');
         const qIdx = link.indexOf('?');
         return at !== -1 ? 'WireGuard (' + link.substring(at + 1, qIdx === -1 ? undefined : qIdx) + ')'

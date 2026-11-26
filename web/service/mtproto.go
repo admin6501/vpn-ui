@@ -341,7 +341,11 @@ func resolveMtprotoPolicy(root map[string]json.RawMessage) (MtprotoInboundPolicy
 			// (checkClients refuses it on save); derive from nothing and move on.
 			_ = json.Unmarshal(blob, &clients)
 		}
-		return deriveMtprotoPolicy(clients), true
+		policy := deriveMtprotoPolicy(clients)
+		if blob, ok := root["externalProxy"]; ok {
+			_ = json.Unmarshal(blob, &policy.ExternalProxy)
+		}
+		return policy, true
 	}
 
 	var policy MtprotoInboundPolicy

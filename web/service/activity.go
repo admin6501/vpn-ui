@@ -1,6 +1,7 @@
 package service
 
 import (
+	"strconv"
 	"time"
 
 	"github.com/mhsanaei/3x-ui/v2/database"
@@ -58,14 +59,21 @@ func (ActivityService) RenewalEvents(user *model.User, before int64) ([]model.Pa
 	return rows, err
 }
 
-func (ActivityService) ChangeEvents(month time.Time, owner string, before int64) ([]model.PanelClientEvent, error) {
-	db := monthEvents(month)
+func (ActivityService) ChangeEvents(month time.Time, owner string, before int64, users ...*model.User) ([]model.PanelClientEvent, error) {
+	db := scopeChangeEvents(monthEvents(month), users)
 	if owner != "" {
 		db = db.Where("owner = ?", owner)
 	}
-	var rows []model.PanelClientEvent
-	err := eventPage(db, before).Find(&rows).Error
-	return rows, err
+	return clientAuditEvents(db, before, ActivityPageSize+1)
+}
+
+func scopeChangeEvents(db *gorm.DB, users []*model.User) *gorm.DB {
+	if len(users) == 0 || users[0].IsPanelOwner {
+		return db
+	}
+	id := users[0].Id
+	return db.Where(`owner_id = ? AND NOT EXISTS (
+		SELECT 1 FROM panel_client_hiddens h WHERE h.user_id=? AND h.event_id=panel_client_events.id)`, id, id)
 }
 
 func monthEvents(month time.Time) *gorm.DB {
@@ -73,9 +81,10 @@ func monthEvents(month time.Time) *gorm.DB {
 		"autoRenewed", month.UnixMilli(), month.AddDate(0, 1, 0).UnixMilli())
 }
 
-func (ActivityService) ChangeMonths() ([]string, error) {
+func (ActivityService) ChangeMonths(users ...*model.User) ([]string, error) {
 	months := []string{}
-	err := database.GetDB().Model(&model.PanelClientEvent{}).Where("kind <> ?", "autoRenewed").
+	db := database.GetDB().Model(&model.PanelClientEvent{}).Where("kind <> ?", "autoRenewed")
+	err := scopeChangeEvents(db, users).
 		Select("DISTINCT strftime('%Y-%m', at/1000, 'unixepoch') AS month").Order("month DESC").Scan(&months).Error
 	return months, err
 }
@@ -86,8 +95,45 @@ func (ActivityService) ChangeOwners(month time.Time) ([]string, error) {
 	return owners, err
 }
 
+func (ActivityService) HideClientChange(user *model.User, id int64) error {
+	if user == nil || user.IsPanelOwner || id <= 0 {
+		return gorm.ErrRecordNotFound
+	}
+	return database.GetDB().Exec(`INSERT OR IGNORE INTO panel_client_hiddens(user_id,event_id)
+		SELECT ?, v.id FROM panel_client_events v JOIN panel_client_events target ON
+			v.id=target.id OR (target.audit_operation<>'' AND v.audit_operation=target.audit_operation AND v.account_id=target.account_id)
+		WHERE target.id=? AND target.owner_id=? AND v.owner_id=? AND v.kind<>'autoRenewed' AND target.kind<>'autoRenewed'`,
+		user.Id, id, user.Id, user.Id).Error
+}
+
 func (ActivityService) PurgeChangeEvents(month time.Time) error {
 	return monthEvents(month).Delete(&model.PanelClientEvent{}).Error
+}
+
+func (ActivityService) ChangeRetention() (int, error) {
+	setting, err := (&SettingService{}).getSetting(database.ClientActivityRetentionSetting)
+	if database.IsNotFound(err) {
+		return 0, nil
+	}
+	if err != nil {
+		return 0, err
+	}
+	days, _ := strconv.Atoi(setting.Value)
+	return days, nil
+}
+
+func (ActivityService) SetChangeRetention(days int) error {
+	return (&SettingService{}).setInt(database.ClientActivityRetentionSetting, days)
+}
+
+func (ActivityService) PurgeExpiredClientChanges(now time.Time) error {
+	// Check retention in the same statement as the delete so disabling it cannot
+	// race a previously read setting. Account history is stored independently.
+	return database.GetDB().Exec(`WITH retention AS (
+		SELECT CAST(value AS INTEGER) AS days FROM settings WHERE key=? ORDER BY id LIMIT 1
+	) DELETE FROM panel_client_events WHERE kind<>'autoRenewed' AND at < (
+		SELECT ? - days * 86400000 FROM retention WHERE days BETWEEN 1 AND 3650
+	)`, database.ClientActivityRetentionSetting, now.UnixMilli()).Error
 }
 
 func (ActivityService) ChangeLogging() (bool, error) {

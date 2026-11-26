@@ -108,14 +108,23 @@ func registerActivityRoutes(api *gin.RouterGroup) {
 		jsonMsg(c, "", activityService.DismissNotice(user, input.Kind, input.Through))
 	})
 	owner := g.Group("", requirePanelOwner())
-	owner.GET("/changes/settings", func(c *gin.Context) {
+	g.GET("/changes/settings", func(c *gin.Context) {
 		enabled, err := activityService.ChangeLogging()
 		if err != nil {
 			jsonObj(c, nil, err)
 			return
 		}
-		months, err := activityService.ChangeMonths()
-		jsonObj(c, gin.H{"enabled": enabled, "months": months}, err)
+		user := session.GetLoginUser(c)
+		retentionDays := 0
+		if user.IsPanelOwner {
+			retentionDays, err = activityService.ChangeRetention()
+			if err != nil {
+				jsonObj(c, nil, err)
+				return
+			}
+		}
+		months, err := activityService.ChangeMonths(user)
+		jsonObj(c, gin.H{"enabled": enabled, "months": months, "retentionDays": retentionDays}, err)
 	})
 	owner.POST("/changes/settings", func(c *gin.Context) {
 		var input struct{ Enabled *bool }
@@ -128,23 +137,45 @@ func registerActivityRoutes(api *gin.RouterGroup) {
 		}
 		jsonMsg(c, "", activityService.SetChangeLogging(*input.Enabled))
 	})
-	owner.GET("/changes", func(c *gin.Context) {
+	g.GET("/changes", func(c *gin.Context) {
 		month, err := time.Parse("2006-01", c.Query("month"))
 		if err != nil {
 			jsonObj(c, nil, errors.New("invalid month"))
 			return
 		}
-		owners, err := activityService.ChangeOwners(month)
-		if err != nil {
-			jsonObj(c, nil, err)
-			return
+		user := session.GetLoginUser(c)
+		owners := []string{}
+		if user.IsPanelOwner {
+			owners, err = activityService.ChangeOwners(month)
+			if err != nil {
+				jsonObj(c, nil, err)
+				return
+			}
 		}
-		rows, err := activityService.ChangeEvents(month, c.Query("owner"), activityBefore(c))
+		rows, err := activityService.ChangeEvents(month, c.Query("owner"), activityBefore(c), user)
 		more := len(rows) > service.ActivityPageSize
 		if more {
 			rows = rows[:service.ActivityPageSize]
 		}
 		jsonObj(c, gin.H{"rows": rows, "more": more, "owners": owners}, err)
+	})
+	g.POST("/changes/hide", func(c *gin.Context) {
+		var input struct{ ID int64 }
+		if !bindActivity(c, &input) {
+			return
+		}
+		jsonMsg(c, "", activityService.HideClientChange(session.GetLoginUser(c), input.ID))
+	})
+	owner.POST("/changes/retention", func(c *gin.Context) {
+		var input struct{ Days *int }
+		if !bindActivity(c, &input) {
+			return
+		}
+		if input.Days == nil || *input.Days < 0 || *input.Days > 3650 {
+			jsonMsg(c, I18nWeb(c, "somethingWentWrong"), errors.New("invalid activity retention"))
+			return
+		}
+		jsonMsg(c, "", activityService.SetChangeRetention(*input.Days))
 	})
 	owner.POST("/changes/purge", func(c *gin.Context) {
 		var input struct{ Month string }

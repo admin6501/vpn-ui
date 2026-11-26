@@ -67,7 +67,7 @@ func (t *Tgbot) createGroupedTelegramAccount() ([]int, error) {
 		return nil, err
 	}
 	var changed []int
-	err := database.GetDB().Transaction(func(tx *gorm.DB) error {
+	err := database.AccountAuditTransaction(database.GetDB(), func(tx *gorm.DB) error {
 		key := accountKey(client.Email)
 		for _, table := range []string{"accounts", "client_traffics"} {
 			var n int64
@@ -209,7 +209,7 @@ func (t *Tgbot) manageTelegramGroups(chatID int64, messageID int, email, toggle 
 			return err
 		}
 		var touched []int
-		err = database.GetDB().Transaction(func(tx *gorm.DB) error {
+		err = database.AccountAuditTransaction(database.GetDB(), func(tx *gorm.DB) error {
 			var group model.ClientGroup
 			if err := tx.Where("disabled = ?", false).First(&group, id).Error; err != nil {
 				return err
@@ -250,7 +250,7 @@ func (t *Tgbot) manageTelegramGroups(chatID int64, messageID int, email, toggle 
 func (t *Tgbot) editTelegramAccount(email string, edit func(*model.Account) error, legacy func() (bool, error)) (bool, error) {
 	var found bool
 	var touched []int
-	err := database.GetDB().Transaction(func(tx *gorm.DB) error {
+	err := database.AccountAuditTransaction(database.GetDB(), func(tx *gorm.DB) error {
 		accounts := &AccountService{}
 		account, err := accounts.GetAccountByEmailTx(tx, email)
 		if err != nil || account == nil {

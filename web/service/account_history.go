@@ -41,12 +41,16 @@ func (s *AccountService) AccountHistory(user *model.User, email string, before i
 	}
 
 	out := &AccountHistoryPage{Events: []model.AccountEvent{}}
-	query := database.GetDB().Where("account_id = ?", account.Id)
-	if before > 0 {
-		query = query.Where("id < ?", before)
-	}
-	if err := query.Order("id DESC").Limit(accountHistoryPageSize + 1).Find(&out.Events).Error; err != nil {
+	query := database.GetDB().Model(&model.AccountEvent{}).Where("account_id = ?", account.Id)
+	rows, err := clientAuditEvents(query, before, accountHistoryPageSize+1)
+	if err != nil {
 		return nil, err
+	}
+	for _, row := range rows {
+		out.Events = append(out.Events, model.AccountEvent{
+			Id: row.Id, AccountID: row.AccountID, Kind: row.Kind, At: row.At,
+			Changes: row.Changes, Details: row.Details,
+		})
 	}
 	if len(out.Events) > accountHistoryPageSize {
 		out.Events = out.Events[:accountHistoryPageSize]

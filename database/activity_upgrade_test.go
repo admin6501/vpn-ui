@@ -21,6 +21,7 @@ func TestClientActivityDetailsUpgradePreservesExistingRows(t *testing.T) {
 	// Reproduce the two audit tables and triggers from the previous release.
 	for _, statement := range []string{
 		"DROP TRIGGER client_history_updated",
+		"DROP TRIGGER client_history_created",
 		"DROP TRIGGER panel_client_activity",
 		"ALTER TABLE account_events DROP COLUMN details",
 		"ALTER TABLE panel_client_events DROP COLUMN details",

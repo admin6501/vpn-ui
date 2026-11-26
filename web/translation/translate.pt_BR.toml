@@ -2435,6 +2435,10 @@ theBuiltInWindowsSSTPClientRejectsSelf = "O cliente SSTP interno do Windows reje
 theNativeWindowsIOSAndroidIKEv2ClientsReject = "Os clientes IKEv2 nativos do Windows/iOS/Android rejeitam certificados autoassinados, a menos que você importe a CA gerada para as raízes confiáveis ​​do dispositivo. Prefira um certificado assinado por uma CA vinculado a um nome de host para usuários reais. Gerar um certificado de servidor CA + autoassinado mesmo assim?"
 
 [pages.activity]
+initialPeriod = "Validade inicial"
+autoPurge = "Excluir automaticamente os registros antigos de atividade"
+retentionDays = "Dias de retenção"
+hideEvent = "Ocultar do meu histórico"
 title = "Atividade"
 logins = "Histórico de entrada e saída"
 expired = "Clientes expirados"

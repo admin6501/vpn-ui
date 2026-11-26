@@ -8,10 +8,24 @@ import (
 	"gorm.io/gorm"
 )
 
+const (
+	accountAuditOperationSQL = "(SELECT operation FROM account_audit_context WHERE id=1)"
+	accountAuditNowSQL       = "CAST(unixepoch('subsec') * 1000 AS INTEGER)"
+)
+
+// An operation can span more than one transaction. Use its first timestamp so
+// the monthly view and retention cutoff keep the whole entry together.
+func accountAuditAtSQL(accountID string) string {
+	return `COALESCE((SELECT at FROM account_events WHERE audit_operation<>'' AND audit_operation=` +
+		accountAuditOperationSQL + ` AND account_id=` + accountID + ` ORDER BY id LIMIT 1),` + accountAuditNowSQL + `)`
+}
+
 // Trigger-based history follows writes from the UI, bot, bulk jobs and imports.
 // Actual credential values and free-form comments are never copied to history.
+// A legacy account can be imported with its current terms; only a tracked
+// creation can attest to the terms at the point of sale.
 func initAccountHistory(db *gorm.DB) error {
-	const now = "CAST(unixepoch('subsec') * 1000 AS INTEGER)"
+	const operation = accountAuditOperationSQL
 	fields := []struct{ label, columns string }{
 		{"email", "email"}, {"quota", "total_gb"}, {"expiry", "expiry_time renewal_duration"},
 		{"enable", "enable representative_blocked"}, {"autoRenew", "auto_renew"},
@@ -42,35 +56,46 @@ func initAccountHistory(db *gorm.DB) error {
 			'usageReset', json(CASE WHEN ` + renewal + ` THEN 'true' ELSE 'false' END)
 		) END`
 	triggers := []string{
+		`CREATE TABLE IF NOT EXISTS account_audit_context (id INTEGER PRIMARY KEY, operation TEXT NOT NULL)`,
+		`INSERT OR IGNORE INTO account_audit_context(id,operation) VALUES(1,'')`,
+		`CREATE INDEX IF NOT EXISTS idx_account_events_audit_operation ON account_events(audit_operation,account_id)
+			WHERE audit_operation<>''`,
+		`DROP TRIGGER IF EXISTS client_history_created`,
 		`DROP TRIGGER IF EXISTS client_history_updated`,
-		`CREATE TRIGGER IF NOT EXISTS client_history_created AFTER INSERT ON accounts BEGIN
-			INSERT INTO account_events(account_id,at,kind) VALUES(NEW.id,NEW.created_at,'created');
+		`DROP TRIGGER IF EXISTS client_history_remove`,
+		`CREATE TRIGGER client_history_created AFTER INSERT ON accounts BEGIN
+			INSERT INTO account_events(account_id,at,kind,details,audit_operation)
+			VALUES(NEW.id,NEW.created_at,'created',
+				CASE WHEN ` + operation + ` <> '' THEN
+					json_object('created',json_object('quota',COALESCE(NEW.total_gb,0),
+						'expiry',COALESCE(NEW.expiry_time,0),'period',COALESCE(NEW.renewal_duration,0)))
+				END,` + operation + `);
 		END`,
-		`CREATE TRIGGER IF NOT EXISTS client_history_updated AFTER UPDATE ON accounts
+		`CREATE TRIGGER client_history_updated AFTER UPDATE ON accounts
 		WHEN ` + renewal + ` OR ` + strings.Join(predicates, " OR ") + `
 		BEGIN
-			INSERT INTO account_events(account_id,at,kind,changes,details) VALUES(NEW.id,` + now + `,
+			INSERT INTO account_events(account_id,at,kind,changes,details,audit_operation) VALUES(NEW.id,` + accountAuditAtSQL("NEW.id") + `,
 			    CASE WHEN OLD.last_renewed_at IS NEW.last_renewed_at THEN 'updated'
 			         WHEN NEW.last_renewal_automatic THEN 'autoRenewed' ELSE 'renewed' END,
-			    rtrim(` + strings.Join(changes, " || ") + `, ','), ` + details + `);
-		END`,
-		`CREATE TRIGGER IF NOT EXISTS client_history_remove AFTER DELETE ON accounts BEGIN
-			DELETE FROM account_events WHERE account_id=OLD.id;
+			    rtrim(` + strings.Join(changes, " || ") + `, ','), ` + details + `, ` + operation + `);
 		END`,
 	}
 	for _, table := range []struct{ name, kind string }{{"account_inbounds", "inbounds"}, {"account_groups", "groups"}} {
-		for _, operation := range []struct{ name, row string }{{"INSERT", "NEW"}, {"DELETE", "OLD"}} {
-			triggers = append(triggers, `CREATE TRIGGER IF NOT EXISTS client_history_`+table.name+"_"+strings.ToLower(operation.name)+
-				` AFTER `+operation.name+` ON `+table.name+` BEGIN
-				INSERT INTO account_events(account_id,at,kind,changes)
-				SELECT id,`+now+`,'updated','`+table.kind+`' FROM accounts WHERE id=`+operation.row+`.account_id;
+		for _, change := range []struct{ name, row string }{{"INSERT", "NEW"}, {"DELETE", "OLD"}} {
+			trigger := "client_history_" + table.name + "_" + strings.ToLower(change.name)
+			triggers = append(triggers, "DROP TRIGGER IF EXISTS "+trigger, `CREATE TRIGGER `+trigger+
+				` AFTER `+change.name+` ON `+table.name+` BEGIN
+				INSERT INTO account_events(account_id,at,kind,changes,audit_operation)
+				SELECT id,`+accountAuditAtSQL(change.row+".account_id")+`,'updated','`+table.kind+`',`+operation+` FROM accounts WHERE id=`+change.row+`.account_id;
 			END`)
 		}
 	}
-	triggers = append(triggers, `CREATE TRIGGER IF NOT EXISTS client_history_membership_status AFTER UPDATE ON account_inbounds
+	triggers = append(triggers, `DROP TRIGGER IF EXISTS client_history_membership_status`, `
+		CREATE TRIGGER client_history_membership_status AFTER UPDATE ON account_inbounds
 		WHEN OLD.enable IS NOT NEW.enable BEGIN
-		INSERT INTO account_events(account_id,at,kind,changes) VALUES(NEW.account_id,`+now+`,'updated','inbounds');
-	END`)
+			INSERT INTO account_events(account_id,at,kind,changes,audit_operation)
+			VALUES(NEW.account_id,`+accountAuditAtSQL("NEW.account_id")+`,'updated','inbounds',`+operation+`);
+		END`)
 	return db.Transaction(func(tx *gorm.DB) error {
 		for _, trigger := range triggers {
 			if err := tx.Exec(trigger).Error; err != nil {

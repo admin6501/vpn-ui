@@ -1,0 +1,121 @@
+{{ define "component/clientAudit" }}
+<script>
+  const clientAudit = {
+    fields: {
+      email: '{{ i18n "pages.clients.email" }}', quota: '{{ i18n "subscription.totalQuota" }}',
+      expiry: '{{ i18n "subscription.expiry" }}', enable: '{{ i18n "enable" }}',
+      autoRenew: '{{ i18n "pages.activity.renewals" }}', limits: '{{ i18n "pages.activity.limits" }}',
+      reset: '{{ i18n "reset" }}', comment: '{{ i18n "comment" }}', owner: '{{ i18n "pages.activity.clientOwner" }}',
+      credentials: '{{ i18n "pages.activity.credentials" }}', inbounds: '{{ i18n "menu.inbounds" }}',
+      groups: '{{ i18n "pages.activity.groups" }}',
+    },
+    auditLabels: {
+      noExpiry: '{{ i18n "subscription.noExpiry" }}', unlimited: '{{ i18n "unlimited" }}',
+      frozen: '{{ i18n "pages.client.frozen" }}', delayedStart: '{{ i18n "pages.client.delayedStart" }}',
+      initialPeriod: '{{ i18n "pages.activity.initialPeriod" }}', renewalPeriod: '{{ i18n "pages.activity.renewalPeriod" }}',
+      usageCleared: '{{ i18n "pages.activity.usageCleared" }}',
+    },
+    formatTime(at) {
+      if (at <= 0) return '—';
+      const timestamp = new Date(at);
+      return Number.isFinite(timestamp.getTime())
+        ? new Intl.DateTimeFormat(document.documentElement.lang, { dateStyle: 'medium', timeStyle: 'medium' }).format(timestamp)
+        : '—';
+    },
+    duration(milliseconds) {
+      const units = [[86400000, 'day'], [3600000, 'hour'], [60000, 'minute'], [1000, 'second']];
+      const [scale, unit] = units.find(([scale]) => milliseconds >= scale) || units[units.length - 1];
+      return new Intl.NumberFormat(document.documentElement.lang, {
+        style: 'unit', unit, unitDisplay: 'long', maximumFractionDigits: 2,
+      }).format(milliseconds / scale);
+    },
+    expiryValue(value) {
+      if (!value) return this.auditLabels.noExpiry;
+      if (value === -1) return this.auditLabels.frozen;
+      if (value < 0) return this.auditLabels.delayedStart + ' · ' + this.duration(-value);
+      return this.formatTime(value);
+    },
+    quotaValue(bytes) {
+      return bytes > 0 ? SizeFormatter.sizeFormat(bytes) : this.auditLabels.unlimited;
+    },
+    changeLines(row) {
+      const details = row.details || {};
+      const fields = new Set((row.changes || '').split(',').filter(Boolean));
+      const lines = [];
+      if (details.created) {
+        const { quota, expiry } = details.created;
+        const validity = this.creationDuration(row);
+        lines.push(`${this.fields.quota} · ${this.quotaValue(quota)}`);
+        lines.push(`${this.fields.expiry} · ${this.expiryValue(expiry)}`);
+        if (validity && expiry >= -1) lines.push(`${this.auditLabels.initialPeriod} · ${validity}`);
+      }
+      if (details.quota) {
+        const { before, after } = details.quota;
+        const delta = after - before;
+        const difference = before > 0 && after > 0 && delta !== 0
+          ? ` (${delta > 0 ? '+' : '−'}${SizeFormatter.sizeFormat(Math.abs(delta))})` : '';
+        lines.push(`${this.fields.quota} · ${this.quotaValue(before)} → ${this.quotaValue(after)}${difference}`);
+        fields.delete('quota');
+      }
+      if (details.expiry) {
+        const { before, after } = details.expiry;
+        const extension = this.expiryDifference(row);
+        const delta = extension ? ` (${extension})` : '';
+        lines.push(`${this.fields.expiry} · ${this.expiryValue(before)} → ${this.expiryValue(after)}${delta}`);
+      }
+      if (details.renewalPeriod) {
+        const { before, after } = details.renewalPeriod;
+        const value = period => period > 0 ? this.duration(period) : this.auditLabels.noExpiry;
+        const text = row.kind === 'updated' && before !== after ? `${value(before)} → ${value(after)}` : value(after);
+        lines.push(`${this.auditLabels.renewalPeriod} · ${text}`);
+      }
+      if (details.expiry || details.renewalPeriod) fields.delete('expiry');
+      if (details.usageReset) {
+        lines.push(this.auditLabels.usageCleared);
+        fields.delete('trafficUsage');
+      }
+      if (fields.size) lines.push([...fields].map(field => this.fields[field] || field).join(' · '));
+      return lines;
+    },
+
+    expiryDifference(row) {
+      const expiry = row.details?.expiry;
+      if (!expiry || row.kind !== 'updated' || expiry.before <= 0 || expiry.after <= 0) return '';
+      const delta = expiry.after - expiry.before;
+      if (delta === 0) return '';
+      return (delta > 0 ? '+' : '−') + this.duration(Math.abs(delta));
+    },
+    creationDuration(row) {
+      const { expiry, period } = row.details.created;
+      const duration = period || (expiry > row.at ? expiry - row.at : (expiry < -1 ? -expiry : 0));
+      return duration > 0 ? this.duration(duration) : '';
+    },
+    summary(row) {
+      const details = row.details || {};
+      if (details.created) {
+        return [this.quotaValue(details.created.quota),
+          this.creationDuration(row) || this.expiryValue(details.created.expiry)].join(' · ');
+      }
+      const fields = new Set((row.changes || '').split(',').filter(Boolean));
+      const parts = [];
+      if (details.quota) {
+        parts.push(this.fields.quota + ' ' + this.quotaValue(details.quota.after));
+        fields.delete('quota');
+      }
+      if (details.expiry || details.renewalPeriod) {
+        const difference = this.expiryDifference(row);
+        const period = details.renewalPeriod?.after;
+        parts.push(difference ? this.fields.expiry + ' ' + difference
+          : period > 0 ? this.duration(period) : this.fields.expiry);
+        fields.delete('expiry');
+      }
+      if (details.usageReset) {
+        parts.push(this.auditLabels.usageCleared);
+        fields.delete('trafficUsage');
+      }
+      for (const field of fields) parts.push(this.fields[field] || field);
+      return parts.length <= 2 ? parts.join(' · ') : parts.slice(0, 2).join(' · ') + ' · …';
+    },
+  };
+</script>
+{{ end }}

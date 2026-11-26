@@ -36,7 +36,14 @@ const assert = require('node:assert/strict');
     if (expected.links) {
       for (const scheme of ['vmess://', 'ss://']) assert.ok(text.includes(scheme), scheme + ' is visible');
       assert.ok(!text.includes('wireguard://'), 'AWG must not be rendered as a plain WireGuard link');
-      assert.equal(await page.locator('.sub-native-card').filter({hasText: 'AmneziaWG'}).count(), 1);
+      const awg = page.locator('.sub-native-card').filter({hasText: 'AmneziaWG'});
+      assert.match(await awg.innerText(), /awg-relay\.example\.test[\s\S]*55080/);
+      if (expected.checkNodeLabels) {
+        for (const proto of ['hysteria2', 'tuic', 'anytls', 'naive']) {
+          const label = page.locator('.qr-box .ant-tag').filter({hasText: 'Node ' + proto});
+          assert.match(await label.innerText(), /7\.00GB📊.*(?:\d+D|\d+H)⏳/);
+        }
+      }
       const title = page.locator('.ant-divider bdi');
       if (expected.lang === 'fa-IR') {
         const heading = await title.evaluate(element => {
@@ -58,7 +65,9 @@ const assert = require('node:assert/strict');
       assert.equal(await downloads.count(), 1, 'AWG config file is offered');
       const response = await context.request.get(await downloads.first().getAttribute('href'));
       assert.equal(response.status(), 200);
-      assert.match(await response.text(), /\[Interface\]/);
+      const config = await response.text();
+      assert.match(config, /\[Interface\]/);
+      assert.match(config, /^Endpoint = awg-relay\.example\.test:55080$/m);
       assert.match(response.headers()['content-disposition'], /attachment/);
     } else {
       for (const scheme of ['vmess://', 'ss://', 'wireguard://']) assert.ok(!text.includes(scheme), 'disabled membership stays out of config exports');

@@ -100,3 +100,25 @@ func TestIKEv2CertificateAndPSKModesDoNotExposeUnusedLogin(t *testing.T) {
 		}
 	}
 }
+
+func TestWireGuardAndMTProtoCardsUseAdvertisedEndpoints(t *testing.T) {
+	s := &SubService{address: "panel.example.com"}
+	const settings = `{"externalProxy":[{"dest":"edge.example.com","port":1443},{"dest":"2001:db8::5","port":2443}]}`
+	for _, protocol := range []model.Protocol{model.WGC, model.AWG, model.MTPROTO} {
+		t.Run(string(protocol), func(t *testing.T) {
+			inbound := &model.Inbound{Protocol: protocol, Port: 443, Settings: settings}
+			card, ok := s.nativeConnection(inbound, model.Client{})
+			if !ok || card.Host != "edge.example.com" || card.Port != 1443 ||
+				len(card.OtherEndpoints) != 1 || card.OtherEndpoints[0] != "[2001:db8::5]:2443" {
+				t.Fatalf("native card did not use the external proxy: %+v", card)
+			}
+		})
+	}
+	inbound := &model.Inbound{Protocol: model.MTPROTO, Port: 443, Settings: settings}
+	card, ok := s.nativeConnection(inbound, model.Client{ExternalProxy: []model.ClientExternalProxy{
+		{Dest: "client-edge.example.com", Port: 3443},
+	}})
+	if !ok || card.Host != "client-edge.example.com" || card.Port != 3443 || len(card.OtherEndpoints) != 0 {
+		t.Fatalf("account's MTProto endpoint must override the inbound: %+v", card)
+	}
+}

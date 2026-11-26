@@ -455,6 +455,12 @@ func (s *Server) startRuntimeTasks() {
 		s.radiusService.CleanStaleSessions()
 	})
 
+	s.cron.AddFunc("@daily", func() {
+		if err := (&service.ActivityService{}).PurgeExpiredClientChanges(time.Now()); err != nil {
+			logger.Warning("client activity retention:", err)
+		}
+	})
+
 	// check client ips from log file every 10 sec
 	s.cron.AddJob("@every 10s", job.NewCheckClientIpJob())
 	s.cron.AddJob("@every 10s", cron.SkipIfStillRunning(cron.DefaultLogger)(cron.FuncJob(func() {

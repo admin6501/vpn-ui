@@ -70,7 +70,12 @@ func TestSubscriptionPageBrowserRuntime(t *testing.T) {
 				expiry = time.Now().Add(-24 * time.Hour).UnixMilli()
 			}
 			var ids []int
-			for i, proto := range []model.Protocol{model.VMESS, model.Shadowsocks, model.AWG} {
+			protocols := []model.Protocol{model.VMESS, model.Shadowsocks, model.AWG}
+			checkNodeLabels := tc.name == "active" || tc.name == "active-persian"
+			if checkNodeLabels {
+				protocols = append(protocols, model.Hysteria2, model.TUIC, model.ANYTLS, model.NAIVE)
+			}
+			for i, proto := range protocols {
 				client := subClient("browser-user", sid)
 				client["enable"] = !tc.memberDisabled
 				settings := map[string]any{"clients": []any{client}}
@@ -79,13 +84,19 @@ func TestSubscriptionPageBrowserRuntime(t *testing.T) {
 					settings["password"] = "synthetic-server-password"
 				}
 				if proto == model.AWG {
+					settings["externalProxy"] = []map[string]any{{"dest": "awg-relay.example.test", "port": 55080}}
 					// Synthetic renderer-only keys: this never configures a kernel interface.
 					settings["serverPubKey"] = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
 					client["privKey"] = "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE="
 					client["pubKey"] = "AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI="
 					client["slot"] = 0
 				}
-				inbound := seedSubInbound(t, proto, 41901+i, "Browser server", client)
+				name := "Browser server"
+				if i >= 3 {
+					client["auth"] = "test-hysteria-auth"
+					name = "Node " + string(proto)
+				}
+				inbound := seedSubInbound(t, proto, 41901+i, name, client)
 				raw, err := json.Marshal(settings)
 				if err != nil {
 					t.Fatal(err)
@@ -154,7 +165,7 @@ func TestSubscriptionPageBrowserRuntime(t *testing.T) {
 				c.Request.AddCookie(&http.Cookie{Name: "lang", Value: tc.lang})
 				locale.LocalizerMiddleware()(c)
 				translate := c.MustGet("I18n").(func(locale.I18nType, string, ...string) string)
-				expected := map[string]any{"status": translate(locale.Web, statusKey), "lang": tc.lang, "active": active, "links": links, "total": tc.total}
+				expected := map[string]any{"status": translate(locale.Web, statusKey), "lang": tc.lang, "active": active, "links": links, "total": tc.total, "checkNodeLabels": checkNodeLabels}
 				raw, _ := json.Marshal(expected)
 				ctx, cancel := context.WithTimeout(context.Background(), 35*time.Second)
 				defer cancel()

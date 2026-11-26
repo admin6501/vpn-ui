@@ -2435,6 +2435,10 @@ theBuiltInWindowsSSTPClientRejectsSelf = "Yerleşik Windows SSTP istemcisi, CA'y
 theNativeWindowsIOSAndroidIKEv2ClientsReject = "Yerel Windows/iOS/Android IKEv2 istemcileri, oluşturulan CA'yı cihazın güvenilen köklerine aktarmadığınız sürece kendinden imzalı sertifikaları reddeder. Gerçek kullanıcılar için ana makine adına bağlı CA imzalı bir sertifikayı tercih edin. Yine de kendinden imzalı bir CA + sunucu sertifikası oluşturulsun mu?"
 
 [pages.activity]
+initialPeriod = "İlk geçerlilik süresi"
+autoPurge = "Eski etkinlik kayıtlarını otomatik sil"
+retentionDays = "Saklama süresi (gün)"
+hideEvent = "Geçmişimden gizle"
 title = "Etkinlik"
 logins = "Oturum açma ve kapatma geçmişi"
 expired = "Süresi veya kotası dolan istemciler"

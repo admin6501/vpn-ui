@@ -2436,6 +2436,10 @@ theBuiltInWindowsSSTPClientRejectsSelf = "内置 Windows SSTP 客户端会拒绝
 theNativeWindowsIOSAndroidIKEv2ClientsReject = "本机 Windows/iOS/Android IKEv2 客户端拒绝自签名证书，除非您将生成的 CA 导入到设备的受信任根中。对于真实用户，首选将 CA 签名的证书绑定到主机名。无论如何生成自签名 CA + 服务器证书？"
 
 [pages.activity]
+initialPeriod = "初始有效期"
+autoPurge = "自动删除旧活动日志"
+retentionDays = "保留天数"
+hideEvent = "从我的历史记录中隐藏"
 title = "活动"
 logins = "登录与退出记录"
 expired = "已到期的客户端"

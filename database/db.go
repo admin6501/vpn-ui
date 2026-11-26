@@ -43,6 +43,7 @@ func initModels() error {
 		&model.AccountEvent{},
 		&model.PanelLoginEvent{},
 		&model.PanelClientEvent{},
+		&model.PanelClientHidden{},
 		&model.PanelExpiry{},
 		&model.PanelActivityRead{},
 		&model.AccountInbound{},

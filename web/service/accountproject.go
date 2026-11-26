@@ -1141,7 +1141,7 @@ func (s *AccountService) ApplyMemberships(email string, wanted []int, removable 
 // mentioned memberships. So the guard survives, narrowed to exactly that case:
 // explicit=false with nothing wanted is still a no-op, and only a caller that
 // SPOKE about memberships can empty an account.
-func (s *AccountService) ApplyMembershipsFrom(email string, anchorInboundId int, wanted []int, removable []int, explicit bool) ([]int, error) {
+func (s *AccountService) ApplyMembershipsFrom(email string, anchorInboundId int, wanted []int, removable []int, explicit bool, operation ...string) ([]int, error) {
 	if email == "" {
 		return nil, nil
 	}
@@ -1149,7 +1149,7 @@ func (s *AccountService) ApplyMembershipsFrom(email string, anchorInboundId int,
 		return nil, nil
 	}
 	var touched []int
-	err := database.SnapshotTransaction(database.GetDB(), func(tx *gorm.DB) error {
+	err := database.AccountAuditTransaction(database.GetDB(), func(tx *gorm.DB) error {
 		// Mirror the inbound the legacy write just touched, so the account row and
 		// its first membership exist before memberships are set.
 		if anchorInboundId > 0 {
@@ -1196,7 +1196,7 @@ func (s *AccountService) ApplyMembershipsFrom(email string, anchorInboundId int,
 			}
 		}
 		return nil
-	})
+	}, operation...)
 	return touched, err
 }
 
@@ -1225,6 +1225,14 @@ func (s *AccountService) ApplyMembershipsFrom(email string, anchorInboundId int,
 // the account, that decides what serves it, and keeping them apart is what lets the
 // same handler create an account on nothing and re-attach one to three inbounds.
 func (s *AccountService) SaveAccountWithoutInbound(entry map[string]any, ownerAdminID ...int) (*model.Account, error) {
+	ownerID := 0
+	if len(ownerAdminID) > 0 {
+		ownerID = ownerAdminID[0]
+	}
+	return s.SaveAccountWithoutInboundAudit(entry, ownerID, "")
+}
+
+func (s *AccountService) SaveAccountWithoutInboundAudit(entry map[string]any, ownerID int, operation string) (*model.Account, error) {
 	encoded, err := json.Marshal(entry)
 	if err != nil {
 		return nil, err
@@ -1242,7 +1250,7 @@ func (s *AccountService) SaveAccountWithoutInbound(entry map[string]any, ownerAd
 		return nil, common.NewError("a client needs an email")
 	}
 	var saved *model.Account
-	err = database.GetDB().Transaction(func(tx *gorm.DB) error {
+	err = database.AccountAuditTransaction(database.GetDB(), func(tx *gorm.DB) error {
 		existing, err := s.GetAccountByEmailTx(tx, email)
 		if err != nil {
 			return err
@@ -1261,10 +1269,6 @@ func (s *AccountService) SaveAccountWithoutInbound(entry map[string]any, ownerAd
 			return common.NewErrorf("the email %q is already in use", email)
 		}
 
-		ownerID := 0
-		if len(ownerAdminID) > 0 {
-			ownerID = ownerAdminID[0]
-		}
 		account, err := s.upsertAccountFromEntry(tx, entry, nil, ownerID)
 		if err != nil {
 			return err
@@ -1291,7 +1295,7 @@ func (s *AccountService) SaveAccountWithoutInbound(entry map[string]any, ownerAd
 		}
 		saved = account
 		return nil
-	})
+	}, operation)
 	return saved, err
 }
 
@@ -1699,7 +1703,7 @@ func (s *AccountService) ProjectAccount(tx *gorm.DB, accountId int) ([]int, erro
 // Returns the inbound ids whose settings changed, for the caller's reconcile: a
 // renamed account is a new RADIUS login and a new per-account routing rule, so every
 // daemon serving it has to be regenerated.
-func (s *AccountService) RenameAccount(oldEmail, newEmail string) ([]int, error) {
+func (s *AccountService) RenameAccount(oldEmail, newEmail string, operation ...string) ([]int, error) {
 	oldKey, newKey := accountKey(oldEmail), accountKey(newEmail)
 	// A case-only change still has to reach the settings (the stored spelling is what
 	// the core and RADIUS carry), but it is not a change of identity, so the account
@@ -1709,7 +1713,7 @@ func (s *AccountService) RenameAccount(oldEmail, newEmail string) ([]int, error)
 	}
 
 	var touched []int
-	err := database.GetDB().Transaction(func(tx *gorm.DB) error {
+	err := database.AccountAuditTransaction(database.GetDB(), func(tx *gorm.DB) error {
 		var account model.Account
 		err := tx.Where("LOWER(TRIM(email)) = ?", oldKey).First(&account).Error
 		if err != nil {
@@ -1750,7 +1754,7 @@ func (s *AccountService) RenameAccount(oldEmail, newEmail string) ([]int, error)
 		}
 		return tx.Model(&model.Account{}).Where("id = ?", account.Id).
 			Update("email", newEmail).Error
-	})
+	}, operation...)
 	if err != nil {
 		return nil, err
 	}

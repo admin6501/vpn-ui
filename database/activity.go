@@ -10,7 +10,10 @@ const ActivityOwnerSQL = `COALESCE(
 	(SELECT id FROM users WHERE is_panel_owner ORDER BY id LIMIT 1),
 	(SELECT id FROM users WHERE is_super_admin ORDER BY id LIMIT 1),0)`
 
-const ClientActivitySetting = "clientActivityLogging"
+const (
+	ClientActivitySetting          = "clientActivityLogging"
+	ClientActivityRetentionSetting = "clientActivityRetentionDays"
+)
 
 func initPanelActivity(db *gorm.DB) error {
 	statements := []string{
@@ -20,18 +23,23 @@ func initPanelActivity(db *gorm.DB) error {
 		WHEN NEW.at > 0 AND (NEW.kind='autoRenewed' OR COALESCE(
 			(SELECT value FROM settings WHERE key='` + ClientActivitySetting + `' ORDER BY id LIMIT 1), 'true')='true')
 		BEGIN
-			INSERT INTO panel_client_events(account_id,owner_id,owner,email,kind,changes,details,at)
+			INSERT INTO panel_client_events(account_id,owner_id,owner,email,kind,changes,details,audit_operation,at)
 			SELECT a.id,` + ActivityOwnerSQL + `,COALESCE((SELECT username FROM users WHERE id=` + ActivityOwnerSQL + `),''),
-				a.email,NEW.kind,COALESCE(NEW.changes,''),NEW.details,NEW.at
+				a.email,NEW.kind,COALESCE(NEW.changes,''),NEW.details,NEW.audit_operation,NEW.at
 			FROM accounts a WHERE a.id=NEW.account_id;
 		END`,
-		`CREATE TRIGGER IF NOT EXISTS panel_client_activity_delete BEFORE DELETE ON accounts
+		`DROP TRIGGER IF EXISTS panel_client_activity_delete`,
+		`CREATE TRIGGER panel_client_activity_delete BEFORE DELETE ON accounts
 		WHEN COALESCE((SELECT value FROM settings WHERE key='` + ClientActivitySetting + `' ORDER BY id LIMIT 1), 'true')='true'
 		BEGIN
-			INSERT INTO panel_client_events(account_id,owner_id,owner,email,kind,changes,at)
+			INSERT INTO panel_client_events(account_id,owner_id,owner,email,kind,changes,audit_operation,at)
 			SELECT a.id,` + ActivityOwnerSQL + `,COALESCE((SELECT username FROM users WHERE id=` + ActivityOwnerSQL + `),''),
-				a.email,'deleted','',CAST(unixepoch('subsec')*1000 AS INTEGER)
+				a.email,'deleted','',` + accountAuditOperationSQL + `,` + accountAuditAtSQL("a.id") + `
 			FROM accounts a WHERE a.id=OLD.id;
+		END`,
+		`CREATE TRIGGER IF NOT EXISTS panel_client_activity_remove_hidden AFTER DELETE ON panel_client_events
+		BEGIN
+			DELETE FROM panel_client_hiddens WHERE event_id=OLD.id;
 		END`,
 	}
 	return db.Transaction(func(tx *gorm.DB) error {

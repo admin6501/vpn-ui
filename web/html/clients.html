@@ -145,7 +145,7 @@
                   :row-key="r => r.email"
                   :row-selection="{ selectedRowKeys: selectedEmails, onChange: onSelectChange }"
                   :pagination="pagination"
-                  :scroll="{ x: 1100 }"
+                  :scroll="{ x: 1320 }" table-layout="fixed"
                   :expanded-row-keys="expandedRowKeys"
                   v-on="{ expandedRowsChange: keys => { expandedRowKeys = keys; } }"
                   @change="onTableChange"
@@ -465,6 +465,7 @@
 {{template "page/shell_end" . }}
 
 {{template "page/body_scripts" .}}
+{{ template "component/clientAudit" . }}
 <script src="{{ .base_path }}assets/qrcode/qrious2.min.js?{{ .asset_ver }}"></script>
 <script src="{{ .base_path }}assets/uri/URI.min.js?{{ .asset_ver }}"></script>
 <script src="{{ .base_path }}assets/js/model/reality_targets.js?{{ .asset_ver }}"></script>
@@ -621,7 +622,7 @@
           col('owner', '{{ i18n "pages.client.owner" }}', 'ownerCol', { width: 180 }),
           col('used', '{{ i18n "pages.clients.quota" }}', 'dataCol', { width: 170 }),
           col('expiry', '{{ i18n "pages.clients.expiry" }}', 'expiresCol', { width: 150 }),
-          col('inbounds', '{{ i18n "pages.clients.inbounds" }}', 'servingCol'),
+          col('inbounds', '{{ i18n "pages.clients.inbounds" }}', 'servingCol', { width: 145 }),
           col('lastOnline', '{{ i18n "lastOnline" }}', 'seenCol', { width: 162 }),
           col('actions', '{{ i18n "enabled" }} / {{ i18n "disabled" }}', 'rowCol', { width: 155, align: 'right' }),
         ];

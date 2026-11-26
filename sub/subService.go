@@ -136,6 +136,7 @@ func (s *SubService) getSubs(subId string, host string, page bool, onlyEmail str
 	s = s.forResponse()
 	s.address = host
 	s.useInboundNames = onlyEmail == ""
+	s.showInfo = s.showInfo || page
 	var result []string
 	var traffic xray.ClientTraffic
 	usage := newSubUsage()
@@ -498,8 +499,20 @@ func (s *SubService) nativeConnection(inbound *model.Inbound, client model.Clien
 		}
 	case model.MTPROTO:
 		card.Secret = client.Secret
+		proxies := client.ExternalProxy
+		if len(proxies) == 0 {
+			for _, proxy := range service.MtprotoInboundPolicyOf(inbound.Settings).ExternalProxy {
+				proxies = append(proxies, model.ClientExternalProxy{Dest: proxy.Dest, Port: proxy.Port, Remark: proxy.Remark})
+			}
+		}
+		card.setAdvertisedEndpoints(proxies)
 	case model.AWG, model.WGC:
-		// The browser also offers the full per-device configuration files.
+		// Use the same first advertised endpoint as the downloadable profiles.
+		var settings struct {
+			ExternalProxy []model.ClientExternalProxy `json:"externalProxy"`
+		}
+		_ = json.Unmarshal([]byte(inbound.Settings), &settings)
+		card.setAdvertisedEndpoints(settings.ExternalProxy)
 	case model.GRE:
 		card.Port = 0
 	default:

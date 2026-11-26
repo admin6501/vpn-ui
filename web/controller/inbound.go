@@ -17,6 +17,8 @@ import (
 	"github.com/mhsanaei/3x-ui/v2/xray"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
+	"gorm.io/gorm"
 )
 
 // InboundController handles HTTP requests related to Xray inbounds management.
@@ -1071,9 +1073,9 @@ func (a *InboundController) addInboundClient(c *gin.Context) {
 
 	var needRestart bool
 	if user := session.GetLoginUser(c); user != nil && !isRepresentative(user) {
-		needRestart, err = a.inboundService.AddInboundClientForAdmin(data, user.Id)
+		needRestart, err = a.inboundService.AddInboundClientForAdmin(data, user.Id, clientAuditOperation(c))
 	} else {
-		needRestart, err = a.inboundService.AddInboundClient(data)
+		needRestart, err = a.inboundService.AddInboundClient(data, clientAuditOperation(c))
 	}
 	if err != nil {
 		// The reservation paid for an account that never landed. Give it back.
@@ -1107,7 +1109,7 @@ func (a *InboundController) addInboundClient(c *gin.Context) {
 	// those too or a daemon keeps serving the settings JSON it no longer matches.
 	var projected []int
 	if emails := postedClientEmails(data); len(emails) > 1 {
-		a.syncInboundAccounts(data.Id)
+		a.syncInboundAccountsForOperation(data.Id, clientAuditOperation(c))
 		if membershipsExplicit {
 			for _, email := range emails {
 				touched, merr := a.applyClientMemberships(c, email, data.Id, membershipIds, membershipsExplicit)
@@ -1220,7 +1222,7 @@ func (a *InboundController) saveAccountClient(c *gin.Context) {
 	if user := session.GetLoginUser(c); user != nil && !isRepresentative(user) {
 		ownerID = user.Id
 	}
-	if _, err := accountService.SaveAccountWithoutInbound(entry, ownerID); err != nil {
+	if _, err := accountService.SaveAccountWithoutInboundAudit(entry, ownerID, clientAuditOperation(c)); err != nil {
 		jsonMsg(c, I18nWeb(c, "somethingWentWrong"), err)
 		return
 	}
@@ -1539,7 +1541,7 @@ func (a *InboundController) updateInboundClient(c *gin.Context) {
 		previousEmail = a.clientEmailOnInbound(stored, clientId)
 	}
 
-	needRestart, err := a.inboundService.UpdateInboundClient(inbound, clientId)
+	needRestart, err := a.inboundService.UpdateInboundClient(inbound, clientId, clientAuditOperation(c))
 	if err != nil {
 		if rerr := resellerService.Rollback(ticket); rerr != nil {
 			logger.Warning("rolling back a reseller charge whose client write failed: ", rerr)
@@ -1579,7 +1581,7 @@ func (a *InboundController) updateInboundClient(c *gin.Context) {
 	var renamed []int
 	if previousEmail != "" && email != "" && previousEmail != email {
 		var rerr error
-		if renamed, rerr = accountService.RenameAccount(previousEmail, email); rerr != nil {
+		if renamed, rerr = accountService.RenameAccount(previousEmail, email, clientAuditOperation(c)); rerr != nil {
 			logger.Warning("carrying the account across a client rename: ", rerr)
 		}
 	}
@@ -1749,8 +1751,9 @@ func (a *InboundController) bulkUpdateClients(c *gin.Context) {
 	// this the accounts layer kept the OLD quota, expiry and enable bit. The Clients
 	// page reads those three off the account row, so a bulk top-up applied to the
 	// data plane and then showed the previous figure.
+	operation := clientAuditOperation(c)
 	for _, id := range distinctInboundIds(req.Targets) {
-		a.syncInboundAccounts(id)
+		a.syncInboundAccountsForOperation(id, operation)
 	}
 	jsonObj(c, result, nil)
 
@@ -3161,9 +3164,26 @@ func distinctInboundIds(targets []service.BulkClientTarget) []int {
 // the inbound itself (where it drops every membership pointing at an id that is
 // gone).
 func (a *InboundController) syncInboundAccounts(inboundId int, creatorID ...int) {
-	if err := accountService.SyncInboundAccounts(database.GetDB(), inboundId, creatorID...); err != nil {
+	a.syncInboundAccountsForOperation(inboundId, "", creatorID...)
+}
+
+func (a *InboundController) syncInboundAccountsForOperation(inboundId int, operation string, creatorID ...int) {
+	err := database.AccountAuditTransaction(database.GetDB(), func(tx *gorm.DB) error {
+		return accountService.SyncInboundAccounts(tx, inboundId, creatorID...)
+	}, operation)
+	if err != nil {
 		logger.Warning("syncing the accounts layer for inbound ", inboundId, ": ", err)
 	}
+}
+
+func clientAuditOperation(c *gin.Context) string {
+	const key = "clientAuditOperation"
+	if id := c.GetString(key); id != "" {
+		return id
+	}
+	id := uuid.NewString()
+	c.Set(key, id)
+	return id
 }
 
 // applyClientMemberships puts an account on exactly the given inbounds and
@@ -3209,9 +3229,9 @@ func (a *InboundController) applyClientMemberships(c *gin.Context, email string,
 	if groups, present, err := postedGroupIDs(c); err != nil {
 		return nil, err
 	} else if present {
-		return (&service.GroupService{}).Apply(session.GetLoginUser(c), email, anchorInboundId, groups)
+		return (&service.GroupService{}).Apply(session.GetLoginUser(c), email, anchorInboundId, groups, clientAuditOperation(c))
 	}
-	return accountService.ApplyMembershipsFrom(email, anchorInboundId, inboundIds, removable, explicit)
+	return accountService.ApplyMembershipsFrom(email, anchorInboundId, inboundIds, removable, explicit, clientAuditOperation(c))
 }
 
 // reconcileForInbounds fires each protocol's reconcile hook once for the set of

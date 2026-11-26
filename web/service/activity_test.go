@@ -247,3 +247,131 @@ func TestPanelClientChangeDetailsRecordQuotaExpiryAndTrafficReset(t *testing.T) 
 		t.Fatalf("missing expected audit details: old=%t change=%t reset=%t renewal=%t", old, changed, reset, renewed)
 	}
 }
+
+func TestClientActivityGroupsARequestAndKeepsAccountHistory(t *testing.T) {
+	accounts := newAccountsDB(t)
+	db := database.GetDB()
+	activity := ActivityService{}
+	var owner model.User
+	if err := db.Where("is_panel_owner = ?", true).First(&owner).Error; err != nil {
+		t.Fatal(err)
+	}
+	admin := &model.User{Username: "audit-admin", Enable: true, IsSuperAdmin: true}
+	other := &model.User{Username: "audit-other", Enable: true, IsSuperAdmin: true}
+	if err := db.Create(admin).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(other).Error; err != nil {
+		t.Fatal(err)
+	}
+	inbound := seedInboundWithClients(t, model.VLESS, 43321, []map[string]any{})
+	accounts.MigrationAccounts()
+	groups := &GroupService{}
+	if err := groups.Migrate(); err != nil {
+		t.Fatal(err)
+	}
+	group, _, err := groups.Save(&owner, 0, "Audit test", []int{inbound.Id})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	now := time.Now().UTC()
+	email := "grouped-audit"
+	expiry := now.Add(10 * 24 * time.Hour).UnixMilli()
+	client := map[string]any{"email": email, "enable": true, "totalGB": float64(2 * gb),
+		"expiryTime": float64(expiry), "renewalDuration": float64(10 * dayMillis)}
+	if _, err := accounts.SaveAccountWithoutInboundAudit(client, admin.Id, "create-request"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := groups.Apply(&owner, email, 0, []int{group.ID}, "create-request"); err != nil {
+		t.Fatal(err)
+	}
+	client["totalGB"] = float64(3 * gb)
+	client["expiryTime"] = float64(expiry + 5*dayMillis)
+	if _, err := accounts.SaveAccountWithoutInboundAudit(client, admin.Id, "edit-request"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := groups.Apply(&owner, email, 0, []int{group.ID}, "edit-request"); err != nil {
+		t.Fatal(err)
+	}
+	month := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)
+	rows, err := activity.ChangeEvents(month, "", 0, admin)
+	if err != nil || len(rows) != 2 || rows[0].Kind != "updated" || rows[1].Kind != "created" {
+		t.Fatalf("expected exactly one row per edit and create: %+v, %v", rows, err)
+	}
+	if detail := rows[0].Details; detail == nil || detail.Quota == nil || detail.Expiry == nil ||
+		*detail.Quota != (model.ClientValueChange{Before: 2 * gb, After: 3 * gb}) ||
+		*detail.Expiry != (model.ClientValueChange{Before: expiry, After: expiry + 5*dayMillis}) ||
+		rows[0].Changes != "quota,expiry" {
+		t.Fatalf("edit details or unchanged group: %+v / %s", detail, rows[0].Changes)
+	}
+	if detail := rows[1].Details; detail == nil || detail.Created == nil ||
+		detail.Created.Quota != 2*gb || detail.Created.Expiry != expiry || detail.Created.Period != 10*dayMillis {
+		t.Fatalf("original package values missing: %+v", detail)
+	}
+	previous, err := activity.ChangeEvents(month, "", rows[0].Id, admin)
+	if err != nil || len(previous) != 1 || previous[0].Id != rows[1].Id {
+		t.Fatalf("operation pagination: %+v, %v", previous, err)
+	}
+	if err := activity.HideClientChange(other, rows[1].Id); err != nil {
+		t.Fatal(err)
+	}
+	if rows, err := activity.ChangeEvents(month, "", 0, other); err != nil || len(rows) != 0 {
+		t.Fatalf("another admin saw hidden or unowned entries: %+v, %v", rows, err)
+	}
+	if rows, err := activity.ChangeEvents(month, "", 0, admin); err != nil || len(rows) != 2 {
+		t.Fatalf("another admin affected my history: %+v, %v", rows, err)
+	}
+	if err := activity.HideClientChange(admin, rows[1].Id); err != nil {
+		t.Fatal(err)
+	}
+	if rows, err := activity.ChangeEvents(month, "", 0, admin); err != nil || len(rows) != 1 || rows[0].Kind != "updated" {
+		t.Fatalf("whole operation was not hidden: %+v, %v", rows, err)
+	}
+	if rows, err := activity.ChangeEvents(month, "", 0, &owner); err != nil || len(rows) != 2 {
+		t.Fatalf("owner lost access to hidden record: %+v, %v", rows, err)
+	}
+	checkHistory := func() {
+		t.Helper()
+		history, err := accounts.AccountHistory(&owner, email, 0)
+		if err != nil || len(history.Events) != 2 || history.Events[1].Kind != "created" ||
+			history.Events[1].Details == nil || history.Events[1].Details.Created == nil {
+			t.Fatalf("grouped account history: %+v, %v", history, err)
+		}
+	}
+	checkHistory()
+
+	nextYear := now.AddDate(1, 0, 0)
+	if err := activity.PurgeExpiredClientChanges(nextYear); err != nil {
+		t.Fatal(err)
+	}
+	if count, err := activity.ChangeRetention(); err != nil || count != 0 {
+		t.Fatalf("automatic purging must be off by default: %d, %v", count, err)
+	}
+	if rows, err := activity.ChangeEvents(month, "", 0, &owner); err != nil || len(rows) != 2 {
+		t.Fatalf("disabled retention removed records: %+v, %v", rows, err)
+	}
+	if err := db.Model(&model.PanelClientEvent{}).Where("account_id = ? AND audit_operation = ?", rows[1].AccountID, "create-request").
+		Update("at", now.Add(-61*24*time.Hour).UnixMilli()).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := activity.SetChangeRetention(60); err != nil {
+		t.Fatal(err)
+	}
+	if err := activity.PurgeExpiredClientChanges(now); err != nil {
+		t.Fatal(err)
+	}
+	var left int64
+	if err := db.Model(&model.PanelClientEvent{}).Where("account_id = ? AND audit_operation = ?", rows[1].AccountID, "create-request").
+		Count(&left).Error; err != nil || left != 0 {
+		t.Fatalf("aged operation remains after automatic purge: %d, %v", left, err)
+	}
+	var hidden int64
+	if err := db.Model(&model.PanelClientHidden{}).Count(&hidden).Error; err != nil || hidden != 0 {
+		t.Fatalf("aged hide markers remain: %d, %v", hidden, err)
+	}
+	if rows, err := activity.ChangeEvents(month, "", 0, &owner); err != nil || len(rows) != 1 {
+		t.Fatalf("retention affected a recent operation: %+v, %v", rows, err)
+	}
+	checkHistory()
+}

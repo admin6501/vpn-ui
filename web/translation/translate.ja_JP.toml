@@ -2435,6 +2435,10 @@ theBuiltInWindowsSSTPClientRejectsSelf = "CA をマシンの信頼されたル�
 theNativeWindowsIOSAndroidIKEv2ClientsReject = "ネイティブ Windows/iOS/Android IKEv2 クライアントは、生成された CA をデバイスの信頼されたルートにインポートしない限り、自己署名証明書を拒否します。実際のユーザーのホスト名にバインドされた CA 署名証明書を優先します。とにかく自己署名 CA + サーバー証明書を生成しますか?"
 
 [pages.activity]
+initialPeriod = "初回の有効期間"
+autoPurge = "古いアクティビティログを自動削除"
+retentionDays = "保存日数"
+hideEvent = "自分の履歴から非表示にする"
 title = "アクティビティ"
 logins = "ログイン・ログアウト履歴"
 expired = "期限切れのクライアント"

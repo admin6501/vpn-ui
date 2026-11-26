@@ -2010,17 +2010,17 @@ func (s *InboundService) updateClientTraffics(tx *gorm.DB, oldInbound *model.Inb
 	return nil
 }
 
-func (s *InboundService) AddInboundClient(data *model.Inbound) (bool, error) {
-	return s.addInboundClient(data, 0, false)
+func (s *InboundService) AddInboundClient(data *model.Inbound, operation ...string) (bool, error) {
+	return s.addInboundClient(data, 0, false, operation...)
 }
 
 // AddInboundClientForAdmin records the creating administrator together
 // with the account rows; representative ownership remains in the billing ledger.
-func (s *InboundService) AddInboundClientForAdmin(data *model.Inbound, ownerID int) (bool, error) {
-	return s.addInboundClient(data, ownerID, ownerID > 0)
+func (s *InboundService) AddInboundClientForAdmin(data *model.Inbound, ownerID int, operation ...string) (bool, error) {
+	return s.addInboundClient(data, ownerID, ownerID > 0, operation...)
 }
 
-func (s *InboundService) addInboundClient(data *model.Inbound, ownerID int, syncAccount bool) (needRestart bool, err error) {
+func (s *InboundService) addInboundClient(data *model.Inbound, ownerID int, syncAccount bool, operation ...string) (needRestart bool, err error) {
 	// Before anything parses the settings: interfaceClients below is spliced into the
 	// inbound's stored JSON verbatim, so an email left untrimmed here is persisted.
 	data.Settings = normalizeClientEmails(data.Settings)
@@ -2184,8 +2184,15 @@ func (s *InboundService) addInboundClient(data *model.Inbound, ownerID int, sync
 
 	db := database.GetDB()
 	tx := db.Begin()
-
+	release, err := database.HoldAccountAudit(tx, operation...)
+	if err != nil {
+		tx.Rollback()
+		return false, err
+	}
 	defer func() {
+		if err == nil {
+			err = release()
+		}
 		if err != nil {
 			tx.Rollback()
 		} else {
@@ -2732,11 +2739,11 @@ func dropMembershipAfterDelete(db *gorm.DB, inboundId int, email string) {
 	}
 }
 
-func (s *InboundService) UpdateInboundClient(data *model.Inbound, clientId string) (bool, error) {
-	return s.updateInboundClient(data, clientId, false)
+func (s *InboundService) UpdateInboundClient(data *model.Inbound, clientId string, operation ...string) (bool, error) {
+	return s.updateInboundClient(data, clientId, false, operation...)
 }
 
-func (s *InboundService) updateInboundClient(data *model.Inbound, clientId string, syncAccount bool) (needRestart bool, err error) {
+func (s *InboundService) updateInboundClient(data *model.Inbound, clientId string, syncAccount bool, operation ...string) (needRestart bool, err error) {
 	// TODO: check if TrafficReset field is updating
 	// Before anything parses the settings: interfaceClients[0] below replaces the
 	// stored client verbatim, so an email left untrimmed here is persisted.
@@ -2909,8 +2916,15 @@ func (s *InboundService) updateInboundClient(data *model.Inbound, clientId strin
 	oldInbound.Settings = string(newSettings)
 	db := database.GetDB()
 	tx := db.Begin()
-
+	release, err := database.HoldAccountAudit(tx, operation...)
+	if err != nil {
+		tx.Rollback()
+		return false, err
+	}
 	defer func() {
+		if err == nil {
+			err = release()
+		}
 		if err != nil {
 			tx.Rollback()
 		} else {

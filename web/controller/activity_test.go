@@ -20,7 +20,7 @@ func TestPanelActivityPrivilegedRoutesRejectDelegatedAdmins(t *testing.T) {
 	})
 	registerActivityRoutes(r.Group("/panel/api"))
 	for _, endpoint := range []struct{ method, path string }{
-		{http.MethodGet, "changes"}, {http.MethodGet, "changes/settings"}, {http.MethodPost, "changes/settings"},
+		{http.MethodPost, "changes/settings"}, {http.MethodPost, "changes/retention"},
 		{http.MethodPost, "changes/purge"}, {http.MethodPost, "logins/purge"},
 		{http.MethodGet, "apps"}, {http.MethodPost, "apps"},
 	} {
