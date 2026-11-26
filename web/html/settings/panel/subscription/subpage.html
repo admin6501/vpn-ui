@@ -23,26 +23,33 @@
         margin-inline: auto;
     }
 
-    /* Config-file downloads. Secondary to the Android/iOS buttons (which stay the one
-       accent-filled action on the page), so these are a neutral surface with the accent
-       kept for the icon and hover. Tokens carry the theme, so there is no dark/light pair
-       to keep in sync. Labels can be long ("AmneziaWG Device 2 cdn (my-inbound)"), hence
-       wrapping and an auto height instead of ant's nowrap single line. */
+    .sub-native-grid, .sub-openvpn-list, .sub-config-grid, .sub-file-downloads {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr);
+        gap: 10px;
+        margin: 12px 0;
+    }
+    .sub-file-downloads > .sub-config-grid { margin: 0; }
+    @media (min-width: 600px) {
+        .sub-native-grid, .sub-config-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .sub-native-grid > :only-child { grid-column: 1 / -1; }
+    }
+
     .subscription-page .sub-config-btn {
         display: inline-flex;
         align-items: center;
         justify-content: center;
         gap: var(--sp-2);
         width: 100%;
-        max-width: 340px;
         height: auto;
-        min-height: 40px;
-        padding: var(--sp-2) var(--sp-4);
+        min-height: 36px;
+        padding: var(--sp-2) var(--sp-3);
         white-space: normal;
+        overflow-wrap: anywhere;
         line-height: var(--lh-tight);
         text-align: center;
         border-radius: var(--radius-sm);
-        background: var(--surface-2);
+        background: var(--accent-weak);
         border: 1px solid var(--border);
         color: var(--text);
         box-shadow: none;
@@ -57,8 +64,9 @@
         color: var(--accent);
     }
 
-    .subscription-page .sub-config-btn .anticon {
+    .sub-download-icon {
         color: var(--accent);
+        flex: none;
     }
 
     .subscription-page .subscription-link-box {
@@ -92,19 +100,48 @@
         color: rgba(0, 0, 0, 0.85);
     }
 
-    .sub-native-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(230px, 100%), 1fr)); gap: 12px; margin: 12px 0; }
     .sub-native-card {
         min-width: 0; padding: 12px; border: 1px solid var(--border); border-radius: 10px;
         color: var(--text-2); overflow-wrap: anywhere;
     }
     .sub-native-card h3 { margin: 0 0 8px; color: var(--text-2); }
-    .sub-native-card a { color: var(--text-2); }
-    .sub-native-card a:hover, .sub-native-card a:focus-visible { color: var(--accent); }
     .sub-native-card dl { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); gap: 6px 10px; margin: 0; }
     .sub-native-card dd { margin: 0; text-align: start; }
-    .sub-native-card ul { padding: 0; margin: 0; list-style: none; display: flex; flex-wrap: wrap; gap: 8px; }
-    .sub-native-card li { max-width: 100%; }
-    .sub-native-card ul.sub-native-downloads { margin-top: 10px; }
+    .sub-native-card .sub-config-grid { margin-bottom: 0; }
+
+    .sub-apps {
+        display: flex; align-items: flex-start; justify-content: center; gap: 12px; margin-top: 12px;
+    }
+    .sub-app-menu { flex: 1 1 0; min-width: 0; text-align: center; }
+    .sub-app-menu summary {
+        display: inline-flex; align-items: center; justify-content: center; gap: 10px;
+        min-height: 38px; padding: 6px 20px; border-radius: var(--radius-pill);
+        background: var(--accent-strong); color: var(--on-accent);
+        font-weight: var(--fw-semibold); cursor: pointer; list-style: none;
+    }
+    .sub-app-menu summary::-webkit-details-marker { display: none; }
+    .sub-app-menu summary::after {
+        content: ""; width: 6px; height: 6px; border-right: 1.5px solid; border-bottom: 1.5px solid;
+        transform: translateY(-2px) rotate(45deg);
+    }
+    .sub-app-menu[open] summary::after { transform: translateY(2px) rotate(225deg); }
+    .sub-app-menu summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+    .sub-app-menu ul {
+        display: block; width: 100%; max-width: 240px;
+        padding: 4px; margin: 8px auto 0; list-style: none;
+        background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-sm);
+    }
+    .sub-app-menu a {
+        display: block; padding: 6px 8px; border-radius: var(--radius-sm);
+        color: var(--text); overflow-wrap: anywhere;
+    }
+    .sub-app-menu a:hover, .sub-app-menu a:focus-visible { color: var(--accent); background: var(--surface); }
+    @media (max-width: 479px) {
+        .sub-apps { flex-direction: column; }
+        .sub-app-menu { width: 100%; }
+        .sub-app-menu summary { width: 100%; }
+    }
+
     .light.subscription-page .subscription-link-box:hover {
         background: rgba(0, 0, 0, 0.05);
         border-color: rgba(0, 0, 0, 0.14);
@@ -258,46 +295,42 @@
                     </div>
                     <br />
 
-                    {{ if .native }}
+                    {{ if .connections.Manual }}
                     <a-divider><bdi dir="auto">{{ i18n "pages.activity.nativeVPN" }}</bdi></a-divider>
                     <div class="sub-native-grid" v-pre>
-                        {{ range .native }}
-                        <section class="sub-native-card">
-                            <h3>{{ if .Name }}<bdi dir="auto">{{ .Name }}</bdi> · {{ end }}{{ .Protocol }}</h3>
-                            <dl>
-                                <dt>{{ i18n "host" }}</dt><dd dir="ltr">{{ .Host }}</dd>
-                                {{ if .Port }}<dt>{{ i18n "pages.inbounds.port" }}</dt><dd dir="ltr">{{ .Port }}</dd>{{ end }}
-                                {{ range .OtherEndpoints }}<dt>{{ i18n "host" }}</dt><dd dir="ltr">{{ . }}</dd>{{ end }}
-                                {{ if .Username }}<dt>{{ i18n "username" }}</dt><dd dir="ltr">{{ .Username }}</dd>{{ end }}
-                                {{ if .Password }}<dt>{{ i18n "password" }}</dt><dd dir="ltr">{{ .Password }}</dd>{{ end }}
-                                {{ if .PSK }}<dt>PSK</dt><dd dir="ltr">{{ .PSK }}</dd>{{ end }}
-                                {{ if .Secret }}<dt>{{ i18n "pages.activity.credentials" }}</dt><dd dir="ltr">{{ .Secret }}</dd>{{ end }}
-                            </dl>
-                            {{ if .Downloads }}
-                            <ul class="sub-native-downloads">
-                                {{ range .Downloads }}<li><a class="ant-btn sub-config-btn" href="{{ .Url }}"
-                                    download="{{ .Filename }}" title="{{ .Filename }}">{{ .Label }}</a></li>{{ end }}
-                            </ul>
-                            {{ end }}
-                        </section>
-                        {{ end }}
+                        {{ range .connections.Manual }}{{ template "subscription/native-card" . }}{{ end }}
                     </div>
                     {{ end }}
 
-                    {{ if .apps }}
+                    {{ if or .connections.OpenVPN .connections.Files .connections.GRE }}
+                    <a-divider>{{ i18n "subscription.configFiles" }}</a-divider>
+                    {{ if .connections.OpenVPN }}
+                    <div class="sub-openvpn-list" v-pre>
+                        {{ range .connections.OpenVPN }}{{ template "subscription/native-card" . }}{{ end }}
+                    </div>
+                    {{ end }}
+                    {{ if or .connections.Files .connections.GRE }}
+                    <div class="sub-file-downloads" v-pre>
+                        {{ with .connections.Files }}{{ template "subscription/config-grid" . }}{{ end }}
+                        {{ with .connections.GRE }}{{ template "subscription/config-grid" . }}{{ end }}
+                    </div>
+                    {{ end }}
+                    {{ end }}
+
+                    {{ if or .androidApps .iosApps }}
                     <a-divider>{{ i18n "pages.activity.apps" }}</a-divider>
-                    <div class="sub-native-grid" v-pre>
+                    <div class="sub-apps">
                         {{ if .androidApps }}
-                        <section class="sub-native-card">
-                            <h3>Android</h3>
-                            <ul>{{ range .androidApps }}<li><a href="{{ .URL }}" target="_blank" rel="noopener noreferrer">{{ .Name }}</a></li>{{ end }}</ul>
-                        </section>
+                        <details class="sub-app-menu">
+                            <summary><a-icon type="android" aria-hidden="true"></a-icon>Android</summary>
+                            {{ template "subscription/app-links" .androidApps }}
+                        </details>
                         {{ end }}
                         {{ if .iosApps }}
-                        <section class="sub-native-card">
-                            <h3>iOS</h3>
-                            <ul>{{ range .iosApps }}<li><a href="{{ .URL }}" target="_blank" rel="noopener noreferrer">{{ .Name }}</a></li>{{ end }}</ul>
-                        </section>
+                        <details class="sub-app-menu">
+                            <summary><a-icon type="apple" aria-hidden="true"></a-icon>iOS</summary>
+                            {{ template "subscription/app-links" .iosApps }}
+                        </details>
                         {{ end }}
                     </div>
                     {{ end }}
@@ -320,3 +353,37 @@
 <script src="{{ .base_path }}assets/js/subscription.js?{{ .asset_ver }}"></script>
 
 {{ template "page/body_end" .}}
+
+{{ define "subscription/native-card" }}
+<section class="sub-native-card">
+    <h3>{{ if .Name }}<bdi dir="auto">{{ .Name }}</bdi> · {{ end }}{{ .Protocol }}</h3>
+    <dl>
+        <dt>{{ i18n "host" }}</dt><dd dir="ltr">{{ .Host }}</dd>
+        {{ if .Port }}<dt>{{ i18n "pages.inbounds.port" }}</dt><dd dir="ltr">{{ .Port }}</dd>{{ end }}
+        {{ range .OtherEndpoints }}<dt>{{ i18n "host" }}</dt><dd dir="ltr">{{ . }}</dd>{{ end }}
+        {{ if .Username }}<dt>{{ i18n "username" }}</dt><dd dir="ltr">{{ .Username }}</dd>{{ end }}
+        {{ if .Password }}<dt>{{ i18n "password" }}</dt><dd dir="ltr">{{ .Password }}</dd>{{ end }}
+        {{ if .PSK }}<dt>PSK</dt><dd dir="ltr">{{ .PSK }}</dd>{{ end }}
+        {{ if .Secret }}<dt>{{ i18n "pages.activity.credentials" }}</dt><dd dir="ltr">{{ .Secret }}</dd>{{ end }}
+    </dl>
+    {{ with .Downloads }}{{ template "subscription/config-grid" . }}{{ end }}
+</section>
+{{ end }}
+
+{{ define "subscription/config-grid" }}
+<div class="sub-config-grid">
+    {{ range . }}
+    <a class="sub-config-btn" href="{{ .Url }}" download="{{ .Filename }}" title="{{ .Filename }}">
+        <span class="sub-download-icon" aria-hidden="true">↓</span><bdi dir="auto">{{ .Label }}</bdi>
+    </a>
+    {{ end }}
+</div>
+{{ end }}
+
+{{ define "subscription/app-links" }}
+<ul v-pre>
+    {{ range . }}
+    <li><a href="{{ .URL }}" target="_blank" rel="noopener noreferrer">{{ .Name }}</a></li>
+    {{ end }}
+</ul>
+{{ end }}

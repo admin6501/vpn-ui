@@ -5,7 +5,7 @@
 {{template "page/shell_start" . }}
       <a-spin :spinning="spinning" :delay="300" tip='{{ i18n "loading"}}' size="large">
         <transition name="list" appear>
-          <a-row :gutter="[16, 16]" :style="{ margin: 0 }">
+          <a-row>
             <a-col :span="24">
 
               <!-- The account-centric view, and the only place clients are managed.
@@ -14,104 +14,109 @@
                    one account could be on several inbounds. Every write goes back
                    through the inbounds client routes with an inboundIds set, so
                    there is still one write path. -->
-              <a-card hoverable :style="{ marginBottom: '16px' }">
-                <div :style="{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '8px' }">
-                  {{ if .expiredOwned }}
-                  <a-button :href="basePath + 'panel/clients'" icon="arrow-left">{{ i18n "menu.clients" }}</a-button>
-                  {{ end }}
-                  <a-button v-if="!expiredOwned" type="primary" icon="plus" @click="openAdd()">
-                    {{ i18n "pages.clients.add" }}
-                  </a-button>
-
-                  <!-- One button, no menu. The inbounds are picked INSIDE the form,
-                       on the same checklist the single-client form uses, so a bulk
-                       add is the same act as a single add repeated - including
-                       landing the batch on several inbounds at once, which the
-                       pick-first menu could never express. -->
-                  <a-button icon="usergroup-add" v-if="!expiredOwned && assignable.length"
-                    @click="openBulkAdd()">{{ i18n "pages.client.bulk" }}</a-button>
-
-                  <!-- Row density. Reads as a toggle rather than a button because
-                       it is one: primary while compact is on. -->
-                  <a-tooltip>
-                    <template slot="title">
-                      [[ density === 'compact' ? '{{ i18n "pages.clients.roomier" }}'
-                                              : '{{ i18n "pages.clients.denser" }}' ]]
-                    </template>
-                    <a-button icon="column-height" @click="toggleDensity()"
-                      :type="density === 'compact' ? 'primary' : 'default'"></a-button>
-                  </a-tooltip>
-
-                  <a-button-group>
-                    <a-button icon="sync" @click="manualRefresh" :loading="refreshing"></a-button>
-                    <a-popover placement="bottomRight" trigger="click"
-                      :overlay-class-name="themeSwitcher.currentTheme">
-                      <template #title>
-                        <div class="ant-custom-popover-title">
-                          <a-switch v-model="isRefreshEnabled"
-                            @change="toggleRefresh" size="small"></a-switch>
-                          <span>{{ i18n "pages.inbounds.autoRefresh" }}</span>
-                        </div>
-                      </template>
-                      <template #content>
-                        <a-space direction="vertical">
-                          <span>{{ i18n "pages.inbounds.autoRefreshInterval" }}</span>
-                          <a-select v-model="refreshInterval"
-                            :disabled="!isRefreshEnabled"
-                            :style="{ width: '100%' }"
-                            @change="changeRefreshInterval"
-                            :dropdown-class-name="themeSwitcher.currentTheme">
-                            <a-select-option v-for="key in [5,10,30,60]"
-                              :value="key*1000">[[ key ]]s</a-select-option>
-                          </a-select>
-                        </a-space>
-                      </template>
-                      <a-button icon="down"></a-button>
-                    </a-popover>
-                  </a-button-group>
-
-                  <a-tag color="green">{{ i18n "online" }}: [[ clientCounts.online ]]</a-tag>
-                  <a-tag>{{ i18n "enabled" }}: [[ clientCounts.enabled ]]</a-tag>
-                  <a-tag>{{ i18n "disabled" }}: [[ clientCounts.disabled ]]</a-tag>
-                  <!-- The menu also offers creation-date orders with no visible column. -->
-                  <a-dropdown :trigger="['click']">
-                    <a-button icon="sort-ascending">
-                      {{ i18n "pages.clients.sortBy" }}
+              <a-card hoverable class="bo-clients-toolbar-card">
+                <div class="bo-clients-toolbar">
+                  <div class="bo-clients-tools">
+                    {{ if .expiredOwned }}
+                    <a-button :href="basePath + 'panel/clients'" icon="arrow-left">{{ i18n "menu.clients" }}</a-button>
+                    {{ end }}
+                    <a-button v-if="!expiredOwned" type="primary" icon="plus" @click="openAdd()">
+                      {{ i18n "pages.clients.add" }}
                     </a-button>
-                    <a-menu slot="overlay" :class="themeSwitcher.currentTheme"
-                      :selected-keys="[sortKey]" @click="e => pickSort(e.key)">
-                      <a-menu-item v-for="o in sortOptions" :key="o.key">
-                        [[ o.label ]]
-                      </a-menu-item>
-                    </a-menu>
-                  </a-dropdown>
 
-                  <a-dropdown>
-                    <a-button icon="ellipsis"></a-button>
-                    <a-menu slot="overlay" :class="themeSwitcher.currentTheme"
-                      @click="e => clickPageAction(e)">
-                      <!-- Refused for a reseller: it cannot be narrowed to the
-                           accounts they own, so it would clear an admin's counters
-                           too. The depleted sweep below IS theirs: it is scoped to
-                           their own accounts and refunds each one. -->
-                      <a-menu-item key="resetClients" v-if="!RESELLER.isReseller">
-                        <a-icon type="file-done"></a-icon>
-                        {{ i18n "pages.inbounds.resetAllClientTraffics" }}
-                      </a-menu-item>
-                      <a-menu-item key="delDepletedClients" :style="{ color: 'var(--error)' }">
-                        <a-icon type="rest"></a-icon>
-                        {{ i18n "pages.inbounds.delDepletedClients" }}
-                      </a-menu-item>
-                    </a-menu>
-                  </a-dropdown>
+                    <!-- One button, no menu. The inbounds are picked INSIDE the form,
+                         on the same checklist the single-client form uses, so a bulk
+                         add is the same act as a single add repeated - including
+                         landing the batch on several inbounds at once, which the
+                         pick-first menu could never express. -->
+                    <a-button icon="usergroup-add" v-if="!expiredOwned && assignable.length"
+                      @click="openBulkAdd()">{{ i18n "pages.client.bulk" }}</a-button>
 
-                  <a-button v-if="!selectedEmails.length && canMoveGroupMembers()" data-testid="group-bulk-operations" icon="tool"
-                    @click="openBulkOps()">{{ i18n "pages.inbounds.bulkOperations" }}</a-button>
+                    <!-- Row density. Reads as a toggle rather than a button because
+                         it is one: primary while compact is on. -->
+                    <a-tooltip>
+                      <template slot="title">
+                        [[ density === 'compact' ? '{{ i18n "pages.clients.roomier" }}'
+                                                : '{{ i18n "pages.clients.denser" }}' ]]
+                      </template>
+                      <a-button icon="column-height" @click="toggleDensity()"
+                        :type="density === 'compact' ? 'primary' : 'default'"></a-button>
+                    </a-tooltip>
+
+                    <a-button-group>
+                      <a-button icon="sync" @click="manualRefresh" :loading="refreshing"></a-button>
+                      <a-popover placement="bottomRight" trigger="click"
+                        :overlay-class-name="themeSwitcher.currentTheme">
+                        <template #title>
+                          <div class="ant-custom-popover-title">
+                            <a-switch v-model="isRefreshEnabled"
+                              @change="toggleRefresh" size="small"></a-switch>
+                            <span>{{ i18n "pages.inbounds.autoRefresh" }}</span>
+                          </div>
+                        </template>
+                        <template #content>
+                          <a-space direction="vertical">
+                            <span>{{ i18n "pages.inbounds.autoRefreshInterval" }}</span>
+                            <a-select v-model="refreshInterval"
+                              :disabled="!isRefreshEnabled"
+                              :style="{ width: '100%' }"
+                              @change="changeRefreshInterval"
+                              :dropdown-class-name="themeSwitcher.currentTheme">
+                              <a-select-option v-for="key in [5,10,30,60]"
+                                :value="key*1000">[[ key ]]s</a-select-option>
+                            </a-select>
+                          </a-space>
+                        </template>
+                        <a-button icon="down"></a-button>
+                      </a-popover>
+                    </a-button-group>
+
+                    <!-- The menu also offers creation-date orders with no visible column. -->
+                    <a-dropdown :trigger="['click']">
+                      <a-button icon="sort-ascending">
+                        {{ i18n "pages.clients.sortBy" }}
+                      </a-button>
+                      <a-menu slot="overlay" :class="themeSwitcher.currentTheme"
+                        :selected-keys="[sortKey]" @click="e => pickSort(e.key)">
+                        <a-menu-item v-for="o in sortOptions" :key="o.key">
+                          [[ o.label ]]
+                        </a-menu-item>
+                      </a-menu>
+                    </a-dropdown>
+
+                    <a-dropdown>
+                      <a-button icon="ellipsis"></a-button>
+                      <a-menu slot="overlay" :class="themeSwitcher.currentTheme"
+                        @click="e => clickPageAction(e)">
+                        <!-- Refused for a reseller: it cannot be narrowed to the
+                             accounts they own, so it would clear an admin's counters
+                             too. The depleted sweep below IS theirs: it is scoped to
+                             their own accounts and refunds each one. -->
+                        <a-menu-item key="resetClients" v-if="!RESELLER.isReseller">
+                          <a-icon type="file-done"></a-icon>
+                          {{ i18n "pages.inbounds.resetAllClientTraffics" }}
+                        </a-menu-item>
+                        <a-menu-item key="delDepletedClients" :style="{ color: 'var(--error)' }">
+                          <a-icon type="rest"></a-icon>
+                          {{ i18n "pages.inbounds.delDepletedClients" }}
+                        </a-menu-item>
+                      </a-menu>
+                    </a-dropdown>
+
+                    <a-button v-if="!selectedEmails.length && canMoveGroupMembers()" data-testid="group-bulk-operations" icon="tool"
+                      @click="openBulkOps()">{{ i18n "pages.inbounds.bulkOperations" }}</a-button>
+
+                    <div class="bo-clients-counts">
+                      <a-tag color="green">{{ i18n "online" }}: [[ clientCounts.online ]]</a-tag>
+                      <a-tag>{{ i18n "enabled" }}: [[ clientCounts.enabled ]]</a-tag>
+                      <a-tag>{{ i18n "disabled" }}: [[ clientCounts.disabled ]]</a-tag>
+                    </div>
+                  </div>
 
                   <a-input-search
+                    class="bo-clients-search"
                     v-model="search"
                     placeholder='{{ i18n "pages.clients.searchPlaceholder" }}'
-                    :style="{ maxWidth: '280px' }"
                     allow-clear
                     @search="onSearch"
                     @change="onSearchChange"></a-input-search>
@@ -143,9 +148,9 @@
                   :columns="columns"
                   :data-source="clients"
                   :row-key="r => r.email"
-                  :row-selection="{ selectedRowKeys: selectedEmails, onChange: onSelectChange }"
+                  :row-selection="{ columnWidth: 42, selectedRowKeys: selectedEmails, onChange: onSelectChange }"
                   :pagination="pagination"
-                  :scroll="{ x: 1320 }" table-layout="fixed"
+                  :scroll="{ x: 1040 }" table-layout="fixed"
                   :expanded-row-keys="expandedRowKeys"
                   v-on="{ expandedRowsChange: keys => { expandedRowKeys = keys; } }"
                   @change="onTableChange"
@@ -157,10 +162,12 @@
                        where a glyph's meaning belongs when the glyph is in a column
                        of twelve identical ones. -->
                   <template slot="ownerCol" slot-scope="text, row">
- <span>[[ row.ownerUsername || '—' ]]</span>
- <a-button v-if="canTransferOwnership" size="small" @click="openOwnerTransfer(row)">{{ i18n "pages.client.changeOwner" }}</a-button>
- </template>
- <template slot="accountCol" slot-scope="text, row">
+                    <div class="bo-lg-owner">
+                      <span>[[ row.ownerUsername || '—' ]]</span>
+                      <a-button v-if="canTransferOwnership" size="small" @click="openOwnerTransfer(row)">{{ i18n "pages.client.changeOwner" }}</a-button>
+                    </div>
+                  </template>
+                  <template slot="accountCol" slot-scope="text, row">
                     <div class="bo-lg-who">
                       <a-tooltip>
                         <template slot="title">[[ stateLabel(row) ]]</template>
@@ -590,13 +597,6 @@
       ],
     },
     computed: {
-      // Fixed widths on everything except Serving, which is the one column whose
-      // content genuinely varies and so is the one that should absorb the slack.
-      // The four fixed ones are deliberately tight: three protocol chips need
-      // about 330px, and at the widths this started with Serving fell just under
-      // that, so a three-inbound account wrapped onto two lines and stood a head
-      // taller than every row around it.
-      //
       columnSorts() {
         return {
           email: ['name', 'name-desc', 'ascend'],
@@ -618,13 +618,13 @@
           }, extra || {});
         };
         return [
-          col('email', '{{ i18n "pages.clients.email" }}', 'accountCol', { width: 230 }),
-          col('owner', '{{ i18n "pages.client.owner" }}', 'ownerCol', { width: 180 }),
-          col('used', '{{ i18n "pages.clients.quota" }}', 'dataCol', { width: 170 }),
-          col('expiry', '{{ i18n "pages.clients.expiry" }}', 'expiresCol', { width: 150 }),
-          col('inbounds', '{{ i18n "pages.clients.inbounds" }}', 'servingCol', { width: 145 }),
-          col('lastOnline', '{{ i18n "lastOnline" }}', 'seenCol', { width: 162 }),
-          col('actions', '{{ i18n "enabled" }} / {{ i18n "disabled" }}', 'rowCol', { width: 155, align: 'right' }),
+          col('email', '{{ i18n "pages.clients.email" }}', 'accountCol'),
+          col('owner', '{{ i18n "pages.client.owner" }}', 'ownerCol', { width: '15%' }),
+          col('used', '{{ i18n "pages.clients.quota" }}', 'dataCol', { width: '13%' }),
+          col('expiry', '{{ i18n "pages.clients.expiry" }}', 'expiresCol', { width: '12%' }),
+          col('inbounds', '{{ i18n "pages.clients.inbounds" }}', 'servingCol', { width: '11%' }),
+          col('lastOnline', '{{ i18n "lastOnline" }}', 'seenCol', { width: '14%' }),
+          col('actions', '{{ i18n "enabled" }} / {{ i18n "disabled" }}', 'rowCol', { width: 150, align: 'right' }),
         ];
       },
     },

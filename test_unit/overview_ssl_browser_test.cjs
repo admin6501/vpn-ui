@@ -1,4 +1,48 @@
 const {chromium}=require('playwright');
+const assert=require('node:assert/strict');
+
+async function checkClientsLayout(page) {
+ const actions = page.locator('.bo-lg-acts').first();
+ await actions.waitFor();
+ const measure = () => actions.evaluate(element => {
+   const body = element.closest('.ant-table-body');
+   const bounds = body.getBoundingClientRect();
+   const controls = element.getBoundingClientRect();
+   const header = body.querySelector('th:last-child').getBoundingClientRect();
+   const search = document.querySelector('.ant-input-search').getBoundingClientRect();
+   const bulk = document.querySelector('[data-testid="group-bulk-operations"]').getBoundingClientRect();
+   const add = document.querySelector('.clients-page .ant-card .ant-btn-primary').getBoundingClientRect();
+   const main = document.querySelector('.bo-main');
+   const fits = rect => rect.left >= bounds.left - 1 && rect.right <= bounds.right + 1;
+   const searchAfterBulk = getComputedStyle(main).direction === 'rtl'
+     ? search.right <= bulk.left + 1 : search.left >= bulk.right - 1;
+   return {
+     tableScroll: body.scrollWidth - body.clientWidth,
+     pageScroll: main.scrollWidth - main.clientWidth,
+     controlsVisible: fits(controls),
+     headerVisible: fits(header),
+     toolbarInline: searchAfterBulk && Math.abs(search.top - add.top) < 2 && Math.abs(search.top - bulk.top) < 2,
+     search: [search.width, search.top, add.top, bulk.top],
+   };
+ });
+ for (const width of [1280, 1440]) {
+   await page.setViewportSize({width, height: 900});
+   const layout = await measure();
+   assert.ok(layout.tableScroll <= 1 && layout.controlsVisible && layout.headerVisible,
+     `client columns must fit at ${width}px: ${JSON.stringify(layout)}`);
+   assert.ok(layout.toolbarInline, `client search and actions should share a row at ${width}px: ${JSON.stringify(layout)}`);
+ }
+ for (const width of [1024, 390]) {
+   await page.setViewportSize({width, height: 850});
+   const narrow = await measure();
+   assert.ok(narrow.tableScroll > 1 && narrow.pageScroll <= 1,
+     `only the client table should scroll horizontally at ${width}px: ${JSON.stringify(narrow)}`);
+   await actions.scrollIntoViewIfNeeded();
+   assert.ok((await measure()).controlsVisible, `client controls must be reachable at ${width}px`);
+ }
+ await page.setViewportSize({width: 1280, height: 900});
+}
+
 (async()=>{const browser=await chromium.launch({executablePath:process.env.NODE_UI_CHROME||'/usr/bin/chromium',headless:true,args:['--no-sandbox']});try{
  const page=await browser.newPage();page.setDefaultTimeout(10000);
  await page.addInitScript(()=>{window.__activeIntervals=new Set();const set=window.setInterval.bind(window),clear=window.clearInterval.bind(window);window.setInterval=(...args)=>{const id=set(...args);window.__activeIntervals.add(id);return id};window.clearInterval=id=>{window.__activeIntervals.delete(id);return clear(id)}});const errors=[];page.on('pageerror',error=>{errors.push(error.message);console.error(error.message)});page.on('console',message=>{if(message.type()==='error')console.error(message.text())});
@@ -20,7 +64,18 @@ const {chromium}=require('playwright');
   if(!await page.evaluate(()=>{const switches=Array.from(app.$el.querySelectorAll('.ssl-row .ant-switch'));return switches.length===3 && switches.every(button=>button.disabled)}))throw Error('external row enables managed-certificate actions');
  await page.goto(process.env.OVERVIEW_SSL_URL+'clients',{waitUntil:'networkidle'});
  await page.waitForFunction(()=>typeof app!=='undefined' && Array.isArray(app.clients));
- await page.evaluate(async()=>{if(app.loadingStates)app.loadingStates.fetched=true;app.density='compact';app.clients=[{id:91,email:'compact-comment-client-'+'long-'.repeat(50),enable:true,up:0,down:0,totalGB:0,expiryTime:0,comment:'VISIBLE-COMMENT-FIXTURE',memberships:Array.from({length:5},(_,i)=>({inboundId:i+1,protocol:['vless','trojan','vmess','vless','trojan'][i],port:15000+i,remark:'location-'+i,enable:true}))}];await app.$nextTick();});
+ await page.evaluate(async()=>{
+   if(app.loadingStates)app.loadingStates.fetched=true;
+   app.density='compact';
+   app.assignable=[{id:1}];
+   app.canTransferOwnership=true;
+   app.clients=[{id:91,email:'compact-comment-client-'+'long-'.repeat(50),ownerUsername:'@Ekram',
+     enable:true,up:0,down:0,totalGB:0,expiryTime:0,comment:'VISIBLE-COMMENT-FIXTURE',
+     memberships:Array.from({length:5},(_,i)=>({inboundId:i+1,protocol:['vless','trojan','vmess','vless','trojan'][i],
+       port:15000+i,remark:'location-'+i,enable:true}))}];
+   await app.$nextTick();
+ });
+ await checkClientsLayout(page);
  const comment=page.locator('.bo-lg-note').filter({hasText:'VISIBLE-COMMENT-FIXTURE'});
  if(await comment.isVisible())throw Error('Compact comment should initially be collapsed');
  await page.locator('.bo-comment-toggle').click();

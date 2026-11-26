@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/mhsanaei/3x-ui/v2/config"
+	"github.com/mhsanaei/3x-ui/v2/database/model"
 	"github.com/mhsanaei/3x-ui/v2/logger"
 	"github.com/mhsanaei/3x-ui/v2/web/locale"
 	"github.com/mhsanaei/3x-ui/v2/web/service"
@@ -150,22 +151,41 @@ func (a *SUBController) subs(c *gin.Context) {
 				basePathStr = strings.TrimRight(basePathStr, "/") + "/" + subId + "/"
 			}
 			page := a.subService.BuildPageData(subId, hostHeader, traffic, lastOnline, subs, subURL, subJsonURL, subClashURL, basePathStr)
-			// OpenVPN and WireGuard cannot be set up from a link: the page offers their
-			// config files as downloads. Rendered only for the browser view, since a
-			// subscription client has no use for them.
+			// Match each download to its inbound and account, including accounts
+			// that share a subscription ID.
 			profiles := subscription.ConfigLinks(subId, host, scheme, hostWithPort, a.subPath)
 			profilesByInbound := make(map[int][]SubConfigLink)
 			for _, profile := range profiles {
 				profilesByInbound[profile.inboundID] = append(profilesByInbound[profile.inboundID], profile)
 			}
-			for i := range native {
-				card := &native[i]
+			connections := struct {
+				Manual, OpenVPN []nativeConnection
+				Files, GRE      []SubConfigLink
+			}{}
+			var wireGuardDownloads, amneziaDownloads []SubConfigLink
+			for _, card := range native {
 				for _, profile := range profilesByInbound[card.inboundID] {
 					if profile.account == card.account {
 						card.Downloads = append(card.Downloads, profile)
 					}
 				}
+				switch {
+				case card.protocol == model.OPENVPN:
+					connections.OpenVPN = append(connections.OpenVPN, card)
+				case len(card.Downloads) == 0:
+					connections.Manual = append(connections.Manual, card)
+				case card.protocol == model.WGC:
+					wireGuardDownloads = append(wireGuardDownloads, card.Downloads...)
+				case card.protocol == model.AWG:
+					amneziaDownloads = append(amneziaDownloads, card.Downloads...)
+				case card.protocol == model.GRE:
+					// Start a new row so an odd number of preceding files cannot split a GRE pair.
+					connections.GRE = append(connections.GRE, card.Downloads...)
+				default:
+					connections.Files = append(connections.Files, card.Downloads...)
+				}
 			}
+			connections.Files = append(append(wireGuardDownloads, amneziaDownloads...), connections.Files...)
 			settings := &service.SettingService{}
 			apps, err := settings.SubscriptionApps()
 			if err != nil {
@@ -207,8 +227,7 @@ func (a *SUBController) subs(c *gin.Context) {
 				"subJsonUrl":   page.SubJsonUrl,
 				"subClashUrl":  page.SubClashUrl,
 				"result":       page.Result,
-				"native":       native,
-				"apps":         apps,
+				"connections":  connections,
 				"androidApps":  androidApps,
 				"iosApps":      iosApps,
 			})

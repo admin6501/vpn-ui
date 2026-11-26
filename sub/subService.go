@@ -457,6 +457,7 @@ type nativeConnection struct {
 	Port                                                  int
 	Downloads                                             []SubConfigLink
 	OtherEndpoints                                        []string
+	protocol                                              model.Protocol
 	inboundID                                             int
 	account                                               string
 }
@@ -464,6 +465,7 @@ type nativeConnection struct {
 func (s *SubService) nativeConnection(inbound *model.Inbound, client model.Client) (nativeConnection, bool) {
 	card := nativeConnection{
 		Protocol: protocolLabel(inbound.Protocol),
+		protocol: inbound.Protocol,
 		Host:     s.resolveInboundAddress(inbound), Port: inbound.Port,
 		inboundID: inbound.Id, account: strings.ToLower(strings.TrimSpace(client.Email)),
 	}

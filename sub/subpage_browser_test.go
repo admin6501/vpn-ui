@@ -73,7 +73,19 @@ func TestSubscriptionPageBrowserRuntime(t *testing.T) {
 			protocols := []model.Protocol{model.VMESS, model.Shadowsocks, model.AWG}
 			checkNodeLabels := tc.name == "active" || tc.name == "active-persian"
 			if checkNodeLabels {
-				protocols = append(protocols, model.Hysteria2, model.TUIC, model.ANYTLS, model.NAIVE)
+				protocols = append(protocols, model.Hysteria2, model.TUIC, model.ANYTLS, model.NAIVE,
+					model.IKEV2, model.PPTP, model.OPENVPN, model.WGC, model.GRE)
+				settings := &service.SettingService{}
+				apps, err := settings.SubscriptionApps()
+				if err != nil {
+					t.Fatal(err)
+				}
+				apps = append(apps,
+					service.SubscriptionApp{Platform: "android", Name: "Managed Android", URL: "https://downloads.example.test/app.apk"},
+					service.SubscriptionApp{Platform: "ios", Name: "Managed iOS", URL: "https://downloads.example.test/ios"})
+				if err := settings.SetSubscriptionApps(apps); err != nil {
+					t.Fatal(err)
+				}
 			}
 			for i, proto := range protocols {
 				client := subClient("browser-user", sid)
@@ -83,13 +95,30 @@ func TestSubscriptionPageBrowserRuntime(t *testing.T) {
 					settings["method"] = "chacha20-ietf-poly1305"
 					settings["password"] = "synthetic-server-password"
 				}
-				if proto == model.AWG {
-					settings["externalProxy"] = []map[string]any{{"dest": "awg-relay.example.test", "port": 55080, "remark": "Relay"}}
+				if proto == model.AWG || proto == model.WGC {
 					// Synthetic renderer-only keys: this never configures a kernel interface.
+					if proto == model.AWG {
+						settings["externalProxy"] = []map[string]any{{"dest": "awg-relay.example.test", "port": 55080, "remark": "Relay"}}
+					} else {
+						settings["externalProxy"] = []map[string]any{
+							{"dest": "wg-relay.example.test", "port": 55081, "remark": "Relay 1"},
+							{"dest": "wg-second.example.test", "port": 55082, "remark": "Relay 2"},
+						}
+					}
 					settings["serverPubKey"] = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
 					client["privKey"] = "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE="
 					client["pubKey"] = "AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI="
 					client["slot"] = 0
+				}
+				if proto == model.OPENVPN {
+					settings["udpEnable"] = true
+					settings["tcpEnable"] = true
+					settings["tlsCryptEnable"] = false
+					settings["caCert"] = "-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----"
+				}
+				if proto == model.GRE {
+					settings["ipRanges"] = []string{"10.9.3.2-10.9.3.254"}
+					client["peers"] = []map[string]any{{"peerIp": "192.0.2.7", "remark": "Branch"}}
 				}
 				name := "Browser server"
 				if i >= 3 {
