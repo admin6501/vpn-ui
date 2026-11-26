@@ -249,7 +249,7 @@
                         <div class="qr-box" style="display: inline-block; width: 100%; max-width: 100%;">
                             <a-tag color="purple"
                                 style="margin-bottom: -10px; position: relative; z-index: 2; box-shadow: 0 2px 4px rgba(0,0,0,0.2);">
-                                <span>[[ linkName(link, idx) ]]</span>
+                                <bdi dir="auto">[[ linkName(link, idx) ]]</bdi>
                             </a-tag>
                             <div @click="copy(link)" class="subscription-link-box">
                                 [[ link ]]
@@ -263,7 +263,7 @@
                     <div class="sub-native-grid" v-pre>
                         {{ range .native }}
                         <section class="sub-native-card">
-                            <h3>{{ if .Name }}{{ .Name }} · {{ end }}{{ .Protocol }}</h3>
+                            <h3>{{ if .Name }}<bdi dir="auto">{{ .Name }}</bdi> · {{ end }}{{ .Protocol }}</h3>
                             <dl>
                                 <dt>{{ i18n "host" }}</dt><dd dir="ltr">{{ .Host }}</dd>
                                 {{ if .Port }}<dt>{{ i18n "pages.inbounds.port" }}</dt><dd dir="ltr">{{ .Port }}</dd>{{ end }}

@@ -17,7 +17,7 @@ func TestNativeProtocolsStayOutOfRawSubscription(t *testing.T) {
 				t.Fatalf("native protocol escaped into raw subscription: %q", got)
 			}
 			card, ok := service.nativeConnection(inbound, client)
-			if !ok || card.Name != "London" || card.Host != "vpn.example.com" {
+			if !ok || card.Name != "London-subscriber" || card.Host != "vpn.example.com" {
 				t.Fatalf("native card: %+v", card)
 			}
 			if protocol == model.SSH && (card.Username != "vpn-login" || card.Password != "p p") {
@@ -102,13 +102,13 @@ func TestIKEv2CertificateAndPSKModesDoNotExposeUnusedLogin(t *testing.T) {
 }
 
 func TestWireGuardAndMTProtoCardsUseAdvertisedEndpoints(t *testing.T) {
-	s := &SubService{address: "panel.example.com"}
-	const settings = `{"externalProxy":[{"dest":"edge.example.com","port":1443},{"dest":"2001:db8::5","port":2443}]}`
+	s := &SubService{address: "panel.example.com", remarkModel: "|oei"}
+	const settings = `{"externalProxy":[{"dest":"edge.example.com","port":1443,"remark":"edge"},{"dest":"2001:db8::5","port":2443}]}`
 	for _, protocol := range []model.Protocol{model.WGC, model.AWG, model.MTPROTO} {
 		t.Run(string(protocol), func(t *testing.T) {
-			inbound := &model.Inbound{Protocol: protocol, Port: 443, Settings: settings}
-			card, ok := s.nativeConnection(inbound, model.Client{})
-			if !ok || card.Host != "edge.example.com" || card.Port != 1443 ||
+			inbound := &model.Inbound{Protocol: protocol, Port: 443, Remark: "London", Settings: settings}
+			card, ok := s.nativeConnection(inbound, model.Client{Email: "alice"})
+			if !ok || card.Host != "edge.example.com" || card.Port != 1443 || card.Name != "edge|alice|London" ||
 				len(card.OtherEndpoints) != 1 || card.OtherEndpoints[0] != "[2001:db8::5]:2443" {
 				t.Fatalf("native card did not use the external proxy: %+v", card)
 			}

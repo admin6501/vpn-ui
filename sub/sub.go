@@ -127,11 +127,6 @@ func (s *Server) initRouter() (*gin.Engine, error) {
 		return nil, err
 	}
 
-	RemarkModel, err := s.settingService.GetRemarkModel()
-	if err != nil {
-		RemarkModel = "-ieo"
-	}
-
 	SubUpdates, err := s.settingService.GetSubUpdates()
 	if err != nil {
 		SubUpdates = "10"
@@ -270,7 +265,7 @@ func (s *Server) initRouter() (*gin.Engine, error) {
 	g := engine.Group("/")
 
 	s.sub = NewSUBController(
-		g, LinksPath, JsonPath, ClashPath, subJsonEnable, subClashEnable, Encrypt, ShowInfo, RemarkModel, SubUpdates,
+		g, LinksPath, JsonPath, ClashPath, subJsonEnable, subClashEnable, Encrypt, ShowInfo, SubUpdates,
 		SubJsonFragment, SubJsonNoises, SubJsonMux, SubJsonRules, SubTitle, SubSupportUrl,
 		SubProfileUrl, SubAnnounce, SubEnableRouting, SubRoutingRules)
 
@@ -404,6 +399,6 @@ func (s *Server) TelegramAccountLinks(subID, email, host string) ([]string, erro
 	if err != nil {
 		return nil, err
 	}
-	links, _, _, err := NewSubService(false, remark).getSubs(subID, host, false, email, nil)
+	links, _, _, err := NewSubService(false, remark).forResponse().getSubs(subID, host, false, email, nil)
 	return links, err
 }

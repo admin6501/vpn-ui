@@ -39,9 +39,13 @@ const assert = require('node:assert/strict');
       const awg = page.locator('.sub-native-card').filter({hasText: 'AmneziaWG'});
       assert.match(await awg.innerText(), /awg-relay\.example\.test[\s\S]*55080/);
       if (expected.checkNodeLabels) {
+        assert.equal(await awg.locator('h3 bdi').innerText(), 'browser-user|Relay|Browser server');
+        assert.match(await awg.locator('.sub-config-btn').innerText(), /browser-user\|Relay\|Browser server/);
         for (const proto of ['hysteria2', 'tuic', 'anytls', 'naive']) {
           const label = page.locator('.qr-box .ant-tag').filter({hasText: 'Node ' + proto});
-          assert.match(await label.innerText(), /7\.00GB📊.*(?:\d+D|\d+H)⏳/);
+          const text = await label.innerText();
+          assert.ok(text.startsWith(`browser-user|Node ${proto}|`), text);
+          assert.match(text, /7\.00GB📊.*(?:\d+D|\d+H)⏳/);
         }
       }
       const title = page.locator('.ant-divider bdi');

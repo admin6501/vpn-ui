@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/gin-gonic/gin"
 	"github.com/goccy/go-json"
@@ -28,11 +29,10 @@ import (
 
 // SubService provides business logic for generating subscription links and managing subscription data.
 type SubService struct {
-	useInboundNames bool
-	address         string
-	showInfo        bool
-	remarkModel     string
-	datepicker      string
+	address     string
+	showInfo    bool
+	remarkModel string
+	datepicker  string
 	// scope is the state of the ONE response being rendered: which identities it
 	// spans, what each one's real quota is, and which node names have been handed
 	// out. Nil on the shared instance the router builds, and set on the per-response
@@ -49,7 +49,8 @@ type SubService struct {
 	openvpnService service.OpenVpnService
 }
 
-// NewSubService creates a new subscription service with the given configuration.
+// NewSubService creates a new subscription service. An empty remark model uses
+// the current panel setting for each response.
 func NewSubService(showInfo bool, remarkModel string) *SubService {
 	return &SubService{
 		showInfo:    showInfo,
@@ -73,10 +74,17 @@ func NewSubService(showInfo bool, remarkModel string) *SubService {
 // copied at all. If one of them ever does need configuring, it has to be carried
 // here BY POINTER, or the response will quietly render against an unconfigured one.
 func (s *SubService) forResponse() *SubService {
+	remarkModel := s.remarkModel
+	if remarkModel == "" {
+		remarkModel, _ = s.settingService.GetRemarkModel()
+		if remarkModel == "" {
+			remarkModel = "-ieo"
+		}
+	}
 	return &SubService{
 		address:     s.address,
 		showInfo:    s.showInfo,
-		remarkModel: s.remarkModel,
+		remarkModel: remarkModel,
 		datepicker:  s.datepicker,
 		scope:       newSubScope(),
 	}
@@ -122,20 +130,19 @@ func (s *SubService) resolveTraffic(inbound *model.Inbound, email string) (traff
 
 // GetSubs retrieves subscription links for a given subscription ID and host.
 func (s *SubService) GetSubs(subId string, host string) ([]string, int64, xray.ClientTraffic, error) {
-	return s.getSubs(subId, host, false, "", nil)
+	return s.forResponse().getSubs(subId, host, false, "", nil)
 }
 
 // GetPageSubs retains the customer's connection details when their representative
 // has run out of allowance. This only changes the browser view, not core admission
 // or the enabled-only exports consumed by subscription clients.
 func (s *SubService) GetPageSubs(subId string, host string) ([]string, int64, xray.ClientTraffic, error) {
-	return s.getSubs(subId, host, true, "", nil)
+	return s.forResponse().getSubs(subId, host, true, "", nil)
 }
 
+// getSubs renders links and cards on the instance created by forResponse.
 func (s *SubService) getSubs(subId string, host string, page bool, onlyEmail string, cards *[]nativeConnection) ([]string, int64, xray.ClientTraffic, error) {
-	s = s.forResponse()
 	s.address = host
-	s.useInboundNames = onlyEmail == ""
 	s.showInfo = s.showInfo || page
 	var result []string
 	var traffic xray.ClientTraffic
@@ -456,10 +463,11 @@ type nativeConnection struct {
 
 func (s *SubService) nativeConnection(inbound *model.Inbound, client model.Client) (nativeConnection, bool) {
 	card := nativeConnection{
-		Name: inbound.Remark, Protocol: protocolLabel(inbound.Protocol),
-		Host: s.resolveInboundAddress(inbound), Port: inbound.Port,
+		Protocol: protocolLabel(inbound.Protocol),
+		Host:     s.resolveInboundAddress(inbound), Port: inbound.Port,
 		inboundID: inbound.Id, account: strings.ToLower(strings.TrimSpace(client.Email)),
 	}
+	var endpointRemark string
 	switch inbound.Protocol {
 	case model.OPENVPN, model.OPENCONNECT, model.L2TP, model.PPTP, model.IKEV2, model.SSTP:
 		card.Username, card.Password = client.ID, client.Password
@@ -474,7 +482,7 @@ func (s *SubService) nativeConnection(inbound *model.Inbound, client model.Clien
 			PSK           string                      `json:"psk"`
 		}
 		_ = json.Unmarshal([]byte(inbound.Settings), &settings)
-		card.setAdvertisedEndpoints(settings.ExternalProxy)
+		endpointRemark = card.setAdvertisedEndpoints(settings.ExternalProxy)
 		switch inbound.Protocol {
 		case model.L2TP:
 			if settings.IPsecEnable {
@@ -493,6 +501,7 @@ func (s *SubService) nativeConnection(inbound *model.Inbound, client model.Clien
 		card.Username, card.Password = client.ID, client.Password
 		if configs, err := s.sshService.RenderClientConfigs(inbound, client.Email, card.Host); err == nil && len(configs) > 0 {
 			card.Host, card.Port = configs[0].Host, configs[0].Port
+			endpointRemark = configs[0].Remark
 			for _, config := range configs[1:] {
 				card.OtherEndpoints = append(card.OtherEndpoints, net.JoinHostPort(config.Host, strconv.Itoa(config.Port)))
 			}
@@ -505,27 +514,31 @@ func (s *SubService) nativeConnection(inbound *model.Inbound, client model.Clien
 				proxies = append(proxies, model.ClientExternalProxy{Dest: proxy.Dest, Port: proxy.Port, Remark: proxy.Remark})
 			}
 		}
-		card.setAdvertisedEndpoints(proxies)
+		endpointRemark = card.setAdvertisedEndpoints(proxies)
 	case model.AWG, model.WGC:
 		// Use the same first advertised endpoint as the downloadable profiles.
 		var settings struct {
 			ExternalProxy []model.ClientExternalProxy `json:"externalProxy"`
 		}
 		_ = json.Unmarshal([]byte(inbound.Settings), &settings)
-		card.setAdvertisedEndpoints(settings.ExternalProxy)
+		endpointRemark = card.setAdvertisedEndpoints(settings.ExternalProxy)
 	case model.GRE:
 		card.Port = 0
 	default:
 		return nativeConnection{}, false
 	}
+	parts, separator := s.remarkParts(inbound, client.Email, endpointRemark)
+	card.Name = strings.Join(parts, separator)
 	return card, true
 }
 
 // setAdvertisedEndpoints matches the native VPN export: the first configured
-// relay replaces the direct address. Later relays are shown as alternatives.
-func (card *nativeConnection) setAdvertisedEndpoints(proxies []model.ClientExternalProxy) {
+// relay replaces the direct address and supplies the main endpoint's remark.
+// Later relays are shown as alternatives.
+func (card *nativeConnection) setAdvertisedEndpoints(proxies []model.ClientExternalProxy) string {
 	defaultPort := card.Port
 	haveEndpoint := false
+	var remark string
 	for _, proxy := range proxies {
 		host := strings.TrimSpace(proxy.Dest)
 		if host == "" {
@@ -537,11 +550,13 @@ func (card *nativeConnection) setAdvertisedEndpoints(proxies []model.ClientExter
 		}
 		if !haveEndpoint {
 			card.Host, card.Port = host, port
+			remark = proxy.Remark
 			haveEndpoint = true
 		} else {
 			card.OtherEndpoints = append(card.OtherEndpoints, net.JoinHostPort(strings.Trim(host, "[]"), strconv.Itoa(port)))
 		}
 	}
+	return remark
 }
 
 // genWireguardLink renders a plain WireGuard URI per device and endpoint.
@@ -1495,6 +1510,23 @@ func cloneStringMap(source map[string]string) map[string]string {
 	return cloned
 }
 
+func (s *SubService) remarkParts(inbound *model.Inbound, email, extra string) ([]string, string) {
+	pattern := s.remarkModel
+	if pattern == "" {
+		pattern = "-ieo"
+	}
+	_, width := utf8.DecodeRuneInString(pattern)
+	separator, order := pattern[:width], pattern[width:]
+	values := map[rune]string{'i': inbound.Remark, 'e': email, 'o': extra}
+	parts := make([]string, 0, len(values))
+	for _, field := range order {
+		if value := values[field]; strings.TrimSpace(value) != "" {
+			parts = append(parts, value)
+		}
+	}
+	return parts, separator
+}
+
 // genRemark composes the node name a client displays: the inbound remark, the
 // email and a per-protocol extra, in the operator's configured order, plus the
 // remaining traffic and days when Show Info is on.
@@ -1505,41 +1537,15 @@ func cloneStringMap(source map[string]string) map[string]string {
 // runs through subScope.uniqueName rather than the composition trying to be unique
 // by construction.
 func (s *SubService) genRemark(inbound *model.Inbound, email string, extra string) string {
-	model := s.remarkModel
-	if model == "" {
-		model = "-ieo"
-	}
-	separationChar := model[:1]
-	orderChars := model[1:]
-	if s.useInboundNames {
-		// Keep the endpoint suffix to distinguish multiple proxies on one inbound.
-		orderChars = "io"
-		if strings.TrimSpace(inbound.Remark) == "" {
-			orderChars = "eo"
+	remark, separationChar := s.remarkParts(inbound, email, extra)
+	if len(remark) == 0 && s.scope != nil {
+		// Importers need a name even when all selected parts are empty. Use the
+		// inbound tag so the fallback does not expose an omitted account name.
+		name := strings.TrimSpace(inbound.Tag)
+		if name == "" {
+			name = string(inbound.Protocol) + separationChar + strconv.Itoa(inbound.Id)
 		}
-	}
-	orders := map[byte]string{
-		'i': "",
-		'e': "",
-		'o': "",
-	}
-	if len(email) > 0 {
-		orders['e'] = email
-	}
-	if len(inbound.Remark) > 0 {
-		orders['i'] = inbound.Remark
-	}
-	if len(extra) > 0 {
-		orders['o'] = extra
-	}
-
-	var remark []string
-	for i := 0; i < len(orderChars); i++ {
-		char := orderChars[i]
-		order, exists := orders[char]
-		if exists && order != "" {
-			remark = append(remark, order)
-		}
+		remark = append(remark, name)
 	}
 
 	if s.showInfo {

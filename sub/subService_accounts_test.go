@@ -547,34 +547,41 @@ func TestGetSubsGivesEveryMembershipItsOwnName(t *testing.T) {
 	}
 }
 
-func TestSubscriptionUsesInboundNameAndFallsBackToEmail(t *testing.T) {
+func TestSubscriptionUsesConfiguredNameParts(t *testing.T) {
 	cases := []struct {
-		name   string
-		remark string
-		want   string
+		name, pattern, inboundRemark, want string
 	}{
-		{name: "with a remark", remark: "Germany", want: "Germany"},
-		{name: "with no remark", remark: "", want: "alice@example.com"},
+		{"default order", "-ieo", "Germany", "Germany-alice@example.com-edge"},
+		{"different order and separator", "|oei", "Germany", "edge|alice@example.com|Germany"},
+		{"space separator", " ei", "Germany", "alice@example.com Germany"},
+		{"only inbound", "-i", "Germany", "Germany"},
+		{"only other", "-o", "Germany", "edge"},
+		{"empty selected field", "-i", " ", "inbound-41100"},
+		{"no fields", "-", "Germany", "inbound-41100"},
 	}
-
-	for i, c := range cases {
+	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			newSubTestDB(t)
-			markAccountsMigrated(t)
 			const email = "alice@example.com"
-			const subId = "sub-alice"
-			port := 41100 + i
-			inbound := seedSubInbound(t, model.VLESS, port, c.remark, subClient(email, subId))
-			seedTraffic(t, inbound.Id, email, 0, 0, 10*gb, 0)
-			seedAccount(t, email, 10*gb, 0, inbound.Id)
-
-			links, _, _, err := subSvc().GetSubs(subId, "vpn.example.com")
-			if err != nil {
-				t.Fatalf("GetSubs: %v", err)
+			const subID = "sub-alice"
+			inbound := seedSubInbound(t, model.VLESS, 41100, c.inboundRemark, subClient(email, subID))
+			stream := `{"network":"tcp","security":"none","externalProxy":[{"dest":"proxy.example.com","port":8443,"forceTls":"same","remark":"edge"}]}`
+			if err := database.GetDB().Model(inbound).Update("stream_settings", stream).Error; err != nil {
+				t.Fatal(err)
 			}
-			names := fragments(t, links)
-			if len(names) != 1 || names[0] != c.want {
-				t.Fatalf("name = %q, want exactly [%q]", names, c.want)
+
+			sub := NewSubService(false, c.pattern)
+			for name, get := range map[string]func(string, string) ([]string, int64, xray.ClientTraffic, error){
+				"raw": sub.GetSubs, "page": sub.GetPageSubs,
+			} {
+				links, _, _, err := get(subID, "vpn.example.com")
+				if err != nil {
+					t.Fatal(err)
+				}
+				got := fragments(t, links)
+				if len(got) != 1 || got[0] != c.want {
+					t.Errorf("%s returned %q, want [%q]", name, got, c.want)
+				}
 			}
 		})
 	}
@@ -587,7 +594,7 @@ func TestEquallyNamedInboundsInASharedSubscriptionAreDisambiguated(t *testing.T)
 	seedSubInbound(t, model.VLESS, 41201, "Germany", subClient("alice@example.com", subId))
 	seedSubInbound(t, model.VLESS, 41202, "Germany", subClient("bob@example.com", subId))
 
-	links, _, _, err := subSvc().GetSubs(subId, "vpn.example.com")
+	links, _, _, err := NewSubService(false, "-i").GetSubs(subId, "vpn.example.com")
 	if err != nil {
 		t.Fatalf("GetSubs: %v", err)
 	}

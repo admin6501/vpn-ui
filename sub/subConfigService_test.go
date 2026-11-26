@@ -8,25 +8,17 @@ import (
 	"github.com/mhsanaei/3x-ui/v2/database/model"
 )
 
-// The renderer's Remark already carries the device number and endpoint label, so the
-// button text must not compose its own: that produced "WireGuard Device 1 Device 1 - edge".
-func TestWgLabelUsesRendererRemarkAsIs(t *testing.T) {
-	cases := []struct {
-		name, proto, cfgRemark, inboundRemark, want string
-	}{
-		{"device and endpoint", "WireGuard", "Device 2 - edge", "home",
-			"WireGuard Device 2 - edge (home)"},
-		{"endpoint only", "AmneziaWG", "edge", "home", "AmneziaWG edge (home)"},
-		{"single config", "WireGuard", "", "home", "WireGuard config (home)"},
-		{"no inbound remark", "WireGuard", "", "", "WireGuard config"},
-		{"remark is whitespace", "AmneziaWG", "  ", "  ", "AmneziaWG config"},
-	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			if got := wgLabel(c.proto, c.cfgRemark, c.inboundRemark); got != c.want {
-				t.Fatalf("got %q, want %q", got, c.want)
-			}
-		})
+func TestDownloadLabelUsesConfiguredNameParts(t *testing.T) {
+	inbound := &model.Inbound{Remark: "home"}
+	for _, tc := range []struct{ pattern, extra, want string }{
+		{"|oei", "Device 2 - edge", "WireGuard · Device 2 - edge|alice|home"},
+		{"~ei", "edge", "WireGuard · alice~home"},
+		{"-o", "", "WireGuard"},
+	} {
+		s := &SubService{remarkModel: tc.pattern}
+		if got := s.configLabel(inbound, "alice", tc.extra, "WireGuard"); got != tc.want {
+			t.Errorf("%s: got %q, want %q", tc.pattern, got, tc.want)
+		}
 	}
 }
 
@@ -77,13 +69,13 @@ func TestGreConfigFilesSplitByPlatform(t *testing.T) {
 	// Each half carries its own platform's commands and not the other's, and names the
 	// peer: by the admin's remark when there is one, by slot number when there is not.
 	for _, want := range []struct{ key, label, filename, has, hasNot string }{
-		{"gre-7-0-mikrotik", "GRE MikroTik office (home)", "home-gre-peer1-mikrotik.txt",
+		{"gre-7-0-mikrotik", "GRE MikroTik · home-alice-office", "home-gre-peer1-mikrotik.txt",
 			"/interface gre add", "ip link add"},
-		{"gre-7-0-linux", "GRE Linux office (home)", "home-gre-peer1-linux.txt",
+		{"gre-7-0-linux", "GRE Linux · home-alice-office", "home-gre-peer1-linux.txt",
 			"ip link add gre-vpnui", "/interface gre add"},
-		{"gre-7-1-mikrotik", "GRE MikroTik Peer 2 (home)", "home-gre-peer2-mikrotik.txt",
+		{"gre-7-1-mikrotik", "GRE MikroTik · home-alice-Peer 2", "home-gre-peer2-mikrotik.txt",
 			"/interface gre add", "ip link add"},
-		{"gre-7-1-linux", "GRE Linux Peer 2 (home)", "home-gre-peer2-linux.txt",
+		{"gre-7-1-linux", "GRE Linux · home-alice-Peer 2", "home-gre-peer2-linux.txt",
 			"ip link add gre-vpnui", "/interface gre add"},
 	} {
 		t.Run(want.key, func(t *testing.T) {
@@ -122,8 +114,8 @@ func TestGreConfigFilesSinglePeer(t *testing.T) {
 		t.Fatalf("want 1 peer x 2 platforms = 2 files, got %d: %+v", len(files), files)
 	}
 	for i, want := range []struct{ label, filename string }{
-		{"GRE MikroTik", "gre-mikrotik.txt"},
-		{"GRE Linux", "gre-linux.txt"},
+		{"GRE MikroTik · alice", "gre-mikrotik.txt"},
+		{"GRE Linux · alice", "gre-linux.txt"},
 	} {
 		if files[i].Label != want.label {
 			t.Fatalf("label %d:\n got=%q\nwant=%q", i, files[i].Label, want.label)

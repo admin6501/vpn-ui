@@ -84,7 +84,7 @@ func TestSubscriptionPageBrowserRuntime(t *testing.T) {
 					settings["password"] = "synthetic-server-password"
 				}
 				if proto == model.AWG {
-					settings["externalProxy"] = []map[string]any{{"dest": "awg-relay.example.test", "port": 55080}}
+					settings["externalProxy"] = []map[string]any{{"dest": "awg-relay.example.test", "port": 55080, "remark": "Relay"}}
 					// Synthetic renderer-only keys: this never configures a kernel interface.
 					settings["serverPubKey"] = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
 					client["privKey"] = "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE="
@@ -146,6 +146,12 @@ func TestSubscriptionPageBrowserRuntime(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			if checkNodeLabels {
+				if err := db.Create(&model.Setting{Key: "remarkModel", Value: "|eoi"}).Error; err != nil {
+					t.Fatal(err)
+				}
+			}
+
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				if r.URL.Path == "/favicon.ico" {
 					w.WriteHeader(http.StatusNoContent)

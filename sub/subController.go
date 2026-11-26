@@ -45,7 +45,6 @@ func NewSUBController(
 	clashEnabled bool,
 	encrypt bool,
 	showInfo bool,
-	rModel string,
 	update string,
 	jsonFragment string,
 	jsonNoise string,
@@ -58,7 +57,7 @@ func NewSUBController(
 	subEnableRouting bool,
 	subRoutingRules string,
 ) *SUBController {
-	sub := NewSubService(showInfo, rModel)
+	sub := NewSubService(showInfo, "")
 	a := &SUBController{
 		subTitle:         subTitle,
 		subSupportUrl:    subSupportUrl,
@@ -117,7 +116,8 @@ func (a *SUBController) subs(c *gin.Context) {
 	if pageRequest {
 		cards = &native
 	}
-	subs, lastOnline, traffic, err := a.subService.getSubs(subId, host, pageRequest, "", cards)
+	subscription := a.subService.forResponse()
+	subs, lastOnline, traffic, err := subscription.getSubs(subId, host, pageRequest, "", cards)
 	if err != nil {
 		c.String(400, "Error!")
 	} else {
@@ -153,7 +153,7 @@ func (a *SUBController) subs(c *gin.Context) {
 			// OpenVPN and WireGuard cannot be set up from a link: the page offers their
 			// config files as downloads. Rendered only for the browser view, since a
 			// subscription client has no use for them.
-			profiles := a.subService.ConfigLinks(subId, host, scheme, hostWithPort, a.subPath)
+			profiles := subscription.ConfigLinks(subId, host, scheme, hostWithPort, a.subPath)
 			profilesByInbound := make(map[int][]SubConfigLink)
 			for _, profile := range profiles {
 				profilesByInbound[profile.inboundID] = append(profilesByInbound[profile.inboundID], profile)
@@ -161,7 +161,7 @@ func (a *SUBController) subs(c *gin.Context) {
 			for i := range native {
 				card := &native[i]
 				for _, profile := range profilesByInbound[card.inboundID] {
-					if profile.account == "" || profile.account == card.account {
+					if profile.account == card.account {
 						card.Downloads = append(card.Downloads, profile)
 					}
 				}

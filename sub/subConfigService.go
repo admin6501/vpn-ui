@@ -58,7 +58,7 @@ func (s *SubService) ConfigFiles(subId string, host string) []SubConfigFile {
 	}
 
 	var out []SubConfigFile
-	seen := map[string]bool{}
+	seen := map[[2]string]bool{}
 	for _, inbound := range inbounds {
 		switch inbound.Protocol {
 		case model.OPENVPN, model.WGC, model.AWG, model.GRE:
@@ -75,17 +75,18 @@ func (s *SubService) ConfigFiles(subId string, host string) []SubConfigFile {
 			}
 			for _, cfg := range s.inboundConfigFiles(inbound, client.Email, host) {
 				cfg.inboundID = inbound.Id
-				// OpenVPN prompts for credentials: the profile is shared by the
-				// inbound. Other files can contain per-account keys and peers.
+				cfg.account = strings.ToLower(strings.TrimSpace(client.Email))
+				// OpenVPN prompts for credentials, so its URL stays shared even
+				// when the configured display name includes each account's name.
 				if inbound.Protocol != model.OPENVPN {
-					cfg.account = strings.ToLower(strings.TrimSpace(client.Email))
 					digest := sha256.Sum256([]byte(cfg.account))
 					cfg.Key += fmt.Sprintf("~%x", digest[:8])
 				}
-				if seen[cfg.Key] {
+				key := [2]string{cfg.Key, cfg.account}
+				if seen[key] {
 					continue
 				}
-				seen[cfg.Key] = true
+				seen[key] = true
 				out = append(out, cfg)
 			}
 		}
@@ -144,7 +145,7 @@ func (s *SubService) inboundConfigFiles(inbound *model.Inbound, email, host stri
 			out = append(out, SubConfigFile{
 				Key:         fmt.Sprintf("ovpn-%d-%s", inbound.Id, proto),
 				Protocol:    string(model.OPENVPN),
-				Label:       "OpenVPN " + strings.ToUpper(proto) + labelSuffix(inbound.Remark),
+				Label:       s.configLabel(inbound, email, "", "OpenVPN "+strings.ToUpper(proto)),
 				Filename:    configFilename(inbound.Remark, "openvpn", proto, "ovpn"),
 				ContentType: "application/x-openvpn-profile",
 				Content:     content,
@@ -162,7 +163,7 @@ func (s *SubService) inboundConfigFiles(inbound *model.Inbound, email, host stri
 			out = append(out, SubConfigFile{
 				Key:         fmt.Sprintf("wgc-%d-%d", inbound.Id, i),
 				Protocol:    string(model.WGC),
-				Label:       wgLabel("WireGuard", cfg.Remark, inbound.Remark),
+				Label:       s.configLabel(inbound, email, cfg.Remark, "WireGuard"),
 				Filename:    configFilename(inbound.Remark, "wg", wgVariant(cfg.Remark, i), "conf"),
 				ContentType: "application/x-wireguard-profile",
 				Content:     cfg.Config,
@@ -180,7 +181,7 @@ func (s *SubService) inboundConfigFiles(inbound *model.Inbound, email, host stri
 			out = append(out, SubConfigFile{
 				Key:         fmt.Sprintf("awg-%d-%d", inbound.Id, i),
 				Protocol:    string(model.AWG),
-				Label:       wgLabel("AmneziaWG", cfg.Remark, inbound.Remark),
+				Label:       s.configLabel(inbound, email, cfg.Remark, "AmneziaWG"),
 				Filename:    configFilename(inbound.Remark, "awg", wgVariant(cfg.Remark, i), "conf"),
 				ContentType: "application/x-wireguard-profile",
 				Content:     cfg.Config,
@@ -201,6 +202,10 @@ func (s *SubService) inboundConfigFiles(inbound *model.Inbound, email, host stri
 		multi := len(cfgs) > 1
 		out := make([]SubConfigFile, 0, len(cfgs)*2)
 		for i, cfg := range cfgs {
+			peerRemark := cfg.Remark
+			if multi && strings.TrimSpace(peerRemark) == "" {
+				peerRemark = "Peer " + strconv.Itoa(cfg.PeerIndex+1)
+			}
 			for _, p := range []struct{ slug, name, content string }{
 				{"mikrotik", "MikroTik", cfg.ConfigMikrotik},
 				{"linux", "Linux", cfg.ConfigLinux},
@@ -214,7 +219,7 @@ func (s *SubService) inboundConfigFiles(inbound *model.Inbound, email, host stri
 					// would serve whichever one ConfigFiles listed first.
 					Key:         fmt.Sprintf("gre-%d-%d-%s", inbound.Id, i, p.slug),
 					Protocol:    string(model.GRE),
-					Label:       greLabel(p.name, cfg.Remark, inbound.Remark, cfg.PeerIndex, multi),
+					Label:       s.configLabel(inbound, email, peerRemark, "GRE "+p.name),
 					Filename:    configFilename(inbound.Remark, "gre", greVariant(inbound.Remark, p.slug, cfg.PeerIndex, multi), "txt"),
 					ContentType: "text/plain; charset=utf-8",
 					Content:     p.content,
@@ -226,18 +231,12 @@ func (s *SubService) inboundConfigFiles(inbound *model.Inbound, email, host stri
 	return nil
 }
 
-// wgLabel names a WireGuard config. The renderer's own Remark already reads "Device 2 -
-// edge" (device number only when the account has more than one, endpoint label only when
-// external proxies are configured), so it is used as-is: composing a second device number
-// on top produced "Device 1 Device 1 - edge".
-func wgLabel(protoName, cfgRemark, inboundRemark string) string {
-	label := protoName
-	if r := strings.TrimSpace(cfgRemark); r != "" {
-		label += " " + r
-	} else {
-		label += " config"
+func (s *SubService) configLabel(inbound *model.Inbound, email, extra, protocol string) string {
+	parts, separator := s.remarkParts(inbound, email, extra)
+	if len(parts) == 0 {
+		return protocol
 	}
-	return label + labelSuffix(inboundRemark)
+	return protocol + " · " + strings.Join(parts, separator)
 }
 
 // wgVariant is the filename half of the same thing, falling back to the position so two
@@ -247,21 +246,6 @@ func wgVariant(cfgRemark string, index int) string {
 		return r
 	}
 	return strconv.Itoa(index + 1)
-}
-
-// greLabel names one GRE download. It cannot reuse wgLabel: a GRE peer remark is optional
-// (a WireGuard config always gets "Device N" from its renderer), so an account with two
-// unnamed peers would show the same button text twice. The slot number stands in when the
-// admin left the peer unnamed, and only then, since "Peer 1" on a single-peer account is
-// noise.
-func greLabel(platform, peerRemark, inboundRemark string, peerIndex int, multi bool) string {
-	label := "GRE " + platform
-	if r := strings.TrimSpace(peerRemark); r != "" {
-		label += " " + r
-	} else if multi {
-		label += " Peer " + strconv.Itoa(peerIndex+1)
-	}
-	return label + labelSuffix(inboundRemark)
 }
 
 // greVariant is the filename half of the same thing. A GRE artifact is a bare .txt rather
@@ -278,13 +262,6 @@ func greVariant(inboundRemark, platform string, peerIndex int, multi bool) strin
 		parts = append(parts, "peer"+strconv.Itoa(peerIndex+1))
 	}
 	return strings.Join(append(parts, platform), "-")
-}
-
-func labelSuffix(remark string) string {
-	if r := strings.TrimSpace(remark); r != "" {
-		return " (" + r + ")"
-	}
-	return ""
 }
 
 // configFilename builds the download filename. Everything that reaches it is
