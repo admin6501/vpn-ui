@@ -144,7 +144,12 @@
               </a-card>
 
               <a-card hoverable class="bo-lg" :class="{ 'bo-lg--compact': density === 'compact' }">
+                <div ref="clientsTopScroll" class="bo-clients-scroll-top" role="region" tabindex="0"
+                  aria-label='{{ i18n "menu.clients" }}' aria-controls="clients-table" hidden>
+                  <div aria-hidden="true"></div>
+                </div>
                 <a-table
+                  ref="clientsTable" id="clients-table"
                   :columns="columns"
                   :data-source="clients"
                   :row-key="r => r.email"
@@ -473,6 +478,7 @@
 
 {{template "page/body_scripts" .}}
 {{ template "component/clientAudit" . }}
+<script src="{{ .base_path }}assets/js/clients-scroll.js?{{ .asset_ver }}"></script>
 <script src="{{ .base_path }}assets/qrcode/qrious2.min.js?{{ .asset_ver }}"></script>
 <script src="{{ .base_path }}assets/uri/URI.min.js?{{ .asset_ver }}"></script>
 <script src="{{ .base_path }}assets/js/model/reality_targets.js?{{ .asset_ver }}"></script>
@@ -1427,6 +1433,7 @@
       },
     },
     async mounted() {
+      this._detachClientScroll = attachClientTableScroll(this.$refs.clientsTable.$el, this.$refs.clientsTopScroll);
       if (window.wsClient) {
         this._onInboundInvalidation = (payload) => {
           if (this.isRefreshEnabled && payload?.type === 'inbounds') {
@@ -1451,6 +1458,7 @@
       if (this.isRefreshEnabled) this.startDataRefreshLoop();
     },
     beforeDestroy() {
+      this._detachClientScroll?.();
       if (this._onInboundInvalidation) window.wsClient.off('invalidate', this._onInboundInvalidation);
       if (this._onClientRates) window.wsClient.off('traffic', this._onClientRates);
       clearInterval(this.liveStateTimer);

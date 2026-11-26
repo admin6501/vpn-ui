@@ -1606,6 +1606,13 @@ html[data-theme-animations='off'] .log-live-dot { animation:none; }
 @media (max-width:680px) {
   .bo-clients-search.ant-input-search { flex-basis:100%; }
 }
+.bo-clients-scroll-top {
+  height:15px; margin-block-end:6px; overflow-x:scroll; overflow-y:hidden;
+  overscroll-behavior-x:contain; scrollbar-color:var(--text-3) var(--surface-2);
+}
+.bo-clients-scroll-top > div { height:1px; }
+.bo-lg .bo-clients-scrollable { cursor:grab; }
+.bo-lg .bo-clients-dragging { cursor:grabbing; user-select:none; }
 
 .bo-lg-who { display:flex; align-items:center; gap:9px; min-width:0; }
 .bo-lg-names { min-width:0; }

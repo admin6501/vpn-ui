@@ -1,9 +1,47 @@
 const {chromium}=require('playwright');
 const assert=require('node:assert/strict');
 
+async function checkClientsScrolling(page, top) {
+ const body = page.locator('#clients-table .ant-table-body');
+ const waitForPosition = left => page.waitForFunction(expected => {
+   const body = document.querySelector('#clients-table .ant-table-body');
+   const bar = document.querySelector('.bo-clients-scroll-top');
+   return Math.abs(body.scrollLeft - expected) < 2 && Math.abs(bar.scrollLeft - expected) < 2;
+ }, left);
+ const [barBounds, bodyBounds] = await Promise.all([top.boundingBox(), body.boundingBox()]);
+ assert.ok(barBounds.y + barBounds.height <= bodyBounds.y + 1, 'the mirrored bar sits above the table');
+
+ await top.evaluate(bar => { bar.scrollLeft = 75; });
+ await waitForPosition(75);
+ await body.evaluate(body => { body.scrollLeft = 125; });
+ await waitForPosition(125);
+ await top.evaluate(bar => { bar.scrollLeft = 0; });
+ await waitForPosition(0);
+
+ const cell = await body.locator('.bo-lg-figs').first().boundingBox();
+ const x = cell.x + cell.width / 2;
+ const y = cell.y + cell.height / 2;
+ await page.mouse.move(x, y);
+ await page.mouse.down();
+ await page.mouse.move(x - 80, y, {steps: 5});
+ await waitForPosition(80);
+ await page.mouse.move(x - 25, y, {steps: 4});
+ await page.mouse.up();
+ await waitForPosition(25);
+ assert.equal(await body.evaluate(body => body.classList.contains('bo-clients-dragging')), false);
+
+ await body.dispatchEvent('wheel', {deltaY: 70});
+ await waitForPosition(25);
+ await body.dispatchEvent('wheel', {deltaY: 65, shiftKey: true});
+ await waitForPosition(90);
+ await top.dispatchEvent('wheel', {deltaY: -90});
+ await waitForPosition(0);
+}
+
 async function checkClientsLayout(page) {
  const originalViewport = page.viewportSize();
  const actions = page.locator('.bo-lg-acts').first();
+ const top = page.locator('.bo-clients-scroll-top');
  await actions.waitFor();
  const measure = () => actions.evaluate(element => {
    const body = element.closest('.ant-table-body');
@@ -28,6 +66,7 @@ async function checkClientsLayout(page) {
  });
  for (const width of [1280, 1440]) {
    await page.setViewportSize({width, height: 900});
+   await top.waitFor({state: 'hidden'});
    const layout = await measure();
    assert.ok(layout.tableScroll <= 1 && layout.controlsVisible && layout.headerVisible,
      `client columns must fit at ${width}px: ${JSON.stringify(layout)}`);
@@ -35,13 +74,16 @@ async function checkClientsLayout(page) {
  }
  for (const width of [1024, 390]) {
    await page.setViewportSize({width, height: 850});
+   await top.waitFor({state: 'visible'});
    const narrow = await measure();
    assert.ok(narrow.tableScroll > 1 && narrow.pageScroll <= 1,
      `only the client table should scroll horizontally at ${width}px: ${JSON.stringify(narrow)}`);
+   if (width === 1024) await checkClientsScrolling(page, top);
    await actions.scrollIntoViewIfNeeded();
    assert.ok((await measure()).controlsVisible, `client controls must be reachable at ${width}px`);
  }
  await page.setViewportSize(originalViewport);
+ await top.waitFor({state: 'hidden'});
 }
 
 (async()=>{const browser=await chromium.launch({executablePath:process.env.NODE_UI_CHROME||'/usr/bin/chromium',headless:true,args:['--no-sandbox']});try{
