@@ -21,8 +21,20 @@ const (
 )
 
 var ErrTrashConflict = errors.New("trash restore conflicts with current panel data")
+var ErrTrashClientPlan = errors.New("missing or invalid restore quota or validity")
 
 type TrashService struct{}
+
+type TrashClientPlan struct {
+	QuotaBytes   *int64 `json:"quotaBytes"`
+	ValidityDays *int64 `json:"validityDays"`
+}
+
+func (p *TrashClientPlan) valid() bool {
+	const maxQuotaBytes = 1<<53 - 1 // Exact in the panel's JSON client settings.
+	return p != nil && p.QuotaBytes != nil && *p.QuotaBytes >= 0 && *p.QuotaBytes <= maxQuotaBytes &&
+		p.ValidityDays != nil && *p.ValidityDays >= 0 && *p.ValidityDays <= maxRenewalDuration/bulkMsPerDay
+}
 
 // Preserve database columns, including secrets that the API models intentionally
 // omit from JSON. Table and column identifiers below are always chosen by the server.
@@ -178,7 +190,7 @@ func (s *trashClientSnapshot) clearAllowance() error {
 	for _, column := range []string{"total_gb", "expiry_time", "renewal_duration", "last_renewed_at", "imported_last_reset_at"} {
 		s.Account[column] = int64(0)
 	}
-	s.Account["last_renewal_automatic"], s.Account["enable"] = false, false
+	s.Account["last_renewal_automatic"] = false
 	s.Payment = nil
 	for i, row := range s.Memberships {
 		for _, column := range []string{"up", "down", "all_time"} {
@@ -203,7 +215,6 @@ func (s *trashClientSnapshot) clearAllowance() error {
 		for _, column := range []string{"total", "expiry_time", "up", "down", "all_time", "last_online"} {
 			row[column] = int64(0)
 		}
-		row["enable"] = false
 	}
 	for _, row := range s.Ledger {
 		row["charged_bytes"], row["all_time_base"] = int64(0), int64(0)
@@ -428,9 +439,12 @@ func (TrashService) Purge(user *model.User, kind string, id int64) error {
 	return q.Delete(&model.PanelTrash{}).Error
 }
 
-func (TrashService) Restore(user *model.User, kind string, id int64) ([]int, error) {
+func (TrashService) Restore(user *model.User, kind string, id int64, plan *TrashClientPlan) ([]int, error) {
 	if user == nil || id <= 0 || (kind == TrashClient && !user.Can(model.PermCreateClient)) {
 		return nil, gorm.ErrRecordNotFound
+	}
+	if kind == TrashClient && !plan.valid() {
+		return nil, ErrTrashClientPlan
 	}
 	var touched []int
 	err := database.SnapshotTransaction(database.GetDB(), func(tx *gorm.DB) error {
@@ -462,6 +476,9 @@ func (TrashService) Restore(user *model.User, kind string, id int64) ([]int, err
 				if err := checkTrashGroupAccess(tx, user, client.Groups); err != nil {
 					return err
 				}
+				if err := client.applyRestorePlan(tx, user, *plan); err != nil {
+					return err
+				}
 			}
 			ids, err := restoreTrashClient(tx, client)
 			if err != nil {
@@ -472,6 +489,53 @@ func (TrashService) Restore(user *model.User, kind string, id int64) ([]int, err
 		return tx.Delete(&row).Error
 	})
 	return touched, err
+}
+
+func (s *trashClientSnapshot) applyRestorePlan(tx *gorm.DB, user *model.User, plan TrashClientPlan) error {
+	now := time.Now().UnixMilli()
+	quota := *plan.QuotaBytes
+	duration, expiry := *plan.ValidityDays*bulkMsPerDay, int64(0)
+	if duration > 0 {
+		expiry = now + duration
+	}
+	representative := user.IsRepresentativeAccount()
+	if len(s.Ledger) > 1 || (len(s.Ledger) == 1 && (!representative || s.Ledger[0].integer("user_id") != int64(user.Id))) {
+		return ErrTrashConflict
+	}
+	if representative {
+		profile, err := (&ResellerService{}).profileForDB(tx, user.Id)
+		if err != nil {
+			return err
+		}
+		quote, err := Quote(QuoteInput{
+			Profile: *profile, Create: true, RequestedExpiry: &expiry, NewTotal: quota, NowMillis: now,
+		})
+		if err != nil {
+			return err
+		}
+		if err := enforceRepresentativeUserCount(tx, user.Id); err != nil {
+			return err
+		}
+		if err := addSpent(tx, user.Id, quote.DeltaSpent); err != nil {
+			return err
+		}
+		if quote.ForceExpiry {
+			expiry, duration = quote.ExpiryTime, quote.ExpiryTime-now
+		}
+		if len(s.Ledger) == 0 {
+			inboundID := 0
+			if len(s.Inbounds) != 0 {
+				inboundID = s.Inbounds[0].ID
+			}
+			s.Ledger = []trashRow{{"email": s.Account.string("email"), "inbound_id": inboundID, "user_id": user.Id}}
+		}
+		s.Ledger[0]["charged_bytes"], s.Ledger[0]["all_time_base"] = quote.NewCharged, int64(0)
+	}
+	s.Account["total_gb"], s.Account["expiry_time"], s.Account["renewal_duration"] = quota, expiry, duration
+	for _, row := range s.Traffic {
+		row["total"], row["expiry_time"] = quota, expiry
+	}
+	return nil
 }
 
 func checkTrashGroupAccess(tx *gorm.DB, user *model.User, groups []trashRow) error {

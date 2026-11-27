@@ -53,11 +53,15 @@
       </label>
     </div>
     <template v-if="mode === 'trash'">
-      <div class="panel-activity-controls">
-        <a-radio-group v-if="owner" v-model="scope" :disabled="busy" @change="resetPage">
-          <a-radio-button value="client">{{ i18n "pages.activity.trashClients" }}</a-radio-button>
-          <a-radio-button value="manager">{{ i18n "pages.activity.trashManagers" }}</a-radio-button>
-        </a-radio-group>
+      <div class="panel-activity-controls panel-trash-toolbar">
+        <div v-if="owner" class="panel-trash-scopes" role="group" aria-label='{{ i18n "pages.activity.trash" }}'>
+          <button type="button" :aria-pressed="scope === 'client'" :disabled="busy" @click="setTrashScope('client')">
+            {{ i18n "pages.activity.trashClients" }}
+          </button>
+          <button type="button" :aria-pressed="scope === 'manager'" :disabled="busy" @click="setTrashScope('manager')">
+            {{ i18n "pages.activity.trashManagers" }}
+          </button>
+        </div>
         <a-popconfirm :key="scope" @confirm="writeTrash('empty')" title='{{ i18n "pages.activity.trashEmptyPrompt" }}'
           ok-text='{{ i18n "pages.activity.trashEmpty" }}' cancel-text='{{ i18n "cancel" }}'>
           <a-button type="danger" :disabled="busy || !rows.length" icon="delete">{{ i18n "pages.activity.trashEmpty" }}</a-button>
@@ -94,7 +98,7 @@
       </div>
     </template>
     <a-spin v-else-if="mode !== 'payments' || paymentsEnabled" :spinning="busy">
-      <div class="panel-activity-table" tabindex="0">
+      <div class="panel-activity-table" :class="{ 'panel-trash-table': mode === 'trash' }" tabindex="0">
         <table v-if="rows.length">
           <thead><tr>
             <th v-if="mode === 'logins' || (mode === 'trash' && scope === 'manager')">{{ i18n "username" }}</th>
@@ -138,9 +142,9 @@
                 </a-popconfirm>
               </td>
               <td v-if="mode === 'trash'">
-                <div class="panel-activity-controls">
+                <div class="panel-trash-actions">
                   <a-button v-if="scope === 'manager' || canRestoreClient" size="small" icon="rollback" :disabled="busy"
-                    @click="writeTrash('restore', row.id)">{{ i18n "pages.activity.trashRestore" }}</a-button>
+                    @click="openTrashRestore(row)">{{ i18n "pages.activity.trashRestore" }}</a-button>
                   <a-popconfirm @confirm="writeTrash('delete', row.id)" title='{{ i18n "pages.activity.trashDeletePrompt" }}'
                     ok-text='{{ i18n "delete" }}' cancel-text='{{ i18n "cancel" }}'>
                     <a-button size="small" type="danger" :disabled="busy">{{ i18n "pages.activity.trashDelete" }}</a-button>
@@ -158,6 +162,31 @@
         <a-button @click="move(true)" :disabled="busy || !more">{{ i18n "pages.activity.next" }}</a-button>
       </div>
     </a-spin>
+    <a-modal v-if="mode === 'trash'" v-model="trashRestore.visible" :confirm-loading="busy"
+      :ok-button-props="{ props: { disabled: !validTrashPlan } }"
+      :cancel-button-props="{ props: { disabled: busy } }" :closable="!busy" :mask-closable="false" :keyboard="!busy"
+      ok-text='{{ i18n "pages.activity.trashRestore" }}' cancel-text='{{ i18n "cancel" }}'
+      :class="themeSwitcher.currentTheme" @ok="submitTrashRestore">
+      <template slot="title">{{ i18n "pages.activity.trashRestore" }} <bdi v-text="trashRestore.name"></bdi></template>
+      <form class="panel-trash-form" @submit.prevent="submitTrashRestore">
+        <label>
+          {{ i18n "pages.inbounds.totalFlow" }}
+          <input class="ant-input" type="number" min="0" step="any" v-model.number="trashRestore.quota" required />
+        </label>
+        <select class="ant-input" v-model="trashRestore.unit" aria-label='{{ i18n "pages.inbounds.totalFlow" }} (GB / MB)'>
+          <option value="GB">GB</option>
+          <option value="MB">MB</option>
+        </select>
+        <label v-if="!trashDaysPerGB" class="panel-trash-validity">
+          {{ i18n "pages.clients.expiryDays" }}
+          <input class="ant-input" type="number" min="0" max="36500" step="1" v-model.number="trashRestore.days" required />
+        </label>
+        <p v-else class="panel-activity-note panel-trash-validity">
+          {{ i18n "pages.resellers.daysPerGb" }} <bdi v-text="trashDaysPerGB"></bdi>
+        </p>
+        <p class="panel-activity-note panel-trash-validity">0 = {{ i18n "unlimited" }}</p>
+      </form>
+    </a-modal>
   </a-card>
 {{ template "page/shell_end" . }}
 {{ template "page/body_scripts" . }}
@@ -173,6 +202,8 @@
       mode: {{ .activityMode }}, owner: {{ .perms.panelOwner }}, busy: false,
       scope: {{ if eq .activityMode "trash" }}'client'{{ else }}'all'{{ end }},
       canRestoreClient: {{ .perms.createClient }}, enabled: true, renewalNotices: true, paymentsEnabled: false,
+      trashDaysPerGB: {{ .trashDaysPerGB }},
+      trashRestore: { visible: false, id: 0, name: '', quota: '', unit: 'GB', days: '' },
       paymentExtension: '{{ i18n "pages.activity.paymentExtension" }}',
       noPendingPayments: '{{ i18n "pages.activity.noPendingPayments" }}',
       autoPurge: false, retentionDays: 90, month: '', months: [], clientOwner: '', owners: [], date: '', rows: [], apps: [], cursors: [0], more: false,
@@ -186,6 +217,17 @@
     computed: {
       validRetention() {
         return Number.isInteger(this.retentionDays) && this.retentionDays > 0 && this.retentionDays <= 3650;
+      },
+      trashQuotaBytes() {
+        const { quota, unit } = this.trashRestore;
+        if (!Number.isFinite(quota) || quota < 0) return NaN;
+        const bytes = Math.round(quota * (unit === 'GB' ? 1024 ** 3 : 1024 ** 2));
+        return quota > 0 && bytes === 0 ? NaN : bytes;
+      },
+      validTrashPlan() {
+        const { days } = this.trashRestore;
+        return Number.isSafeInteger(this.trashQuotaBytes) &&
+          (this.trashDaysPerGB > 0 || (Number.isInteger(days) && days >= 0 && days <= 36500));
       },
     },
     methods: {
@@ -281,13 +323,31 @@
           this.busy = false;
         }
       },
-      async writeTrash(action, id) {
+      async setTrashScope(scope) {
+        if (this.busy || this.scope === scope) return;
+        this.scope = scope;
+        this.rows = [];
+        this.more = false;
+        await this.resetPage();
+      },
+      openTrashRestore(row) {
+        if (this.scope === 'manager') return this.writeTrash('restore', row.id);
+        this.trashRestore = { visible: true, id: row.id, name: row.name, quota: '', unit: 'GB', days: '' };
+      },
+      async submitTrashRestore() {
+        if (this.busy || !this.validTrashPlan) return;
+        if (await this.writeTrash('restore', this.trashRestore.id, {
+          quotaBytes: this.trashQuotaBytes,
+          validityDays: this.trashDaysPerGB > 0 ? 0 : this.trashRestore.days,
+        })) this.trashRestore.visible = false;
+      },
+      async writeTrash(action, id, plan = {}) {
         if (this.busy) return;
         this.busy = true;
         try {
-          if (await panelActivityWrite('trash/' + this.scope + '/' + action, id ? { id } : { confirm: true })) {
-            await this.resetPage();
-          }
+          const saved = await panelActivityWrite('trash/' + this.scope + '/' + action, id ? { id, ...plan } : { confirm: true });
+          if (saved) await this.resetPage();
+          return saved;
         } finally {
           this.busy = false;
         }

@@ -13,7 +13,7 @@ import (
 	"gorm.io/gorm"
 )
 
-func TestTrashClientPrivacyAndRestoreWithoutAllowance(t *testing.T) {
+func TestTrashClientPrivacyAndRestoreWithNewAllowance(t *testing.T) {
 	newInboundDB(t)
 	db := database.GetDB()
 	var owner model.User
@@ -62,18 +62,24 @@ func TestTrashClientPrivacyAndRestoreWithoutAllowance(t *testing.T) {
 	if err != nil || len(rows) != 1 || rows[0].Name != account.Email || rows[0].Payload != "" {
 		t.Fatalf("owner metadata: %+v %v", rows, err)
 	}
+	quota, days := int64(5<<30), int64(30)
+	plan := &TrashClientPlan{QuotaBytes: &quota, ValidityDays: &days}
 	for _, forbidden := range []*model.User{&owner, &other} {
 		if rows, err := trash.List(forbidden, TrashClient, 0); err != nil || len(rows) > 0 {
 			t.Fatalf("private client trash exposed: %+v %v", rows, err)
 		}
-		if _, err := trash.Restore(forbidden, TrashClient, rows[0].Id); !errors.Is(err, gorm.ErrRecordNotFound) {
+		if _, err := trash.Restore(forbidden, TrashClient, rows[0].Id, plan); !errors.Is(err, gorm.ErrRecordNotFound) {
 			t.Fatalf("cross-owner restore: %v", err)
 		}
 		if err := trash.Purge(forbidden, TrashClient, rows[0].Id); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if ids, err := trash.Restore(&admin, TrashClient, rows[0].Id); err != nil || len(ids) != 2 {
+	if _, err := trash.Restore(&admin, TrashClient, rows[0].Id, nil); !errors.Is(err, ErrTrashClientPlan) {
+		t.Fatalf("restore without plan: %v", err)
+	}
+	start := time.Now().UnixMilli()
+	if ids, err := trash.Restore(&admin, TrashClient, rows[0].Id, plan); err != nil || len(ids) != 2 {
 		t.Fatalf("restore account: %v %v", ids, err)
 	}
 	var restored model.Account
@@ -82,8 +88,14 @@ func TestTrashClientPrivacyAndRestoreWithoutAllowance(t *testing.T) {
 	}
 	if restored.OwnerAdminID != admin.Id || restored.UUID != account.UUID || restored.Password != account.Password ||
 		restored.ProtocolCredentials != account.ProtocolCredentials || restored.Comment != account.Comment || !restored.AutoRenew ||
-		restored.Enable || restored.TotalGB != 0 || restored.ExpiryTime != 0 || restored.RenewalDuration != 0 {
-		t.Fatalf("restore preserved identity/config and cleared allowance: %+v", restored)
+		!restored.Enable || restored.TotalGB != quota || restored.RenewalDuration != days*bulkMsPerDay ||
+		restored.ExpiryTime < start+restored.RenewalDuration || restored.ExpiryTime > time.Now().UnixMilli()+restored.RenewalDuration {
+		t.Fatalf("restore preserved identity/config and assigned the selected allowance: %+v", restored)
+	}
+	var traffic xray.ClientTraffic
+	if err := db.Where("email = ?", account.Email).First(&traffic).Error; err != nil ||
+		traffic.Total != quota || traffic.ExpiryTime != restored.ExpiryTime || traffic.Up != 0 {
+		t.Fatalf("restored traffic row: %+v %v", traffic, err)
 	}
 	var members []model.AccountInbound
 	if err := db.Where("account_id = ?", account.Id).Order("inbound_id").Find(&members).Error; err != nil {
@@ -94,6 +106,61 @@ func TestTrashClientPrivacyAndRestoreWithoutAllowance(t *testing.T) {
 	}
 	if rows, err := trash.List(&admin, TrashClient, 0); err != nil || len(rows) != 0 {
 		t.Fatalf("restored row remained in trash: %+v %v", rows, err)
+	}
+}
+
+func TestTrashClientRestoreHonorsRepresentativePlan(t *testing.T) {
+	fx := newResellerFixture(t, "resellers-client")
+	seedResellerProfile(t, fx)
+	db := database.GetDB()
+	if err := (&AccountService{}).SyncInboundAccounts(db, fx.inbound.Id, fx.admin.Id); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(&model.ResellerProfile{}).Where("user_id = ?", fx.reseller.Id).
+		Updates(map[string]any{"allowance_bytes": 3 * oneGB, "spent_bytes": oneGB, "days_per_gb": 3}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(&model.ResellerClient{}).Where("user_id = ?", fx.reseller.Id).
+		Update("charged_bytes", oneGB).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(&xray.ClientTraffic{}).Where("email = ?", "resellers-client").
+		Update("all_time", 256).Error; err != nil {
+		t.Fatal(err)
+	}
+	trash := TrashService{}
+	if _, err := trash.DeleteClient(fx.reseller, "resellers-client"); err != nil {
+		t.Fatal(err)
+	}
+	rows, err := trash.List(fx.reseller, TrashClient, 0)
+	if err != nil || len(rows) != 1 {
+		t.Fatalf("representative trash: %v %v", rows, err)
+	}
+	wantDays, tooMuch := int64(10), int64(5*oneGB)
+	plan := TrashClientPlan{QuotaBytes: &tooMuch, ValidityDays: &wantDays}
+	if _, err := trash.Restore(fx.reseller, TrashClient, rows[0].Id, &plan); !errors.Is(err, ErrInsufficientBalance) {
+		t.Fatalf("restore exceeding balance: %v", err)
+	}
+	var profile model.ResellerProfile
+	if err := db.Where("user_id = ?", fx.reseller.Id).First(&profile).Error; err != nil || profile.SpentBytes != 256 {
+		t.Fatalf("failed restore changed balance: %+v %v", profile, err)
+	}
+	newQuota := int64(2 * oneGB)
+	plan.QuotaBytes = &newQuota
+	if _, err := trash.Restore(fx.reseller, TrashClient, rows[0].Id, &plan); err != nil {
+		t.Fatal(err)
+	}
+	var restored model.Account
+	if err := db.Where("LOWER(email) = ?", "resellers-client").First(&restored).Error; err != nil ||
+		restored.Enable || restored.TotalGB != newQuota || restored.RenewalDuration != 6*bulkMsPerDay {
+		t.Fatalf("representative restore terms: %+v %v", restored, err)
+	}
+	if err := db.Where("user_id = ?", fx.reseller.Id).First(&profile).Error; err != nil || profile.SpentBytes != newQuota+256 {
+		t.Fatalf("restore did not charge the representative: %+v %v", profile, err)
+	}
+	var ledger model.ResellerClient
+	if err := db.Where("user_id = ?", fx.reseller.Id).First(&ledger).Error; err != nil || ledger.ChargedBytes != newQuota {
+		t.Fatalf("restore did not record the charge: %+v %v", ledger, err)
 	}
 }
 
@@ -164,7 +231,7 @@ func TestTrashRepresentativeBundleSurvivesNativeBackup(t *testing.T) {
 	if err := db.Create(&conflict).Error; err != nil {
 		t.Fatal(err)
 	}
-	if _, err := trash.Restore(&owner, TrashManager, rows[0].Id); !errors.Is(err, ErrTrashConflict) {
+	if _, err := trash.Restore(&owner, TrashManager, rows[0].Id, nil); !errors.Is(err, ErrTrashConflict) {
 		t.Fatalf("restore should refuse an existing client identity: %v", err)
 	}
 	if resellerExists(t, fx.reseller.Id) {
@@ -173,7 +240,7 @@ func TestTrashRepresentativeBundleSurvivesNativeBackup(t *testing.T) {
 	if err := db.Delete(&conflict).Error; err != nil {
 		t.Fatal(err)
 	}
-	if ids, err := trash.Restore(&owner, TrashManager, rows[0].Id); err != nil || len(ids) != 1 {
+	if ids, err := trash.Restore(&owner, TrashManager, rows[0].Id, nil); err != nil || len(ids) != 1 {
 		t.Fatalf("bundle restore: %v %v", ids, err)
 	}
 	var user model.User

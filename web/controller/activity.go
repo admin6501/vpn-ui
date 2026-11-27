@@ -41,7 +41,13 @@ func loginOS(platform, agent string) string {
 
 func activityPage(mode string) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		html(c, "activity.html", "pages.activity."+mode, gin.H{"activityMode": mode})
+		data := gin.H{"activityMode": mode, "trashDaysPerGB": 0}
+		if user := session.GetLoginUser(c); mode == "trash" && user.IsRepresentativeAccount() {
+			if profile, err := (&service.ResellerService{}).ProfileFor(user.Id); err == nil && !profile.ConsumptionBased {
+				data["trashDaysPerGB"] = profile.DaysPerGB
+			}
+		}
+		html(c, "activity.html", "pages.activity."+mode, data)
 	}
 }
 
@@ -267,11 +273,18 @@ func registerTrashRoutes(g *gin.RouterGroup) {
 			activityRows(c, rows, err)
 		})
 		scope.POST("/restore", func(c *gin.Context) {
-			var input struct{ ID int64 }
+			var input struct {
+				ID int64
+				service.TrashClientPlan
+			}
 			if !bindActivity(c, &input) {
 				return
 			}
-			ids, err := trash.Restore(session.GetLoginUser(c), kind, input.ID)
+			ids, err := trash.Restore(session.GetLoginUser(c), kind, input.ID, &input.TrashClientPlan)
+			if errors.Is(err, service.ErrTrashClientPlan) {
+				pureJsonMsg(c, http.StatusOK, false, I18nWeb(c, "pages.activity.trashClientNote"))
+				return
+			}
 			if errors.Is(err, service.ErrTrashConflict) || errors.Is(err, gorm.ErrRecordNotFound) {
 				pureJsonMsg(c, http.StatusOK, false, I18nWeb(c, "pages.activity.trashUnavailable"))
 				return

@@ -58,8 +58,13 @@ const { chromium } = require('playwright');
             } else if (path === 'activity/trash/manager') {
                 obj = { rows: [deletedManager], more: false };
             } else if (path === 'activity/trash/client/restore' || path === 'activity/trash/client/delete') {
-                const { id } = route.request().postDataJSON();
-                assert.equal(id, path.endsWith('/restore') ? 30 : 31);
+                const payload = route.request().postDataJSON();
+                if (path.endsWith('/restore')) {
+                    assert.deepEqual(payload, { id: 30, quotaBytes: 2.5 * 1024 ** 3, validityDays: 30 });
+                } else {
+                    assert.deepEqual(payload, { id: 31 });
+                }
+                const { id } = payload;
                 deletedClients = deletedClients.filter(row => row.id !== id);
             } else if (path === 'activity/trash/client/empty') {
                 assert.equal(route.request().postDataJSON().confirm, true);
@@ -240,9 +245,44 @@ const { chromium } = require('playwright');
         assert.equal(paymentReminders, false);
         await page.getByRole('button', { name: 'Activity' }).click();
         await page.getByRole('link', { name: 'Recycle bin' }).click();
+        const myClients = page.getByRole('button', { name: 'My clients', pressed: true });
+        await myClients.waitFor();
+        for (const width of [390, 1280]) {
+            await page.setViewportSize({ width, height: 844 });
+            const scopes = await page.locator('.panel-trash-scopes button').evaluateAll(buttons =>
+                buttons.map(button => ({
+                    top: button.getBoundingClientRect().top,
+                    color: getComputedStyle(button).backgroundColor,
+                    weight: Number(getComputedStyle(button).fontWeight),
+                }))
+            );
+            assert.equal(scopes[0].top, scopes[1].top, 'recycle bin scopes stay on one row');
+            assert.notEqual(scopes[0].color, scopes[1].color, 'the selected scope has a distinct fill');
+            assert.ok(scopes[0].weight > scopes[1].weight);
+        }
+        await page.locator('.panel-trash-table td').first().waitFor();
+        const cells = await page.locator('.panel-trash-table td').evaluateAll(cells =>
+            cells.map(cell => {
+                const style = getComputedStyle(cell);
+                return [style.paddingTop, style.paddingBottom, style.verticalAlign];
+            })
+        );
+        assert.ok(cells.every(cell => cell[0] === '6px' && cell[0] === cell[1] && cell[2] === 'middle'));
         const recover = page.getByRole('row').filter({ hasText: 'recover-client' });
         await recover.getByRole('button', { name: 'Restore' }).click();
+        const restore = page.getByRole('dialog');
+        const confirmRestore = restore.getByRole('button', { name: 'Restore' });
+        await restore.getByRole('button', { name: 'Cancel' }).click();
+        assert.equal(deletedClients.length, 3);
+        await restore.waitFor({ state: 'hidden' });
+        await recover.getByRole('button', { name: 'Restore' }).click();
+        assert.ok(await confirmRestore.isDisabled());
+        await restore.getByRole('spinbutton', { name: 'Total Flow' }).fill('2.5');
+        assert.ok(await confirmRestore.isDisabled());
+        await restore.getByRole('spinbutton', { name: 'Expiry (days)' }).fill('30');
+        await confirmRestore.click();
         await recover.waitFor({ state: 'hidden' });
+        await restore.waitFor({ state: 'hidden' });
         const purge = page.getByRole('row').filter({ hasText: 'purge-client' });
         await purge.getByRole('button', { name: 'Delete permanently' }).click();
         const purgePrompt = page.locator('.ant-popover:visible').filter({ hasText: 'Permanently delete this entry?' });
@@ -260,8 +300,9 @@ const { chromium } = require('playwright');
         await emptyPrompt.getByRole('button', { name: 'Empty recycle bin' }).click();
         await page.getByRole('cell', { name: 'empty-client' }).waitFor({ state: 'hidden' });
         assert.equal(deletedClients.length, 0);
-        await page.getByText('Administrators and representatives', { exact: true }).click();
+        await page.getByRole('button', { name: 'Administrators and representatives', pressed: false }).click();
         await page.getByRole('cell', { name: deletedManager.name }).waitFor();
+        await page.getByRole('button', { name: 'Administrators and representatives', pressed: true }).waitFor();
         assert.deepEqual(errors, []);
     } finally {
         await browser.close();
