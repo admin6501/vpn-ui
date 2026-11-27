@@ -252,12 +252,12 @@
       delAdmin(admin) {
         this.$confirm({
           title: '{{ i18n "pages.admins.del" }}' + ': ' + admin.username,
-          content: '{{ i18n "pages.admins.deleteConfirm" }}',
+          content: this.isPanelOwner ? '{{ i18n "pages.activity.trashManagerPrompt" }}' : '{{ i18n "pages.admins.deleteConfirm" }}',
           class: themeSwitcher.currentTheme,
           okText: '{{ i18n "delete" }}',
           cancelText: '{{ i18n "cancel" }}',
           onOk: async () => {
-            const msg = await HttpUtil.post('/panel/admins/del/' + admin.id);
+            const msg = await HttpUtil.post('/panel/admins/del/' + admin.id, this.isPanelOwner ? { mode: 'trash' } : {});
             if (msg && msg.success) await this.loadAdmins();
           },
         });

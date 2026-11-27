@@ -197,6 +197,9 @@ func noticeEvents(user *model.User, kind string) *gorm.DB {
 
 func (ActivityService) Notifications(user *model.User, kind string) (ActivityNotice, error) {
 	result := ActivityNotice{Names: []string{}}
+	if kind == "renewals" && user.RenewalNoticesDisabled {
+		return result, nil
+	}
 	db := noticeEvents(user, kind).Where("id > COALESCE((SELECT through FROM panel_activity_reads WHERE user_id=? AND kind=?),0)", user.Id, kind)
 	err := db.Session(&gorm.Session{}).Select("COUNT(*) AS count, COALESCE(MAX(id),0) AS through").Scan(&result).Error
 	if err != nil || result.Count == 0 {
@@ -204,6 +207,11 @@ func (ActivityService) Notifications(user *model.User, kind string) (ActivityNot
 	}
 	err = db.Where("id <= ?", result.Through).Order("id DESC").Limit(8).Pluck("email", &result.Names).Error
 	return result, err
+}
+
+func (ActivityService) SetRenewalNotices(user *model.User, enabled bool) error {
+	return database.GetDB().Model(&model.User{}).Where("id = ?", user.Id).
+		UpdateColumn("renewal_notices_disabled", !enabled).Error
 }
 
 func (ActivityService) DismissNotice(user *model.User, kind string, through int64) error {

@@ -2435,6 +2435,18 @@ theBuiltInWindowsSSTPClientRejectsSelf = "Klien SSTP Windows bawaan menolak sert
 theNativeWindowsIOSAndroidIKEv2ClientsReject = "Klien asli Windows/iOS/Android IKEv2 menolak sertifikat yang ditandatangani sendiri kecuali Anda mengimpor CA yang dihasilkan ke akar tepercaya perangkat. Lebih memilih sertifikat bertanda tangan CA yang terikat pada nama host untuk pengguna sebenarnya. Tetap hasilkan sertifikat server CA + yang ditandatangani sendiri?"
 
 [pages.activity]
+trash = "Tong sampah"
+trashClients = "Klien saya"
+trashManagers = "Administrator dan reseller"
+trashEmpty = "Kosongkan tong sampah"
+trashEmptyPrompt = "Hapus permanen semua entri di bagian ini?"
+trashClientNote = "Klien dipulihkan dalam keadaan nonaktif. Atur kuota dan masa berlaku sebelum mengaktifkannya."
+trashRestore = "Pulihkan"
+trashDelete = "Hapus permanen"
+trashDeletePrompt = "Hapus permanen entri ini?"
+trashUnavailable = "Pemulihan tidak tersedia karena entri, izinnya, atau data panel terkait telah berubah."
+trashManagerPrompt = "Pindahkan akun ini dan kliennya ke tong sampah? Pengaturan, kuota, dan masa berlaku akan disimpan."
+renewalNotices = "Tampilkan notifikasi perpanjangan otomatis"
 payments = "Pembayaran menunggu konfirmasi"
 paymentReminders = "Ingatkan saya tentang pembayaran klien"
 paymentReminderHelp = "Klien baru, perpanjangan, dan penambahan kuota atau masa aktif tetap tertunda sampai pembayaran dikonfirmasi."

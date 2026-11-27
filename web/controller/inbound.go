@@ -105,6 +105,7 @@ func (a *InboundController) initRouter(g *gin.RouterGroup) {
 	g.POST("/renameUnservedAccount", requirePerm(model.PermEditClient), a.renameUnservedAccount)
 	g.POST("/saveAccount", requirePerm(model.PermCreateClient), a.saveAccountClient)
 	g.POST("/delAccount/:email", requirePerm(model.PermDeleteClient), a.delAccountClient)
+	g.POST("/trashAccount/:email", requirePerm(model.PermDeleteClient), a.trashAccountClient)
 	// Switch one account on or off on ONE inbound. Deliberately not a shape of
 	// updateClient: `enable` inside a posted client entry means the ACCOUNT's flag
 	// to every existing caller, so the per-inbound intent needs its own route or it
@@ -1266,6 +1267,14 @@ func (a *InboundController) delAccountClient(c *gin.Context) {
 		return
 	}
 	jsonMsg(c, I18nWeb(c, "pages.inbounds.toasts.inboundClientDeleteSuccess"), nil)
+}
+
+func (a *InboundController) trashAccountClient(c *gin.Context) {
+	ids, err := (service.TrashService{}).DeleteClient(session.GetLoginUser(c), c.Param("email"))
+	if err == nil && len(ids) != 0 {
+		a.reconcileForInbounds(ids, true)
+	}
+	jsonMsg(c, I18nWeb(c, "pages.inbounds.toasts.inboundClientDeleteSuccess"), err)
 }
 
 // singlePostedClientEntry pulls the ONE client entry out of a posted settings blob,

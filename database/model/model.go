@@ -109,7 +109,8 @@ type User struct {
 	// Enable gates login without deleting the account (and its owned inbounds).
 	Enable bool `json:"enable" form:"enable" gorm:"default:1"`
 
-	PaymentReminders bool `json:"-" gorm:"not null;default:false"`
+	PaymentReminders       bool `json:"-" gorm:"not null;default:false"`
+	RenewalNoticesDisabled bool `json:"-" gorm:"not null;default:false"`
 
 	// Per-account TOTP. Replaces the panel-global twoFactorEnable/twoFactorToken
 	// settings pair, which leaked the shared secret to every logged-in user

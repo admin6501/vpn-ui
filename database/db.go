@@ -47,6 +47,7 @@ func initModels() error {
 		&model.PanelExpiry{},
 		&model.PanelActivityRead{},
 		&model.PanelPaymentReminder{},
+		&model.PanelTrash{},
 		&model.AccountInbound{},
 		&model.ClientGroup{},
 		&model.GroupInbound{},
@@ -546,12 +547,7 @@ func IsSQLiteDB(file io.ReaderAt) (bool, error) {
 
 // Checkpoint folds the WAL back into the main database file.
 //
-// TRUNCATE, not the default PASSIVE. The caller is ServerService.GetDb, which
-// checkpoints and then serves ONLY the .db file as the panel's DB download. A
-// passive checkpoint yields to any concurrent reader and still reports success,
-// so on a busy panel the downloaded backup could quietly be missing the most
-// recent writes - the one thing a backup may not do. The other two backup paths
-// (main.go, panelupdate.go) already use TRUNCATE; this one was the odd one out.
+// TRUNCATE, not the default PASSIVE, for callers that need a flushed main file.
 func Checkpoint() error {
 	return db.Exec("PRAGMA wal_checkpoint(TRUNCATE);").Error
 }

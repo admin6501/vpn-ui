@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"runtime"
 	"sort"
@@ -1157,25 +1158,18 @@ func (s *ServerService) GetConfigJson() (any, error) {
 }
 
 func (s *ServerService) GetDb() ([]byte, error) {
-	// Update by manually trigger a checkpoint operation
-	err := database.Checkpoint()
+	// Both manual downloads and Telegram use this consistent SQLite snapshot,
+	// including committed WAL pages and all panel tables.
+	dir, err := os.MkdirTemp("", "vpn-ui-db-backup-")
 	if err != nil {
 		return nil, err
 	}
-	// Open the file for reading
-	file, err := os.Open(config.GetDBPath())
-	if err != nil {
+	defer os.RemoveAll(dir)
+	path := filepath.Join(dir, "panel.db")
+	if err := database.GetDB().Exec("VACUUM INTO ?", path).Error; err != nil {
 		return nil, err
 	}
-	defer file.Close()
-
-	// Read the file contents
-	fileContents, err := io.ReadAll(file)
-	if err != nil {
-		return nil, err
-	}
-
-	return fileContents, nil
+	return os.ReadFile(path)
 }
 
 // BackupNameOptions selects which components a backup filename carries. A struct

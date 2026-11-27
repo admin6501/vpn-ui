@@ -458,6 +458,9 @@ func (s *AccountService) SyncInboundAccounts(tx *gorm.DB, inboundId int, creator
 				Where("inbound_id = ?", inboundId).Distinct().Pluck("account_id", &orphaned).Error; derr != nil {
 				return derr
 			}
+			if err := archiveLastTrashClients(tx, inboundId, orphaned); err != nil {
+				return err
+			}
 			if derr := tx.Where("inbound_id = ?", inboundId).Delete(&model.AccountInbound{}).Error; derr != nil {
 				return derr
 			}
@@ -506,11 +509,16 @@ func (s *AccountService) SyncInboundAccounts(tx *gorm.DB, inboundId int, creator
 		if present[membership.AccountId] {
 			continue
 		}
-		if err := tx.Where("account_id = ? AND inbound_id = ?", membership.AccountId, inboundId).
+		dropped = append(dropped, membership.AccountId)
+	}
+	if err := archiveLastTrashClients(tx, inboundId, dropped); err != nil {
+		return err
+	}
+	if len(dropped) > 0 {
+		if err := tx.Where("account_id IN ? AND inbound_id = ?", dropped, inboundId).
 			Delete(&model.AccountInbound{}).Error; err != nil {
 			return err
 		}
-		dropped = append(dropped, membership.AccountId)
 	}
 	return s.pruneOrphanAccounts(tx, dropped)
 }
@@ -1331,6 +1339,9 @@ func (s *AccountService) DeleteAccountWithoutInbound(email string) error {
 				"%q is still served on %d inbound(s); delete it from those instead",
 				email, memberships)
 		}
+		if err := archiveTrashClient(tx, account.Id); err != nil {
+			return err
+		}
 		if err := tx.Where("LOWER(TRIM(email)) = ?", key).Delete(&xray.ClientTraffic{}).Error; err != nil {
 			return err
 		}
@@ -1844,6 +1855,9 @@ func (s *AccountService) DropMembership(tx *gorm.DB, inboundId int, email string
 		return err
 	}
 
+	if err := archiveLastTrashClients(tx, inboundId, []int{account.Id}); err != nil {
+		return err
+	}
 	if err := tx.Where("account_id = ? AND inbound_id = ?", account.Id, inboundId).
 		Delete(&model.AccountInbound{}).Error; err != nil {
 		return err

@@ -398,6 +398,7 @@ func TestUnfreezeCannotReviveADepletedAccount(t *testing.T) {
 			for _, ct := range []xray.ClientTraffic{
 				{InboundId: 1, Email: "spent", Total: 5 * gb, Up: 3 * gb, Down: 2 * gb},
 				{InboundId: 1, Email: "healthy", Total: 5 * gb, Up: 1 * gb, Down: 0},
+				{InboundId: 1, Email: "restored-without-quota"},
 			} {
 				if err := db.Create(&ct).Error; err != nil {
 					t.Fatal(err)
@@ -405,9 +406,10 @@ func TestUnfreezeCannotReviveADepletedAccount(t *testing.T) {
 			}
 			req := &BulkClientUpdateRequest{Op: op, Targets: []BulkClientTarget{
 				{InboundId: 1, Email: "spent"}, {InboundId: 1, Email: "healthy"},
+				{InboundId: 1, Email: "restored-without-quota"},
 			}}
 			rs := &ResellerService{}
-			if err := rs.dropDepletedTargets(req); err != nil {
+			if err := rs.dropDepletedTargets(req, true); err != nil {
 				t.Fatal(err)
 			}
 			if len(req.Targets) != 1 || req.Targets[0].Email != "healthy" {

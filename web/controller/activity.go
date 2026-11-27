@@ -76,8 +76,24 @@ func registerActivityRoutes(api *gin.RouterGroup) {
 		jsonMsg(c, "", activityService.PurgeLoginEvents(date, time.Now()))
 	})
 	g.GET("/renewals", func(c *gin.Context) {
-		rows, err := activityService.RenewalEvents(session.GetLoginUser(c), activityBefore(c))
-		activityRows(c, rows, err)
+		user := session.GetLoginUser(c)
+		rows, err := activityService.RenewalEvents(user, activityBefore(c))
+		more := len(rows) > service.ActivityPageSize
+		if more {
+			rows = rows[:service.ActivityPageSize]
+		}
+		jsonObj(c, gin.H{"rows": rows, "more": more, "enabled": !user.RenewalNoticesDisabled}, err)
+	})
+	g.POST("/renewals/settings", func(c *gin.Context) {
+		var input struct{ Enabled *bool }
+		if !bindActivity(c, &input) {
+			return
+		}
+		if input.Enabled == nil {
+			jsonMsg(c, I18nWeb(c, "somethingWentWrong"), errors.New("missing notification preference"))
+			return
+		}
+		jsonMsg(c, "", activityService.SetRenewalNotices(session.GetLoginUser(c), *input.Enabled))
 	})
 	g.GET("/notices", func(c *gin.Context) {
 		user := session.GetLoginUser(c)
@@ -114,6 +130,7 @@ func registerActivityRoutes(api *gin.RouterGroup) {
 		jsonMsg(c, "", activityService.DismissNotice(user, input.Kind, input.Through))
 	})
 	registerPaymentReminderRoutes(g.Group("/payments", requirePerm(model.PermAccessInbounds)))
+	registerTrashRoutes(g.Group("/trash"))
 	owner := g.Group("", requirePanelOwner())
 	g.GET("/changes/settings", func(c *gin.Context) {
 		enabled, err := activityService.ChangeLogging()
@@ -236,6 +253,57 @@ func registerPaymentReminderRoutes(g *gin.RouterGroup) {
 		}
 		pureJsonMsg(c, http.StatusOK, true, I18nWeb(c, "pages.activity.paymentRecorded"))
 	})
+}
+
+func registerTrashRoutes(g *gin.RouterGroup) {
+	trash := service.TrashService{}
+	for _, kind := range []string{service.TrashClient, service.TrashManager} {
+		scope := g.Group("/" + kind)
+		if kind == service.TrashManager {
+			scope.Use(requirePanelOwner())
+		}
+		scope.GET("", func(c *gin.Context) {
+			rows, err := trash.List(session.GetLoginUser(c), kind, activityBefore(c))
+			activityRows(c, rows, err)
+		})
+		scope.POST("/restore", func(c *gin.Context) {
+			var input struct{ ID int64 }
+			if !bindActivity(c, &input) {
+				return
+			}
+			ids, err := trash.Restore(session.GetLoginUser(c), kind, input.ID)
+			if errors.Is(err, service.ErrTrashConflict) || errors.Is(err, gorm.ErrRecordNotFound) {
+				pureJsonMsg(c, http.StatusOK, false, I18nWeb(c, "pages.activity.trashUnavailable"))
+				return
+			}
+			if err == nil && len(ids) != 0 {
+				(&InboundController{}).reconcileForInbounds(ids, true)
+			}
+			jsonMsg(c, "", err)
+		})
+		scope.POST("/delete", func(c *gin.Context) {
+			var input struct{ ID int64 }
+			if !bindActivity(c, &input) {
+				return
+			}
+			if input.ID <= 0 {
+				jsonMsg(c, I18nWeb(c, "somethingWentWrong"), errors.New("invalid trash entry"))
+				return
+			}
+			jsonMsg(c, "", trash.Purge(session.GetLoginUser(c), kind, input.ID))
+		})
+		scope.POST("/empty", func(c *gin.Context) {
+			var input struct{ Confirm bool }
+			if !bindActivity(c, &input) {
+				return
+			}
+			if !input.Confirm {
+				jsonMsg(c, I18nWeb(c, "somethingWentWrong"), errors.New("missing trash confirmation"))
+				return
+			}
+			jsonMsg(c, "", trash.Purge(session.GetLoginUser(c), kind, 0))
+		})
+	}
 }
 
 func activityBefore(c *gin.Context) int64 {

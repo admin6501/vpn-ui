@@ -2435,6 +2435,18 @@ theBuiltInWindowsSSTPClientRejectsSelf = "內建 Windows SSTP 用戶端會拒絕
 theNativeWindowsIOSAndroidIKEv2ClientsReject = "本機 Windows/iOS/Android IKEv2 用戶端拒絕自簽章證書，除非您將產生的 CA 匯入到裝置的受信任根。對於真實用戶，首選將 CA 簽署的憑證綁定到主機名稱。無論如何產生自簽名 CA + 伺服器憑證？"
 
 [pages.activity]
+trash = "資源回收筒"
+trashClients = "我的用戶端"
+trashManagers = "管理員與代理商"
+trashEmpty = "清空資源回收筒"
+trashEmptyPrompt = "要永久刪除此區段中的所有項目嗎？"
+trashClientNote = "用戶端還原後會停用。請先設定流量配額和有效期限，再啟用。"
+trashRestore = "還原"
+trashDelete = "永久刪除"
+trashDeletePrompt = "要永久刪除此項目嗎？"
+trashUnavailable = "項目、權限或相關面板資料已變更，無法還原。"
+trashManagerPrompt = "要將此帳戶及其用戶端移入資源回收筒嗎？設定、流量配額和有效期限會保留。"
+renewalNotices = "顯示自動續期通知"
 payments = "待確認付款"
 paymentReminders = "提醒我核對客戶付款"
 paymentReminderHelp = "新增客戶、續期或增加流量及有效期後，提醒會保留，直到你確認收到付款。"

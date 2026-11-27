@@ -2435,6 +2435,18 @@ theBuiltInWindowsSSTPClientRejectsSelf = "Yerleşik Windows SSTP istemcisi, CA'y
 theNativeWindowsIOSAndroidIKEv2ClientsReject = "Yerel Windows/iOS/Android IKEv2 istemcileri, oluşturulan CA'yı cihazın güvenilen köklerine aktarmadığınız sürece kendinden imzalı sertifikaları reddeder. Gerçek kullanıcılar için ana makine adına bağlı CA imzalı bir sertifikayı tercih edin. Yine de kendinden imzalı bir CA + sunucu sertifikası oluşturulsun mu?"
 
 [pages.activity]
+trash = "Geri dönüşüm kutusu"
+trashClients = "Müşterilerim"
+trashManagers = "Yöneticiler ve bayiler"
+trashEmpty = "Geri dönüşüm kutusunu boşalt"
+trashEmptyPrompt = "Bu bölümdeki tüm kayıtlar kalıcı olarak silinsin mi?"
+trashClientNote = "İstemciler devre dışı olarak geri yüklenir. Etkinleştirmeden önce kota ve geçerlilik süresini belirleyin."
+trashRestore = "Geri yükle"
+trashDelete = "Kalıcı olarak sil"
+trashDeletePrompt = "Bu kayıt kalıcı olarak silinsin mi?"
+trashUnavailable = "Kayıt, izinleri veya ilgili panel verileri değiştiği için geri yükleme yapılamıyor."
+trashManagerPrompt = "Bu hesap ve istemcileri geri dönüşüm kutusuna taşınsın mı? Ayarları, kotaları ve geçerlilik süreleri korunur."
+renewalNotices = "Otomatik yenileme bildirimlerini göster"
 payments = "Onay bekleyen ödemeler"
 paymentReminders = "İstemci ödemelerini hatırlat"
 paymentReminderHelp = "Yeni istemciler, yenilemeler ve kota veya süre artışları, ödemeyi onaylayana kadar beklemede kalır."

@@ -178,7 +178,7 @@ func (s *ResellerService) PrepareBulk(user *model.User, req *BulkClientUpdateReq
 		// the same (see applyBulkClientOp), and nothing in it looks at the quota.
 		// Exempting it because it "only restores a deadline" was wrong.
 		if req.Op == bulkOpEnable || req.Op == bulkOpUnfreeze {
-			if err := s.dropDepletedTargets(req); err != nil {
+			if err := s.dropDepletedTargets(req, !profile.ConsumptionBased && !profile.Unlimited); err != nil {
 				return BulkTicket{}, err
 			}
 		}
@@ -208,22 +208,22 @@ func (s *ResellerService) PrepareBulk(user *model.User, req *BulkClientUpdateReq
 	return ticket, nil
 }
 
-// dropDepletedTargets removes accounts that have already moved everything their
-// quota allows, so a free "enable" cannot hand them more.
+// dropDepletedTargets removes spent accounts and, for prepaid representatives
+// with a limited balance, accounts that have no purchased quota after restore.
 //
 // Uses the enforcement job's own predicate (`up + down >= total`, unlimited
 // exempt) so the two cannot disagree about which accounts are spent.
-func (s *ResellerService) dropDepletedTargets(req *BulkClientUpdateRequest) error {
+func (s *ResellerService) dropDepletedTargets(req *BulkClientUpdateRequest, requireQuota bool) error {
 	if len(req.Targets) == 0 {
 		return nil
 	}
 	emails := make([]string, 0, len(req.Targets))
 	for _, t := range req.Targets {
-		emails = append(emails, t.Email)
+		emails = append(emails, emailKey(t.Email))
 	}
 	var spent []xray.ClientTraffic
 	if err := database.GetDB().Model(&xray.ClientTraffic{}).
-		Where("email IN (?) AND total > 0 AND up + down >= total", emails).
+		Where("LOWER(TRIM(email)) IN (?) AND ((total > 0 AND up + down >= total) OR (? AND total <= 0))", emails, requireQuota).
 		Find(&spent).Error; err != nil {
 		return err
 	}

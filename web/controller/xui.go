@@ -43,6 +43,7 @@ func (a *XUIController) initRouter(g *gin.RouterGroup) {
 	g.GET("/security", a.security)
 	g.GET("/activity/logins", activityPage("logins"))
 	g.GET("/activity/renewals", activityPage("renewals"))
+	g.GET("/activity/trash", activityPage("trash"))
 	g.GET("/activity/changes", activityPage("changes"))
 	g.GET("/activity/payments", requirePerm(model.PermAccessInbounds), activityPage("payments"))
 	g.GET("/activity/apps", requirePanelOwner(), activityPage("apps"))

@@ -1624,9 +1624,7 @@ type DeleteResult struct {
 // refuses, as it always has, so the destructive path is never the default and an
 // old client or a script cannot silently destroy or orphan accounts.
 //
-// On cascade the accounts are removed BEFORE the reseller, so a mid-cascade
-// failure leaves "some accounts gone, reseller still owns the rest" (retryable)
-// rather than a deleted reseller with live accounts nobody bills.
+// The reseller and the chosen account changes are committed with their archive.
 func (s *ResellerService) DeleteReseller(caller *model.User, id int, mode string) (DeleteResult, error) {
 	user, _, err := s.manageable(caller, id)
 	if err != nil {
@@ -1637,140 +1635,22 @@ func (s *ResellerService) DeleteReseller(caller *model.User, id int, mode string
 	if err := db.Where("user_id = ?", id).Find(&rows).Error; err != nil {
 		return DeleteResult{}, err
 	}
-	if len(rows) == 0 {
-		return DeleteResult{}, s.dropReseller(user.Id) // childless: mode is moot
-	}
-	switch mode {
-	case DeleteModeKeep:
-		// The accounts stay byte-for-byte; only the ownership ledger goes, which
-		// makes them house-owned and visible to the inbound's admin.
-		if err := db.Where("user_id = ?", id).Delete(&model.ResellerClient{}).Error; err != nil {
-			return DeleteResult{}, err
-		}
-		return DeleteResult{}, s.dropReseller(user.Id)
-	case DeleteModeCascade:
-		res, err := s.cascadeClients(rows)
-		if err != nil {
-			return res, err // stop before dropping the reseller so a retry is possible
-		}
-		return res, s.dropReseller(user.Id)
-	default:
+	if len(rows) > 0 && mode != DeleteModeKeep && mode != DeleteModeCascade {
 		return DeleteResult{}, fmt.Errorf("%w (%d)", ErrResellerHasClients, len(rows))
 	}
-}
-
-// dropReseller removes the reseller row, its profile and its inbound grants once
-// the accounts have been dealt with. The balance vanishes with the profile: a
-// deleted reseller has nothing to refund to.
-func (s *ResellerService) dropReseller(userId int) error {
-	return database.GetDB().Transaction(func(tx *gorm.DB) error {
-		if err := tx.Where("user_id = ?", userId).Delete(&model.ResellerProfile{}).Error; err != nil {
-			return err
-		}
-		if err := tx.Where("user_id = ?", userId).Delete(&model.RepresentativeGroupAccess{}).Error; err != nil {
-			return err
-		}
-		if err := tx.Where("user_id = ?", userId).Delete(&model.InboundAccess{}).Error; err != nil {
-			return err
-		}
-		return tx.Where("id = ?", userId).Delete(&model.User{}).Error
-	})
-}
-
-// cascadeClients deletes every VPN account a reseller owns the same way the
-// single-account delete route does (settings surgery, IP release, traffic-row
-// removal, live Xray RemoveUser) and drops each ledger row. It returns the set
-// of daemon protocols it touched so the caller can regenerate their configs.
-//
-// EVERY membership of each account, not the one its ledger row names. An account
-// is one identity on N inbounds, and deleting it from the single inbound recorded
-// in ResellerClient.InboundId left N-1 live memberships behind with no ledger row,
-// which by this table's own rule means the house owns them: a working account,
-// serving traffic, that nobody is billed for and no reseller page shows.
-//
-// An account is handed to the house instead of deleted when it is STILL SERVED
-// somewhere after the cascade has done what it can, or when it was already gone
-// (a stale ledger row). Neither aborts the cascade, and the ledger row goes either
-// way, because the reseller it belongs to is being deleted and a charge against a
-// user that no longer exists can never be settled.
-//
-// That "still served" test is the load-bearing rule of this function and is checked
-// against the database at the end, not inferred from what the removal loop managed
-// to do. The reseller's ledger row is dropped unconditionally, so an account this
-// function leaves behind is a live, working client that nobody is billed for; if it
-// is also miscounted as deleted, nothing anywhere will ever surface it.
-func (s *ResellerService) cascadeClients(rows []model.ResellerClient) (DeleteResult, error) {
-	res := DeleteResult{Protocols: map[model.Protocol]bool{}}
-	db := database.GetDB()
-	var inboundService InboundService
-	dropLedger := func(email string) error {
-		return db.Where("email = ?", email).Delete(&model.ResellerClient{}).Error
+	touched, deleted, err := (TrashService{}).DeleteManager(caller, user.Id, true, mode)
+	if err != nil {
+		return DeleteResult{}, err
 	}
-	for _, rc := range rows {
-		ids, err := servingInboundIds(db, rc.Email)
-		if err != nil {
-			return res, err
-		}
-		removed := 0
-		for _, id := range ids {
-			inbound, err := inboundService.GetInbound(id)
-			if err != nil || inbound == nil {
-				continue // gone between resolving and now: nothing left to remove
-			}
-			// The ledger's own spelling is handed over as-is. DelInboundClientByEmail
-			// now matches the settings entry on accountKey, so an account the two
-			// tables spell differently is found; it used to report "not found" and
-			// survive the cascade as a live, unbilled client, which is what the
-			// spelling lookup that stood here worked around.
-			needRestart, err := inboundService.DelInboundClientByEmail(id, rc.Email)
-			if err != nil {
-				// "not found" only: already gone from this one, which is not a failure.
-				// The last client of an inbound is no longer a special case either, so
-				// there is nothing left that can leave a cascaded account still serving.
-				if !strings.Contains(err.Error(), "not found") {
-					return res, err
-				}
-				continue
-			}
-			res.Protocols[inbound.Protocol] = true
-			res.NeedXrayRestart = res.NeedXrayRestart || needRestart
-			removed++
-		}
-		if derr := dropLedger(rc.Email); derr != nil {
-			return res, derr
-		}
-
-		// Reported by what became of the ACCOUNT, not by how many memberships moved:
-		// an account still serving ANYWHERE was handed to the house, whatever else the
-		// cascade managed to remove. The ledger row has just gone, so a survivor is a
-		// live, working, unbilled client and must not be counted as deleted.
-		//
-		// Asked of the database rather than inferred from the loop above. It used to be
-		// inferred, from DelInboundClientByEmail answering "no client remained in
-		// Inbound" - which was the panel refusing to empty an inbound, a guard that has
-		// since been removed because it stranded accounts rather than protecting
-		// anything. Inferring it from an error string was always the weaker test: it
-		// could only see the one survival mode it knew the message for, and silently
-		// counted an account as deleted when its inbound had disappeared between the
-		// resolve and the delete (the `continue` above), which is a survival the old
-		// code could not detect at all.
-		//
-		// settings.clients ONLY, which is why this is inboundIdsServingEmails and not
-		// the servingInboundIds that drove the removal loop. That one unions
-		// account_inbounds and client_traffics.inbound_id as well, and a membership
-		// outlives the settings entry it described, so asking it here would report
-		// every cascaded account as a survivor and nothing would ever be counted
-		// deleted. Being served is a property of the settings blob: it is what RADIUS,
-		// the daemon config writers and GetXrayConfig all read.
-		stillServed, serr := inboundService.inboundIdsServingEmails(db, []string{rc.Email})
-		if serr != nil {
-			return res, serr
-		}
-		if len(stillServed) > 0 || removed == 0 {
-			res.Kept++
-			continue
-		}
-		res.Deleted++
+	result := DeleteResult{Protocols: map[model.Protocol]bool{}, NeedXrayRestart: len(touched) > 0, Deleted: deleted}
+	if mode == DeleteModeCascade {
+		result.Kept = max(len(rows)-deleted, 0)
 	}
-	return res, nil
+	for _, inboundID := range touched {
+		var protocol model.Protocol
+		if err := db.Model(&model.Inbound{}).Where("id = ?", inboundID).Select("protocol").Scan(&protocol).Error; err == nil {
+			result.Protocols[protocol] = true
+		}
+	}
+	return result, nil
 }

@@ -2436,6 +2436,18 @@ theBuiltInWindowsSSTPClientRejectsSelf = "El cliente SSTP de Windows integrado r
 theNativeWindowsIOSAndroidIKEv2ClientsReject = "Los clientes IKEv2 nativos de Windows/iOS/Android rechazan los certificados autofirmados a menos que importe la CA generada a las raíces confiables del dispositivo. Prefiera un certificado firmado por una CA vinculado a un nombre de host para usuarios reales. ¿Generar un certificado de servidor CA + autofirmado de todos modos?"
 
 [pages.activity]
+trash = "Papelera"
+trashClients = "Mis clientes"
+trashManagers = "Administradores y distribuidores"
+trashEmpty = "Vaciar papelera"
+trashEmptyPrompt = "¿Eliminar permanentemente todos los elementos de esta sección?"
+trashClientNote = "Los clientes se restauran desactivados. Configura su cuota y vigencia antes de activarlos."
+trashRestore = "Restaurar"
+trashDelete = "Eliminar definitivamente"
+trashDeletePrompt = "¿Eliminar este elemento definitivamente?"
+trashUnavailable = "No se puede restaurar porque han cambiado el elemento, sus permisos o los datos relacionados del panel."
+trashManagerPrompt = "¿Mover esta cuenta y sus clientes a la papelera? Se conservarán la configuración, las cuotas y la vigencia."
+renewalNotices = "Mostrar avisos de renovación automática"
 payments = "Pagos pendientes"
 paymentReminders = "Recordarme los pagos de mis clientes"
 paymentReminderHelp = "Las altas, las renovaciones y las ampliaciones de cuota o vigencia quedan pendientes hasta que confirmes el pago."

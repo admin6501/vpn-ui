@@ -2734,7 +2734,9 @@ func dropMembershipAfterDelete(db *gorm.DB, inboundId int, email string) {
 		return
 	}
 	var accountService AccountService
-	if err := accountService.DropMembership(db, inboundId, email); err != nil {
+	if err := database.SnapshotTransaction(db, func(tx *gorm.DB) error {
+		return accountService.DropMembership(tx, inboundId, email)
+	}); err != nil {
 		logger.Warningf("dropping the accounts-layer membership of %q on inbound %d after deleting it: %v", email, inboundId, err)
 	}
 }
@@ -3143,9 +3145,8 @@ func bulkNumToInt64(v any) int64 {
 // skip toggles. It mutates each affected inbound's settings JSON in place and saves
 // it inside a single transaction. Returns the applied/skipped counts and the set of
 // protocols touched, so the caller can regenerate the right subsystems once.
-func (s *InboundService) BulkUpdateClients(req BulkClientUpdateRequest) (BulkClientUpdateResult, map[string]bool, error) {
-	result := BulkClientUpdateResult{}
-	touched := map[string]bool{}
+func (s *InboundService) BulkUpdateClients(req BulkClientUpdateRequest) (result BulkClientUpdateResult, touched map[string]bool, err error) {
+	touched = map[string]bool{}
 
 	switch req.Op {
 	case "addDays", "subDays", "addTraffic", "subTraffic", "enable", "disable", "delete", "freeze", "unfreeze":
@@ -3168,19 +3169,21 @@ func (s *InboundService) BulkUpdateClients(req BulkClientUpdateRequest) (BulkCli
 	now := time.Now().Unix() * 1000
 	db := database.GetDB()
 	tx := db.Begin()
-	var err error
+	if tx.Error != nil {
+		return result, touched, tx.Error
+	}
 	defer func() {
 		if err != nil {
 			tx.Rollback()
 		} else {
-			tx.Commit()
+			err = tx.Commit().Error
 		}
 	}()
+	removed := make(map[string][]int)
 
 	for inboundId, emails := range byInbound {
-		var inbound *model.Inbound
-		inbound, err = s.GetInbound(inboundId)
-		if err != nil {
+		var inbound model.Inbound
+		if err = tx.First(&inbound, inboundId).Error; err != nil {
 			return result, touched, err
 		}
 		var settings map[string]any
@@ -3220,12 +3223,7 @@ func (s *InboundService) BulkUpdateClients(req BulkClientUpdateRequest) (BulkCli
 				cm, _ := clientsAny[i].(map[string]any)
 				email, _ := cm["email"].(string)
 				if email != "" && del[email] {
-					if err = s.DelClientStat(tx, email); err != nil {
-						return result, touched, err
-					}
-					if err = s.DelClientIPs(tx, email); err != nil {
-						return result, touched, err
-					}
+					removed[accountKey(email)] = append(removed[accountKey(email)], inboundId)
 					result.Applied++
 					changed = true
 				} else {
@@ -3285,12 +3283,12 @@ func (s *InboundService) BulkUpdateClients(req BulkClientUpdateRequest) (BulkCli
 			return result, touched, err
 		}
 		inbound.Settings = string(newSettings)
-		if err = tx.Save(inbound).Error; err != nil {
+		if err = tx.Save(&inbound).Error; err != nil {
 			return result, touched, err
 		}
 		touched[string(inbound.Protocol)] = true
 	}
-	return result, touched, nil
+	return result, touched, s.finishTrashRemovals(tx, removed)
 }
 
 // bulkClientSkipped reports whether a client is excluded by the request's skip
@@ -5057,9 +5055,12 @@ func (s *InboundService) DelDepletedClients(id int) error {
 func (s *InboundService) DelDepletedClientsScoped(id int, onlyEmails map[string]bool) (deleted []string, err error) {
 	db := database.GetDB()
 	tx := db.Begin()
+	if tx.Error != nil {
+		return nil, tx.Error
+	}
 	defer func() {
 		if err == nil {
-			tx.Commit()
+			err = tx.Commit().Error
 		} else {
 			tx.Rollback()
 		}
@@ -5093,6 +5094,8 @@ func (s *InboundService) DelDepletedClientsScoped(id int, onlyEmails map[string]
 	// Resolved in full before anything is written, so the settings rewrites below
 	// cannot see a half-swept panel.
 	removals := map[int][]string{} // inbound id -> the emails to take out of its settings
+	removed := map[string][]int{}
+	restorable := map[int]bool{}
 	deleted = []string{}
 	for _, row := range depletedClients {
 		email := row.Email
@@ -5111,9 +5114,17 @@ func (s *InboundService) DelDepletedClientsScoped(id int, onlyEmails map[string]
 				continue
 			}
 		}
+		account, err := (&AccountService{}).GetAccountByEmailTx(db, email)
+		if err != nil {
+			return nil, err
+		}
 		for _, inboundId := range ids {
 			removals[inboundId] = append(removals[inboundId], email)
+			if account != nil {
+				restorable[inboundId] = true
+			}
 		}
+		removed[accountKey(email)] = ids
 		deleted = append(deleted, email)
 	}
 
@@ -5172,8 +5183,10 @@ func (s *InboundService) DelDepletedClientsScoped(id int, onlyEmails map[string]
 		// follows an account onto every inbound serving it, and without this a sweep
 		// of inbound 3 could destroy inbound 5 - port, certificates, daemon config and
 		// all - because one expired customer happened to be its only client.
-		if len(newClients) == 0 && onlyEmails == nil && (id < 0 || inboundId == id) {
-			s.DelInbound(inboundId)
+		if len(newClients) == 0 && !restorable[inboundId] && onlyEmails == nil && (id < 0 || inboundId == id) {
+			if _, err := s.DelInbound(inboundId); err != nil {
+				return nil, err
+			}
 			continue
 		}
 		if newClients == nil {
@@ -5195,10 +5208,8 @@ func (s *InboundService) DelDepletedClientsScoped(id int, onlyEmails map[string]
 	// Exactly the accounts just taken out of the settings, and no longer "everything
 	// the predicate matches": with the sweep scoped by membership rather than by
 	// inbound_id, the predicate on its own names accounts this call was never about.
-	if len(deleted) > 0 {
-		if err = tx.Where("email IN ?", deleted).Delete(xray.ClientTraffic{}).Error; err != nil {
-			return nil, err
-		}
+	if err := s.finishTrashRemovals(tx, removed); err != nil {
+		return nil, err
 	}
 
 	return deleted, nil

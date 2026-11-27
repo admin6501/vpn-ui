@@ -41,7 +41,7 @@ func TestPanelActivityBrowserRuntime(t *testing.T) {
 		t.Fatal(err)
 	}
 	pages := map[string][]byte{}
-	for _, mode := range []string{"logins", "renewals", "changes", "apps", "expired", "payments"} {
+	for _, mode := range []string{"logins", "renewals", "changes", "apps", "expired", "payments", "trash"} {
 		var out bytes.Buffer
 		name := "activity.html"
 		if mode == "expired" {
@@ -50,7 +50,7 @@ func TestPanelActivityBrowserRuntime(t *testing.T) {
 		if err := tpl.ExecuteTemplate(&out, name, map[string]any{
 			"lang": "en-US", "base_path": "/test/", "title": "pages.activity." + mode, "me": 1,
 			"activityMode": mode, "expiredOwned": mode == "expired",
-			"perms": map[string]bool{"panelOwner": true, "superAdmin": true, "accessInbounds": true},
+			"perms": map[string]bool{"panelOwner": true, "superAdmin": true, "accessInbounds": true, "createClient": true},
 		}); err != nil {
 			t.Fatal(err)
 		}

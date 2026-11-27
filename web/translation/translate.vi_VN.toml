@@ -2436,6 +2436,18 @@ theBuiltInWindowsSSTPClientRejectsSelf = "Ứng dụng khách SSTP Windows tích
 theNativeWindowsIOSAndroidIKEv2ClientsReject = "Máy khách IKEv2 Windows/iOS/Android gốc từ chối chứng chỉ tự ký trừ khi bạn nhập CA được tạo vào nguồn gốc đáng tin cậy của thiết bị. Ưu tiên chứng chỉ do CA ký được liên kết với tên máy chủ cho người dùng thực. Vẫn tạo chứng chỉ máy chủ CA + tự ký?"
 
 [pages.activity]
+trash = "Thùng rác"
+trashClients = "Khách hàng của tôi"
+trashManagers = "Quản trị viên và đại lý"
+trashEmpty = "Dọn sạch thùng rác"
+trashEmptyPrompt = "Xóa vĩnh viễn tất cả mục trong phần này?"
+trashClientNote = "Tài khoản khách hàng được khôi phục ở trạng thái tắt. Hãy đặt hạn mức và thời hạn trước khi bật."
+trashRestore = "Khôi phục"
+trashDelete = "Xóa vĩnh viễn"
+trashDeletePrompt = "Xóa vĩnh viễn mục này?"
+trashUnavailable = "Không thể khôi phục vì mục này, quyền truy cập hoặc dữ liệu liên quan đã thay đổi."
+trashManagerPrompt = "Chuyển tài khoản này và khách hàng của tài khoản vào thùng rác? Cấu hình, hạn mức và thời hạn sẽ được lưu."
+renewalNotices = "Hiển thị thông báo gia hạn tự động"
 payments = "Thanh toán chờ xác nhận"
 paymentReminders = "Nhắc tôi về khoản thanh toán của khách hàng"
 paymentReminderHelp = "Khách hàng mới, lượt gia hạn và lần tăng dung lượng hoặc thời hạn vẫn ở trạng thái chờ cho đến khi bạn xác nhận thanh toán."

@@ -1398,31 +1398,10 @@
           },
         });
       },
-      // Removed from EVERY inbound serving it. Deleting it from one and leaving the
-      // rest is a working account nobody is billed for, so a partial result has to
-      // be reported rather than left looking like success.
-      //
-      // The panel no longer refuses to empty an inbound, so the common cause of a
-      // partial result (an account that was the only client of one of its inbounds)
-      // is gone. This still reports what stuck, because a membership can fail for
-      // reasons of its own and a half-deleted account must not look like success.
       async deleteAccount(row) {
-        const stuck = [];
-        // Nothing serves it, so there is no inbound to address the delete to and
-        // nothing in any settings blob to remove. What is left is the account row and
-        // its counter row, which is what this route takes.
-        if (!this.isServed(row)) {
-          const msg = await HttpUtil.post(
-            `/panel/api/inbounds/delAccount/${encodeURIComponent(row.email)}`);
-          if (!msg || !msg.success) stuck.push(row.email);
-          return stuck;
-        }
-        for (const m of (row.memberships || [])) {
-          const msg = await HttpUtil.post(
-            `/panel/api/inbounds/${m.inboundId}/delClientByEmail/${encodeURIComponent(row.email)}`);
-          if (!msg || !msg.success) stuck.push(m.remark || (m.protocol + ':' + m.port));
-        }
-        return stuck;
+        const msg = await HttpUtil.post(
+          `/panel/api/inbounds/trashAccount/${encodeURIComponent(row.email)}`);
+        return msg?.success ? [] : [row.email];
       },
       reportStuck(email, stuck) {
         if (!stuck.length) return;

@@ -2436,6 +2436,18 @@ theBuiltInWindowsSSTPClientRejectsSelf = "يرفض عميل Windows SSTP الم�
 theNativeWindowsIOSAndroidIKEv2ClientsReject = "يرفض عملاء Windows/iOS/Android IKEv2 الأصليون الشهادات الموقعة ذاتيًا ما لم تقم باستيراد المرجع المصدق (CA) الذي تم إنشاؤه إلى الجذور الموثوقة للجهاز. تفضل شهادة موقعة من CA مرتبطة باسم مضيف للمستخدمين الحقيقيين. هل تريد إنشاء شهادة خادم CA + موقعة ذاتيًا على أي حال؟"
 
 [pages.activity]
+trash = "سلة المحذوفات"
+trashClients = "عملائي"
+trashManagers = "المسؤولون والموزعون"
+trashEmpty = "إفراغ سلة المحذوفات"
+trashEmptyPrompt = "هل تريد حذف جميع عناصر هذا القسم نهائيًا؟"
+trashClientNote = "تُستعاد حسابات العملاء معطّلة. عيّن الحصة وفترة الصلاحية قبل تفعيلها."
+trashRestore = "استعادة"
+trashDelete = "حذف نهائي"
+trashDeletePrompt = "هل تريد حذف هذا العنصر نهائيًا؟"
+trashUnavailable = "تعذّرت الاستعادة بسبب تغيّر العنصر أو أذوناته أو بيانات اللوحة المرتبطة به."
+trashManagerPrompt = "هل تريد نقل هذا الحساب وعملائه إلى سلة المحذوفات؟ ستُحفظ إعداداتهم وحصصهم وصلاحيتهم."
+renewalNotices = "عرض إشعارات التجديد التلقائي"
 payments = "المدفوعات بانتظار التأكيد"
 paymentReminders = "ذكّرني بمدفوعات عملائي"
 paymentReminderHelp = "تظل الحسابات الجديدة والتجديدات وزيادات الحصة أو الصلاحية معلّقة إلى أن تؤكد استلام الدفع."

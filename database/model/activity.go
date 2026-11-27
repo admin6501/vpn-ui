@@ -71,3 +71,14 @@ type PanelPaymentReminder struct {
 	ConfirmedAt int64 `gorm:"not null;default:0"`
 	ConfirmedBy int   `gorm:"not null;default:0"`
 }
+
+// PanelTrash stores private snapshots. The Activity API exposes only metadata.
+type PanelTrash struct {
+	Id          int64  `json:"id" gorm:"primaryKey;autoIncrement"`
+	OwnerID     int    `json:"-" gorm:"not null;index:idx_panel_trash_scope,priority:1"`
+	Kind        string `json:"kind" gorm:"not null;index:idx_panel_trash_scope,priority:2"`
+	Name        string `json:"name" gorm:"not null"`
+	ClientCount int    `json:"clientCount"`
+	DeletedAt   int64  `json:"deletedAt" gorm:"not null"`
+	Payload     string `json:"-" gorm:"not null"`
+}

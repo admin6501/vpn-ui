@@ -2439,6 +2439,18 @@ theBuiltInWindowsSSTPClientRejectsSelf = "The built-in Windows SSTP client rejec
 theNativeWindowsIOSAndroidIKEv2ClientsReject = "The native Windows/iOS/Android IKEv2 clients reject self-signed certificates unless you import the generated CA into the device's trusted roots. Prefer a CA-signed cert bound to a hostname for real users. Generate a self-signed CA + server cert anyway?"
 
 [pages.activity]
+trash = "Recycle bin"
+trashClients = "My clients"
+trashManagers = "Administrators and representatives"
+trashEmpty = "Empty recycle bin"
+trashEmptyPrompt = "Permanently delete all entries in this section?"
+trashClientNote = "Clients are restored disabled. Set their quota and validity before enabling them."
+trashRestore = "Restore"
+trashDelete = "Delete permanently"
+trashDeletePrompt = "Permanently delete this entry?"
+trashUnavailable = "Restore is unavailable because the entry, its permissions, or related panel data has changed."
+trashManagerPrompt = "Move this account and its clients to the recycle bin? Their settings, quotas and validity will be preserved."
+renewalNotices = "Show automatic renewal notifications"
 payments = "Pending payments"
 paymentReminders = "Remind me about client payments"
 paymentReminderHelp = "New clients, renewals, and quota or validity extensions stay pending until you confirm payment."

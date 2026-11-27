@@ -2436,6 +2436,18 @@ theBuiltInWindowsSSTPClientRejectsSelf = "内置 Windows SSTP 客户端会拒绝
 theNativeWindowsIOSAndroidIKEv2ClientsReject = "本机 Windows/iOS/Android IKEv2 客户端拒绝自签名证书，除非您将生成的 CA 导入到设备的受信任根中。对于真实用户，首选将 CA 签名的证书绑定到主机名。无论如何生成自签名 CA + 服务器证书？"
 
 [pages.activity]
+trash = "回收站"
+trashClients = "我的客户端"
+trashManagers = "管理员和代理商"
+trashEmpty = "清空回收站"
+trashEmptyPrompt = "要永久删除此分区中的所有条目吗？"
+trashClientNote = "客户端恢复后处于停用状态。请先设置流量配额和有效期，再启用。"
+trashRestore = "恢复"
+trashDelete = "永久删除"
+trashDeletePrompt = "要永久删除此条目吗？"
+trashUnavailable = "条目、权限或相关面板数据已更改，无法恢复。"
+trashManagerPrompt = "要将此账户及其客户端移入回收站吗？设置、流量配额和有效期会保留。"
+renewalNotices = "显示自动续期通知"
 payments = "待确认付款"
 paymentReminders = "提醒我核对客户付款"
 paymentReminderHelp = "新增客户、续期或增加流量及有效期后，提醒会保留，直到你确认收到付款。"

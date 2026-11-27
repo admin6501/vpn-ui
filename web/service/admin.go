@@ -381,53 +381,44 @@ func (s *AdminService) isLastSuperAdmin(db *gorm.DB, id int) (bool, error) {
 // the account still owns inbounds: those would become invisible to everyone,
 // while their daemons kept running and their clients kept connecting.
 func (s *AdminService) DeleteAdmin(id int) error {
-	db := database.GetDB()
-	existing := &model.User{}
-	if err := db.Model(model.User{}).Where("id = ?", id).First(existing).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
+	return database.SnapshotTransaction(database.GetDB(), func(tx *gorm.DB) error {
+		var existing model.User
+		if err := tx.First(&existing, id).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrAdminNotFound
+			}
+			return err
+		}
+		if existing.IsReseller {
 			return ErrAdminNotFound
 		}
-		return err
-	}
-	// Resellers are deleted from their own page, which also has to settle the
-	// balance and the accounts they own. Deleting one from here would leave both
-	// stranded.
-	if existing.IsReseller {
-		return ErrAdminNotFound
-	}
-	if existing.IsPanelOwner {
-		return ErrProtectedAdmin
-	}
-	if existing.IsSuperAdmin {
-		last, err := s.isLastSuperAdmin(db, id)
-		if err != nil {
+		if existing.IsPanelOwner {
+			return ErrProtectedAdmin
+		}
+		if existing.IsSuperAdmin {
+			last, err := s.isLastSuperAdmin(tx, id)
+			if err != nil {
+				return err
+			}
+			if last {
+				return ErrLastSuperAdmin
+			}
+		}
+		var owned int64
+		if err := tx.Model(&model.Inbound{}).Where("user_id = ?", id).Count(&owned).Error; err != nil {
 			return err
 		}
-		if last {
-			return ErrLastSuperAdmin
+		if owned > 0 {
+			return fmt.Errorf("this admin still owns %d inbound(s); delete or reassign them first", owned)
 		}
-	}
-	var owned int64
-	if err := db.Model(model.Inbound{}).Where("user_id = ?", id).Count(&owned).Error; err != nil {
-		return err
-	}
-	if owned > 0 {
-		return fmt.Errorf("this admin still owns %d inbound(s); delete or reassign them first", owned)
-	}
-	if err := db.Model(&model.Account{}).Where("owner_admin_id = ?", id).Count(&owned).Error; err != nil {
-		return err
-	}
-	if owned > 0 {
-		return fmt.Errorf("this admin still owns %d client account(s); transfer them first", owned)
-	}
-	return db.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Where("user_id = ?", id).Delete(&model.AdminGroupAccess{}).Error; err != nil {
+		if err := tx.Model(&model.Account{}).Where("owner_admin_id = ?", id).Count(&owned).Error; err != nil {
 			return err
 		}
-		if err := tx.Where("user_id = ?", id).Delete(&model.InboundAccess{}).Error; err != nil {
-			return err
+		if owned > 0 {
+			return fmt.Errorf("this admin still owns %d client account(s); transfer them first", owned)
 		}
-		return tx.Where("id = ?", id).Delete(&model.User{}).Error
+		_, _, err := archiveAndRemoveManager(tx, existing, true)
+		return err
 	})
 }
 

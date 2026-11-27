@@ -2435,6 +2435,18 @@ theBuiltInWindowsSSTPClientRejectsSelf = "CA をマシンの信頼されたル�
 theNativeWindowsIOSAndroidIKEv2ClientsReject = "ネイティブ Windows/iOS/Android IKEv2 クライアントは、生成された CA をデバイスの信頼されたルートにインポートしない限り、自己署名証明書を拒否します。実際のユーザーのホスト名にバインドされた CA 署名証明書を優先します。とにかく自己署名 CA + サーバー証明書を生成しますか?"
 
 [pages.activity]
+trash = "ごみ箱"
+trashClients = "自分のクライアント"
+trashManagers = "管理者と再販業者"
+trashEmpty = "ごみ箱を空にする"
+trashEmptyPrompt = "このセクションのすべての項目を完全に削除しますか？"
+trashClientNote = "クライアントは無効な状態で復元されます。有効化する前に容量と有効期限を設定してください。"
+trashRestore = "復元"
+trashDelete = "完全に削除"
+trashDeletePrompt = "この項目を完全に削除しますか？"
+trashUnavailable = "項目、権限、または関連するパネルのデータが変更されたため、復元できません。"
+trashManagerPrompt = "このアカウントとそのクライアントをごみ箱に移動しますか？ 設定、容量、有効期限は保持されます。"
+renewalNotices = "自動更新の通知を表示"
 payments = "支払い確認待ち"
 paymentReminders = "クライアントの支払いを通知"
 paymentReminderHelp = "クライアントの新規作成、更新、通信量の追加、有効期間の延長は、支払いを確認するまで保留になります。"

@@ -180,6 +180,14 @@ func (a *AdminController) del(c *gin.Context) {
 		jsonMsg(c, I18nWeb(c, "pages.admins.del"), errSelfDelete)
 		return
 	}
+	if user := session.GetLoginUser(c); user != nil && user.IsPanelOwner && c.PostForm("mode") == "trash" {
+		ids, _, err := (service.TrashService{}).DeleteManager(user, id, false, service.DeleteModeCascade)
+		if err == nil && len(ids) != 0 {
+			(&InboundController{}).reconcileForInbounds(ids, true)
+		}
+		jsonMsg(c, I18nWeb(c, "pages.admins.del"), err)
+		return
+	}
 	if err := a.adminService.DeleteAdmin(id); err != nil {
 		jsonMsg(c, I18nWeb(c, "pages.admins.del"), err)
 		return

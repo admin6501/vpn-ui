@@ -16,8 +16,13 @@ const { chromium } = require('playwright');
         let appChanges;
         let retention;
         let paymentReminders = false;
+        let renewalNotices = true;
         let pendingPayment;
         const at = Date.now();
+        let deletedClients = ['recover-client', 'purge-client', 'empty-client'].map((name, index) => ({
+            id: index + 30, name, deletedAt: at,
+        }));
+        const deletedManager = { id: 40, name: 'recover-representative', deletedAt: at, clientCount: 4 };
         const login = { id: 2, kind: 'login', at, username: 'panel-owner', os: 'Windows', ip: '203.0.113.19' };
         const renewal = { id: 3, kind: 'autoRenewed', at, email: 'test-renewed', owner: 'test-representative' };
         pendingPayment = { id: 15, kind: 'created', at, email: 'payment-client' };
@@ -45,7 +50,20 @@ const { chromium } = require('playwright');
                     ? { rows: [{ ...login, id: 1, kind: 'logout', os: 'Android' }], more: false }
                     : { rows: [login], more: true };
             } else if (path === 'activity/renewals') {
-                obj = { rows: [renewal], more: false };
+                obj = { rows: [renewal], more: false, enabled: renewalNotices };
+            } else if (path === 'activity/renewals/settings') {
+                renewalNotices = route.request().postDataJSON().enabled;
+            } else if (path === 'activity/trash/client') {
+                obj = { rows: deletedClients, more: false };
+            } else if (path === 'activity/trash/manager') {
+                obj = { rows: [deletedManager], more: false };
+            } else if (path === 'activity/trash/client/restore' || path === 'activity/trash/client/delete') {
+                const { id } = route.request().postDataJSON();
+                assert.equal(id, path.endsWith('/restore') ? 30 : 31);
+                deletedClients = deletedClients.filter(row => row.id !== id);
+            } else if (path === 'activity/trash/client/empty') {
+                assert.equal(route.request().postDataJSON().confirm, true);
+                deletedClients = [];
             } else if (path === 'activity/changes/settings') {
                 obj = { enabled: true, months: ['2026-11'] };
             } else if (path === 'activity/changes/retention') {
@@ -157,6 +175,11 @@ const { chromium } = require('playwright');
         assert.equal(menuColor.actual, menuColor.gray, 'Activity uses the same gray as other panel labels');
         await renewalLink.click();
         await page.getByRole('cell', { name: 'test-renewed' }).waitFor();
+        const renewalPreference = page.getByRole('switch', { name: 'Show automatic renewal notifications', checked: true });
+        await renewalPreference.click();
+        await page.getByRole('switch', { name: 'Show automatic renewal notifications', checked: false }).waitFor();
+        assert.equal(renewalNotices, false);
+        await page.getByRole('cell', { name: 'test-renewed' }).waitFor();
         await page.getByRole('button', { name: 'Activity' }).click();
         await page.getByRole('link', { name: 'Client change history' }).click();
         await page.getByRole('cell', { name: 'test-representative' }).waitFor();
@@ -215,6 +238,30 @@ const { chromium } = require('playwright');
         await preferenceSaved;
         await page.getByRole('switch', { name: 'Remind me about client payments', checked: false }).waitFor();
         assert.equal(paymentReminders, false);
+        await page.getByRole('button', { name: 'Activity' }).click();
+        await page.getByRole('link', { name: 'Recycle bin' }).click();
+        const recover = page.getByRole('row').filter({ hasText: 'recover-client' });
+        await recover.getByRole('button', { name: 'Restore' }).click();
+        await recover.waitFor({ state: 'hidden' });
+        const purge = page.getByRole('row').filter({ hasText: 'purge-client' });
+        await purge.getByRole('button', { name: 'Delete permanently' }).click();
+        const purgePrompt = page.locator('.ant-popover:visible').filter({ hasText: 'Permanently delete this entry?' });
+        await purgePrompt.getByRole('button', { name: 'Cancel' }).click();
+        assert.equal(deletedClients.length, 2);
+        await purge.getByRole('button', { name: 'Delete permanently' }).click();
+        await purgePrompt.getByRole('button', { name: 'Delete', exact: true }).click();
+        await purge.waitFor({ state: 'hidden' });
+        await page.getByRole('button', { name: 'Empty recycle bin' }).click();
+        const emptyPrompt = page.locator('.ant-popover:visible').filter({ hasText: 'Permanently delete all entries in this section?' });
+        await emptyPrompt.getByRole('button', { name: 'Cancel' }).click();
+        await emptyPrompt.waitFor({ state: 'hidden' });
+        assert.equal(deletedClients.length, 1);
+        await page.getByRole('button', { name: 'Empty recycle bin' }).click();
+        await emptyPrompt.getByRole('button', { name: 'Empty recycle bin' }).click();
+        await page.getByRole('cell', { name: 'empty-client' }).waitFor({ state: 'hidden' });
+        assert.equal(deletedClients.length, 0);
+        await page.getByText('Administrators and representatives', { exact: true }).click();
+        await page.getByRole('cell', { name: deletedManager.name }).waitFor();
         assert.deepEqual(errors, []);
     } finally {
         await browser.close();
