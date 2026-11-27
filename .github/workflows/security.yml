@@ -1,0 +1,53 @@
+name: Security audit
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: "23 3 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: security-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  dependency-audit:
+    name: Dependency vulnerability audit
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout repository and pinned submodules
+        uses: actions/checkout@v6
+        with:
+          submodules: recursive
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: telegram-bot/package-lock.json
+
+      - name: Apply required Xray security patches
+        run: bash build/core/apply-security.sh
+
+      - name: Scan panel and node-agent dependencies
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./web/... ./nodeagent/...
+
+      - name: Scan embedded Xray dependencies
+        working-directory: third_party/Xray-core
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./main/...
+
+      - name: Audit Telegram bot dependencies
+        run: npm audit --prefix telegram-bot --audit-level=moderate
