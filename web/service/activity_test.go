@@ -250,7 +250,7 @@ func TestPanelClientChangeDetailsRecordQuotaExpiryAndTrafficReset(t *testing.T) 
 	}
 }
 
-func TestClientActivityRecordsEditorOfLegacyAccount(t *testing.T) {
+func TestFirstEditorBecomesOnlyTheUnattributedLegacyOwner(t *testing.T) {
 	accounts := newAccountsDB(t)
 	db := database.GetDB()
 	var owner model.User
@@ -269,24 +269,49 @@ func TestClientActivityRecordsEditorOfLegacyAccount(t *testing.T) {
 	if _, err := accounts.SaveAccountWithoutInboundAudit(input, editor.Id, database.AccountAudit{ActorID: editor.Id}); err != nil {
 		t.Fatal(err)
 	}
+	input["comment"] = "a different administrator edited this later"
+	if _, err := accounts.SaveAccountWithoutInboundAudit(input, owner.Id, database.AccountAudit{ActorID: owner.Id}); err != nil {
+		t.Fatal(err)
+	}
 	now := time.Now().UTC()
 	month := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)
 	activity := ActivityService{}
 	rows, err := activity.ChangeEvents(month, "", 0, &owner)
-	if err != nil || len(rows) != 2 || rows[0].OwnerID != owner.Id || rows[0].Owner != "" || rows[0].ActorID != editor.Id ||
-		rows[0].Actor != editor.Username || rows[0].Kind != "updated" {
-		t.Fatalf("a later editor cannot establish ownership: %+v, %v", rows, err)
+	if err != nil || len(rows) != 3 || rows[0].OwnerID != editor.Id || rows[0].Owner != editor.Username ||
+		rows[0].Actor != owner.Username || rows[1].Actor != editor.Username || rows[2].Owner != editor.Username {
+		t.Fatalf("the first editor should establish ownership while later editors retain their own attribution: %+v, %v", rows, err)
 	}
-	if visible, err := activity.ChangeEvents(month, "", 0, &editor); err != nil || len(visible) != 0 {
-		t.Fatalf("editing an unattributed client gave access to its owner history: %+v, %v", visible, err)
+	if visible, err := activity.ChangeEvents(month, "", 0, &editor); err != nil || len(visible) != 3 {
+		t.Fatalf("inferred owner cannot see the client history: %+v, %v", visible, err)
 	}
 	var saved model.Account
-	if err := db.First(&saved, account.Id).Error; err != nil || saved.OwnerAdminID != owner.Id {
-		t.Fatalf("edit changed account ownership: %+v, %v", saved, err)
+	if err := db.First(&saved, account.Id).Error; err != nil || saved.InferredOwnerID != editor.Id {
+		t.Fatalf("first editor was not persisted as the fallback owner: %+v, %v", saved, err)
+	}
+	history, err := accounts.AccountHistory(&editor, account.Email, 0)
+	if err != nil || len(history.Events) != 3 || history.Events[0].Actor != owner.Username || history.Events[1].Actor != editor.Username {
+		t.Fatalf("individual client history lost the actual editor: %+v, %v", history, err)
+	}
+	if _, err := accounts.SaveAccountWithoutInboundAudit(map[string]any{"email": "new-client"}, editor.Id,
+		database.AccountAudit{ActorID: editor.Id}); err != nil {
+		t.Fatal(err)
+	}
+	notice, err := activity.Notifications(&owner, "changes")
+	if err != nil || notice.Count != 3 || len(notice.Names) != 2 || notice.Names[0] != "new-client" {
+		t.Fatalf("panel owner did not see change and creation notices: %+v, %v", notice, err)
+	}
+	if editorNotice, err := activity.Notifications(&editor, "changes"); err != nil || editorNotice.Count != 0 {
+		t.Fatalf("global change notice reached a delegated admin: %+v, %v", editorNotice, err)
+	}
+	if err := activity.DismissNotice(&owner, "changes", notice.Through); err != nil {
+		t.Fatal(err)
+	}
+	if dismissed, err := activity.Notifications(&owner, "changes"); err != nil || dismissed.Count != 0 {
+		t.Fatalf("the global change notice stayed unread after dismissal: %+v, %v", dismissed, err)
 	}
 }
 
-func TestLegacyClientNoticesUseTheRecoveredOwner(t *testing.T) {
+func TestLegacyClientRenewalNoticesUseTheConfiguratorAndPanelOwner(t *testing.T) {
 	accounts := newAccountsDB(t)
 	db := database.GetDB()
 	var owner model.User
@@ -346,7 +371,7 @@ func TestLegacyClientNoticesUseTheRecoveredOwner(t *testing.T) {
 	}
 	for _, recipient := range []*model.User{&manager, &owner, &other} {
 		want := int64(1)
-		if recipient.Id == other.Id {
+		if recipient.Id == manager.Id {
 			want = 0
 		}
 		notice, err := activity.Notifications(recipient, "renewals")
@@ -359,14 +384,19 @@ func TestLegacyClientNoticesUseTheRecoveredOwner(t *testing.T) {
 			}
 		}
 	}
-	if notice, err := activity.Notifications(&manager, "renewals"); err != nil || notice.Count != 1 {
-		t.Fatalf("panel owner's dismissal hid the manager's notice: %+v %v", notice, err)
+	if notice, err := activity.Notifications(&other, "renewals"); err != nil || notice.Count != 1 {
+		t.Fatalf("panel owner's dismissal hid the configurator's notice: %+v %v", notice, err)
 	}
-	rows, err := activity.PendingPayments(&manager, 0)
-	if err != nil || len(rows) != 1 || rows[0].Owner != manager.Username || rows[0].Kind != "autoRenewed" {
-		t.Fatalf("pending payment for legacy manager: %+v %v", rows, err)
+	logs, err := activity.RenewalEvents(&owner, 0)
+	if err != nil || len(logs) != 1 || logs[0].Owner != manager.Username || logs[0].Actor != other.Username {
+		t.Fatalf("automatic renewal should record its owner and configurator: %+v %v", logs, err)
 	}
-	for _, unrelated := range []*model.User{&other, &owner} {
+	rows, err := activity.PendingPayments(&other, 0)
+	if err != nil || len(rows) != 1 || rows[0].Owner != manager.Username || rows[0].Actor != other.Username ||
+		rows[0].Kind != "autoRenewed" {
+		t.Fatalf("pending payment for automatic renewal configurator: %+v %v", rows, err)
+	}
+	for _, unrelated := range []*model.User{&manager, &owner} {
 		if notice, err := activity.PaymentNotice(unrelated); err != nil || notice.Count != 0 {
 			t.Fatalf("payment notice to %s: %+v %v", unrelated.Username, notice, err)
 		}
@@ -374,7 +404,7 @@ func TestLegacyClientNoticesUseTheRecoveredOwner(t *testing.T) {
 			t.Fatalf("%s was allowed to confirm an unrelated payment: %v", unrelated.Username, err)
 		}
 	}
-	if err := activity.ConfirmPayment(&manager, rows[0].ID); err != nil {
+	if err := activity.ConfirmPayment(&other, rows[0].ID); err != nil {
 		t.Fatal(err)
 	}
 }

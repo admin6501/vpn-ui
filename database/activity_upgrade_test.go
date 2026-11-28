@@ -29,8 +29,14 @@ func TestClientActivityDetailsUpgradePreservesExistingRows(t *testing.T) {
 		"DROP TRIGGER client_history_account_groups_insert",
 		"DROP TRIGGER client_history_account_groups_delete",
 		"DROP TRIGGER client_history_membership_status",
+		"DROP TRIGGER assign_unattributed_client_owner",
 		"DROP TRIGGER panel_client_activity",
 		"DROP TRIGGER panel_payment_reminder_changed",
+		"DROP INDEX idx_pending_payments_actor",
+		"DROP INDEX idx_panel_payment_reminders_actor_id",
+		"ALTER TABLE panel_payment_reminders DROP COLUMN actor_id",
+		"ALTER TABLE accounts DROP COLUMN inferred_owner_id",
+		"ALTER TABLE accounts DROP COLUMN auto_renew_actor_id",
 		"DROP INDEX idx_panel_client_events_actor_id",
 		"DROP INDEX idx_account_event_actor_history",
 		"ALTER TABLE panel_client_events DROP COLUMN actor_id",
@@ -118,5 +124,61 @@ func TestLegacyRenewalNoticesRecoverRecordedActorOnUpgrade(t *testing.T) {
 	var creation model.AccountEvent
 	if err := db.Where("account_id=? AND kind='created'", account.Id).First(&creation).Error; err != nil || creation.ActorID != manager.Id {
 		t.Fatalf("creation provenance wasn't retained with history: %+v %v", creation, err)
+	}
+}
+
+func TestLegacyActivityRecoversFallbackOwnerAndRenewalOperatorOnUpgrade(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "panel.db")
+	if err := InitDB(path); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { CloseDB() })
+	var owner model.User
+	if err := db.Where("is_panel_owner").First(&owner).Error; err != nil {
+		t.Fatal(err)
+	}
+	editor := model.User{Username: "unattributed-client-editor", Enable: true, IsReseller: true}
+	operator := model.User{Username: "automatic-renewal-operator", Enable: true, IsSuperAdmin: true}
+	for _, user := range []*model.User{&editor, &operator} {
+		if err := db.Create(user).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	created := time.Now().Add(-time.Minute).UnixMilli()
+	account := model.Account{Email: "unattributed-legacy-client", OwnerAdminID: owner.Id, AutoRenew: true, CreatedAt: created}
+	if err := db.Create(&account).Error; err != nil {
+		t.Fatal(err)
+	}
+	// The previous panel stored the editor in history without using it for ownership or notices.
+	if err := db.Exec("DROP TRIGGER assign_unattributed_client_owner").Error; err != nil {
+		t.Fatal(err)
+	}
+	for _, event := range []model.AccountEvent{
+		{AccountID: account.Id, Kind: "updated", Changes: "comment", ActorID: editor.Id, At: created + 100},
+		{AccountID: account.Id, Kind: "updated", Changes: "autoRenew", ActorID: operator.Id, At: created + 200},
+		{AccountID: account.Id, Kind: "autoRenewed", At: created + 300},
+	} {
+		if err := db.Create(&event).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := CloseDB(); err != nil {
+		t.Fatal(err)
+	}
+	if err := InitDB(path); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.First(&account, account.Id).Error; err != nil || account.InferredOwnerID != editor.Id ||
+		account.AutoRenewActorID != operator.Id {
+		t.Fatalf("legacy account attribution was not recovered: %+v, %v", account, err)
+	}
+	var renewal model.PanelClientEvent
+	if err := db.Where("account_id=? AND kind='autoRenewed'", account.Id).First(&renewal).Error; err != nil ||
+		renewal.OwnerID != editor.Id || renewal.ActorID != operator.Id {
+		t.Fatalf("historical renewal attribution was not recovered: %+v, %v", renewal, err)
+	}
+	var payment model.PanelPaymentReminder
+	if err := db.First(&payment, account.Id).Error; err != nil || payment.ActorID != operator.Id {
+		t.Fatalf("historical payment was not assigned to the renewal operator: %+v, %v", payment, err)
 	}
 }

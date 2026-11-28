@@ -649,8 +649,9 @@ type Account struct {
 
 	// Administrative ownership is separate from reseller billing. Zero marks a
 	// legacy account whose original creator was not recorded.
-	OwnerAdminID   int  `json:"-" gorm:"not null;default:0;index"`
-	OwnerConfirmed bool `json:"-" gorm:"not null;default:false"`
+	OwnerAdminID    int  `json:"-" gorm:"not null;default:0;index"`
+	OwnerConfirmed  bool `json:"-" gorm:"not null;default:false"`
+	InferredOwnerID int  `json:"-" gorm:"->;not null;default:0"`
 
 	// Email is the identity, and is matched case-insensitively after trimming (see
 	// AccountKey). uniqueIndex here mirrors xray.ClientTraffic.Email's own unique
@@ -693,6 +694,7 @@ type Account struct {
 	LastRenewedAt        int64 `json:"lastRenewedAt" gorm:"not null;default:0"`
 	LastRenewalAutomatic bool  `json:"-" gorm:"not null;default:false"`
 	AutoRenew            bool  `json:"autoRenew" gorm:"not null;default:false;index"`
+	AutoRenewActorID     int   `json:"-" gorm:"->;not null;default:0"`
 	// NO gorm default, deliberately. `default:1` makes GORM treat Go's false as
 	// "unset" and write 1 instead, so a DISABLED client migrated to an ENABLED
 	// account. The projection then rendered enable:true over the stored false, the
@@ -769,6 +771,7 @@ type AccountEvent struct {
 	Changes        string               `json:"changes" gorm:"not null;default:''"`
 	AuditOperation string               `json:"-" gorm:"not null;default:''"`
 	ActorID        int                  `json:"-" gorm:"not null;default:0"`
+	Actor          string               `json:"actor,omitempty" gorm:"-"`
 	Details        *ClientChangeDetails `json:"details,omitempty" gorm:"serializer:json;type:text"`
 }
 

@@ -2,9 +2,7 @@ package database
 
 import (
 	"strings"
-	"time"
 
-	"github.com/mhsanaei/3x-ui/v2/database/model"
 	"gorm.io/gorm"
 )
 
@@ -49,6 +47,8 @@ func initAccountHistory(db *gorm.DB) error {
 	const expiryChanged = "OLD.expiry_time IS NOT NEW.expiry_time"
 	const periodChanged = "OLD.renewal_duration IS NOT NEW.renewal_duration"
 	const autoRenewChanged = "OLD.auto_renew IS NOT NEW.auto_renew"
+	const renewalActor = `COALESCE(NULLIF(NEW.auto_renew_actor_id,0),
+		(SELECT ` + knownAccountOwnerSQL + ` FROM accounts a WHERE id=NEW.id),0)`
 	details := `CASE WHEN ` + quotaChanged + ` OR ` + expiryChanged + ` OR ` + periodChanged + ` OR ` + renewal + ` OR ` + autoRenewChanged + `
 		THEN json_object(
 			'quota', CASE WHEN ` + quotaChanged + ` THEN json_object('before', OLD.total_gb, 'after', NEW.total_gb) END,
@@ -80,7 +80,9 @@ func initAccountHistory(db *gorm.DB) error {
 			INSERT INTO account_events(account_id,at,kind,changes,details,audit_operation,actor_id) VALUES(NEW.id,` + accountAuditAtSQL("NEW.id") + `,
 			    CASE WHEN OLD.last_renewed_at IS NEW.last_renewed_at THEN 'updated'
 			         WHEN NEW.last_renewal_automatic THEN 'autoRenewed' ELSE 'renewed' END,
-			    rtrim(` + strings.Join(changes, " || ") + `, ','), ` + details + `, ` + operation + `,` + accountAuditActorSQL + `);
+			    rtrim(` + strings.Join(changes, " || ") + `, ','), ` + details + `, ` + operation + `,
+			    CASE WHEN ` + renewal + ` AND NEW.last_renewal_automatic THEN ` + renewalActor + `
+			         ELSE ` + accountAuditActorSQL + ` END);
 		END`,
 		`CREATE TRIGGER client_history_remove BEFORE DELETE ON accounts BEGIN
 			INSERT INTO account_events(account_id,at,kind,details,audit_operation,actor_id)
@@ -159,8 +161,7 @@ func inboundAuditDetails(row, before, after string) string {
 // RecordAccountTrafficReset records an explicit reset in the same transaction
 // as the counters. Renewal operations already capture the reset with their expiry.
 func RecordAccountTrafficReset(tx *gorm.DB, accountID int) error {
-	return tx.Create(&model.AccountEvent{
-		AccountID: accountID, At: time.Now().UnixMilli(), Kind: "updated", Changes: "trafficUsage",
-		Details: &model.ClientChangeDetails{UsageReset: true},
-	}).Error
+	return tx.Exec(`INSERT INTO account_events (account_id,at,kind,changes,details,audit_operation,actor_id)
+		VALUES (?,`+accountAuditAtSQL("?")+`,'updated','trafficUsage','{"usageReset":true}',`+
+		accountAuditOperationSQL+`,`+accountAuditActorSQL+`)`, accountID, accountID).Error
 }

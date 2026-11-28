@@ -117,8 +117,13 @@ func registerActivityRoutes(api *gin.RouterGroup) {
 			jsonObj(c, nil, err)
 			return
 		}
+		changes, err := activityService.Notifications(user, "changes")
+		if err != nil {
+			jsonObj(c, nil, err)
+			return
+		}
 		payments, err := activityService.PaymentNotice(user)
-		jsonObj(c, gin.H{"expired": expired, "renewals": renewals, "payments": payments}, err)
+		jsonObj(c, gin.H{"expired": expired, "renewals": renewals, "payments": payments, "changes": changes}, err)
 	})
 	g.POST("/notices/dismiss", func(c *gin.Context) {
 		var input struct {
@@ -129,7 +134,9 @@ func registerActivityRoutes(api *gin.RouterGroup) {
 			return
 		}
 		user := session.GetLoginUser(c)
-		if input.Through <= 0 || (input.Kind != "renewals" && (input.Kind != "expired" || !user.Can(model.PermAccessInbounds))) {
+		valid := input.Kind == "renewals" || input.Kind == "changes" && user.IsPanelOwner ||
+			input.Kind == "expired" && user.Can(model.PermAccessInbounds)
+		if input.Through <= 0 || !valid {
 			jsonMsg(c, I18nWeb(c, "somethingWentWrong"), errors.New("invalid notice"))
 			return
 		}

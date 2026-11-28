@@ -154,6 +154,10 @@ func archiveAndRemoveManager(tx *gorm.DB, target model.User, keepClients bool) (
 	if err := tx.Model(&model.Account{}).Where("owner_admin_id = ?", id).UpdateColumn("owner_admin_id", ownerID).Error; err != nil {
 		return nil, 0, err
 	}
+	if err := tx.Exec(`UPDATE accounts SET inferred_owner_id=0,owner_admin_id=?,owner_confirmed=1
+		WHERE inferred_owner_id=? AND NOT owner_confirmed AND owner_admin_id IN (0,?)`, ownerID, id, ownerID).Error; err != nil {
+		return nil, 0, err
+	}
 	if err := tx.Model(&model.Inbound{}).Where("user_id = ?", id).UpdateColumn("user_id", ownerID).Error; err != nil {
 		return nil, 0, err
 	}

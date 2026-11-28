@@ -269,6 +269,7 @@
         </p>
         <div v-for="event in accountInfoModal.history.events" :key="event.id" class="account-client-history-row">
           <div><strong v-text="eventName(event.kind)"></strong> · <time v-text="historyDate(event.at)"></time></div>
+          <div v-if="event.actor">{{ i18n "pages.activity.changedBy" }} <span dir="auto" v-text="event.actor"></span></div>
           <details v-if="eventLines(event).length" class="panel-activity-detail-box">
             <summary v-text="eventSummary(event)"></summary>
             <ul class="panel-activity-details">

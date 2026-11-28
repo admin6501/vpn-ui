@@ -4,12 +4,14 @@ import "gorm.io/gorm"
 
 // A legacy default pointing at the panel owner is not proof of ownership.
 // A reseller ledger or an explicit assignment remains authoritative.
-const verifiedAccountOwnerSQL = `(` + resellerAccountOwnerSQL + ` IS NOT NULL OR a.owner_confirmed OR
-	(a.owner_admin_id>0 AND a.owner_admin_id<>` + defaultPanelOwnerSQL + `))`
+const recordedAdminOwnerSQL = `CASE WHEN a.owner_confirmed OR
+	(a.owner_admin_id>0 AND a.owner_admin_id<>` + defaultPanelOwnerSQL + `) THEN NULLIF(a.owner_admin_id,0) END`
+
+const knownAccountOwnerSQL = `COALESCE(` + resellerAccountOwnerSQL + `,` + recordedAdminOwnerSQL + `,
+	CASE WHEN NOT a.owner_confirmed THEN NULLIF(a.inferred_owner_id,0) END)`
 
 // AccountOwnerNameSQL leaves the name empty when only the legacy default is known.
-const AccountOwnerNameSQL = `CASE WHEN ` + verifiedAccountOwnerSQL + `
-	THEN COALESCE((SELECT username FROM users WHERE id=` + ActivityOwnerSQL + `),'') ELSE '' END`
+const AccountOwnerNameSQL = `COALESCE((SELECT username FROM users WHERE id=` + knownAccountOwnerSQL + `),'')`
 
 func repairLegacyClientOwners(db *gorm.DB) error {
 	return SnapshotTransaction(db, func(tx *gorm.DB) error {
@@ -19,15 +21,14 @@ func repairLegacyClientOwners(db *gorm.DB) error {
 			)`).Error; err != nil {
 			return err
 		}
-		// Only creation data can recover the original owner. Later editors,
-		// renewal operators and shared inbound grants do not establish it.
+		// Prefer verified creation provenance to attributing the account to an editor.
 		var recovered []struct {
 			AccountID int
 			OwnerID   int
 			Username  string
 		}
 		if err := tx.Raw(`WITH legacy AS (
-			SELECT a.id,a.created_at FROM accounts a WHERE NOT ` + verifiedAccountOwnerSQL + `
+			SELECT a.id,a.created_at FROM accounts a WHERE ` + knownAccountOwnerSQL + ` IS NULL
 		), creators AS (
 			SELECT l.id AS account_id,e.actor_id AS owner_id
 			FROM legacy l JOIN account_events e ON e.account_id=l.id AND e.kind='created' AND e.at=l.created_at
@@ -51,6 +52,16 @@ func repairLegacyClientOwners(db *gorm.DB) error {
 				return err
 			}
 		}
+		if err := tx.Exec(`WITH editors AS MATERIALIZED (
+			SELECT a.id,(SELECT e.actor_id FROM account_events e JOIN users u ON u.id=e.actor_id
+				WHERE e.account_id=a.id AND e.at>=a.created_at AND e.actor_id>0 AND e.kind IN ('updated','renewed')
+				AND e.audit_operation NOT LIKE '` + groupDefinitionAuditPrefix + `%' AND e.changes<>'inbounds'
+				ORDER BY e.id LIMIT 1) AS actor_id
+			FROM accounts a WHERE NOT a.owner_confirmed AND ` + knownAccountOwnerSQL + ` IS NULL
+		) UPDATE accounts SET inferred_owner_id=editors.actor_id FROM editors
+			WHERE accounts.id=editors.id AND editors.actor_id IS NOT NULL`).Error; err != nil {
+			return err
+		}
 		if err := tx.Exec(`WITH known AS MATERIALIZED (
 			SELECT a.id,` + ActivityOwnerSQL + ` AS owner_id,` + AccountOwnerNameSQL + ` AS owner
 			FROM accounts a WHERE EXISTS (
@@ -64,8 +75,11 @@ func repairLegacyClientOwners(db *gorm.DB) error {
 			AND (p.owner_id<>k.owner_id OR p.owner='')`).Error; err != nil {
 			return err
 		}
-		return tx.Exec(`UPDATE panel_client_events SET owner='' WHERE owner<>'' AND owner_id=` + defaultPanelOwnerSQL + `
-			AND EXISTS (SELECT 1 FROM accounts a WHERE a.id=panel_client_events.account_id AND NOT ` + verifiedAccountOwnerSQL + `)`).Error
+		if err := tx.Exec(`UPDATE panel_client_events SET owner='' WHERE owner<>'' AND owner_id=` + defaultPanelOwnerSQL + `
+			AND EXISTS (SELECT 1 FROM accounts a WHERE a.id=panel_client_events.account_id AND ` + knownAccountOwnerSQL + ` IS NULL)`).Error; err != nil {
+			return err
+		}
+		return backfillClientNotificationActors(tx)
 	})
 }
 

@@ -12,6 +12,14 @@ type AccountAudit struct {
 	ActorID   int
 }
 
+const groupDefinitionAuditPrefix = "group-definition:"
+
+// GroupDefinitionAudit records the administrator who edited a group while
+// distinguishing inherited membership changes from direct client edits.
+func GroupDefinitionAudit(actorID int) AccountAudit {
+	return AccountAudit{ActorID: actorID, Operation: groupDefinitionAuditPrefix + uuid.NewString()}
+}
+
 // HoldAccountAudit is used only inside a write transaction. SQLite serializes
 // writers, so each operation marker is isolated and a rollback restores it.
 func HoldAccountAudit(tx *gorm.DB, operation ...AccountAudit) (func() error, error) {

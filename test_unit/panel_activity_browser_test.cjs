@@ -12,6 +12,7 @@ const { chromium } = require('playwright');
         page.on('pageerror', error => errors.push(error.message));
         page.on('console', entry => { if (entry.type() === 'error') errors.push(entry.text()); });
         let expiryUnread = true;
+        let changesUnread = true;
         let expiryScoped = false;
         let appChanges;
         let retention;
@@ -24,8 +25,8 @@ const { chromium } = require('playwright');
         }));
         const deletedManager = { id: 40, name: 'recover-representative', deletedAt: at, clientCount: 4 };
         const login = { id: 2, kind: 'login', at, username: 'panel-owner', os: 'Windows', ip: '203.0.113.19' };
-        const renewal = { id: 3, kind: 'autoRenewed', at, email: 'test-renewed', owner: 'test-representative' };
-        pendingPayment = { id: 15, kind: 'created', at, email: 'payment-client', owner: 'payment-owner' };
+        const renewal = { id: 3, kind: 'autoRenewed', at, email: 'test-renewed', owner: 'test-representative', actor: 'renewal-operator' };
+        pendingPayment = { id: 15, kind: 'created', at, email: 'payment-client', owner: 'payment-owner', actor: 'payment-operator' };
         await page.route('**/test/panel/api/**', async route => {
             const url = new URL(route.request().url());
             const method = route.request().method();
@@ -34,6 +35,7 @@ const { chromium } = require('playwright');
             if (path === 'activity/notices') {
                 obj = {
                     expired: expiryUnread ? { count: 1, through: 7, names: ['test-expired'] } : {},
+                    changes: changesUnread ? { count: 2, through: 17, names: ['test-renewed', 'removed-client'] } : {},
                     renewals: {},
                     payments: paymentReminders && pendingPayment ? { count: 1, names: [pendingPayment.email] } : {},
                 };
@@ -74,7 +76,7 @@ const { chromium } = require('playwright');
             } else if (path === 'activity/changes/retention') {
                 retention = route.request().postDataJSON().days;
             } else if (path === 'clients/history/test-expired') {
-                obj = { next: 0, events: [{ id: 1, kind: 'created', at,
+                obj = { next: 0, events: [{ id: 1, kind: 'created', at, actor: 'test-client-editor',
                     details: { created: { quota: 5 * 2 ** 30, expiry: at + 864000000, period: 864000000 } }
                 }] };
             } else if (path === 'activity/changes') {
@@ -98,6 +100,7 @@ const { chromium } = require('playwright');
             } else if (path === 'activity/notices/dismiss') {
                 const payload = route.request().postDataJSON();
                 if (payload.kind === 'expired' && payload.through === 7) expiryUnread = false;
+                if (payload.kind === 'changes' && payload.through === 17) changesUnread = false;
             } else if (path === 'inbounds/onlines') {
                 obj = ['test-expired'];
             } else if (path === 'clients/list') {
@@ -112,6 +115,10 @@ const { chromium } = require('playwright');
         await page.goto(base + 'panel/activity/logins');
         const badge = page.getByRole('link', { name: 'Expired clients 1' });
         assert.equal(await badge.getAttribute('title'), 'test-expired');
+        const changesBadge = page.getByRole('link', { name: 'Client change history 2' });
+        assert.equal(await changesBadge.getAttribute('title'), 'test-renewed\nremoved-client');
+        await page.locator('.panel-activity-badge').filter({ has: changesBadge }).getByRole('button', { name: 'Close' }).click();
+        await changesBadge.waitFor({ state: 'hidden' });
         await page.getByRole('cell', { name: '203.0.113.19' }).waitFor();
         await page.getByRole('cell', { name: 'Windows' }).waitFor();
         await page.getByRole('button', { name: 'Next' }).click();
@@ -166,6 +173,7 @@ const { chromium } = require('playwright');
         await page.getByRole('button', { name: /Logs/ }).click();
         const history = page.locator('.account-client-history');
         await history.locator('summary').waitFor();
+        await history.getByText('test-client-editor', { exact: true }).waitFor();
         assert.match(await history.locator('summary').innerText(), /5(?:[.,]00)?\s*GB.*10 days/);
         await history.locator('summary').click();
         assert.match(await history.locator('.panel-activity-details').innerText(), /Initial validity.*10 days/);
@@ -190,6 +198,8 @@ const { chromium } = require('playwright');
         await page.getByRole('cell', { name: 'test-renewed' }).waitFor();
         await page.getByRole('columnheader', { name: 'Client owner' }).waitFor();
         await page.getByRole('cell', { name: 'test-representative' }).waitFor();
+        await page.getByRole('columnheader', { name: 'Changed by' }).waitFor();
+        await page.getByRole('cell', { name: 'renewal-operator' }).waitFor();
         const renewalPreference = page.getByRole('switch', { name: 'Show automatic renewal notifications', checked: true });
         await renewalPreference.click();
         await page.getByRole('switch', { name: 'Show automatic renewal notifications', checked: false }).waitFor();
@@ -200,6 +210,7 @@ const { chromium } = require('playwright');
         await page.getByRole('columnheader', { name: 'Client owner' }).waitFor();
         const editRow = page.getByRole('row').filter({ hasText: 'test-renewed' });
         await editRow.getByRole('cell', { name: 'test-representative' }).waitFor();
+        await editRow.getByRole('cell', { name: 'test-client-editor' }).waitFor();
         const detailBox = editRow.locator('.panel-activity-detail-box');
         assert.equal(await detailBox.getAttribute('open'), null, 'details start collapsed');
         await detailBox.locator('summary').click();

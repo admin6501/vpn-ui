@@ -52,7 +52,7 @@ func (s *AccountService) TransferOwnership(actor *model.User, accountID, newOwne
 		if err := tx.Model(&model.User{}).Where("is_panel_owner").Select("id").Scan(&panelOwnerID).Error; err != nil {
 			return err
 		}
-		unattributed := old.Id == 0 && !a.OwnerConfirmed && (a.OwnerAdminID == 0 || a.OwnerAdminID == panelOwnerID)
+		unattributed := old.Id == 0 && !a.OwnerConfirmed && a.InferredOwnerID == 0 && (a.OwnerAdminID == 0 || a.OwnerAdminID == panelOwnerID)
 		if target.IsRepresentativeAccount() && target.RepresentativeRoleID == 0 && !unattributed {
 			return errors.New("legacy prepaid ownership transfer is unsupported")
 		}

@@ -48,7 +48,7 @@ func eventPage(db *gorm.DB, before int64) *gorm.DB {
 func renewalEvents(user *model.User) *gorm.DB {
 	db := database.GetDB().Model(&model.PanelClientEvent{}).Where("kind = ?", "autoRenewed")
 	if !user.IsPanelOwner {
-		db = db.Where("owner_id = ?", user.Id)
+		db = db.Where("actor_id = ?", user.Id)
 	}
 	return db
 }
@@ -72,8 +72,8 @@ func scopeChangeEvents(db *gorm.DB, users []*model.User) *gorm.DB {
 		return db
 	}
 	id := users[0].Id
-	return db.Where(`owner_id = ? AND NOT EXISTS (
-		SELECT 1 FROM panel_client_hiddens h WHERE h.user_id=? AND h.event_id=panel_client_events.id)`, id, id)
+	return db.Where(`(owner_id = ? OR actor_id = ?) AND NOT EXISTS (
+		SELECT 1 FROM panel_client_hiddens h WHERE h.user_id=? AND h.event_id=panel_client_events.id)`, id, id, id)
 }
 
 func monthEvents(month time.Time) *gorm.DB {
@@ -102,9 +102,9 @@ func (ActivityService) HideClientChange(user *model.User, id int64) error {
 	return database.GetDB().Exec(`INSERT OR IGNORE INTO panel_client_hiddens(user_id,event_id)
 		SELECT ?, v.id FROM panel_client_events v JOIN panel_client_events target ON
 			v.id=target.id OR (target.audit_operation<>'' AND v.audit_operation=target.audit_operation AND v.account_id=target.account_id)
-		WHERE target.id=? AND target.owner_id=? AND v.owner_id=?
-			AND v.kind<>'autoRenewed' AND target.kind<>'autoRenewed'`,
-		user.Id, id, user.Id, user.Id).Error
+		WHERE target.id=? AND (target.owner_id=? OR target.actor_id=?)
+			AND (v.owner_id=? OR v.actor_id=?) AND v.kind<>'autoRenewed' AND target.kind<>'autoRenewed'`,
+		user.Id, id, user.Id, user.Id, user.Id, user.Id).Error
 }
 
 func (ActivityService) PurgeChangeEvents(month time.Time) error {
@@ -190,10 +190,15 @@ type ActivityNotice struct {
 }
 
 func noticeEvents(user *model.User, kind string) *gorm.DB {
-	if kind == "renewals" {
+	switch kind {
+	case "renewals":
 		return renewalEvents(user)
+	case "changes":
+		return database.GetDB().Model(&model.PanelClientEvent{}).
+			Where("kind <> 'autoRenewed' AND (actor_id>0 OR audit_operation<>'') AND ?", user.IsPanelOwner)
+	default:
+		return database.GetDB().Model(&model.PanelExpiry{}).Where("owner_id = ?", user.Id)
 	}
-	return database.GetDB().Model(&model.PanelExpiry{}).Where("owner_id = ?", user.Id)
 }
 
 func (ActivityService) Notifications(user *model.User, kind string) (ActivityNotice, error) {
@@ -202,11 +207,21 @@ func (ActivityService) Notifications(user *model.User, kind string) (ActivityNot
 		return result, nil
 	}
 	db := noticeEvents(user, kind).Where("id > COALESCE((SELECT through FROM panel_activity_reads WHERE user_id=? AND kind=?),0)", user.Id, kind)
-	err := db.Session(&gorm.Session{}).Select("COUNT(*) AS count, COALESCE(MAX(id),0) AS through").Scan(&result).Error
+	count := "COUNT(*)"
+	if kind == "changes" {
+		count = "COUNT(DISTINCT " + clientAuditKeySQL + ")"
+	}
+	err := db.Session(&gorm.Session{}).Select(count + " AS count, COALESCE(MAX(id),0) AS through").Scan(&result).Error
 	if err != nil || result.Count == 0 {
 		return result, err
 	}
-	err = db.Where("id <= ?", result.Through).Order("id DESC").Limit(8).Pluck("email", &result.Names).Error
+	query := db.Where("id <= ?", result.Through).Limit(8)
+	if kind == "changes" {
+		query = query.Group("email").Order("MAX(id) DESC")
+	} else {
+		query = query.Order("id DESC")
+	}
+	err = query.Pluck("email", &result.Names).Error
 	return result, err
 }
 

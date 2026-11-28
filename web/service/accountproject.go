@@ -1244,7 +1244,7 @@ func (s *AccountService) SaveAccountWithoutInbound(entry map[string]any, ownerAd
 	if len(ownerAdminID) > 0 {
 		ownerID = ownerAdminID[0]
 	}
-	return s.SaveAccountWithoutInboundAudit(entry, ownerID, database.AccountAudit{})
+	return s.SaveAccountWithoutInboundAudit(entry, ownerID, database.AccountAudit{ActorID: ownerID})
 }
 
 func (s *AccountService) SaveAccountWithoutInboundAudit(entry map[string]any, ownerID int, operation database.AccountAudit) (*model.Account, error) {

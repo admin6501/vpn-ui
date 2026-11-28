@@ -149,6 +149,9 @@ func TestGroupsDynamicUnionAndEmptyGroupPreserveAccounts(t *testing.T) {
 	}
 	for _, old := range before {
 		stored := noInboundAccount(t, accounts, old.Email)
+		if old.Email == "a" {
+			old.InferredOwnerID = root.Id
+		}
 		if !reflect.DeepEqual(*stored, old) {
 			t.Fatal("group edits changed customer credentials, quota, expiry or subscription")
 		}
@@ -176,6 +179,9 @@ func TestGroupsDynamicUnionAndEmptyGroupPreserveAccounts(t *testing.T) {
 	}
 	for _, old := range before {
 		stored := noInboundAccount(t, accounts, old.Email)
+		if old.Email == "a" {
+			old.InferredOwnerID = root.Id
+		}
 		if !reflect.DeepEqual(*stored, old) {
 			t.Fatal("disabled group changed account data")
 		}

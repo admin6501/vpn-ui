@@ -14,6 +14,10 @@ import (
 )
 
 func (s *AccountService) SetAutoRenew(email string, enabled bool, audit ...database.AccountAudit) error {
+	actorID := 0
+	if len(audit) > 0 {
+		actorID = audit[0].ActorID
+	}
 	return database.AccountAuditTransaction(database.GetDB(), func(tx *gorm.DB) error {
 		account, err := s.GetAccountByEmailTx(tx, email)
 		if err != nil {
@@ -30,7 +34,9 @@ func (s *AccountService) SetAutoRenew(email string, enabled bool, audit ...datab
 				return common.NewError("automatic renewal requires a quota or expiration")
 			}
 		}
-		return tx.Model(account).Update("auto_renew", enabled).Error
+		return tx.Exec(`UPDATE accounts SET auto_renew=?,auto_renew_actor_id=
+			CASE WHEN ? THEN ? ELSE 0 END WHERE id=? AND auto_renew<>?`,
+			enabled, enabled, actorID, account.Id, enabled).Error
 	}, audit...)
 }
 

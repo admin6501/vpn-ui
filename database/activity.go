@@ -8,7 +8,9 @@ const defaultPanelOwnerSQL = `COALESCE(
 	(SELECT id FROM users WHERE is_super_admin ORDER BY id LIMIT 1),0)`
 
 // ActivityOwnerSQL follows the Clients page's stored ownership.
-const ActivityOwnerSQL = `COALESCE(` + resellerAccountOwnerSQL + `,NULLIF(a.owner_admin_id,0),` + defaultPanelOwnerSQL + `)`
+const ActivityOwnerSQL = `COALESCE(` + knownAccountOwnerSQL + `,` + defaultPanelOwnerSQL + `)`
+
+const eventActorSQL = `COALESCE(NULLIF(NEW.actor_id,0),NULLIF(` + accountAuditActorSQL + `,0))`
 
 const (
 	ClientActivitySetting          = "clientActivityLogging"
@@ -27,6 +29,19 @@ func initPanelActivity(db *gorm.DB) error {
 		),0) WHERE e.actor_id=0 AND e.audit_operation<>'' AND EXISTS (
 			SELECT 1 FROM panel_client_events p WHERE p.account_id=e.account_id AND p.audit_operation=e.audit_operation
 			AND p.audit_operation<>'' AND p.actor_id>0)`,
+		`DROP TRIGGER IF EXISTS assign_unattributed_client_owner`,
+		`CREATE TRIGGER assign_unattributed_client_owner BEFORE INSERT ON account_events
+		WHEN NEW.kind IN ('updated','renewed','deleted') AND ` + eventActorSQL + ` IS NOT NULL
+			AND NEW.audit_operation NOT LIKE '` + groupDefinitionAuditPrefix + `%'
+		BEGIN
+			UPDATE accounts SET inferred_owner_id=` + eventActorSQL + `
+			WHERE id=NEW.account_id AND EXISTS (SELECT 1 FROM accounts a
+				WHERE a.id=NEW.account_id AND NOT a.owner_confirmed AND ` + knownAccountOwnerSQL + ` IS NULL)
+				AND EXISTS (SELECT 1 FROM users WHERE id=` + eventActorSQL + ` AND enable);
+			UPDATE panel_client_events SET owner_id=` + eventActorSQL + `,
+				owner=(SELECT username FROM users WHERE id=` + eventActorSQL + `)
+			WHERE changes()=1 AND account_id=NEW.account_id AND owner='';
+		END`,
 		`DROP TRIGGER IF EXISTS panel_client_activity`,
 		`CREATE TRIGGER IF NOT EXISTS panel_client_activity AFTER INSERT ON account_events
 		WHEN NEW.at > 0 AND (NEW.kind='autoRenewed' OR COALESCE(
@@ -37,7 +52,7 @@ func initPanelActivity(db *gorm.DB) error {
 				COALESCE(actor.id,0),COALESCE(actor.username,''),
 				a.email,NEW.kind,COALESCE(NEW.changes,''),NEW.details,
 				COALESCE(NULLIF(NEW.audit_operation,''),` + accountAuditOperationSQL + `,''),NEW.at
-			FROM accounts a LEFT JOIN users actor ON actor.id=COALESCE(NULLIF(NEW.actor_id,0),` + accountAuditActorSQL + `)
+			FROM accounts a LEFT JOIN users actor ON actor.id=` + eventActorSQL + `
 			WHERE a.id=NEW.account_id;
 		END`,
 		`DROP TRIGGER IF EXISTS panel_client_activity_delete`,

@@ -106,6 +106,7 @@
             <th v-if="mode === 'logins'">IP</th>
             <th v-if="mode === 'logins'">{{ i18n "pages.activity.os" }}</th>
             <th v-if="['changes', 'renewals', 'payments'].includes(mode)">{{ i18n "pages.activity.clientOwner" }}</th>
+            <th v-if="['changes', 'renewals', 'payments'].includes(mode)">{{ i18n "pages.activity.changedBy" }}</th>
             <th v-if="mode !== 'trash'">{{ i18n "pages.activity.event" }}</th>
             <th v-if="mode !== 'logins' && mode !== 'payments' && mode !== 'trash'">{{ i18n "pages.activity.fields" }}</th>
             <th v-if="mode === 'trash' && scope === 'manager'">{{ i18n "pages.clients.title" }}</th>
@@ -120,6 +121,7 @@
               <td v-if="mode === 'logins'" dir="ltr" v-text="row.ip || '—'"></td>
               <td v-if="mode === 'logins'" v-text="row.os || '—'"></td>
               <td v-if="['changes', 'renewals', 'payments'].includes(mode)" dir="auto" v-text="row.owner || unknownClientOwner"></td>
+              <td v-if="['changes', 'renewals', 'payments'].includes(mode)" dir="auto" v-text="row.actor || '—'"></td>
               <td v-if="mode !== 'trash'" v-text="mode === 'payments' && row.kind === 'updated' ? paymentExtension : (kinds[row.kind] || row.kind)"></td>
               <td v-if="mode !== 'logins' && mode !== 'payments' && mode !== 'trash'">
                 <details v-if="changeLines(row).length" class="panel-activity-detail-box">

@@ -134,7 +134,7 @@ func TestPaymentReminderLifecycle(t *testing.T) {
 	}
 }
 
-func TestOnlyCurrentResponsibleUserCanSeeAndConfirmPayment(t *testing.T) {
+func TestOnlyTheBillableChangeActorCanSeeAndConfirmPayment(t *testing.T) {
 	accounts := newAccountsDB(t)
 	db := database.GetDB()
 	activity := ActivityService{}
@@ -172,8 +172,12 @@ func TestOnlyCurrentResponsibleUserCanSeeAndConfirmPayment(t *testing.T) {
 		}
 		return rows
 	}
-	revision := pending(&rep, 1)[0].ID
-	for _, user := range []*model.User{&owner, &delegated} {
+	created := pending(&delegated, 1)[0]
+	revision := created.ID
+	if created.Owner != rep.Username || created.Actor != delegated.Username {
+		t.Fatalf("payment did not preserve the client owner and the operator: %+v", created)
+	}
+	for _, user := range []*model.User{&owner, &rep} {
 		pending(user, 0)
 		if err := activity.ConfirmPayment(user, revision); !errors.Is(err, gorm.ErrRecordNotFound) {
 			t.Fatalf("%s confirmed another user's payment: %v", user.Username, err)
@@ -182,12 +186,8 @@ func TestOnlyCurrentResponsibleUserCanSeeAndConfirmPayment(t *testing.T) {
 	if err := db.Delete(&ledger).Error; err != nil {
 		t.Fatal(err)
 	}
-	pending(&rep, 0)
-	if err := activity.ConfirmPayment(&rep, revision); !errors.Is(err, gorm.ErrRecordNotFound) {
-		t.Fatalf("previous owner confirmed after transfer: %v", err)
-	}
 	if pending(&delegated, 1)[0].ID != revision {
-		t.Fatal("the pending payment did not follow the responsible admin")
+		t.Fatal("an ownership change moved the outstanding payment to another actor")
 	}
 	if err := activity.ConfirmPayment(&delegated, revision); err != nil {
 		t.Fatal(err)

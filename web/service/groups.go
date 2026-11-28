@@ -444,7 +444,7 @@ func (s *GroupService) Save(user *model.User, id int, name string, inboundIDs []
 			touched = unionGroupIDs(touched, changed)
 		}
 		return nil
-	}, database.AccountAudit{ActorID: user.Id})
+	}, database.GroupDefinitionAudit(user.Id))
 	return &GroupView{ClientGroup: group, InboundIDs: inboundIDs}, touched, err
 }
 func unionGroupIDs(a, b []int) []int {

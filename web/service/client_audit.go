@@ -8,10 +8,11 @@ import (
 	"gorm.io/gorm"
 )
 
+const clientAuditKeySQL = `CASE WHEN audit_operation <> '' THEN audit_operation || ':' || account_id ELSE CAST(id AS TEXT) END`
+
 // The cursor belongs to an operation, so pagination never splits its details.
 func clientAuditEvents(scope *gorm.DB, before int64, limit int) ([]model.PanelClientEvent, error) {
-	visible := scope.Select(`*, CASE WHEN audit_operation <> '' THEN audit_operation || ':' || account_id
-		ELSE CAST(id AS TEXT) END AS audit_key`)
+	visible := scope.Select("*, " + clientAuditKeySQL + " AS audit_key")
 	var rows []model.PanelClientEvent
 	err := database.GetDB().Raw(`WITH visible AS (?), audit_page AS (
 		SELECT audit_key, MAX(id) AS last_id FROM visible GROUP BY audit_key

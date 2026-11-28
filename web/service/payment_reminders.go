@@ -14,12 +14,13 @@ type PaymentReminder struct {
 	Kind  string `json:"kind"`
 	At    int64  `json:"at"`
 	Owner string `json:"owner,omitempty"`
+	Actor string `json:"actor,omitempty"`
 }
 
 func pendingPayments(user *model.User) *gorm.DB {
 	return database.GetDB().Table("panel_payment_reminders p").
 		Joins("JOIN accounts a ON a.id=p.account_id").
-		Where("p.confirmed_at=0 AND "+database.ActivityOwnerSQL+"=?", user.Id)
+		Where("p.confirmed_at=0 AND p.actor_id=?", user.Id)
 }
 
 func (ActivityService) PendingPayments(user *model.User, before int64) ([]PaymentReminder, error) {
@@ -27,7 +28,8 @@ func (ActivityService) PendingPayments(user *model.User, before int64) ([]Paymen
 	if !user.Can(model.PermAccessInbounds) || !user.PaymentReminders {
 		return rows, nil
 	}
-	query := pendingPayments(user).Select("p.revision AS id, a.email, p.kind, p.at, " + database.AccountOwnerNameSQL + " AS owner")
+	query := pendingPayments(user).Select("p.revision AS id, a.email, p.kind, p.at, " + database.AccountOwnerNameSQL +
+		" AS owner, (SELECT username FROM users WHERE id=p.actor_id) AS actor")
 	if before > 0 {
 		query = query.Where("p.revision < ?", before)
 	}
@@ -61,11 +63,9 @@ func (ActivityService) ConfirmPayment(user *model.User, revision int64) error {
 		return gorm.ErrRecordNotFound
 	}
 	// Authorize and confirm the exact displayed revision in one write, so an
-	// ownership transfer or a newer renewal cannot be approved from a stale tab.
+	// newer billable change cannot be approved from a stale tab.
 	result := database.GetDB().Exec(`UPDATE panel_payment_reminders
-		SET confirmed_at=?, confirmed_by=? WHERE revision=? AND confirmed_at=0
-		AND EXISTS (SELECT 1 FROM accounts a WHERE a.id=panel_payment_reminders.account_id
-			AND `+database.ActivityOwnerSQL+`=?)
+		SET confirmed_at=?, confirmed_by=? WHERE revision=? AND confirmed_at=0 AND actor_id=?
 		AND EXISTS (SELECT 1 FROM users WHERE id=? AND enable AND payment_reminders)`,
 		time.Now().UnixMilli(), user.Id, revision, user.Id, user.Id)
 	if result.Error != nil {

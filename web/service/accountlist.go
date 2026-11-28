@@ -292,14 +292,15 @@ func (s *AccountService) listAccounts(user *model.User, page, size int, search, 
 		}
 		row.GroupIDs = append([]int{}, groupIDs[account.Id]...)
 		row.OwnerID = owner[key]
-		if row.OwnerID == 0 {
+		if row.OwnerID == 0 && (account.OwnerConfirmed || account.OwnerAdminID != rootID) {
 			row.OwnerID = account.OwnerAdminID
 		}
+		if row.OwnerID == 0 && !account.OwnerConfirmed {
+			row.OwnerID = account.InferredOwnerID
+		}
+		row.OwnerUsername = names[row.OwnerID]
 		if row.OwnerID == 0 {
 			row.OwnerID = rootID
-		}
-		if owner[key] > 0 || account.OwnerConfirmed || (account.OwnerAdminID != 0 && account.OwnerAdminID != rootID) {
-			row.OwnerUsername = names[row.OwnerID]
 		}
 		if len(mine) == 0 {
 			// Nothing serves it, so no settings blob carries its credentials and this
@@ -596,7 +597,7 @@ func (s *AccountService) visibilityFilter(user *model.User) (func(*model.Account
 		// and history. Quota purchases and refunds still use the billing ledger.
 		var confirmed []string
 		if err := database.GetDB().Table("accounts a").
-			Where("a.owner_confirmed AND a.owner_admin_id=? AND "+database.ActivityOwnerSQL+"=?", user.Id, user.Id).
+			Where("(a.owner_confirmed OR a.inferred_owner_id>0) AND "+database.ActivityOwnerSQL+"=?", user.Id).
 			Pluck("a.email", &confirmed).Error; err != nil {
 			return nil, err
 		}

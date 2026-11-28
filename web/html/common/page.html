@@ -222,6 +222,11 @@
       <a :href="basePath + 'panel/activity/renewals'">{{ i18n "pages.activity.renewals" }} <b v-text="notices.renewals.count"></b></a>
       <button type="button" @click="dismiss('renewals')" aria-label='{{ i18n "close" }}'><a-icon type="close"></a-icon></button>
     </div>
+    <div class="panel-activity-badge" v-if="notices.changes && notices.changes.count">
+      <a :href="basePath + 'panel/activity/changes'"
+        :title="(notices.changes.names || []).join('\n')">{{ i18n "pages.activity.changes" }} <b v-text="notices.changes.count"></b></a>
+      <button type="button" @click="dismiss('changes')" aria-label='{{ i18n "close" }}'><a-icon type="close"></a-icon></button>
+    </div>
     {{ if .perms.accessInbounds }}
     <div class="panel-activity-badge" v-if="notices.payments && notices.payments.count">
       <a :href="basePath + 'panel/activity/payments'"
