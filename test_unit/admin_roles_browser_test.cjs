@@ -40,7 +40,19 @@ const {chromium}=require('playwright');
   await page.evaluate(()=>{app.openRole(app.roles[0]);app.roleModal.permissions=['accessInbounds']});
   await page.locator('#admin-role-modal .ant-modal-footer button.ant-btn-primary').click();
   await page.waitForFunction(()=>app.admins.find(u=>u.username==='operator').permissions.includes('accessInbounds') && !app.admins.find(u=>u.username==='operator').permissions.includes('manageNodes'));
-  await page.evaluate(()=>{const operator=app.admins.find(u=>u.username==='operator');app.openEdit(operator);adminModal.admin.adminRoleId=0});
+  await page.evaluate(()=>app.openEdit(app.admins.find(u=>u.username==='operator')));
+  const adminModalDialog=page.locator('#admin-modal .ant-modal');
+  await adminModalDialog.waitFor();
+  for(const ultra of [false,true]){
+   const colors=await adminModalDialog.evaluate((dialog,ultra)=>{
+    if(themeSwitcher.isUltra!==ultra)themeSwitcher.toggleUltra();
+    const settingsGray=getComputedStyle(dialog.querySelector('.ant-form-item-label > label')).color;
+    const controls=['.ant-checkbox-disabled + span','.ant-checkbox:not(.ant-checkbox-disabled) + span','.ant-form-item p'];
+    return {settingsGray,labels:controls.map(selector=>getComputedStyle(dialog.querySelector(selector)).color)};
+   },ultra);
+   if(colors.labels.some(color=>color!==colors.settingsGray))throw Error('Admin access labels do not match the settings gray: '+JSON.stringify(colors));
+  }
+  await page.evaluate(()=>{themeSwitcher.toggleUltra();adminModal.admin.adminRoleId=0});
   await page.locator('#admin-modal .ant-modal-footer button.ant-btn-primary').click();
   await page.waitForFunction(()=>app.admins.find(u=>u.username==='operator').adminRoleId===0);
   await page.evaluate(async()=>{await app.loadRoles();await HttpUtil.post('/panel/admins/roles/delete/'+app.roles[0].id);await app.loadRoles()});

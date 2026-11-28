@@ -256,6 +256,10 @@
   background:var(--accent-strong);
   border-color:var(--accent-strong);
 }
+/* Ant sets a separate text color on the label beside a locked checkbox. */
+body.dark #admin-modal :is(.ant-checkbox-wrapper, .ant-checkbox + span, .ant-form-item p) {
+  color:var(--text-2);
+}
 :is(.bo-shell,.login-app,.ant-modal,.ant-drawer,.ant-select-dropdown,.ant-dropdown,.ant-popover) .ant-radio-checked .ant-radio-inner { border-color:var(--accent); }
 :is(.bo-shell,.login-app,.ant-modal,.ant-drawer,.ant-select-dropdown,.ant-dropdown,.ant-popover) .ant-radio-inner::after { background:var(--accent); }
 
