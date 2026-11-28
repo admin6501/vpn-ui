@@ -20,6 +20,7 @@ type updateUserForm struct {
 	OldPassword string `json:"oldPassword" form:"oldPassword"`
 	NewUsername string `json:"newUsername" form:"newUsername"`
 	NewPassword string `json:"newPassword" form:"newPassword"`
+	Code        string `json:"code" form:"code"`
 }
 
 // SettingController handles settings and user management operations.
@@ -61,6 +62,7 @@ func (a *SettingController) initRouter(g *gin.RouterGroup) {
 	personal := g.Group("/setting")
 	personal.Use((&BaseController{}).checkLogin)
 	personal.POST("/twoFactor", securityLimiter, a.updateTwoFactor)
+	personal.POST("/password", securityLimiter, a.changePassword)
 
 	g = g.Group("/setting")
 	g.Use(requirePerm(model.PermPanelSettings))
@@ -220,14 +222,44 @@ func (a *SettingController) updateUser(c *gin.Context) {
 		jsonMsg(c, I18nWeb(c, "pages.settings.toasts.modifyUserError"), errors.New(I18nWeb(c, "pages.settings.toasts.userPassMustBeNotEmpty")))
 		return
 	}
-	err = a.userService.UpdateUser(user.Id, form.NewUsername, form.NewPassword)
+	if user.TwoFactorEnable && !service.VerifyTOTPCode(user.TwoFactorToken, form.Code) {
+		jsonMsg(c, I18nWeb(c, "pages.settings.toasts.modifyUserError"),
+			errors.New(I18nWeb(c, "pages.settings.security.twoFactorModalError")))
+		return
+	}
+	fresh, err := a.userService.ChangeOwnCredentials(user, form.NewUsername, form.NewPassword)
 	if err == nil {
-		var fresh model.User
-		err = database.GetDB().First(&fresh, user.Id).Error
-		if err == nil {
-			session.SetLoginUser(c, &fresh)
-			err = sessions.Default(c).Save()
-		}
+		session.SetLoginUser(c, fresh)
+		err = sessions.Default(c).Save()
+	}
+	jsonMsg(c, I18nWeb(c, "pages.settings.toasts.modifyUser"), err)
+}
+
+func (a *SettingController) changePassword(c *gin.Context) {
+	var form struct {
+		OldPassword string `json:"oldPassword" form:"oldPassword" binding:"required"`
+		NewPassword string `json:"newPassword" form:"newPassword" binding:"required"`
+		Code        string `json:"code" form:"code"`
+	}
+	if err := c.ShouldBind(&form); err != nil {
+		jsonMsg(c, I18nWeb(c, "pages.settings.toasts.modifyUserError"), err)
+		return
+	}
+	user := session.GetLoginUser(c)
+	if !crypto.CheckPasswordHash(user.Password, form.OldPassword) {
+		jsonMsg(c, I18nWeb(c, "pages.settings.toasts.modifyUserError"),
+			errors.New(I18nWeb(c, "pages.settings.toasts.originalUserPassIncorrect")))
+		return
+	}
+	if user.TwoFactorEnable && !service.VerifyTOTPCode(user.TwoFactorToken, form.Code) {
+		jsonMsg(c, I18nWeb(c, "pages.settings.toasts.modifyUserError"),
+			errors.New(I18nWeb(c, "pages.settings.security.twoFactorModalError")))
+		return
+	}
+	fresh, err := a.userService.ChangeOwnCredentials(user, "", form.NewPassword)
+	if err == nil {
+		session.SetLoginUser(c, fresh)
+		err = sessions.Default(c).Save()
 	}
 	jsonMsg(c, I18nWeb(c, "pages.settings.toasts.modifyUser"), err)
 }

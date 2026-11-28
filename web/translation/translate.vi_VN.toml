@@ -612,6 +612,7 @@ unfreeze = "Giải phóng"
 frozen = "Đông lạnh"
 
 [pages.clients]
+"autoRenewPlanHelp" = "Để trống ô để dùng dung lượng hoặc thời hạn của gói hiện tại. Nhập 0 nếu không giới hạn."
 autoRenewLimit = "Giới hạn tự động gia hạn"
 autoRenewLimitHelp = "0 cho phép tự động gia hạn không giới hạn"
 autoRenewUsed = "Số lần đã gia hạn"
@@ -620,7 +621,7 @@ autoRenewUsed = "Số lần đã gia hạn"
 "historyUnavailable" = "Không có sự kiện đã ghi. Các thay đổi trước khi bắt đầu ghi không khả dụng."
 "historyMore" = "Sự kiện cũ hơn"
 "autoRenew" = "Tự động gia hạn"
-"autoRenewHelp" = "Áp dụng ngay. Gia hạn gói đã lưu khi hết thời hạn hoặc dung lượng."
+"autoRenewHelp" = "Sau khi lưu, gói đăng ký tự động gia hạn khi hết dung lượng hoặc hết hạn."
 "liveRate" = "Tốc độ tải xuống và tải lên (~10 giây)"
 "renew" = "Gia hạn"
 "renewHint" = "Đặt lại tải lên và tải xuống, bắt đầu thời hạn từ bây giờ và bật khách. Giữ hạn mức, kết nối, quyền truy cập và lịch sử tổng."
@@ -2452,6 +2453,7 @@ theBuiltInWindowsSSTPClientRejectsSelf = "Ứng dụng khách SSTP Windows tích
 theNativeWindowsIOSAndroidIKEv2ClientsReject = "Máy khách IKEv2 Windows/iOS/Android gốc từ chối chứng chỉ tự ký trừ khi bạn nhập CA được tạo vào nguồn gốc đáng tin cậy của thiết bị. Ưu tiên chứng chỉ do CA ký được liên kết với tên máy chủ cho người dùng thực. Vẫn tạo chứng chỉ máy chủ CA + tự ký?"
 
 [pages.activity]
+"showOwnLoginHistory" = "Cho phép tài khoản này xem nhật ký đăng nhập và đăng xuất của mình"
 gateway = "Cổng"
 gatewayUnavailable = "Không xem được trạng thái cổng hiện tại"
 gatewayNoRoute = "Hiện không có kết nối đi nào khả dụng"

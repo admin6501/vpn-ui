@@ -1,9 +1,15 @@
 package service
 
 import (
+	"context"
 	_ "embed"
 	"encoding/json"
+	"errors"
+	"fmt"
+	"os"
+	"os/exec"
 	"strings"
+	"time"
 
 	"github.com/mhsanaei/3x-ui/v2/logger"
 	"github.com/mhsanaei/3x-ui/v2/util/common"
@@ -14,6 +20,79 @@ import (
 // It handles validation and storage of Xray template configurations.
 type XraySettingService struct {
 	SettingService
+}
+
+var ErrGatewayOwnerRequired = errors.New("only the panel owner can modify gateway settings")
+
+// SavePanelXraySetting applies a saved gateway to a running core, including a
+// gateway persisted by an older panel that had never restarted its Xray.
+func (s *XraySettingService) SavePanelXraySetting(proposed string, owner bool) error {
+	lock.Lock()
+	defer lock.Unlock()
+	previous, err := s.GetXrayConfigTemplate()
+	if err != nil {
+		return err
+	}
+	changed, err := GatewayConfigurationChanged(previous, proposed)
+	if err != nil {
+		return err
+	}
+	if changed && !owner {
+		return ErrGatewayOwnerRequired
+	}
+	hasGateway, err := GatewayConfigurationChanged("{}", proposed)
+	if err != nil {
+		return err
+	}
+	core := &XrayService{}
+	apply := owner && (changed || hasGateway) && core.IsXrayRunning() && !isManuallyStopped.Load() && !NodeCorePaused("xray")
+
+	if err := s.SaveXraySetting(proposed); err != nil {
+		return err
+	}
+	if !apply {
+		return nil
+	}
+	running := p
+	previousAdmission := xrayAdmissionApplied.Load()
+	if err := core.restartXrayLocked(false, true); err != nil {
+		if restoreErr := s.storeXrayTemplate(previous); restoreErr != nil {
+			err = errors.Join(err, fmt.Errorf("restore Xray settings: %w", restoreErr))
+		}
+		if p != running {
+			if restoreErr := core.startXrayLocked(running.GetConfig(), previousAdmission, true); restoreErr != nil {
+				err = errors.Join(err, fmt.Errorf("restart Xray with previous settings: %w", restoreErr))
+			}
+		}
+		return err
+	}
+	return nil
+}
+
+func testXrayConfig(config *xray.Config) error {
+	raw, err := json.Marshal(config)
+	if err != nil {
+		return err
+	}
+	file, err := os.CreateTemp("", "panel-xray-check-*.json")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(file.Name())
+	_, writeErr := file.Write(raw)
+	if err := errors.Join(writeErr, file.Close()); err != nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	output, err := exec.CommandContext(ctx, xray.GetBinaryPath(), "-test", "-c", file.Name()).CombinedOutput()
+	if err != nil {
+		if ctx.Err() != nil {
+			return fmt.Errorf("Xray configuration test: %w", ctx.Err())
+		}
+		return fmt.Errorf("Xray rejected configuration: %s", strings.TrimSpace(string(output)))
+	}
+	return nil
 }
 
 func (s *XraySettingService) SaveXraySetting(newXraySettings string) error {

@@ -68,6 +68,23 @@ func renewalPeriod(account *model.Account, requested *int64) (int64, error) {
 	return period, nil
 }
 
+// Empty overrides inherit the current package. Zero explicitly removes that limit.
+func automaticRenewalPackage(account *model.Account, plan AutoRenewPlan) (quota, period int64, err error) {
+	quota = account.TotalGB
+	if plan.Quota != nil {
+		quota = *plan.Quota
+	}
+	if plan.Duration == nil {
+		period, err = renewalPeriod(account, nil)
+	} else {
+		period = *plan.Duration
+	}
+	if err == nil && quota == 0 && period == 0 {
+		err = common.NewError("automatic renewal requires a quota or expiration")
+	}
+	return
+}
+
 // RenewAccount resets the current period, not the customer's identity or access.
 // Ledger, account, membership breakdown and projection commit together. Cumulative
 // core/node cursors and lifetime usage remain monotonic for billing and deltas.
@@ -98,7 +115,14 @@ func (s *AccountService) RenewAccount(user *model.User, email string, requested 
 }
 
 func (s *AccountService) renewAccountTx(tx *gorm.DB, user *model.User, account *model.Account, traffic *xray.ClientTraffic, requested *int64, now int64, automatic bool) ([]int, error) {
-	period, err := renewalPeriod(account, requested)
+	quota := account.TotalGB
+	var period int64
+	var err error
+	if automatic {
+		quota, period, err = automaticRenewalPackage(account, AutoRenewPlan{account.AutoRenewQuota, account.AutoRenewDuration})
+	} else {
+		period, err = renewalPeriod(account, requested)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -106,12 +130,12 @@ func (s *AccountService) renewAccountTx(tx *gorm.DB, user *model.User, account *
 	if period > 0 {
 		expiry = now + period
 	}
-	if err := chargeAccountRenewal(tx, user, account, traffic, expiry, now); err != nil {
+	if err := chargeAccountRenewal(tx, user, account, traffic, quota, expiry, now); err != nil {
 		return nil, err
 	}
 
 	updates := map[string]any{
-		"enable": true, "expiry_time": expiry, "renewal_duration": period,
+		"enable": true, "expiry_time": expiry, "renewal_duration": period, "total_gb": quota,
 		"last_renewed_at": max(now, account.LastRenewedAt+1), "last_renewal_automatic": automatic,
 		"imported_reset_disabled": false, "imported_last_reset_at": now,
 	}
@@ -125,7 +149,7 @@ func (s *AccountService) renewAccountTx(tx *gorm.DB, user *model.User, account *
 	}
 	if err := tx.Model(traffic).Updates(map[string]any{
 		"up": 0, "down": 0, "enable": !account.RepresentativeBlocked,
-		"expiry_time": expiry, "total": account.TotalGB,
+		"expiry_time": expiry, "total": quota,
 	}).Error; err != nil {
 		return nil, err
 	}
@@ -139,7 +163,7 @@ func (s *AccountService) renewAccountTx(tx *gorm.DB, user *model.User, account *
 // Match traffic-reset pricing without a separate reservation/rollback window.
 // A days-per-GB seller purchases a full timed package on renewal; granting its
 // original full duration for only the consumed bytes would bypass that policy.
-func chargeAccountRenewal(tx *gorm.DB, user *model.User, account *model.Account, traffic *xray.ClientTraffic, expiry, now int64) error {
+func chargeAccountRenewal(tx *gorm.DB, user *model.User, account *model.Account, traffic *xray.ClientTraffic, quota, expiry, now int64) error {
 	if user == nil {
 		return common.NewError("authentication required")
 	}
@@ -158,23 +182,33 @@ func chargeAccountRenewal(tx *gorm.DB, user *model.User, account *model.Account,
 	if profile.ConsumptionBased {
 		// Unlike a plain counter reset, renewal also changes expiry. Validate the
 		// ordinary edit limits before applying the reset's billing semantics.
-		if _, err := Quote(QuoteInput{Profile: profile, OldTotal: account.TotalGB, NewTotal: account.TotalGB,
+		if _, err := Quote(QuoteInput{Profile: profile, OldTotal: account.TotalGB, NewTotal: quota,
 			CurrentExpiry: account.ExpiryTime, RequestedExpiry: &expiry, NowMillis: now}); err != nil {
 			return err
 		}
 	}
 	cleared := traffic.Up + traffic.Down
-	if !profile.ConsumptionBased && profile.DaysPerGB > 0 && cleared < account.TotalGB {
-		cleared = account.TotalGB
+	if !profile.ConsumptionBased && quota != account.TotalGB {
+		if quota == 0 && (!profile.Unlimited || owner.ChargedBytes > 0) {
+			return ErrUnlimitedAccount
+		}
+		if minimum := gbToBytes(profile.MinCreateGB); quota < minimum {
+			return ErrBelowMinCreate
+		}
+		// Apply the unused portion of the current reservation to the next
+		// package. A smaller renewal never refunds previously charged bytes.
+		unusedReservation := max(0, owner.ChargedBytes-max(0, traffic.AllTime-owner.AllTimeBase))
+		cleared = max(0, quota-min(unusedReservation, max(0, account.TotalGB-cleared)))
 	}
-	if !profile.ConsumptionBased && profile.DaysPerGB > 0 && expiry > 0 {
-		allowed := float64(account.TotalGB) / float64(oneGB) * float64(profile.DaysPerGB) * 86400000
-		if float64(expiry-now) > allowed {
+	if !profile.ConsumptionBased && profile.DaysPerGB > 0 {
+		cleared = max(cleared, quota)
+		allowed := float64(quota) / float64(oneGB) * float64(profile.DaysPerGB) * 86400000
+		if (expiry == 0 && account.ExpiryTime != 0) || float64(expiry-now) > allowed {
 			return common.NewError("the renewal period exceeds the representative's days-per-GB allowance")
 		}
 	}
 	quote, err := Quote(QuoteInput{Profile: profile, Reset: true, ClearedBytes: cleared,
-		OldCharged: owner.ChargedBytes, NewTotal: account.TotalGB, CurrentExpiry: account.ExpiryTime, NowMillis: now})
+		OldCharged: owner.ChargedBytes, NewTotal: quota, CurrentExpiry: account.ExpiryTime, NowMillis: now})
 	if err != nil {
 		return err
 	}

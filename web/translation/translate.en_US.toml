@@ -611,6 +611,7 @@ kernelRuntime = "OS kernel"
 "renewDesc" = "Auto-renewal after expiration. (0 = disable)(unit: day)"
 
 [pages.clients]
+"autoRenewPlanHelp" = "Leave a field blank to use the current package quota or duration. Enter 0 for no limit."
 autoRenewLimit = "Automatic renewal limit"
 autoRenewLimitHelp = "0 allows unlimited automatic renewals"
 autoRenewUsed = "Renewals used"
@@ -619,7 +620,7 @@ autoRenewUsed = "Renewals used"
 "historyUnavailable" = "No recorded events. Changes before tracking began are unavailable."
 "historyMore" = "Older events"
 "autoRenew" = "Automatic renewal"
-"autoRenewHelp" = "Applies immediately. Renews the saved package when time or quota runs out."
+"autoRenewHelp" = "After saving, the subscription renews automatically when its quota or validity runs out."
 "liveRate" = "Download / upload rate (~10 seconds)"
 "renew" = "Renew"
 "renewHint" = "Reset upload and download, restart the package duration from now, and enable the client. Keep the quota, connection details and inbound access unchanged. Lifetime accounting is retained."
@@ -2455,6 +2456,7 @@ theBuiltInWindowsSSTPClientRejectsSelf = "The built-in Windows SSTP client rejec
 theNativeWindowsIOSAndroidIKEv2ClientsReject = "The native Windows/iOS/Android IKEv2 clients reject self-signed certificates unless you import the generated CA into the device's trusted roots. Prefer a CA-signed cert bound to a hostname for real users. Generate a self-signed CA + server cert anyway?"
 
 [pages.activity]
+"showOwnLoginHistory" = "Allow this account to view its sign-in and sign-out history"
 gateway = "Gateway"
 gatewayUnavailable = "Live gateway status unavailable"
 gatewayNoRoute = "No outbound is currently reachable"

@@ -14,15 +14,6 @@ const ActivityPageSize = 30
 type ActivityService struct{}
 
 func (ActivityService) RecordLogin(user *model.User, ip, os, kind string) error {
-	if !user.IsPanelOwner {
-		admins, representatives, err := (ActivityService{}).LoginLogging()
-		if err != nil {
-			return err
-		}
-		if user.IsRepresentativeAccount() && !representatives || !user.IsRepresentativeAccount() && !admins {
-			return nil
-		}
-	}
 	return database.GetDB().Create(&model.PanelLoginEvent{
 		UserID: user.Id, Username: user.Username, IP: ip, OS: os, Kind: kind, At: time.Now().UnixMilli(),
 	}).Error
@@ -33,7 +24,7 @@ const (
 	representativeLoginLogging = "activityRepresentativeLoginLogging"
 )
 
-func (ActivityService) LoginLogging() (admins, representatives bool, err error) {
+func legacyLoginHistoryDefaults() (admins, representatives bool, err error) {
 	var settings []model.Setting
 	err = database.GetDB().Where("key IN ?", []string{adminLoginLogging, representativeLoginLogging}).Find(&settings).Error
 	admins, representatives = true, true
@@ -47,15 +38,65 @@ func (ActivityService) LoginLogging() (admins, representatives bool, err error) 
 	return
 }
 
-func (ActivityService) SetLoginLogging(representative, enabled bool) error {
-	key := adminLoginLogging
-	if representative {
-		key = representativeLoginLogging
+type LoginHistoryAccount struct {
+	ID       int    `json:"id"`
+	Username string `json:"username"`
+	Enabled  bool   `json:"enabled"`
+}
+
+func (ActivityService) LoginHistoryAccounts() ([]LoginHistoryAccount, error) {
+	var users []model.User
+	if err := database.GetDB().Select("id, username, is_reseller, is_super_admin, admin_role_id, representative_role_id, login_history_visible").
+		Where("NOT is_panel_owner").Order("LOWER(username), id").Find(&users).Error; err != nil {
+		return nil, err
 	}
-	return (&SettingService{}).setBool(key, enabled)
+	admins, representatives, err := legacyLoginHistoryDefaults()
+	if err != nil {
+		return nil, err
+	}
+	rows := make([]LoginHistoryAccount, 0, len(users))
+	for _, user := range users {
+		rows = append(rows, LoginHistoryAccount{user.Id, user.Username, showOwnLoginHistory(&user, admins, representatives)})
+	}
+	return rows, nil
+}
+
+func showOwnLoginHistory(user *model.User, admins, representatives bool) bool {
+	if user.LoginHistoryVisible != nil {
+		return *user.LoginHistoryVisible
+	}
+	if user.IsRepresentativeAccount() {
+		return representatives
+	}
+	return admins
+}
+
+func (ActivityService) SetLoginHistoryVisible(id int, enabled bool) error {
+	result := database.GetDB().Model(&model.User{}).Where("id = ? AND NOT is_panel_owner", id).
+		UpdateColumn("login_history_visible", enabled)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected != 1 {
+		return gorm.ErrRecordNotFound
+	}
+	return nil
 }
 
 func (ActivityService) LoginEvents(user *model.User, own bool, before int64) ([]model.PanelLoginEvent, error) {
+	if !user.IsPanelOwner {
+		admins, representatives := true, true
+		if user.LoginHistoryVisible == nil {
+			var err error
+			admins, representatives, err = legacyLoginHistoryDefaults()
+			if err != nil {
+				return nil, err
+			}
+		}
+		if !showOwnLoginHistory(user, admins, representatives) {
+			return nil, nil
+		}
+	}
 	db := database.GetDB().Model(&model.PanelLoginEvent{})
 	if !user.IsPanelOwner || own {
 		db = db.Where("user_id = ?", user.Id)

@@ -158,7 +158,9 @@ func (a *AdminController) update(c *gin.Context) {
 		jsonMsg(c, I18nWeb(c, "pages.admins.edit"), errSelfDemote)
 		return
 	}
-	err = a.adminService.UpdateAdmin(id, form.spec())
+	spec := form.spec()
+	spec.ResetTwoFactorOnPasswordChange = session.GetLoginUser(c).IsPanelOwner
+	err = a.adminService.UpdateAdmin(id, spec)
 	if err != nil {
 		adminRoleResult(c, err)
 		return

@@ -14,6 +14,7 @@ import (
 	ldaputil "github.com/mhsanaei/3x-ui/v2/util/ldap"
 	"github.com/xlzd/gotp"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // UserService provides business logic for user management and authentication.
@@ -162,26 +163,27 @@ func verifyTOTP(secret, code string) bool {
 	return ok
 }
 
-func (s *UserService) UpdateUser(id int, username string, password string) error {
-	db := database.GetDB()
-	hashedPassword, err := crypto.HashPasswordAsBcrypt(password)
-
+func (s *UserService) ChangeOwnCredentials(user *model.User, username, password string) (*model.User, error) {
+	hash, err := crypto.HashPasswordAsBcrypt(password)
 	if err != nil {
-		return err
+		return nil, err
 	}
-
-	// Changing credentials clears THIS admin's TOTP, so a lost authenticator can be
-	// recovered by a password change. It used to clear the panel-global 2FA setting,
-	// so one admin renaming themselves disabled 2FA for everyone.
-	return db.Model(model.User{}).
-		Where("id = ?", id).
-		Updates(map[string]any{
-			"username":          username,
-			"password":          hashedPassword,
-			"two_factor_enable": false,
-			"two_factor_token":  "",
-		}).
-		Error
+	updates := map[string]any{"password": hash, "session_version": gorm.Expr("session_version + 1")}
+	if username != "" {
+		updates["username"] = username
+	}
+	var fresh model.User
+	result := database.GetDB().Model(&fresh).Clauses(clause.Returning{}).
+		Where("id = ? AND password = ? AND COALESCE(session_version,0) = ? AND enable AND two_factor_enable = ? AND COALESCE(two_factor_token,'') = ?",
+			user.Id, user.Password, user.SessionVersion, user.TwoFactorEnable, user.TwoFactorToken).
+		Updates(updates)
+	if result.Error != nil {
+		return nil, result.Error
+	}
+	if result.RowsAffected != 1 {
+		return nil, gorm.ErrRecordNotFound
+	}
+	return &fresh, nil
 }
 
 func (s *UserService) UpdateFirstUser(username string, password string) error {

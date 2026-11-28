@@ -3,6 +3,8 @@ package service
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -775,6 +777,10 @@ func (s *XrayService) RestartXray(isForce bool) error {
 	}
 	lock.Lock()
 	defer lock.Unlock()
+	return s.restartXrayLocked(isForce, false)
+}
+
+func (s *XrayService) restartXrayLocked(isForce, verify bool) error {
 	admissionGeneration := xrayAdmissionRequested.Load()
 	isForce = isForce || admissionGeneration != xrayAdmissionApplied.Load()
 	logger.Debug("restart Xray, force:", isForce)
@@ -834,14 +840,40 @@ func (s *XrayService) RestartXray(isForce bool) error {
 			logger.Debug("It does not need to restart Xray")
 			return nil
 		}
-		p.Stop()
+	}
+	if verify {
+		if err := testXrayConfig(xrayConfig); err != nil {
+			return err
+		}
+	}
+	return s.startXrayLocked(xrayConfig, admissionGeneration, verify)
+}
+
+func (s *XrayService) startXrayLocked(xrayConfig *xray.Config, admissionGeneration int64, verify bool) error {
+	if s.IsXrayRunning() {
+		if err := p.Stop(); err != nil {
+			return err
+		}
+		if verify {
+			timer := time.NewTimer(5 * time.Second)
+			defer timer.Stop()
+			select {
+			case <-p.Done():
+			case <-timer.C:
+				return errors.New("Xray did not stop before applying its new configuration")
+			}
+		}
 	}
 
 	p = xray.NewProcess(xrayConfig)
 	result = ""
-	err = p.Start()
-	if err != nil {
+	if err := p.Start(); err != nil {
 		return err
+	}
+	if verify {
+		if err := waitForXrayAPI(p); err != nil {
+			return err
+		}
 	}
 
 	// A carrier tun belongs to the panel but is attached by the core, and stopping the
@@ -862,6 +894,29 @@ func (s *XrayService) RestartXray(isForce bool) error {
 	xrayAdmissionApplied.Store(admissionGeneration)
 
 	return nil
+}
+
+func waitForXrayAPI(process *xray.Process) error {
+	addr := net.JoinHostPort("127.0.0.1", strconv.Itoa(process.GetAPIPort()))
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		conn, err := net.DialTimeout("tcp", addr, 100*time.Millisecond)
+		if err == nil {
+			conn.Close()
+			if process.IsRunning() {
+				return nil
+			}
+		}
+		select {
+		case <-process.Done():
+			if err := process.GetErr(); err != nil {
+				return fmt.Errorf("Xray failed to start: %w", err)
+			}
+			return errors.New("Xray exited before opening its local API")
+		case <-time.After(50 * time.Millisecond):
+		}
+	}
+	return errors.New("Xray did not open its local API after restart")
 }
 
 // StopXray stops the running Xray process.

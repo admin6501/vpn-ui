@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"github.com/mhsanaei/3x-ui/v2/database/model"
 	"github.com/mhsanaei/3x-ui/v2/web/service"
 	"strconv"
 
@@ -39,6 +40,11 @@ func (a *ClientsController) initRouter(g *gin.RouterGroup) {
 	// accounts from the other side, so a caller who may see one may see the other.
 	// The rows are then narrowed per caller inside ListAccounts.
 	g.GET("/list", a.list)
+	g.GET("/edit/:email", requirePerm(model.PermEditClient), requireClientAccess(), func(c *gin.Context) {
+		c.Header("Cache-Control", "no-store")
+		row, err := accountService.AccountForEdit(session.GetLoginUser(c), c.Param("email"))
+		jsonObj(c, row, err)
+	})
 	g.GET("/history/:email", a.history)
 	g.GET("/assignable", a.assignable)
 	g.GET("/groups", func(c *gin.Context) {

@@ -27,7 +27,7 @@ func initAccountHistory(db *gorm.DB) error {
 	const operation = accountAuditOperationSQL
 	fields := []struct{ label, columns string }{
 		{"email", "email"}, {"quota", "total_gb"}, {"expiry", "expiry_time renewal_duration"},
-		{"enable", "enable representative_blocked"}, {"autoRenew", "auto_renew auto_renew_limit"},
+		{"enable", "enable representative_blocked"}, {"autoRenew", "auto_renew auto_renew_limit auto_renew_quota auto_renew_duration"},
 		{"limits", "limit_ip speed_limit_up speed_limit_down user_limit_override"},
 		{"reset", "reset"}, {"comment", "comment"}, {"owner", "owner_admin_id"},
 		{"credentials", "uuid protocol_credentials password vpn_username auth secret security naive_username sub_id tg_id"},

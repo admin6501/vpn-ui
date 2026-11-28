@@ -153,8 +153,24 @@ func TestSecurityCredentialChangesAndAuthenticatorReplacement(t *testing.T) {
 	if !success(enabled) {
 		t.Fatal("verified enrollment failed")
 	}
-	beforePassword := freshCookie(enabled)
-	changed := post("/panel/setting/updateUser", url.Values{"oldUsername": {user.Username}, "oldPassword": {"current-password"}, "newUsername": {user.Username}, "newPassword": {"new-password"}}, beforePassword)
+	passwordCookie := freshCookie(enabled)
+	passwordForm := url.Values{"oldPassword": {"current-password"}, "newPassword": {"self-changed-password"}}
+	if success(post("/panel/setting/password", passwordForm, passwordCookie)) {
+		t.Fatal("password change accepted without the current authenticator")
+	}
+	passwordForm.Set("code", gotp.NewDefaultTOTP(newSecret).Now())
+	selfChanged := post("/panel/setting/password", passwordForm, passwordCookie)
+	if !success(selfChanged) {
+		t.Fatalf("self-service password change: %s", selfChanged.Body.String())
+	}
+	beforePassword := freshCookie(selfChanged)
+	if authenticated(passwordCookie) || !authenticated(beforePassword) {
+		t.Fatal("self-service password change must revoke previous cookies")
+	}
+	if err := db.First(&current, user.Id).Error; err != nil || current.TwoFactorToken != newSecret || !current.TwoFactorEnable {
+		t.Fatal("self-service password change must preserve the authenticator", err)
+	}
+	changed := post("/panel/setting/updateUser", url.Values{"oldUsername": {user.Username}, "oldPassword": {"self-changed-password"}, "newUsername": {user.Username}, "newPassword": {"new-password"}, "code": {gotp.NewDefaultTOTP(newSecret).Now()}}, beforePassword)
 	if !success(changed) {
 		t.Fatal("password change failed")
 	}

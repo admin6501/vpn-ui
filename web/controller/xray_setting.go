@@ -2,6 +2,7 @@ package controller
 
 import (
 	"encoding/json"
+	"errors"
 	"strconv"
 	"strings"
 
@@ -101,23 +102,12 @@ func (a *XraySettingController) getXraySetting(c *gin.Context) {
 // updateSetting updates the Xray configuration settings.
 func (a *XraySettingController) updateSetting(c *gin.Context) {
 	xraySetting := c.PostForm("xraySetting")
-	if !session.GetLoginUser(c).IsPanelOwner {
-		previous, err := a.SettingService.GetXrayConfigTemplate()
-		if err != nil {
-			jsonMsg(c, I18nWeb(c, "pages.settings.toasts.modifySettings"), err)
-			return
-		}
-		changed, err := service.GatewayConfigurationChanged(previous, xraySetting)
-		if err != nil {
-			jsonMsg(c, I18nWeb(c, "pages.settings.toasts.modifySettings"), err)
-			return
-		}
-		if changed {
-			jsonMsg(c, I18nWeb(c, "pages.admins.ownerOnly"), common.NewError("only the panel owner can modify gateway settings"))
-			return
-		}
+	err := a.XraySettingService.SavePanelXraySetting(xraySetting, session.GetLoginUser(c).IsPanelOwner)
+	if errors.Is(err, service.ErrGatewayOwnerRequired) {
+		jsonMsg(c, I18nWeb(c, "pages.admins.ownerOnly"), err)
+		return
 	}
-	if err := a.XraySettingService.SaveXraySetting(xraySetting); err != nil {
+	if err != nil {
 		jsonMsg(c, I18nWeb(c, "pages.settings.toasts.modifySettings"), err)
 		return
 	}

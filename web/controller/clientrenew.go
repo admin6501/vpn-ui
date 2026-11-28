@@ -2,6 +2,7 @@ package controller
 
 import (
 	"github.com/gin-gonic/gin"
+	"github.com/mhsanaei/3x-ui/v2/web/service"
 	"github.com/mhsanaei/3x-ui/v2/web/session"
 )
 
@@ -29,13 +30,20 @@ func (a *InboundController) renewClient(c *gin.Context) {
 
 func (a *InboundController) setClientAutoRenew(c *gin.Context) {
 	var body struct {
-		Enabled *bool `form:"enabled" json:"enabled" binding:"required"`
-		Limit   *int  `form:"limit" json:"limit"`
+		Enabled  *bool  `form:"enabled" json:"enabled" binding:"required"`
+		Limit    *int   `form:"limit" json:"limit"`
+		SetPlan  bool   `form:"setPlan" json:"setPlan"`
+		Quota    *int64 `form:"quota" json:"quota"`
+		Duration *int64 `form:"duration" json:"duration"`
 	}
 	if err := c.ShouldBind(&body); err != nil {
 		jsonMsg(c, I18nWeb(c, "somethingWentWrong"), err)
 		return
 	}
-	err := accountService.ConfigureAutoRenew(c.Param("email"), *body.Enabled, body.Limit, clientAuditOperation(c))
+	var plan *service.AutoRenewPlan
+	if body.SetPlan {
+		plan = &service.AutoRenewPlan{Quota: body.Quota, Duration: body.Duration}
+	}
+	err := accountService.ConfigureAutoRenewPlan(c.Param("email"), *body.Enabled, body.Limit, plan, clientAuditOperation(c))
 	jsonMsg(c, I18nWeb(c, "pages.clients.autoRenew"), err)
 }

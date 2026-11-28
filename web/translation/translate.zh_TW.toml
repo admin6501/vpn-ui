@@ -611,6 +611,7 @@ unfreeze = "解凍"
 frozen = "凍結"
 
 [pages.clients]
+"autoRenewPlanHelp" = "留空即沿用目前方案的流量或有效期限。輸入 0 表示不限。"
 autoRenewLimit = "自動續訂次數上限"
 autoRenewLimitHelp = "0 表示自動續訂次數無上限"
 autoRenewUsed = "已續訂次數"
@@ -619,7 +620,7 @@ autoRenewUsed = "已續訂次數"
 "historyUnavailable" = "沒有已記錄的事件。開始記錄前的變更無法顯示。"
 "historyMore" = "較早的事件"
 "autoRenew" = "自動續期"
-"autoRenewHelp" = "立即生效。到期或流量用完後續期已儲存的方案。"
+"autoRenewHelp" = "儲存後，用完流量或有效期限屆滿時將自動續訂。"
 "liveRate" = "下載與上傳速率（約 10 秒）"
 "renew" = "續期"
 "renewHint" = "清零上傳和下載，從現在重新計算方案期限並啟用使用者。保留流量上限、連線資訊、入站權限及累計記錄。"
@@ -2451,6 +2452,7 @@ theBuiltInWindowsSSTPClientRejectsSelf = "內建 Windows SSTP 用戶端會拒絕
 theNativeWindowsIOSAndroidIKEv2ClientsReject = "本機 Windows/iOS/Android IKEv2 用戶端拒絕自簽章證書，除非您將產生的 CA 匯入到裝置的受信任根。對於真實用戶，首選將 CA 簽署的憑證綁定到主機名稱。無論如何產生自簽名 CA + 伺服器憑證？"
 
 [pages.activity]
+"showOwnLoginHistory" = "允許此帳號查看自己的登入和登出紀錄"
 gateway = "閘道"
 gatewayUnavailable = "無法取得即時閘道狀態"
 gatewayNoRoute = "目前沒有可用的出站"

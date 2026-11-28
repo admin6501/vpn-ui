@@ -611,6 +611,7 @@ unfreeze = "Mencairkan"
 frozen = "Beku"
 
 [pages.clients]
+"autoRenewPlanHelp" = "Kosongkan kolom untuk memakai kuota atau masa berlaku paket saat ini. Masukkan 0 jika tanpa batas."
 autoRenewLimit = "Batas perpanjangan otomatis"
 autoRenewLimitHelp = "0 mengizinkan perpanjangan otomatis tanpa batas"
 autoRenewUsed = "Perpanjangan terpakai"
@@ -619,7 +620,7 @@ autoRenewUsed = "Perpanjangan terpakai"
 "historyUnavailable" = "Tidak ada kejadian tercatat. Perubahan sebelum pencatatan dimulai tidak tersedia."
 "historyMore" = "Kejadian lebih lama"
 "autoRenew" = "Perpanjangan otomatis"
-"autoRenewHelp" = "Berlaku segera. Memperpanjang paket yang tersimpan saat waktu atau kuota habis."
+"autoRenewHelp" = "Setelah disimpan, langganan diperbarui otomatis saat kuota habis atau masa berlaku berakhir."
 "liveRate" = "Kecepatan unduh dan unggah (~10 detik)"
 "renew" = "Perpanjang"
 "renewHint" = "Nolkan unggahan dan unduhan, mulai ulang masa paket sekarang, dan aktifkan klien. Kuota, koneksi, akses dan riwayat total tetap."
@@ -2451,6 +2452,7 @@ theBuiltInWindowsSSTPClientRejectsSelf = "Klien SSTP Windows bawaan menolak sert
 theNativeWindowsIOSAndroidIKEv2ClientsReject = "Klien asli Windows/iOS/Android IKEv2 menolak sertifikat yang ditandatangani sendiri kecuali Anda mengimpor CA yang dihasilkan ke akar tepercaya perangkat. Lebih memilih sertifikat bertanda tangan CA yang terikat pada nama host untuk pengguna sebenarnya. Tetap hasilkan sertifikat server CA + yang ditandatangani sendiri?"
 
 [pages.activity]
+"showOwnLoginHistory" = "Izinkan akun ini melihat riwayat masuk dan keluarnya"
 gateway = "Gateway"
 gatewayUnavailable = "Status gateway langsung tidak tersedia"
 gatewayNoRoute = "Tidak ada outbound yang dapat dijangkau"

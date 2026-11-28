@@ -74,16 +74,16 @@ func registerActivityRoutes(api *gin.RouterGroup) {
 		}
 		result := gin.H{"rows": rows, "more": more}
 		if err == nil && user.IsPanelOwner {
-			admins, representatives, loadErr := activityService.LoginLogging()
-			result["logAdmins"], result["logRepresentatives"] = admins, representatives
+			accounts, loadErr := activityService.LoginHistoryAccounts()
+			result["accounts"] = accounts
 			err = loadErr
 		}
 		jsonObj(c, result, err)
 	})
 	g.POST("/logins/settings", requirePanelOwner(), func(c *gin.Context) {
 		var input struct {
-			Representative bool
-			Enabled        *bool
+			UserID  int `json:"userId"`
+			Enabled *bool
 		}
 		if !bindActivity(c, &input) {
 			return
@@ -92,7 +92,7 @@ func registerActivityRoutes(api *gin.RouterGroup) {
 			jsonMsg(c, I18nWeb(c, "somethingWentWrong"), errors.New("missing login logging preference"))
 			return
 		}
-		jsonMsg(c, "", activityService.SetLoginLogging(input.Representative, *input.Enabled))
+		jsonMsg(c, "", activityService.SetLoginHistoryVisible(input.UserID, *input.Enabled))
 	})
 	g.POST("/logins/purge", requirePanelOwner(), func(c *gin.Context) {
 		var input struct{ Date string }

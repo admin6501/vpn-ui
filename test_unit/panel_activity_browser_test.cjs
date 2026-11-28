@@ -22,6 +22,8 @@ const { chromium } = require('playwright');
         let pendingPayment;
         let lowQuotaUnread = false;
         let gatewayTarget = 'emergency';
+        let loginVisibility;
+        let renewalPlan;
         const at = Date.now();
         let deletedClients = ['recover-client', 'purge-client', 'empty-client'].map((name, index) => ({
             id: index + 30, name, deletedAt: at,
@@ -61,6 +63,11 @@ const { chromium } = require('playwright');
                 };
             } else if (path === 'activity/lowQuota') {
                 obj = { enabled: true, rows: [{ id: 1, email: 'low-client', remaining: 8388608 }] };
+            } else if (path === 'clients/edit/low-client') {
+                obj = { id: 1, email: 'low-client', enable: true, totalGB: 2 ** 30, expiryTime: at + 864000000,
+                    autoRenew: false, autoRenewLimit: 0, memberships: [], groupIds: [], credentials: {} };
+            } else if (path === 'inbounds/autoRenewClient/low-client') {
+                renewalPlan = route.request().postDataJSON();
             } else if (path === 'activity/gateway') {
                 obj = { outbounds: ['master', 'emergency', 'backup', 'other'],
                     balancers: [{ tag: 'tunnel', normal: ['master', 'backup'], emergency: ['emergency'], active: gatewayTarget, available: true }] };
@@ -76,6 +83,10 @@ const { chromium } = require('playwright');
                 obj = url.searchParams.get('before') === '2'
                     ? { rows: [{ ...login, id: 1, kind: 'logout', os: 'Android' }], more: false }
                     : { rows: [login], more: true };
+                obj.accounts = [{ id: 4, username: 'delegate-one', enabled: true },
+                    { id: 5, username: 'delegate-two', enabled: loginVisibility?.enabled ?? true }];
+            } else if (path === 'activity/logins/settings') {
+                loginVisibility = route.request().postDataJSON();
             } else if (path === 'activity/renewals') {
                 obj = { rows: [renewal], more: false, enabled: renewalNotices };
             } else if (path === 'activity/renewals/settings') {
@@ -133,6 +144,12 @@ const { chromium } = require('playwright');
         assert.equal(await changesBadge.getAttribute('title'), 'removed-client\ntest-renewed');
         await page.getByRole('cell', { name: '203.0.113.19' }).waitFor();
         await page.getByRole('cell', { name: 'Windows' }).waitFor();
+        await page.getByText('delegate-one', { exact: true }).click();
+        await page.getByText('delegate-two', { exact: true }).click();
+        const visibility = page.waitForResponse(response => response.url().endsWith('/activity/logins/settings'));
+        await page.getByText('Allow this account to view its sign-in and sign-out history').locator('..').getByRole('switch').click();
+        await visibility;
+        assert.deepEqual(loginVisibility, { userId: 5, enabled: false });
         await page.getByRole('button', { name: 'Next' }).click();
         await page.getByRole('cell', { name: 'Android' }).waitFor();
         await badge.click();
@@ -407,6 +424,23 @@ const { chromium } = require('playwright');
         await lowQuotaRead;
         await lowQuotaBadge.waitFor({ state: 'hidden' });
         assert.equal(lowQuotaUnread, false);
+        await page.getByRole('row', { name: /low-client/ }).getByRole('button', { name: 'Edit' }).click();
+        const editClient = page.getByRole('dialog');
+        await editClient.getByRole('switch', { name: 'Automatic renewal' }).click();
+        await editClient.getByLabel('Total Flow (GB)').fill('1.5');
+        await editClient.getByLabel('Package duration (days)').fill('8');
+        const renewed = page.waitForResponse(response => response.url().endsWith('/autoRenewClient/low-client'));
+        await editClient.getByRole('button', { name: 'Save · Automatic renewal' }).click();
+        await renewed;
+        assert.deepEqual(renewalPlan, { enabled: 'true', limit: '0', setPlan: 'true', quota: String(1.5 * 2 ** 30), duration: String(8 * 86400000) });
+        await editClient.getByLabel('Total Flow (GB)').fill('');
+        await editClient.getByLabel('Package duration (days)').fill('');
+        const inherited = page.waitForResponse(response => response.url().endsWith('/autoRenewClient/low-client'));
+        await editClient.getByRole('button', { name: 'Save · Automatic renewal' }).click();
+        await inherited;
+        assert.deepEqual(renewalPlan, { enabled: 'true', limit: '0', setPlan: 'true' });
+        await editClient.getByRole('button', { name: 'Close', exact: true }).last().click();
+        await editClient.waitFor({ state: 'hidden' });
         await page.getByRole('button', { name: 'Activity' }).click();
         await page.getByRole('link', { name: 'Gateway', exact: true }).click();
         const active = page.locator('.panel-gateway-route').filter({ hasText: 'Active' });

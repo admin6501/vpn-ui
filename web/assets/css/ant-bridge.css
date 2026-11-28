@@ -265,6 +265,10 @@ body.dark #clients-table .ant-table-thead > tr > th.ant-table-column-sort:hover 
   border-color:var(--accent-strong);
 }
 /* Ant sets a separate text color on the label beside a locked checkbox. */
+body.dark #balancer-modal .ant-form-extra {
+  color: var(--text-2);
+}
+
 body.dark #admin-modal :is(.ant-checkbox-wrapper, .ant-checkbox + span, .ant-form-item p) {
   color:var(--text-2);
 }

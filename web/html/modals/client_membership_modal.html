@@ -65,6 +65,35 @@
            split across two tabs and did not need to be: an operator setting up a
            customer sets the quota in the same breath as the name. -->
       <template v-if="clientMembershipModal.tab === 'identity'">
+        <div class="bo-cf-switch bo-cf-auto-renew" v-if="clientMembershipModal.isEdit && clientMembershipModal.row">
+          <div>
+            <div class="bo-cf-t">{{ i18n "pages.clients.autoRenew" }}</div>
+            <div class="bo-cf-d">{{ i18n "pages.clients.autoRenewHelp" }}</div>
+          </div>
+          <a-switch :checked="clientMembershipModal.autoRenewEnabled" :disabled="clientMembershipModal.autoRenewBusy"
+            aria-label='{{ i18n "pages.clients.autoRenew" }}'
+            @change="clientMembershipModal.autoRenewEnabled = $event"></a-switch>
+          <div v-if="clientMembershipModal.autoRenewEnabled" class="bo-cf-renew-plan">
+            <label class="bo-cf-field">{{ i18n "pages.inbounds.totalFlow" }} (GB)
+              <input class="ant-input" type="number" v-model="clientMembershipModal.autoRenewQuotaGB" min="0" step="any">
+            </label>
+            <label class="bo-cf-field">{{ i18n "pages.clients.renewDays" }}
+              <input class="ant-input" type="number" v-model="clientMembershipModal.autoRenewDays" min="0" max="36500" step="1">
+            </label>
+            <label class="bo-cf-field">{{ i18n "pages.clients.autoRenewLimit" }}
+              <a-input-number v-model="clientMembershipModal.autoRenewLimit" :min="0" :max="10000"></a-input-number>
+            </label>
+            <div class="bo-cf-d">{{ i18n "pages.clients.autoRenewPlanHelp" }}</div>
+            <div class="bo-cf-d">{{ i18n "pages.clients.autoRenewLimitHelp" }}
+              <span v-if="clientMembershipModal.row.autoRenewLimit > 0">
+                · {{ i18n "pages.clients.autoRenewUsed" }} <span v-text="clientMembershipModal.row.autoRenewCount || 0"></span>
+              </span>
+            </div>
+          </div>
+          <a-button :loading="clientMembershipModal.autoRenewBusy" :disabled="!clientMembershipModal.validAutoRenew"
+            @click="clientMembershipModal.saveAutoRenew()">{{ i18n "save" }} · {{ i18n "pages.clients.autoRenew" }}</a-button>
+        </div>
+
         <div class="bo-cf-field">
           <label>{{ i18n "pages.inbounds.email" }}</label>
           <a-input v-model.trim="clientMembershipModal.client.email">
@@ -209,25 +238,6 @@
           </div>
           <a-input-number v-model="clientMembershipModal.client.reset" :min="0"
             :style="{ width: '96px' }"></a-input-number>
-        </div>
-        <div class="bo-cf-switch bo-cf-auto-renew" v-if="clientMembershipModal.isEdit && clientMembershipModal.row">
-          <div>
-            <div class="bo-cf-t">{{ i18n "pages.clients.autoRenew" }}</div>
-            <div class="bo-cf-d">{{ i18n "pages.clients.autoRenewHelp" }}</div>
-          </div>
-          <a-space>
-            <a-switch :checked="!!clientMembershipModal.row.autoRenew" :loading="clientMembershipModal.autoRenewBusy"
-              @change="v => clientMembershipModal.toggleAutoRenew(v)"></a-switch>
-            <a-input-number v-model="clientMembershipModal.autoRenewLimit" :min="0" :max="10000"
-              aria-label='{{ i18n "pages.clients.autoRenewLimit" }}'></a-input-number>
-            <a-button :disabled="clientMembershipModal.autoRenewBusy || !Number.isInteger(clientMembershipModal.autoRenewLimit) || clientMembershipModal.autoRenewLimit === (clientMembershipModal.row.autoRenewLimit || 0)"
-              @click="clientMembershipModal.toggleAutoRenew(!!clientMembershipModal.row.autoRenew)">{{ i18n "save" }}</a-button>
-          </a-space>
-          <div class="bo-cf-d">{{ i18n "pages.clients.autoRenewLimit" }} · {{ i18n "pages.clients.autoRenewLimitHelp" }}
-            <span v-if="clientMembershipModal.row.autoRenewLimit > 0">
-              · {{ i18n "pages.clients.autoRenewUsed" }} <span v-text="clientMembershipModal.row.autoRenewCount || 0"></span>
-            </span>
-          </div>
         </div>
         <div class="bo-cf-switch">
           <div>
@@ -516,6 +526,9 @@
     storedBy: {},
     onDone: null,
     autoRenewBusy: false,
+    autoRenewEnabled: false,
+    autoRenewQuotaGB: '',
+    autoRenewDays: '',
     autoRenewLimit: 0,
 
     // Only these three cannot tell two of their own inbounds apart (bare
@@ -580,17 +593,31 @@
       };
     },
 
-    async toggleAutoRenew(enabled) {
-      if (!this.row || this.autoRenewBusy || !Number.isInteger(this.autoRenewLimit)) return;
+    get validAutoRenew() {
+      const quotaGB = Number(this.autoRenewQuotaGB);
+      const quotaBytes = Math.round(quotaGB * 1073741824);
+      const days = Number(this.autoRenewDays);
+      return Number.isInteger(this.autoRenewLimit) && this.autoRenewLimit >= 0 && this.autoRenewLimit <= 10000
+        && (quotaGB === 0 || (quotaBytes > 0 && Number.isSafeInteger(quotaBytes)))
+        && Number.isInteger(days) && days >= 0 && days <= 36500;
+    },
+    async saveAutoRenew() {
+      if (!this.row || this.autoRenewBusy || !this.validAutoRenew) return;
       const current = this.row;
+      const enabled = this.autoRenewEnabled;
+      const limit = this.autoRenewLimit;
+      const quota = this.autoRenewQuotaGB === '' ? null : Math.round(Number(this.autoRenewQuotaGB) * 1073741824);
+      const duration = this.autoRenewDays === '' ? null : Number(this.autoRenewDays) * 86400000;
       this.autoRenewBusy = true;
       try {
-        const limit = this.autoRenewLimit;
-        const msg = await HttpUtil.post('/panel/api/inbounds/autoRenewClient/' + encodeURIComponent(current.email), { enabled, limit });
+        const msg = await HttpUtil.post('/panel/api/inbounds/autoRenewClient/' + encodeURIComponent(current.email),
+          { enabled, limit, setPlan: true, quota: quota ?? undefined, duration: duration ?? undefined });
         if (msg && msg.success) {
           if ((current.autoRenewLimit || 0) !== limit || (!current.autoRenew && enabled)) current.autoRenewCount = 0;
           current.autoRenew = enabled;
           current.autoRenewLimit = limit;
+          current.autoRenewQuota = quota;
+          current.autoRenewDuration = duration;
         }
       } finally { this.autoRenewBusy = false; }
     },
@@ -605,6 +632,9 @@
       this.isEdit = !!row;
       this.row = row;
       this.autoRenewLimit = row?.autoRenewLimit || 0;
+      this.autoRenewEnabled = !!row?.autoRenew;
+      this.autoRenewQuotaGB = row?.autoRenewQuota == null ? '' : String(row.autoRenewQuota / 1073741824);
+      this.autoRenewDays = row?.autoRenewDuration == null ? '' : String(row.autoRenewDuration / 86400000);
       this.storedBy = storedBy || {};
       this.title = row ? '{{ i18n "pages.clients.editTitle" }}' : '{{ i18n "pages.clients.addTitle" }}';
       this.okText = row ? '{{ i18n "sure" }}' : '{{ i18n "pages.clients.add" }}';

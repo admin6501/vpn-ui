@@ -13,6 +13,20 @@
     <a-switch :checked="enabled" :disabled="required && enabled" @click="toggleTwoFactor"></a-switch>
     <a-tag :color="enabled ? 'green' : 'orange'">[[ enabled ? '{{ i18n "enabled" }}' : '{{ i18n "disabled" }}' ]]</a-tag>
   </a-space>
+  <a-divider v-if="!required || enabled"></a-divider>
+  <form v-if="!required || enabled" @submit.prevent="changePassword">
+    <a-form-item label='{{ i18n "pages.settings.currentPassword" }}'>
+      <a-input-password v-model="oldPassword" autocomplete="current-password" required></a-input-password>
+    </a-form-item>
+    <a-form-item label='{{ i18n "pages.settings.newPassword" }}'>
+      <a-input-password v-model="newPassword" autocomplete="new-password" required></a-input-password>
+    </a-form-item>
+    <a-form-item v-if="enabled" label='{{ i18n "twoFactorCode" }}'>
+      <a-input v-model="code" maxlength="6" inputmode="numeric" autocomplete="one-time-code" required></a-input>
+    </a-form-item>
+    <a-button type="primary" html-type="submit" :loading="changingPassword"
+      :disabled="!oldPassword || !newPassword || (enabled && code.length !== 6)">{{ i18n "save" }}</a-button>
+  </form>
 </a-card>
 {{ template "page/shell_end" .}}
 {{ template "page/body_scripts" .}}
@@ -31,9 +45,20 @@
       pageTitle: '{{ i18n "pages.accountSecurity.title" }}',
       pageClass: '',
       enabled: {{ .two_factor }},
+      oldPassword: '', newPassword: '', code: '', changingPassword: false,
       required: {{ .two_factor_required }},
     },
     methods: {
+      async changePassword() {
+        if (this.changingPassword) return;
+        this.changingPassword = true;
+        try {
+          const msg = await HttpUtil.post('/panel/setting/password', {
+            oldPassword: this.oldPassword, newPassword: this.newPassword, code: this.code,
+          });
+          if (msg.success) this.oldPassword = this.newPassword = this.code = '';
+        } finally { this.changingPassword = false; }
+      },
       toggleTwoFactor(enable) {
         if (!enable && this.required) return;
         const token = enable ? RandomUtil.randomBase32String(32) : '';

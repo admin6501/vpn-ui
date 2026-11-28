@@ -1222,27 +1222,23 @@
         }
       },
       async updateUser() {
-        const sendUpdateUserRequest = async () => {
+        const sendUpdateUserRequest = async (code = "") => {
           this.loading(true);
-          const msg = await HttpUtil.post("/panel/setting/updateUser", this.user);
+          const msg = await HttpUtil.post("/panel/setting/updateUser", { ...this.user, code });
           this.loading(false);
           if (msg.success) {
             this.user = {};
             window.location.replace(basePath + "logout");
           }
+          return msg.success;
         }
 
-        if (this.allSetting.twoFactorEnable) {
+        if (this.twoFactorEnable) {
           twoFactorModal.show({
             title: '{{ i18n "pages.settings.security.twoFactorModalChangeCredentialsTitle" }}',
             description: '{{ i18n "pages.settings.security.twoFactorModalChangeCredentialsStep" }}',
-            token: this.allSetting.twoFactorToken,
             type: 'confirm',
-            confirm: (success) => {
-              if (success) {
-                sendUpdateUserRequest();
-              }
-            }
+            confirm: (success, code) => success ? sendUpdateUserRequest(code) : false,
           })
         } else {
           sendUpdateUserRequest();

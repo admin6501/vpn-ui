@@ -184,11 +184,12 @@ type AdminSpec struct {
 	AdminRoleID *int
 	Username    string
 	// Password empty on update means "keep the existing one".
-	Password     string
-	Nickname     string
-	Permissions  model.Permission
-	Enable       bool
-	IsSuperAdmin bool
+	Password                       string
+	ResetTwoFactorOnPasswordChange bool
+	Nickname                       string
+	Permissions                    model.Permission
+	Enable                         bool
+	IsSuperAdmin                   bool
 	// InboundIds is the exact set of inbounds this admin may see. Replaces whatever
 	// they had. Empty means no access at all, which is a legitimate state (an admin
 	// who has not been given anything yet), so it must not be read as "leave alone".
@@ -324,6 +325,11 @@ func (s *AdminService) UpdateAdmin(id int, spec AdminSpec) error {
 			return err
 		}
 		updates["password"] = hash
+		updates["session_version"] = gorm.Expr("session_version + 1")
+		if spec.ResetTwoFactorOnPasswordChange {
+			updates["two_factor_enable"] = false
+			updates["two_factor_token"] = ""
+		}
 	}
 	return db.Transaction(func(tx *gorm.DB) error {
 		taken, err := s.usernameTaken(tx, username, id)

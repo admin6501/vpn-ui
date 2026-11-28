@@ -374,46 +374,43 @@ func TestSetTwoFactorRoundTrip(t *testing.T) {
 	}
 }
 
-// A password change is the documented recovery route for a lost authenticator, so
-// it must clear THIS admin's 2FA, and only theirs. It used to wipe the panel-wide
-// setting, disabling 2FA for everyone whenever anyone renamed themselves.
-func TestUpdateUserClearsOnlyOwnTwoFactor(t *testing.T) {
-	s := newAdminDB(t)
-	us := &UserService{}
+func TestAdminPasswordResetClearsOnlyTargetAuthenticator(t *testing.T) {
+	admins := newAdminDB(t)
+	users := &UserService{}
 	db := database.GetDB()
-
-	other, err := s.AddAdmin(AdminSpec{Username: "other", Password: "pw", Enable: true})
+	other, err := admins.AddAdmin(AdminSpec{Username: "delegate", Password: "original", Enable: true})
 	if err != nil {
-		t.Fatalf("AddAdmin: %v", err)
+		t.Fatal(err)
 	}
-	super := &model.User{}
-	db.Model(model.User{}).Where("is_super_admin = ?", true).First(super)
-
+	var owner model.User
+	if err := db.Where("is_panel_owner").First(&owner).Error; err != nil {
+		t.Fatal(err)
+	}
 	const secret = "JBSWY3DPEHPK3PXP"
-	if err := us.SetTwoFactor(super.Id, true, secret); err != nil {
-		t.Fatalf("SetTwoFactor super: %v", err)
-	}
-	if err := us.SetTwoFactor(other.Id, true, secret); err != nil {
-		t.Fatalf("SetTwoFactor other: %v", err)
-	}
-
-	// The super admin changes their own credentials.
-	if err := us.UpdateUser(super.Id, "renamed", "newpw"); err != nil {
-		t.Fatalf("UpdateUser: %v", err)
+	for _, id := range []int{owner.Id, other.Id} {
+		if err := users.SetTwoFactor(id, true, secret); err != nil {
+			t.Fatal(err)
+		}
 	}
 
-	reloaded := &model.User{}
-	db.Model(model.User{}).Where("id = ?", super.Id).First(reloaded)
-	if reloaded.TwoFactorEnable || reloaded.TwoFactorToken != "" {
-		t.Error("a credential change must clear that admin's own 2FA")
+	spec := AdminSpec{Username: other.Username, Enable: true, ResetTwoFactorOnPasswordChange: true}
+	if err := admins.UpdateAdmin(other.Id, spec); err != nil {
+		t.Fatal(err)
 	}
-	otherReloaded := &model.User{}
-	if err := db.Model(model.User{}).Where("id = ?", other.Id).First(otherReloaded).Error; err != nil {
-		t.Fatalf("reload other (id=%d): %v", other.Id, err)
+	if err := db.First(other, other.Id).Error; err != nil || !other.TwoFactorEnable {
+		t.Fatal("metadata changes must preserve the authenticator", err)
 	}
-	if !otherReloaded.TwoFactorEnable || otherReloaded.TwoFactorToken != secret {
-		t.Errorf("one admin's credential change must NOT touch another admin's 2FA: other(id=%d) enable=%v token=%q",
-			other.Id, otherReloaded.TwoFactorEnable, otherReloaded.TwoFactorToken)
+	sessionVersion := other.SessionVersion
+	spec.Password = "replacement"
+	if err := admins.UpdateAdmin(other.Id, spec); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.First(other, other.Id).Error; err != nil || other.TwoFactorEnable ||
+		other.TwoFactorToken != "" || other.SessionVersion <= sessionVersion {
+		t.Fatal("password reset must clear the targeted authenticator and revoke sessions", err)
+	}
+	if err := db.First(&owner, owner.Id).Error; err != nil || !owner.TwoFactorEnable || owner.TwoFactorToken != secret {
+		t.Fatal("password reset must preserve the owner's authenticator", err)
 	}
 }
 

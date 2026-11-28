@@ -611,6 +611,7 @@ unfreeze = "凍結解除"
 frozen = "冷凍"
 
 [pages.clients]
+"autoRenewPlanHelp" = "空欄の場合は現在のプランの容量または有効期間を使用します。0 は無制限です。"
 autoRenewLimit = "自動更新回数の上限"
 autoRenewLimitHelp = "0 は自動更新回数の制限なし"
 autoRenewUsed = "実行済みの更新回数"
@@ -619,7 +620,7 @@ autoRenewUsed = "実行済みの更新回数"
 "historyUnavailable" = "記録されたイベントはありません。記録開始前の変更は表示できません。"
 "historyMore" = "過去のイベント"
 "autoRenew" = "自動更新"
-"autoRenewHelp" = "すぐに適用されます。期限切れまたは通信量の上限に達したときに保存済みプランを更新します。"
+"autoRenewHelp" = "保存すると、容量を使い切ったときや有効期限が切れたときにサブスクリプションが自動で更新されます。"
 "liveRate" = "ダウンロード・アップロード速度（約10秒）"
 "renew" = "更新"
 "renewHint" = "送受信量をゼロにし、今から契約期間を再開して利用者を有効にします。容量上限、接続情報、アクセス権と累計履歴は保持します。"
@@ -2451,6 +2452,7 @@ theBuiltInWindowsSSTPClientRejectsSelf = "CA をマシンの信頼されたル�
 theNativeWindowsIOSAndroidIKEv2ClientsReject = "ネイティブ Windows/iOS/Android IKEv2 クライアントは、生成された CA をデバイスの信頼されたルートにインポートしない限り、自己署名証明書を拒否します。実際のユーザーのホスト名にバインドされた CA 署名証明書を優先します。とにかく自己署名 CA + サーバー証明書を生成しますか?"
 
 [pages.activity]
+"showOwnLoginHistory" = "このアカウントに自身のログイン・ログアウト履歴の表示を許可する"
 gateway = "ゲートウェイ"
 gatewayUnavailable = "ゲートウェイの現在の状態を取得できません"
 gatewayNoRoute = "利用可能なアウトバウンドがありません"

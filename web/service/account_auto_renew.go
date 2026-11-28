@@ -17,11 +17,25 @@ func (s *AccountService) SetAutoRenew(email string, enabled bool, audit ...datab
 	return s.ConfigureAutoRenew(email, enabled, nil, audit...)
 }
 
-const MaxAutoRenewLimit = 10000
+const (
+	MaxAutoRenewLimit = 10000
+	maxAutoRenewQuota = 1<<53 - 1 // bytes, matching the browser's largest exact integer
+)
 
 var ErrInvalidAutoRenewLimit = errors.New("invalid automatic renewal limit")
 
 func (s *AccountService) ConfigureAutoRenew(email string, enabled bool, limit *int, audit ...database.AccountAudit) error {
+	return s.ConfigureAutoRenewPlan(email, enabled, limit, nil, audit...)
+}
+
+type AutoRenewPlan struct {
+	Quota, Duration *int64
+}
+
+func (s *AccountService) ConfigureAutoRenewPlan(email string, enabled bool, limit *int, plan *AutoRenewPlan, audit ...database.AccountAudit) error {
+	if plan != nil && ((plan.Quota != nil && (*plan.Quota < 0 || *plan.Quota > maxAutoRenewQuota)) || (plan.Duration != nil && (*plan.Duration < 0 || *plan.Duration > maxRenewalDuration))) {
+		return common.NewError("invalid automatic renewal quota or period")
+	}
 	if limit != nil && (*limit < 0 || *limit > MaxAutoRenewLimit) {
 		return ErrInvalidAutoRenewLimit
 	}
@@ -37,12 +51,15 @@ func (s *AccountService) ConfigureAutoRenew(email string, enabled bool, limit *i
 		if account == nil {
 			return gorm.ErrRecordNotFound
 		}
+		if plan == nil {
+			plan = &AutoRenewPlan{Quota: account.AutoRenewQuota, Duration: account.AutoRenewDuration}
+		}
 		if enabled {
-			if _, err := renewalPeriod(account, nil); err != nil {
+			if _, _, err := automaticRenewalPackage(account, *plan); err != nil {
 				return err
 			}
 			if account.TotalGB <= 0 && account.ExpiryTime == 0 {
-				return common.NewError("automatic renewal requires a quota or expiration")
+				return common.NewError("automatic renewal requires a current quota or expiration")
 			}
 		}
 		newLimit := account.AutoRenewLimit
@@ -52,9 +69,11 @@ func (s *AccountService) ConfigureAutoRenew(email string, enabled bool, limit *i
 		return tx.Exec(`UPDATE accounts SET auto_renew=?,auto_renew_limit=?,
 			auto_renew_count=CASE WHEN auto_renew_limit<>? OR (NOT auto_renew AND ?) THEN 0 ELSE auto_renew_count END,
 			auto_renew_actor_id=
-			CASE WHEN ? THEN COALESCE(NULLIF(?,0), auto_renew_actor_id) ELSE 0 END
-			WHERE id=? AND (auto_renew<>? OR auto_renew_limit<>?)`,
-			enabled, newLimit, newLimit, enabled, enabled, actorID, account.Id, enabled, newLimit).Error
+			CASE WHEN ? THEN COALESCE(NULLIF(?,0), auto_renew_actor_id) ELSE 0 END,
+			auto_renew_quota=?, auto_renew_duration=?
+			WHERE id=? AND (auto_renew<>? OR auto_renew_limit<>? OR auto_renew_quota IS NOT ? OR auto_renew_duration IS NOT ?)`,
+			enabled, newLimit, newLimit, enabled, enabled, actorID, plan.Quota, plan.Duration,
+			account.Id, enabled, newLimit, plan.Quota, plan.Duration).Error
 	}, audit...)
 }
 

@@ -114,6 +114,20 @@ const assert=require('node:assert/strict');
      await dialog.getByText('Master outbound', { exact: true }).waitFor();
      assert.equal(await page.evaluate(() => balancerModal.gateway.unit), 60);
      assert.equal(await page.evaluate(() => balancerModal.gateway.interval), 2);
+     await page.evaluate(() => {
+      if (!themeSwitcher.isDarkTheme) themeSwitcher.toggleTheme();
+      balancerModal.balancer.strategy = 'failover';
+      balancerModal.strategyChanged('failover');
+     });
+     const help = dialog.getByText('Uses the primary while it is healthy and selects the lowest-latency healthy backup if it fails.');
+     await help.waitFor();
+     const colors = await help.evaluate(el => {
+      const expected = document.createElement('span');
+      expected.style.color = 'var(--text-2)';
+      el.append(expected);
+      return { actual: getComputedStyle(el).color, expected: getComputedStyle(expected).color };
+     });
+     assert.equal(colors.actual, colors.expected, 'failover explanation uses the dark menu text color');
     }
     assert.deepEqual(errors,[]);
     console.log(`${lang} ${width}px: large/zero/unmeasured traffic, success/failure, IPv4/IPv6 and scroll boundaries passed`);

@@ -50,7 +50,7 @@ func TestPanelActivityBrowserRuntime(t *testing.T) {
 		if err := tpl.ExecuteTemplate(&out, name, map[string]any{
 			"lang": "en-US", "base_path": "/test/", "title": "pages.activity." + mode, "me": 1,
 			"activityMode": mode, "expiredOwned": mode == "expired",
-			"perms": map[string]bool{"panelOwner": true, "superAdmin": true, "accessInbounds": true, "createClient": true},
+			"perms": map[string]bool{"panelOwner": true, "superAdmin": true, "accessInbounds": true, "createClient": true, "editClient": true},
 		}); err != nil {
 			t.Fatal(err)
 		}

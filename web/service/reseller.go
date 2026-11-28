@@ -1542,6 +1542,11 @@ func (s *ResellerService) UpdateReseller(caller *model.User, id int, spec Resell
 			return err
 		}
 		updates["password"] = hash
+		updates["session_version"] = gorm.Expr("session_version + 1")
+		if caller.IsPanelOwner {
+			updates["two_factor_enable"] = false
+			updates["two_factor_token"] = ""
+		}
 	}
 	err = db.Transaction(func(tx *gorm.DB) error {
 		taken, err := adminService.usernameTaken(tx, spec.Username, id)

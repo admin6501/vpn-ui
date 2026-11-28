@@ -39,7 +39,7 @@
                   :style="{ display: 'flex', flexWrap: 'wrap', alignItems: 'center' }">
                   <a-col :xs="24" :sm="10" :style="{ padding: '4px' }">
                     <a-space direction="horizontal">
-                      <a-button type="primary" :disabled="saveBtnDisable || nodeConfigPending"
+                      <a-button type="primary" :disabled="(saveBtnDisable && !canReapplyGateway) || nodeConfigPending || loadingStates.spinning"
                         @click="updateXraySetting">
                         {{ i18n "pages.xray.save" }}
                       </a-button>
@@ -673,7 +673,7 @@ if (window.nodeXrayId) axios.interceptors.request.use(config => {
         });
         this.loading(false);
         if (msg.success) {
-          await this.getXraySetting();
+          await Promise.all([this.getXraySetting(), this.getXrayResult()]);
         }
       },
       async restartXray() {
@@ -1746,6 +1746,13 @@ if (window.nodeXrayId) axios.interceptors.request.use(config => {
       }
     },
     computed: {
+      canReapplyGateway() {
+        if (!PERMS.panelOwner || this.nodeContext) return false;
+        try {
+          const balancers = JSON.parse(this.xraySetting)?.routing?.balancers;
+          return Array.isArray(balancers) && balancers.some(item => String(item?.strategy?.type || '').toLowerCase() === 'gateway');
+        } catch (_) { return false; }
+      },
       templateSettings: {
         get: function () {
           const parsedSettings = this.xraySetting ? JSON.parse(this.xraySetting) : null;

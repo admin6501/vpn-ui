@@ -611,6 +611,7 @@ unfreeze = "descongelar"
 frozen = "Congelado"
 
 [pages.clients]
+"autoRenewPlanHelp" = "Deixe um campo em branco para usar a franquia ou a validade do plano atual. Digite 0 para deixar sem limite."
 autoRenewLimit = "Limite de renovações automáticas"
 autoRenewLimitHelp = "0 permite renovações automáticas ilimitadas"
 autoRenewUsed = "Renovações utilizadas"
@@ -619,7 +620,7 @@ autoRenewUsed = "Renovações utilizadas"
 "historyUnavailable" = "Nenhum evento registrado. Alterações anteriores ao registro estão indisponíveis."
 "historyMore" = "Eventos mais antigos"
 "autoRenew" = "Renovação automática"
-"autoRenewHelp" = "Entra em vigor imediatamente. Renova o plano salvo quando o tempo ou a franquia acaba."
+"autoRenewHelp" = "Após salvar, a assinatura é renovada automaticamente quando a franquia acaba ou a validade expira."
 "liveRate" = "Taxa de download e upload (~10 segundos)"
 "renew" = "Renovar"
 "renewHint" = "Zera o envio e recebimento, reinicia o prazo agora e ativa o cliente. Mantém a franquia, conexões, acessos e histórico total."
@@ -2451,6 +2452,7 @@ theBuiltInWindowsSSTPClientRejectsSelf = "O cliente SSTP interno do Windows reje
 theNativeWindowsIOSAndroidIKEv2ClientsReject = "Os clientes IKEv2 nativos do Windows/iOS/Android rejeitam certificados autoassinados, a menos que você importe a CA gerada para as raízes confiáveis ​​do dispositivo. Prefira um certificado assinado por uma CA vinculado a um nome de host para usuários reais. Gerar um certificado de servidor CA + autoassinado mesmo assim?"
 
 [pages.activity]
+"showOwnLoginHistory" = "Permitir que esta conta veja seu histórico de login e logout"
 gateway = "Gateway"
 gatewayUnavailable = "Estado atual do gateway indisponível"
 gatewayNoRoute = "Nenhuma saída está acessível no momento"

@@ -611,6 +611,7 @@ unfreeze = "Çözme"
 frozen = "Dondurulmuş"
 
 [pages.clients]
+"autoRenewPlanHelp" = "Mevcut paketin kotasını veya süresini kullanmak için ilgili alanı boş bırakın. Sınır olmaması için 0 girin."
 autoRenewLimit = "Otomatik yenileme sınırı"
 autoRenewLimitHelp = "0 sınırsız otomatik yenilemeye izin verir"
 autoRenewUsed = "Kullanılan yenilemeler"
@@ -619,7 +620,7 @@ autoRenewUsed = "Kullanılan yenilemeler"
 "historyUnavailable" = "Kayıtlı olay yok. Kayıt başlamadan önceki değişiklikler kullanılamaz."
 "historyMore" = "Önceki olaylar"
 "autoRenew" = "Otomatik yenileme"
-"autoRenewHelp" = "Hemen uygulanır. Süre veya kota bittiğinde kayıtlı paketi yeniler."
+"autoRenewHelp" = "Kaydettikten sonra kota dolduğunda veya geçerlilik süresi bittiğinde abonelik otomatik yenilenir."
 "liveRate" = "İndirme ve yükleme hızı (~10 saniye)"
 "renew" = "Yenile"
 "renewHint" = "Yükleme ve indirmeyi sıfırlar, süreyi şimdi yeniden başlatır ve istemciyi etkinleştirir. Kota, bağlantılar, erişim ve toplam geçmiş korunur."
@@ -2451,6 +2452,7 @@ theBuiltInWindowsSSTPClientRejectsSelf = "Yerleşik Windows SSTP istemcisi, CA'y
 theNativeWindowsIOSAndroidIKEv2ClientsReject = "Yerel Windows/iOS/Android IKEv2 istemcileri, oluşturulan CA'yı cihazın güvenilen köklerine aktarmadığınız sürece kendinden imzalı sertifikaları reddeder. Gerçek kullanıcılar için ana makine adına bağlı CA imzalı bir sertifikayı tercih edin. Yine de kendinden imzalı bir CA + sunucu sertifikası oluşturulsun mu?"
 
 [pages.activity]
+"showOwnLoginHistory" = "Bu hesabın kendi giriş ve çıkış geçmişini görmesine izin ver"
 gateway = "Ağ geçidi"
 gatewayUnavailable = "Canlı ağ geçidi durumu alınamadı"
 gatewayNoRoute = "Şu anda erişilebilir çıkış yok"

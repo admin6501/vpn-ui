@@ -85,28 +85,30 @@ type AccountCredentials struct {
 
 // AccountRow is one line of the Clients table.
 type AccountRow struct {
-	GroupIDs        []int        `json:"groupIds"`
-	OwnerID         int          `json:"ownerId"`
-	OwnerUsername   string       `json:"ownerUsername"`
-	Id              int          `json:"id"`
-	Email           string       `json:"email"`
-	Enable          bool         `json:"enable"`
-	SubID           string       `json:"subId"`
-	LegacySubID     string       `json:"legacySubId,omitempty"`
-	Comment         string       `json:"comment"`
-	TotalGB         int64        `json:"totalGB"`    // bytes, despite the name
-	ExpiryTime      int64        `json:"expiryTime"` // ms; negative = delayed start
-	RenewalDuration int64        `json:"renewalDuration"`
-	CreatedAt       int64        `json:"createdAt"`
-	LastRenewedAt   int64        `json:"lastRenewedAt"`
-	AutoRenew       bool         `json:"autoRenew"`
-	AutoRenewLimit  int          `json:"autoRenewLimit"`
-	AutoRenewCount  int          `json:"autoRenewCount"`
-	LastOnline      int64        `json:"lastOnline"`
-	OnlineSince     int64        `json:"onlineSince"`
-	LiveRate        *AccountRate `json:"liveRate,omitempty"`
-	Reset           int          `json:"reset"`
-	LimitIP         int          `json:"limitIp"`
+	GroupIDs          []int        `json:"groupIds"`
+	OwnerID           int          `json:"ownerId"`
+	OwnerUsername     string       `json:"ownerUsername"`
+	Id                int          `json:"id"`
+	Email             string       `json:"email"`
+	Enable            bool         `json:"enable"`
+	SubID             string       `json:"subId"`
+	LegacySubID       string       `json:"legacySubId,omitempty"`
+	Comment           string       `json:"comment"`
+	TotalGB           int64        `json:"totalGB"`    // bytes, despite the name
+	ExpiryTime        int64        `json:"expiryTime"` // ms; negative = delayed start
+	RenewalDuration   int64        `json:"renewalDuration"`
+	CreatedAt         int64        `json:"createdAt"`
+	LastRenewedAt     int64        `json:"lastRenewedAt"`
+	AutoRenew         bool         `json:"autoRenew"`
+	AutoRenewLimit    int          `json:"autoRenewLimit"`
+	AutoRenewCount    int          `json:"autoRenewCount"`
+	AutoRenewQuota    *int64       `json:"autoRenewQuota"`
+	AutoRenewDuration *int64       `json:"autoRenewDuration"`
+	LastOnline        int64        `json:"lastOnline"`
+	OnlineSince       int64        `json:"onlineSince"`
+	LiveRate          *AccountRate `json:"liveRate,omitempty"`
+	Reset             int          `json:"reset"`
+	LimitIP           int          `json:"limitIp"`
 	// TgID is the Telegram chat the bot notifies. Reported so the Clients form can
 	// edit it without a second read; 0 means the account is not linked.
 	TgID int64 `json:"tgId"`
@@ -186,14 +188,28 @@ const (
 //   - an ordinary admin sees accounts with at least one membership on an inbound
 //     they hold, which is exactly what the Inbounds page already shows them.
 func (s *AccountService) ListAccounts(user *model.User, page, size int, search, sortKey string) (*AccountListResult, error) {
-	return s.listAccounts(user, page, size, search, sortKey, false)
+	return s.listAccounts(user, page, size, search, sortKey, false, "")
 }
 
 func (s *AccountService) ListExpiredOwnedAccounts(user *model.User, page, size int, search, sortKey string) (*AccountListResult, error) {
-	return s.listAccounts(user, page, size, search, sortKey, true)
+	return s.listAccounts(user, page, size, search, sortKey, true, "")
 }
 
-func (s *AccountService) listAccounts(user *model.User, page, size int, search, sortKey string, expiredOwned bool) (*AccountListResult, error) {
+func (s *AccountService) AccountForEdit(user *model.User, email string) (*AccountRow, error) {
+	if accountKey(email) == "" {
+		return nil, gorm.ErrRecordNotFound
+	}
+	result, err := s.listAccounts(user, 1, 1, "", "", false, accountKey(email))
+	if err != nil {
+		return nil, err
+	}
+	if len(result.Rows) != 1 {
+		return nil, gorm.ErrRecordNotFound
+	}
+	return &result.Rows[0], nil
+}
+
+func (s *AccountService) listAccounts(user *model.User, page, size int, search, sortKey string, expiredOwned bool, email string) (*AccountListResult, error) {
 	if user == nil {
 		// No identity, no rows. Never an unscoped list.
 		return &AccountListResult{Rows: []AccountRow{}, Sort: AccountSortNewest}, nil
@@ -208,7 +224,11 @@ func (s *AccountService) listAccounts(user *model.User, page, size int, search, 
 	db := database.GetDB()
 
 	var accounts []model.Account
-	if err := db.Order("email ASC").Find(&accounts).Error; err != nil {
+	query := db.Order("email ASC")
+	if email != "" {
+		query = query.Where("LOWER(TRIM(email)) = ?", email)
+	}
+	if err := query.Find(&accounts).Error; err != nil {
 		return nil, err
 	}
 
@@ -288,6 +308,7 @@ func (s *AccountService) listAccounts(user *model.User, page, size int, search, 
 			RenewalDuration: account.RenewalDuration, CreatedAt: account.CreatedAt,
 			LastRenewedAt: account.LastRenewedAt, AutoRenew: account.AutoRenew,
 			AutoRenewLimit: account.AutoRenewLimit, AutoRenewCount: account.AutoRenewCount,
+			AutoRenewQuota: account.AutoRenewQuota, AutoRenewDuration: account.AutoRenewDuration,
 			Reset: account.Reset, LimitIP: account.LimitIP, TgID: account.TgID,
 			SpeedLimitDown: account.SpeedLimitDown, SpeedLimitUp: account.SpeedLimitUp,
 			UserLimitOverride: account.UserLimitOverride,

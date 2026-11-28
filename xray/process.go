@@ -143,7 +143,8 @@ func NewTestProcess(xrayConfig *Config, configPath string) *Process {
 }
 
 type process struct {
-	cmd *exec.Cmd
+	cmd  *exec.Cmd
+	done chan struct{}
 
 	version string
 	apiPort int
@@ -190,6 +191,9 @@ func (p *process) IsRunning() bool {
 	}
 	return false
 }
+
+// Done closes when the started process has exited.
+func (p *Process) Done() <-chan struct{} { return p.done }
 
 // GetErr returns the last error encountered by the Xray process.
 func (p *process) GetErr() error {
@@ -338,7 +342,10 @@ func (p *process) Start() (err error) {
 	cmd.Stdout = p.logWriter
 	cmd.Stderr = p.logWriter
 
+	done := make(chan struct{})
+	p.done = done
 	go func() {
+		defer close(done)
 		err := cmd.Run()
 		if err != nil {
 			logger.Error("Failure in running xray-core:", err)

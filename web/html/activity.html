@@ -16,11 +16,16 @@
         <a-button type="danger" :disabled="!date || busy">{{ i18n "delete" }}</a-button>
       </a-popconfirm>
       <p class="panel-activity-note">{{ i18n "pages.activity.loginProtection" }}</p>
-      <label class="panel-activity-inline">{{ i18n "pages.activity.logAdmins" }}
-        <a-switch :checked="logAdmins" :disabled="busy" @change="setLoginLogging(false, $event)"></a-switch>
-      </label>
-      <label class="panel-activity-inline">{{ i18n "pages.activity.logRepresentatives" }}
-        <a-switch :checked="logRepresentatives" :disabled="busy" @change="setLoginLogging(true, $event)"></a-switch>
+    </div>
+    <div class="panel-activity-controls" v-if="mode === 'logins' && owner && loginAccounts.length">
+      <a-select v-model="loginAccountID" show-search option-filter-prop="title" style="min-width: 180px"
+        aria-label='{{ i18n "username" }}' placeholder='{{ i18n "username" }}'>
+        <a-select-option v-for="account in loginAccounts" :key="account.id" :value="account.id" :title="account.username">
+          <bdi v-text="account.username"></bdi>
+        </a-select-option>
+      </a-select>
+      <label v-if="loginAccount" class="panel-activity-inline">{{ i18n "pages.activity.showOwnLoginHistory" }}
+        <a-switch :checked="loginAccount.enabled" :disabled="loginSettingsBusy" @change="setLoginLogging"></a-switch>
       </label>
     </div>
     <div class="panel-activity-controls" v-if="mode === 'changes'">
@@ -156,6 +161,7 @@
             <th v-if="mode === 'changes' && !owner">{{ i18n "pages.activity.hideEvent" }}</th>
             <th v-if="mode === 'payments'">{{ i18n "pages.activity.confirmPayment" }}</th>
             <th v-if="mode === 'trash'"></th>
+            {{ if .perms.editClient }}<th v-if="mode === 'lowQuota'">{{ i18n "edit" }}</th>{{ end }}
           </tr></thead>
           <tbody>
             <tr v-for="row in rows" :key="row.id">
@@ -189,6 +195,11 @@
                   <a-button size="small" type="primary" :disabled="busy">{{ i18n "pages.activity.confirmPayment" }}</a-button>
                 </a-popconfirm>
               </td>
+              {{ if .perms.editClient }}
+              <td v-if="mode === 'lowQuota'">
+                <a-button size="small" icon="edit" :disabled="busy" @click="editLowQuota(row)">{{ i18n "edit" }}</a-button>
+              </td>
+              {{ end }}
               <td v-if="mode === 'trash'">
                 <div class="panel-trash-actions">
                   <a-button v-if="scope === 'manager' || canRestoreClient" size="small" icon="rollback" :disabled="busy"
@@ -241,6 +252,12 @@
 {{ template "component/clientAudit" . }}
 {{ template "component/aThemeSwitch" . }}
 {{ template "component/aSidebar" . }}
+{{ if and (eq .activityMode "lowQuota") .perms.editClient }}
+<script src="{{ .base_path }}assets/js/model/reality_targets.js?{{ .asset_ver }}"></script>
+<script src="{{ .base_path }}assets/js/model/inbound.js?{{ .asset_ver }}"></script>
+<script src="{{ .base_path }}assets/js/model/dbinbound.js?{{ .asset_ver }}"></script>
+{{ template "modals/clientMembershipModal" . }}
+{{ end }}
 <script>
   new Vue({
     el: '#app',
@@ -248,7 +265,7 @@
     data: {
       basePath, themeSwitcher, pageClass: 'activity-page', pageTitle: '{{ i18n .title }}',
       mode: {{ .activityMode }}, owner: {{ .perms.panelOwner }}, busy: false,
-      logAdmins: true, logRepresentatives: true, lowQuotaNotices: true, lowQuotaRead: false,
+      loginAccounts: [], loginAccountID: undefined, loginSettingsBusy: false, lowQuotaNotices: true, lowQuotaRead: false,
       gateway: { outbounds: [], balancers: [] },
       scope: {{ if eq .activityMode "trash" }}'client'{{ else }}'all'{{ end }},
       canRestoreClient: {{ .perms.createClient }}, enabled: true, renewalNotices: true, paymentsEnabled: false,
@@ -266,6 +283,7 @@
 
     },
     computed: {
+      loginAccount() { return this.loginAccounts.find(account => account.id === this.loginAccountID); },
       validRetention() {
         return Number.isInteger(this.retentionDays) && this.retentionDays > 0 && this.retentionDays <= 3650;
       },
@@ -337,8 +355,8 @@
           if (this.mode === 'renewals') this.renewalNotices = result.enabled;
           if (this.mode === 'changes') this.owners = (result.owners || []).filter(Boolean);
           if (this.mode === 'logins' && this.owner) {
-            this.logAdmins = result.logAdmins !== false;
-            this.logRepresentatives = result.logRepresentatives !== false;
+            this.loginAccounts = result.accounts || [];
+            if (!this.loginAccount) this.loginAccountID = this.loginAccounts[0]?.id;
           }
           if (this.mode === 'lowQuota') {
             this.lowQuotaNotices = result.enabled;
@@ -360,12 +378,40 @@
         this.clientOwner = '';
         await this.resetPage();
       },
-      async setLoginLogging(representative, enabled) {
-        if (await panelActivityWrite('logins/settings', { representative, enabled })) {
-          if (representative) this.logRepresentatives = enabled;
-          else this.logAdmins = enabled;
-        }
+      async setLoginLogging(enabled) {
+        const account = this.loginAccount;
+        if (!account || this.loginSettingsBusy) return;
+        this.loginSettingsBusy = true;
+        try {
+          if (await panelActivityWrite('logins/settings', { userId: account.id, enabled })) account.enabled = enabled;
+        } finally { this.loginSettingsBusy = false; }
       },
+      {{ if and (eq .activityMode "lowQuota") .perms.editClient }}
+      async editLowQuota(item) {
+        this.busy = true;
+        try {
+          const [result, assignable] = await Promise.all([
+            HttpUtil.get('/panel/api/clients/edit/' + encodeURIComponent(item.email)),
+            HttpUtil.get('/panel/api/clients/assignable'),
+          ]);
+          if (!result.success || !assignable.success || !result.obj) return;
+          const row = result.obj;
+          const storedBy = {};
+          if ((row.memberships || []).length) {
+            const inbounds = await HttpUtil.get('/panel/api/clients/inbounds');
+            if (!inbounds.success) return;
+            const memberIDs = new Set(row.memberships.map(membership => membership.inboundId));
+            for (const inbound of (inbounds.obj || [])) {
+              if (!memberIDs.has(inbound.id)) continue;
+              const clients = new DBInbound(inbound).toInbound()?.clients || [];
+              const stored = clients.find(client => client.email === row.email);
+              if (stored) storedBy[inbound.id] = typeof stored.toJson === 'function' ? stored.toJson() : stored;
+            }
+          }
+          await clientMembershipModal.show({ row, storedBy, assignable: assignable.obj || [], onDone: () => this.resetPage() });
+        } finally { this.busy = false; }
+      },
+      {{ end }}
       async setLowQuotaNotices(enabled) {
         if (await panelActivityWrite('lowQuota/settings', { enabled })) {
           this.lowQuotaNotices = enabled;

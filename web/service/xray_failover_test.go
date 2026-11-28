@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -273,4 +274,81 @@ func exerciseGatewayTraffic(t *testing.T, binary string, cfg *xray.Config, addre
 	expect("")
 	setPath("primary", 90, false)
 	expect("primary")
+}
+
+func TestGatewaySettingsApplyAndRollbackOnRunningCore(t *testing.T) {
+	binary := os.Getenv("VPNUI_TEST_FAILOVER_XRAY")
+	if binary == "" {
+		t.Skip("VPNUI_TEST_FAILOVER_XRAY is not set")
+	}
+	absolute, err := filepath.Abs(binary)
+	if err != nil {
+		t.Fatal(err)
+	}
+	newAccountsDB(t)
+	t.Setenv("VPNUI_BIN_FOLDER", t.TempDir())
+	t.Setenv("VPNUI_LOG_FOLDER", t.TempDir())
+	if err := os.Symlink(absolute, xray.GetBinaryPath()); err != nil {
+		t.Fatal(err)
+	}
+	listener, err := net.Listen("tcp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	port := listener.Addr().(*net.TCPAddr).Port
+	listener.Close()
+	baseline := fmt.Sprintf(`{
+      "log":{"loglevel":"error"},
+      "api":{"tag":"api","services":["RoutingService"]},
+      "inbounds":[{"tag":"api","listen":"127.0.0.1","port":%d,"protocol":"dokodemo-door","settings":{"address":"127.0.0.1"}}],
+      "outbounds":[{"tag":"primary","protocol":"freedom"},{"tag":"backup","protocol":"freedom"}],
+      "routing":{"rules":[{"type":"field","inboundTag":["api"],"outboundTag":"api"}]}
+    }`, port)
+	settings := &XraySettingService{}
+	core := &XrayService{}
+	if err := settings.RepairXrayTemplate(baseline); err != nil {
+		t.Fatal(err)
+	}
+	if err := core.restartXrayLocked(false, true); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if core.IsXrayRunning() {
+			core.StopXray()
+			select {
+			case <-p.Done():
+			case <-time.After(time.Second):
+			}
+		}
+		isManuallyStopped.Store(false)
+	})
+	initialProcess := p
+	gateway := strings.Replace(baseline, `"routing":{`, `"routing":{"balancers":[{"tag":"edge","primaryTag":"primary","selector":["backup"],"strategy":{"type":"gateway","settings":{"latencyMs":100,"intervalSeconds":5,"attempts":1,"emergencyIntervalSeconds":5,"emergencyAttempts":1,"probeUrl":"http://127.0.0.1:1/"}}}],`, 1)
+	// Simulate saving with an older panel, then applying that same configuration.
+	if err := settings.SaveXraySetting(gateway); err != nil {
+		t.Fatal(err)
+	}
+	if err := settings.SavePanelXraySetting(gateway, true); err != nil {
+		t.Fatal(err)
+	}
+	overview, err := core.GatewayStatus(context.Background())
+	if err != nil || p == initialProcess || len(overview.Balancers) != 1 || !overview.Balancers[0].Available {
+		t.Fatalf("gateway has not reached the running Xray API: %+v, %v", overview, err)
+	}
+	activeProcess := p
+	rejected := strings.Replace(gateway, `"protocol":"freedom"`, `"protocol":"invalid-protocol"`, 1)
+	if err := settings.SavePanelXraySetting(rejected, true); err == nil {
+		t.Fatal("invalid core config was accepted")
+	}
+	actual, err := settings.GetXrayConfigTemplate()
+	if err != nil || actual != gateway || p != activeProcess || !core.IsXrayRunning() {
+		t.Fatalf("a failed preflight replaced the working configuration: %v", err)
+	}
+	if err := settings.SavePanelXraySetting(baseline, true); err != nil {
+		t.Fatal(err)
+	}
+	overview, err = core.GatewayStatus(context.Background())
+	if err != nil || len(overview.Balancers) != 0 {
+		t.Fatalf("deleted gateway remains active: %+v, %v", overview, err)
+	}
 }

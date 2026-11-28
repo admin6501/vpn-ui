@@ -70,10 +70,11 @@ type ClientExternalProxy struct {
 // encrypted, so anything that reaches it is readable client-side. The session
 // stores only Id for the same reason (see web/session).
 type User struct {
-	Id             int    `json:"id" gorm:"primaryKey;autoIncrement"`
-	Username       string `json:"username" gorm:"uniqueIndex"`
-	Password       string `json:"-"`
-	SessionVersion int64  `json:"-" gorm:"default:0"`
+	Id                  int    `json:"id" gorm:"primaryKey;autoIncrement"`
+	Username            string `json:"username" gorm:"uniqueIndex"`
+	Password            string `json:"-"`
+	SessionVersion      int64  `json:"-" gorm:"default:0"`
+	LoginHistoryVisible *bool  `json:"-"`
 
 	// Nickname is a human label for the Admins list; it carries no privilege.
 	Nickname string `json:"nickname" form:"nickname"`
@@ -691,13 +692,15 @@ type Account struct {
 	ExpiryTime int64 `json:"expiryTime" gorm:"column:expiry_time"`
 	// Kept independently of the moving deadline and remaining frozen time.
 	// Zero with a nonzero expiry means a legacy period has not been recorded yet.
-	RenewalDuration      int64 `json:"renewalDuration" gorm:"not null;default:0"`
-	LastRenewedAt        int64 `json:"lastRenewedAt" gorm:"not null;default:0"`
-	LastRenewalAutomatic bool  `json:"-" gorm:"not null;default:false"`
-	AutoRenew            bool  `json:"autoRenew" gorm:"not null;default:false;index"`
-	AutoRenewActorID     int   `json:"-" gorm:"->;not null;default:0"`
-	AutoRenewLimit       int   `json:"autoRenewLimit" gorm:"->;not null;default:0"`
-	AutoRenewCount       int   `json:"autoRenewCount" gorm:"->;not null;default:0"`
+	RenewalDuration      int64  `json:"renewalDuration" gorm:"not null;default:0"`
+	LastRenewedAt        int64  `json:"lastRenewedAt" gorm:"not null;default:0"`
+	LastRenewalAutomatic bool   `json:"-" gorm:"not null;default:false"`
+	AutoRenew            bool   `json:"autoRenew" gorm:"not null;default:false;index"`
+	AutoRenewActorID     int    `json:"-" gorm:"->;not null;default:0"`
+	AutoRenewLimit       int    `json:"autoRenewLimit" gorm:"->;not null;default:0"`
+	AutoRenewCount       int    `json:"autoRenewCount" gorm:"->;not null;default:0"`
+	AutoRenewQuota       *int64 `json:"autoRenewQuota" gorm:"->"`
+	AutoRenewDuration    *int64 `json:"autoRenewDuration" gorm:"->"`
 	// NO gorm default, deliberately. `default:1` makes GORM treat Go's false as
 	// "unset" and write 1 instead, so a DISABLED client migrated to an ENABLED
 	// account. The projection then rendered enable:true over the stored false, the

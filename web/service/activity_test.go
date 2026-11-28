@@ -699,7 +699,7 @@ func TestClientActivityGroupsARequestAndKeepsAccountHistory(t *testing.T) {
 	checkHistory()
 }
 
-func TestActivityRecordsCommentChangesAndRoleLoginPreferences(t *testing.T) {
+func TestActivityRecordsCommentChangesAndPerAccountLoginVisibility(t *testing.T) {
 	accounts := newAccountsDB(t)
 	db := database.GetDB()
 	var owner model.User
@@ -723,24 +723,30 @@ func TestActivityRecordsCommentChangesAndRoleLoginPreferences(t *testing.T) {
 		*rows[0].Details.Comment != (model.ClientTextChange{Before: "initial note", After: "changed note"}) {
 		t.Fatalf("comment audit details: %+v, %v", rows, err)
 	}
-	admin := &model.User{Id: 71, Username: "delegated-admin"}
-	representative := &model.User{Id: 72, Username: "delegated-rep", IsReseller: true}
-	if err := activity.SetLoginLogging(false, false); err != nil {
+	users := []model.User{{Username: "delegated-admin"}, {Username: "second-admin"}, {Username: "delegated-rep", IsReseller: true}}
+	if err := db.Create(&users).Error; err != nil {
 		t.Fatal(err)
 	}
-	for _, user := range []*model.User{&owner, admin, representative} {
-		if err := activity.RecordLogin(user, "", "", "login"); err != nil {
+	if err := activity.SetLoginHistoryVisible(users[0].Id, false); err != nil {
+		t.Fatal(err)
+	}
+	if err := activity.SetLoginHistoryVisible(owner.Id, false); !errors.Is(err, gorm.ErrRecordNotFound) {
+		t.Fatalf("owner visibility cannot be disabled: %v", err)
+	}
+	for i := range users {
+		if err := db.First(&users[i], users[i].Id).Error; err != nil {
 			t.Fatal(err)
 		}
-	}
-	if err := activity.SetLoginLogging(true, false); err != nil {
-		t.Fatal(err)
-	}
-	if err := activity.RecordLogin(representative, "", "", "logout"); err != nil {
-		t.Fatal(err)
+		if err := activity.RecordLogin(&users[i], "203.0.113.1", "Linux", "login"); err != nil {
+			t.Fatal(err)
+		}
+		own, err := activity.LoginEvents(&users[i], false, 0)
+		if err != nil || len(own) != map[bool]int{true: 0, false: 1}[i == 0] {
+			t.Fatalf("delegated login visibility for %s: %+v, %v", users[i].Username, own, err)
+		}
 	}
 	logins, err := activity.LoginEvents(&owner, false, 0)
-	if err != nil || len(logins) != 2 || logins[0].Username != representative.Username || logins[1].Username != owner.Username {
-		t.Fatalf("role login settings: %+v, %v", logins, err)
+	if err != nil || len(logins) != 3 || logins[2].Username != users[0].Username {
+		t.Fatalf("owner audit lost recorded events: %+v, %v", logins, err)
 	}
 }

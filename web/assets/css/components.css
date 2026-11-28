@@ -1307,6 +1307,15 @@ html[data-theme-animations='off'] .log-live-dot { animation:none; }
 }
 .bo-cf-switch:last-child { border-bottom:0; }
 .bo-cf-auto-renew { flex-wrap:wrap; }
+.bo-cf-renew-plan {
+  display:grid;
+  flex:0 0 100%;
+  grid-template-columns:repeat(auto-fit, minmax(min(100%, 130px), 1fr));
+  gap:8px 12px;
+}
+.bo-cf-renew-plan .bo-cf-field { display:grid; gap:4px; margin:0; }
+.bo-cf-renew-plan .bo-cf-d { grid-column:1 / -1; }
+.bo-cf-renew-plan .ant-input-number { width:100%; }
 .bo-cf-t { font-size:13.5px; color:var(--text); }
 .bo-cf-d { font-size:11.5px; color:var(--text-3); margin-top:2px; }
 

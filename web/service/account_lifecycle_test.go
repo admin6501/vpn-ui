@@ -244,3 +244,40 @@ func TestLowQuotaNoticeUsesClientOwnerAndPositiveBalance(t *testing.T) {
 		t.Fatalf("disabled low quota notice: %+v, %v", notice, err)
 	}
 }
+
+func TestAutomaticRenewalPackageOverridesPersistAndInherit(t *testing.T) {
+	svc := newAccountsDB(t)
+	account := renewFixture(t, svc, 10*gb, 0, 0, true)
+	quota, duration := int64(15*gb), int64(14*dayMillis)
+	limit := 2
+	if err := svc.ConfigureAutoRenewPlan(account.Email, true, &limit, &AutoRenewPlan{Quota: &quota, Duration: &duration}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.RenewDueAccounts(); err != nil {
+		t.Fatal(err)
+	}
+	got, err := svc.GetAccountByEmail(account.Email)
+	traffic := accountTrafficOf(t, account.Email)
+	if err != nil || got.TotalGB != quota || got.RenewalDuration != duration || got.AutoRenewCount != 1 ||
+		traffic.Total != quota || traffic.Up != 0 || traffic.ExpiryTime != got.ExpiryTime || got.SubID != account.SubID {
+		t.Fatalf("custom renewal: account=%+v traffic=%+v err=%v", got, traffic, err)
+	}
+	if err := svc.ConfigureAutoRenewPlan(account.Email, true, &limit, &AutoRenewPlan{}); err != nil {
+		t.Fatal(err)
+	}
+	got, err = svc.GetAccountByEmail(account.Email)
+	if err != nil || got.AutoRenewQuota != nil || got.AutoRenewDuration != nil || got.AutoRenewCount != 1 {
+		t.Fatalf("clear the overrides without advancing or resetting the renewal count: %+v, %v", got, err)
+	}
+	if err := database.GetDB().Model(&xray.ClientTraffic{}).Where("email = ?", account.Email).
+		Update("expiry_time", time.Now().Add(-time.Minute).UnixMilli()).Error; err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.RenewDueAccounts(); err != nil {
+		t.Fatal(err)
+	}
+	got, err = svc.GetAccountByEmail(account.Email)
+	if err != nil || got.TotalGB != quota || got.RenewalDuration != duration || got.AutoRenewCount != 2 {
+		t.Fatalf("blank overrides reuse the current package: %+v, %v", got, err)
+	}
+}
