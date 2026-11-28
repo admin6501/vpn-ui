@@ -89,6 +89,17 @@ const assert=require('node:assert/strict');
      await ping.scrollIntoViewIfNeeded();
      assert.ok(await ping.isVisible(),'ping control is reachable inside the mobile scroller');
     }
+    if (width === 1440 && ['en-US', 'fa-IR'].includes(lang)) {
+     await page.locator('.bo-secnav-sec').filter({ has: page.locator('.anticon-cluster') }).click();
+     await page.locator('[data-section="tpl-balancer"] button').first().click();
+     const modal = page.locator('#balancer-modal .ant-modal');
+     await modal.locator('.ant-select-selection').first().click();
+     const label = lang === 'fa-IR' ? 'جابه‌جایی گیت‌وی' : 'Gateway failover';
+     await page.getByText(label, { exact: true }).click();
+     await page.waitForFunction(() => balancerModal.isGateway);
+     await modal.locator('.ant-modal-close').click();
+     await modal.waitFor({ state: 'hidden' });
+    }
     if (lang === 'en-US' && width === 1440) {
      await page.evaluate(() => {
       app.templateSettings.outbounds.push({ tag: 'emergency', protocol: 'freedom', settings: {} });
