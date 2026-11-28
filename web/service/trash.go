@@ -237,7 +237,7 @@ func archiveTrashClient(tx *gorm.DB, id int) error {
 	return saveTrash(tx, owner, TrashClient, client.Account.string("email"), trashSnapshot{Clients: []trashClientSnapshot{client}})
 }
 
-func archiveLastTrashClients(tx *gorm.DB, inboundID int, candidates []int) error {
+func deleteLastTrashClients(tx *gorm.DB, inboundID int, candidates []int) error {
 	if len(candidates) == 0 {
 		return nil
 	}
@@ -252,7 +252,10 @@ func archiveLastTrashClients(tx *gorm.DB, inboundID int, candidates []int) error
 			return err
 		}
 	}
-	return nil
+	if len(ids) == 0 {
+		return nil
+	}
+	return deleteAccountsAndGroups(tx, ids)
 }
 
 // Bulk operations can remove several memberships at once. Capture an account
@@ -301,10 +304,13 @@ func (s *InboundService) finishTrashRemovals(tx *gorm.DB, removed map[string][]i
 }
 
 func removeTrashClient(tx *gorm.DB, account model.Account) ([]int, error) {
+	if err := deleteAccountsAndGroups(tx, []int{account.Id}); err != nil {
+		return nil, err
+	}
 	if err := tx.Where("account_id = ?", account.Id).Delete(&model.AccountInbound{}).Error; err != nil {
 		return nil, err
 	}
-	touched, err := (&AccountService{}).ProjectAccount(tx, account.Id)
+	touched, err := projectAccountMemberships(tx, &account, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -313,7 +319,6 @@ func removeTrashClient(tx *gorm.DB, account model.Account) ([]int, error) {
 		table, where string
 		value        any
 	}{
-		{"account_groups", "account_id = ?", account.Id},
 		{"client_traffics", "LOWER(TRIM(email)) = ?", email},
 		{"inbound_client_ips", "LOWER(TRIM(client_email)) = ?", email},
 	} {
@@ -321,7 +326,7 @@ func removeTrashClient(tx *gorm.DB, account model.Account) ([]int, error) {
 			return nil, err
 		}
 	}
-	return touched, tx.Delete(&account).Error
+	return touched, nil
 }
 
 func settleTrashClient(tx *gorm.DB, email string, traffic []xray.ClientTraffic) error {
@@ -360,7 +365,7 @@ func (TrashService) DeleteClient(user *model.User, email string) ([]int, error) 
 		return nil, gorm.ErrRecordNotFound
 	}
 	var touched []int
-	err := database.SnapshotTransaction(database.GetDB(), func(tx *gorm.DB) error {
+	err := database.AccountAuditTransaction(database.GetDB(), func(tx *gorm.DB) error {
 		var account model.Account
 		if err := tx.Where("LOWER(TRIM(email)) = ?", accountKey(email)).First(&account).Error; err != nil {
 			return err
@@ -391,7 +396,7 @@ func (TrashService) DeleteClient(user *model.User, email string) ([]int, error) 
 			return err
 		}
 		return settleTrashClient(tx, account.Email, traffic)
-	})
+	}, database.AccountAudit{ActorID: user.Id})
 	return touched, err
 }
 

@@ -38,7 +38,14 @@ func clientAuditEvents(scope *gorm.DB, before int64, limit int) ([]model.PanelCl
 
 func mergeClientAuditEvent(event *model.PanelClientEvent, row model.PanelClientEvent) {
 	event.Id, event.Email = row.Id, row.Email
-	if event.Kind == "updated" || row.Kind == "deleted" {
+	if row.ActorID != 0 {
+		event.ActorID, event.Actor = row.ActorID, row.Actor
+	}
+	if row.Kind == "deleted" {
+		*event = row
+		return
+	}
+	if event.Kind == "updated" {
 		event.Kind, event.At = row.Kind, row.At
 	}
 	fields := strings.Split(event.Changes, ",")

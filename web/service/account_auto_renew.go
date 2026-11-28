@@ -13,8 +13,8 @@ import (
 	"gorm.io/gorm"
 )
 
-func (s *AccountService) SetAutoRenew(email string, enabled bool) error {
-	return database.GetDB().Transaction(func(tx *gorm.DB) error {
+func (s *AccountService) SetAutoRenew(email string, enabled bool, audit ...database.AccountAudit) error {
+	return database.AccountAuditTransaction(database.GetDB(), func(tx *gorm.DB) error {
 		account, err := s.GetAccountByEmailTx(tx, email)
 		if err != nil {
 			return err
@@ -31,7 +31,7 @@ func (s *AccountService) SetAutoRenew(email string, enabled bool) error {
 			}
 		}
 		return tx.Model(account).Update("auto_renew", enabled).Error
-	})
+	}, audit...)
 }
 
 func renewalDepleted(traffic *xray.ClientTraffic, now int64) bool {

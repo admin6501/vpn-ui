@@ -10,6 +10,7 @@ import (
 )
 
 const ActivityPageSize = 30
+const changeAuthorSQL = "COALESCE(NULLIF(actor,''),owner)"
 
 type ActivityService struct{}
 
@@ -62,7 +63,7 @@ func (ActivityService) RenewalEvents(user *model.User, before int64) ([]model.Pa
 func (ActivityService) ChangeEvents(month time.Time, owner string, before int64, users ...*model.User) ([]model.PanelClientEvent, error) {
 	db := scopeChangeEvents(monthEvents(month), users)
 	if owner != "" {
-		db = db.Where("owner = ?", owner)
+		db = db.Where(changeAuthorSQL+" = ?", owner)
 	}
 	return clientAuditEvents(db, before, ActivityPageSize+1)
 }
@@ -72,8 +73,8 @@ func scopeChangeEvents(db *gorm.DB, users []*model.User) *gorm.DB {
 		return db
 	}
 	id := users[0].Id
-	return db.Where(`owner_id = ? AND NOT EXISTS (
-		SELECT 1 FROM panel_client_hiddens h WHERE h.user_id=? AND h.event_id=panel_client_events.id)`, id, id)
+	return db.Where(`(owner_id = ? OR actor_id = ?) AND NOT EXISTS (
+		SELECT 1 FROM panel_client_hiddens h WHERE h.user_id=? AND h.event_id=panel_client_events.id)`, id, id, id)
 }
 
 func monthEvents(month time.Time) *gorm.DB {
@@ -91,7 +92,7 @@ func (ActivityService) ChangeMonths(users ...*model.User) ([]string, error) {
 
 func (ActivityService) ChangeOwners(month time.Time) ([]string, error) {
 	owners := []string{}
-	err := monthEvents(month).Distinct("owner").Order("owner").Pluck("owner", &owners).Error
+	err := monthEvents(month).Distinct().Select(changeAuthorSQL + " AS author").Order("author").Scan(&owners).Error
 	return owners, err
 }
 
@@ -102,8 +103,9 @@ func (ActivityService) HideClientChange(user *model.User, id int64) error {
 	return database.GetDB().Exec(`INSERT OR IGNORE INTO panel_client_hiddens(user_id,event_id)
 		SELECT ?, v.id FROM panel_client_events v JOIN panel_client_events target ON
 			v.id=target.id OR (target.audit_operation<>'' AND v.audit_operation=target.audit_operation AND v.account_id=target.account_id)
-		WHERE target.id=? AND target.owner_id=? AND v.owner_id=? AND v.kind<>'autoRenewed' AND target.kind<>'autoRenewed'`,
-		user.Id, id, user.Id, user.Id).Error
+		WHERE target.id=? AND (target.owner_id=? OR target.actor_id=?) AND (v.owner_id=? OR v.actor_id=?)
+			AND v.kind<>'autoRenewed' AND target.kind<>'autoRenewed'`,
+		user.Id, id, user.Id, user.Id, user.Id, user.Id).Error
 }
 
 func (ActivityService) PurgeChangeEvents(month time.Time) error {

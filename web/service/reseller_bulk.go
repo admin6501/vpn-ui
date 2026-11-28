@@ -701,7 +701,7 @@ func bulkTargetEmails(targets []BulkClientTarget) []string {
 // the daemons' own accounting read. Writing one without the other leaves the
 // panel and the data plane disagreeing about when an account dies, so this runs
 // in a single transaction and reports failure rather than half-applying.
-func (s *ResellerService) ApplyBulkCharges(t BulkTicket) error {
+func (s *ResellerService) ApplyBulkCharges(t BulkTicket, audit ...database.AccountAudit) error {
 	if !t.Active {
 		return nil
 	}
@@ -718,7 +718,7 @@ func (s *ResellerService) ApplyBulkCharges(t BulkTicket) error {
 		return nil
 	}
 
-	return database.GetDB().Transaction(func(tx *gorm.DB) error {
+	return database.AccountAuditTransaction(database.GetDB(), func(tx *gorm.DB) error {
 		ids, err := servingInboundIds(tx, emails...)
 		if err != nil {
 			return err
@@ -784,7 +784,7 @@ func (s *ResellerService) ApplyBulkCharges(t BulkTicket) error {
 			}
 		}
 		return nil
-	})
+	}, audit...)
 }
 
 // RollbackBulk undoes a reservation whose batch then failed to apply.

@@ -444,7 +444,7 @@ func (s *GroupService) Save(user *model.User, id int, name string, inboundIDs []
 			touched = unionGroupIDs(touched, changed)
 		}
 		return nil
-	})
+	}, database.AccountAudit{ActorID: user.Id})
 	return &GroupView{ClientGroup: group, InboundIDs: inboundIDs}, touched, err
 }
 func unionGroupIDs(a, b []int) []int {
@@ -477,7 +477,7 @@ func (s *GroupService) Delete(user *model.User, id int) error {
 	if !found {
 		return errors.New("not found")
 	}
-	return database.GetDB().Transaction(func(tx *gorm.DB) error {
+	return database.AccountAuditTransaction(database.GetDB(), func(tx *gorm.DB) error {
 		var count int64
 		if err := tx.Model(&model.AccountGroup{}).Where("group_id = ?", id).Count(&count).Error; err != nil {
 			return err
@@ -524,12 +524,12 @@ func (s *GroupService) Delete(user *model.User, id int) error {
 			return err
 		}
 		return tx.Delete(&model.ClientGroup{}, id).Error
-	})
+	}, database.AccountAudit{ActorID: user.Id})
 }
 
 // Apply writes account-to-group links and their inbound union in one transaction.
 // Invisible existing groups are retained for delegated editors.
-func (s *GroupService) Apply(user *model.User, email string, anchor int, groupIDs []int, operation ...string) ([]int, error) {
+func (s *GroupService) Apply(user *model.User, email string, anchor int, groupIDs []int, operation ...database.AccountAudit) ([]int, error) {
 	if _, err := s.Resolve(user, groupIDs); err != nil {
 		return nil, err
 	}
@@ -593,6 +593,9 @@ func (s *GroupService) Apply(user *model.User, email string, anchor int, groupID
 				return nil, errors.New("not found")
 			}
 		}
+	}
+	if len(operation) == 0 {
+		operation = []database.AccountAudit{{ActorID: user.Id}}
 	}
 	touched := []int{}
 	err = database.AccountAuditTransaction(database.GetDB(), func(tx *gorm.DB) error {
@@ -673,7 +676,7 @@ func (s *GroupService) MoveMembers(user *model.User, source, destination int) (i
 			touched = append(touched, changed...)
 		}
 		return nil
-	})
+	}, database.AccountAudit{ActorID: user.Id})
 	if err != nil {
 		return 0, nil, err
 	}

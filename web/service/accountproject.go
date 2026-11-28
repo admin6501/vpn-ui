@@ -458,7 +458,7 @@ func (s *AccountService) SyncInboundAccounts(tx *gorm.DB, inboundId int, creator
 				Where("inbound_id = ?", inboundId).Distinct().Pluck("account_id", &orphaned).Error; derr != nil {
 				return derr
 			}
-			if err := archiveLastTrashClients(tx, inboundId, orphaned); err != nil {
+			if err := deleteLastTrashClients(tx, inboundId, orphaned); err != nil {
 				return err
 			}
 			if derr := tx.Where("inbound_id = ?", inboundId).Delete(&model.AccountInbound{}).Error; derr != nil {
@@ -468,7 +468,7 @@ func (s *AccountService) SyncInboundAccounts(tx *gorm.DB, inboundId int, creator
 			// served by nothing, and returning here without pruning left it
 			// listed forever on the Clients page and blocking revert-accounts.
 			// Found by deleting a test inbound on a live panel.
-			return s.pruneOrphanAccounts(tx, orphaned)
+			return nil
 		}
 		return err
 	}
@@ -511,7 +511,7 @@ func (s *AccountService) SyncInboundAccounts(tx *gorm.DB, inboundId int, creator
 		}
 		dropped = append(dropped, membership.AccountId)
 	}
-	if err := archiveLastTrashClients(tx, inboundId, dropped); err != nil {
+	if err := deleteLastTrashClients(tx, inboundId, dropped); err != nil {
 		return err
 	}
 	if len(dropped) > 0 {
@@ -520,7 +520,7 @@ func (s *AccountService) SyncInboundAccounts(tx *gorm.DB, inboundId int, creator
 			return err
 		}
 	}
-	return s.pruneOrphanAccounts(tx, dropped)
+	return nil
 }
 
 // upsertAccountFromEntry creates or refreshes the account a client entry belongs
@@ -906,11 +906,16 @@ func (s *AccountService) pruneOrphanAccounts(tx *gorm.DB, candidates []int) erro
 	if len(orphans) == 0 {
 		return nil
 	}
-	if err := tx.Session(&gorm.Session{NewDB: true}).Where("account_id IN ?", orphans).Delete(&model.AccountGroup{}).Error; err != nil {
+	return deleteAccountsAndGroups(tx, orphans)
+}
+
+func deleteAccountsAndGroups(tx *gorm.DB, ids []int) error {
+	// Capture the deletion while the account, ownership and counters are still
+	// available. Association cleanup no longer describes a live account.
+	if err := tx.Session(&gorm.Session{NewDB: true}).Where("id IN ?", ids).Delete(&model.Account{}).Error; err != nil {
 		return err
 	}
-	return tx.Session(&gorm.Session{NewDB: true}).
-		Where("id IN ?", orphans).Delete(&model.Account{}).Error
+	return tx.Session(&gorm.Session{NewDB: true}).Where("account_id IN ?", ids).Delete(&model.AccountGroup{}).Error
 }
 
 // inboundVlessFlow is the inbound-level vless flow, which every account served on
@@ -1149,7 +1154,7 @@ func (s *AccountService) ApplyMemberships(email string, wanted []int, removable 
 // mentioned memberships. So the guard survives, narrowed to exactly that case:
 // explicit=false with nothing wanted is still a no-op, and only a caller that
 // SPOKE about memberships can empty an account.
-func (s *AccountService) ApplyMembershipsFrom(email string, anchorInboundId int, wanted []int, removable []int, explicit bool, operation ...string) ([]int, error) {
+func (s *AccountService) ApplyMembershipsFrom(email string, anchorInboundId int, wanted []int, removable []int, explicit bool, operation ...database.AccountAudit) ([]int, error) {
 	if email == "" {
 		return nil, nil
 	}
@@ -1237,10 +1242,10 @@ func (s *AccountService) SaveAccountWithoutInbound(entry map[string]any, ownerAd
 	if len(ownerAdminID) > 0 {
 		ownerID = ownerAdminID[0]
 	}
-	return s.SaveAccountWithoutInboundAudit(entry, ownerID, "")
+	return s.SaveAccountWithoutInboundAudit(entry, ownerID, database.AccountAudit{})
 }
 
-func (s *AccountService) SaveAccountWithoutInboundAudit(entry map[string]any, ownerID int, operation string) (*model.Account, error) {
+func (s *AccountService) SaveAccountWithoutInboundAudit(entry map[string]any, ownerID int, operation database.AccountAudit) (*model.Account, error) {
 	encoded, err := json.Marshal(entry)
 	if err != nil {
 		return nil, err
@@ -1316,12 +1321,12 @@ func (s *AccountService) SaveAccountWithoutInboundAudit(entry map[string]any, ow
 // here. An account on no inbound has none of those to clean up, which is exactly why
 // it needs its own removal - the inbound-addressed delete has no inbound to be
 // addressed to.
-func (s *AccountService) DeleteAccountWithoutInbound(email string) error {
+func (s *AccountService) DeleteAccountWithoutInbound(email string, audit ...database.AccountAudit) error {
 	key := accountKey(email)
 	if key == "" {
 		return common.NewError("no email")
 	}
-	return database.GetDB().Transaction(func(tx *gorm.DB) error {
+	return database.AccountAuditTransaction(database.GetDB(), func(tx *gorm.DB) error {
 		account, err := s.GetAccountByEmailTx(tx, email)
 		if err != nil {
 			return err
@@ -1342,14 +1347,11 @@ func (s *AccountService) DeleteAccountWithoutInbound(email string) error {
 		if err := archiveTrashClient(tx, account.Id); err != nil {
 			return err
 		}
-		if err := tx.Where("LOWER(TRIM(email)) = ?", key).Delete(&xray.ClientTraffic{}).Error; err != nil {
+		if err := deleteAccountsAndGroups(tx, []int{account.Id}); err != nil {
 			return err
 		}
-		if err := tx.Where("account_id = ?", account.Id).Delete(&model.AccountGroup{}).Error; err != nil {
-			return err
-		}
-		return tx.Where("id = ?", account.Id).Delete(&model.Account{}).Error
-	})
+		return tx.Where("LOWER(TRIM(email)) = ?", key).Delete(&xray.ClientTraffic{}).Error
+	}, audit...)
 }
 
 // SetMembershipEnable switches one account on or off on ONE inbound, leaving every
@@ -1363,12 +1365,12 @@ func (s *AccountService) DeleteAccountWithoutInbound(email string) error {
 // disable into a one-inbound one.
 //
 // Returns the inbound ids whose settings changed, for the caller's reconcile.
-func (s *AccountService) SetMembershipEnable(email string, inboundId int, enable bool) ([]int, error) {
+func (s *AccountService) SetMembershipEnable(email string, inboundId int, enable bool, audit ...database.AccountAudit) ([]int, error) {
 	if email == "" {
 		return nil, common.NewError("no email")
 	}
 	var touched []int
-	err := database.GetDB().Transaction(func(tx *gorm.DB) error {
+	err := database.AccountAuditTransaction(database.GetDB(), func(tx *gorm.DB) error {
 		account, err := s.GetAccountByEmailTx(tx, email)
 		if err != nil {
 			return err
@@ -1404,7 +1406,7 @@ func (s *AccountService) SetMembershipEnable(email string, inboundId int, enable
 			}
 		}
 		return nil
-	})
+	}, audit...)
 	return touched, err
 }
 
@@ -1635,7 +1637,10 @@ func (s *AccountService) ProjectAccount(tx *gorm.DB, accountId int) ([]int, erro
 	if err := tx.Where("account_id = ?", accountId).Order("inbound_id ASC").Find(&memberships).Error; err != nil {
 		return nil, err
 	}
+	return projectAccountMemberships(tx, &account, memberships)
+}
 
+func projectAccountMemberships(tx *gorm.DB, account *model.Account, memberships []model.AccountInbound) ([]int, error) {
 	member := make(map[int]*model.AccountInbound, len(memberships))
 	for i := range memberships {
 		member[memberships[i].InboundId] = &memberships[i]
@@ -1654,7 +1659,7 @@ func (s *AccountService) ProjectAccount(tx *gorm.DB, accountId int) ([]int, erro
 	for _, inbound := range inbounds {
 		m, isMember := member[inbound.Id]
 		if isMember {
-			settings, err := projectAccountOntoInbound(inbound, &account, m)
+			settings, err := projectAccountOntoInbound(inbound, account, m)
 			if err != nil {
 				return nil, err
 			}
@@ -1714,7 +1719,7 @@ func (s *AccountService) ProjectAccount(tx *gorm.DB, accountId int) ([]int, erro
 // Returns the inbound ids whose settings changed, for the caller's reconcile: a
 // renamed account is a new RADIUS login and a new per-account routing rule, so every
 // daemon serving it has to be regenerated.
-func (s *AccountService) RenameAccount(oldEmail, newEmail string, operation ...string) ([]int, error) {
+func (s *AccountService) RenameAccount(oldEmail, newEmail string, operation ...database.AccountAudit) ([]int, error) {
 	oldKey, newKey := accountKey(oldEmail), accountKey(newEmail)
 	// A case-only change still has to reach the settings (the stored spelling is what
 	// the core and RADIUS carry), but it is not a change of identity, so the account
@@ -1855,29 +1860,8 @@ func (s *AccountService) DropMembership(tx *gorm.DB, inboundId int, email string
 		return err
 	}
 
-	if err := archiveLastTrashClients(tx, inboundId, []int{account.Id}); err != nil {
+	if err := deleteLastTrashClients(tx, inboundId, []int{account.Id}); err != nil {
 		return err
 	}
-	if err := tx.Where("account_id = ? AND inbound_id = ?", account.Id, inboundId).
-		Delete(&model.AccountInbound{}).Error; err != nil {
-		return err
-	}
-
-	// Counted for THIS account only, not through pruneOrphanAccounts: that one reads
-	// "no memberships anywhere" as "every account is an orphan" and empties the whole
-	// table, which is right where it is called (straight after removing an inbound's
-	// last membership) and catastrophic here, on a path that runs for every ordinary
-	// client delete.
-	var left int64
-	if err := tx.Model(&model.AccountInbound{}).
-		Where("account_id = ?", account.Id).Count(&left).Error; err != nil {
-		return err
-	}
-	if left > 0 {
-		return nil
-	}
-	if err := tx.Where("account_id = ?", account.Id).Delete(&model.AccountGroup{}).Error; err != nil {
-		return err
-	}
-	return tx.Where("id = ?", account.Id).Delete(&model.Account{}).Error
+	return tx.Where("account_id = ? AND inbound_id = ?", account.Id, inboundId).Delete(&model.AccountInbound{}).Error
 }

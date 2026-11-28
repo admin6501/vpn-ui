@@ -14,6 +14,10 @@
       frozen: '{{ i18n "pages.client.frozen" }}', delayedStart: '{{ i18n "pages.client.delayedStart" }}',
       initialPeriod: '{{ i18n "pages.activity.initialPeriod" }}', renewalPeriod: '{{ i18n "pages.activity.renewalPeriod" }}',
       usageCleared: '{{ i18n "pages.activity.usageCleared" }}',
+      initialQuota: '{{ i18n "pages.activity.initialQuota" }}', remainingQuota: '{{ i18n "pages.activity.remainingQuota" }}',
+      usage: '{{ i18n "usage" }}', upload: '{{ i18n "subscription.uploaded" }}', download: '{{ i18n "subscription.downloaded" }}',
+      lifetime: '{{ i18n "pages.inbounds.allTimeTraffic" }}', status: '{{ i18n "status" }}',
+      enabled: '{{ i18n "enabled" }}', disabled: '{{ i18n "disabled" }}',
     },
     formatTime(at) {
       if (at <= 0) return '—';
@@ -40,6 +44,7 @@
     },
     changeLines(row) {
       const details = row.details || {};
+      if (details.deleted) return this.deletionLines(details.deleted);
       const fields = new Set((row.changes || '').split(',').filter(Boolean));
       const lines = [];
       if (details.created) {
@@ -78,6 +83,23 @@
       return lines;
     },
 
+    deletionLines({ quota, initialQuota, upload, download, lifetime, expiry, period, enabled }) {
+      const label = this.auditLabels;
+      const size = bytes => SizeFormatter.sizeFormat(bytes);
+      const lines = [`${this.fields.quota} · ${this.quotaValue(quota)}`];
+      if (initialQuota != null) lines.push(`${label.initialQuota} · ${this.quotaValue(initialQuota)}`);
+      if (upload != null && download != null) {
+        const used = upload + download;
+        lines.push(`${label.usage} · ${size(used)} (${label.upload} ${size(upload)} · ${label.download} ${size(download)})`);
+        lines.push(`${label.remainingQuota} · ${quota > 0 ? size(Math.max(0, quota - used)) : label.unlimited}`);
+      }
+      if (lifetime != null) lines.push(`${label.lifetime} · ${size(lifetime)}`);
+      lines.push(`${this.fields.expiry} · ${this.expiryValue(expiry)}`);
+      if (period > 0) lines.push(`${label.renewalPeriod} · ${this.duration(period)}`);
+      lines.push(`${label.status} · ${enabled ? label.enabled : label.disabled}`);
+      return lines;
+    },
+
     expiryDifference(row) {
       const expiry = row.details?.expiry;
       if (!expiry || row.kind !== 'updated' || expiry.before <= 0 || expiry.after <= 0) return '';
@@ -92,6 +114,9 @@
     },
     summary(row) {
       const details = row.details || {};
+      if (details.deleted) {
+        return [this.quotaValue(details.deleted.quota), this.expiryValue(details.deleted.expiry)].join(' · ');
+      }
       if (details.created) {
         return [this.quotaValue(details.created.quota),
           this.creationDuration(row) || this.expiryValue(details.created.expiry)].join(' · ');

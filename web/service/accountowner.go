@@ -27,7 +27,7 @@ func (s *AccountService) TransferOwnership(actor *model.User, accountID, newOwne
 	if actor == nil || !actor.IsSuperAdmin {
 		return errors.New("only the panel owner can transfer accounts")
 	}
-	return database.GetDB().Transaction(func(tx *gorm.DB) error {
+	return database.AccountAuditTransaction(database.GetDB(), func(tx *gorm.DB) error {
 		var a model.Account
 		if err := tx.First(&a, accountID).Error; err != nil {
 			return err
@@ -133,5 +133,5 @@ func (s *AccountService) TransferOwnership(actor *model.User, accountID, newOwne
 		}
 		_, err = reconcileRepresentatives(tx)
 		return err
-	})
+	}, database.AccountAudit{ActorID: actor.Id})
 }

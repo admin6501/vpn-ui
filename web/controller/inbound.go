@@ -720,7 +720,7 @@ func (a *InboundController) addInbound(c *gin.Context) {
 		jsonMsg(c, I18nWeb(c, "somethingWentWrong"), err)
 		return
 	}
-	a.syncInboundAccounts(inbound.Id, user.Id)
+	a.syncInboundAccounts(c, inbound.Id, user.Id)
 	jsonMsgObj(c, I18nWeb(c, "pages.inbounds.toasts.inboundCreateSuccess"), inbound, nil)
 	if inbound.Protocol == model.L2TP {
 		a.onL2tpChanged()
@@ -790,10 +790,10 @@ func (a *InboundController) delInbound(c *gin.Context) {
 			logger.Warning("reading traffic before an inbound delete: ", oerr)
 		}
 	}
-	needRestart, err := a.inboundService.DelInbound(id)
+	needRestart, err := a.inboundService.DelInbound(id, clientAuditOperation(c))
 	if err == nil {
 		// The inbound is gone, so every membership pointing at it must go too.
-		a.syncInboundAccounts(id)
+		a.syncInboundAccounts(c, id)
 	}
 	if err != nil {
 		jsonMsg(c, I18nWeb(c, "somethingWentWrong"), err)
@@ -918,7 +918,7 @@ func (a *InboundController) updateInbound(c *gin.Context) {
 		jsonMsg(c, I18nWeb(c, "somethingWentWrong"), err)
 		return
 	}
-	a.syncInboundAccounts(inbound.Id, currentUserId(c))
+	a.syncInboundAccounts(c, inbound.Id, currentUserId(c))
 	jsonMsgObj(c, I18nWeb(c, "pages.inbounds.toasts.inboundUpdateSuccess"), inbound, nil)
 	if inbound.Protocol == model.L2TP {
 		a.onL2tpChanged()
@@ -1262,7 +1262,7 @@ func (a *InboundController) delAccountClient(c *gin.Context) {
 		return
 	}
 	email := c.Param("email")
-	if err := accountService.DeleteAccountWithoutInbound(email); err != nil {
+	if err := accountService.DeleteAccountWithoutInbound(email, clientAuditOperation(c)); err != nil {
 		jsonMsg(c, I18nWeb(c, "somethingWentWrong"), err)
 		return
 	}
@@ -1353,8 +1353,8 @@ func (a *InboundController) copyInboundClients(c *gin.Context) {
 	// accounts layer) until some later single-client write to the same inbound
 	// happened to reconcile it. Both inbounds are touched: the copy mints a subId back
 	// into the SOURCE for any client that had none.
-	a.syncInboundAccounts(targetID)
-	a.syncInboundAccounts(req.SourceInboundID)
+	a.syncInboundAccounts(c, targetID)
+	a.syncInboundAccounts(c, req.SourceInboundID)
 	jsonObj(c, result, nil)
 	if needRestart {
 		a.xrayService.SetToNeedRestart()
@@ -1387,9 +1387,9 @@ func (a *InboundController) delInboundClient(c *gin.Context) {
 	// refund priced afterwards would see no consumption and return the whole
 	// charge.
 	used, usedKnown := a.usageBeforeDelete(email)
-	needRestart, err := a.inboundService.DelInboundClient(id, clientId)
+	needRestart, err := a.inboundService.DelInboundClient(id, clientId, clientAuditOperation(c))
 	if err == nil {
-		a.syncInboundAccounts(id)
+		a.syncInboundAccounts(c, id)
 	}
 	if err != nil {
 		jsonMsg(c, I18nWeb(c, "somethingWentWrong"), err)
@@ -1732,7 +1732,8 @@ func (a *InboundController) bulkUpdateClients(c *gin.Context) {
 			return
 		}
 	}
-	result, touched, err := a.inboundService.BulkUpdateClients(req)
+	operation := clientAuditOperation(c)
+	result, touched, err := a.inboundService.BulkUpdateClients(req, operation)
 	if err != nil {
 		// The reservation paid for a batch that never landed. Give it back.
 		if rerr := resellerService.RollbackBulk(ticket); rerr != nil {
@@ -1753,14 +1754,13 @@ func (a *InboundController) bulkUpdateClients(c *gin.Context) {
 	// once), and under days-per-GB the deadline that traffic bought, so a bulk
 	// top-up extends the accounts it just sold bytes to instead of silently leaving
 	// them to expire on the old date.
-	if aerr := resellerService.ApplyBulkCharges(ticket); aerr != nil {
+	if aerr := resellerService.ApplyBulkCharges(ticket, operation); aerr != nil {
 		logger.Warning("applying priced quota and expiry after a reseller bulk operation: ", aerr)
 	}
 	// The applier writes settings.clients and client_traffics directly, so without
 	// this the accounts layer kept the OLD quota, expiry and enable bit. The Clients
 	// page reads those three off the account row, so a bulk top-up applied to the
 	// data plane and then showed the previous figure.
-	operation := clientAuditOperation(c)
 	for _, id := range distinctInboundIds(req.Targets) {
 		a.syncInboundAccountsForOperation(id, operation)
 	}
@@ -2096,7 +2096,7 @@ func (a *InboundController) resetClientTraffic(c *gin.Context) {
 		return
 	}
 
-	needRestart, err := a.inboundService.ResetClientTraffic(id, email)
+	needRestart, err := a.inboundService.ResetClientTraffic(id, email, clientAuditOperation(c))
 	if err != nil {
 		if rerr := resellerService.Rollback(ticket); rerr != nil {
 			logger.Warning("rolling back a reseller charge whose traffic reset failed: ", rerr)
@@ -2144,7 +2144,7 @@ func (a *InboundController) setMembershipEnable(c *gin.Context) {
 		return
 	}
 
-	touched, err := accountService.SetMembershipEnable(email, id, body.Enable)
+	touched, err := accountService.SetMembershipEnable(email, id, body.Enable, clientAuditOperation(c))
 	if err != nil {
 		jsonMsg(c, I18nWeb(c, "somethingWentWrong"), err)
 		return
@@ -2209,14 +2209,14 @@ func (a *InboundController) resetAllClientTraffics(c *gin.Context) {
 		return
 	}
 
-	err = a.inboundService.ResetAllClientTraffics(id)
+	err = a.inboundService.ResetAllClientTraffics(id, clientAuditOperation(c))
 	if err != nil {
 		jsonMsg(c, I18nWeb(c, "somethingWentWrong"), err)
 		return
 	} else {
 		a.xrayService.SetToNeedRestart()
 	}
-	a.syncInboundAccountsAll(id)
+	a.syncInboundAccountsAll(c, id)
 	jsonMsg(c, I18nWeb(c, "pages.inbounds.toasts.resetAllClientTrafficSuccess"), nil)
 	a.onL2tpClientChanged()
 	a.onPptpClientChanged()
@@ -2276,7 +2276,7 @@ func (a *InboundController) importInbound(c *gin.Context) {
 		}
 	}
 	if err == nil && inbound != nil {
-		a.syncInboundAccounts(inbound.Id, user.Id)
+		a.syncInboundAccounts(c, inbound.Id, user.Id)
 	}
 	jsonMsgObj(c, I18nWeb(c, "pages.inbounds.toasts.inboundCreateSuccess"), inbound, err)
 	if err == nil && needRestart {
@@ -2318,7 +2318,7 @@ func (a *InboundController) delDepletedClients(c *gin.Context) {
 			jsonMsg(c, I18nWeb(c, "somethingWentWrong"), uerr)
 			return
 		}
-		deleted, derr := a.inboundService.DelDepletedClientsScoped(id, owned)
+		deleted, derr := a.inboundService.DelDepletedClientsScoped(id, owned, clientAuditOperation(c))
 		if derr != nil {
 			jsonMsg(c, I18nWeb(c, "somethingWentWrong"), derr)
 			return
@@ -2331,18 +2331,18 @@ func (a *InboundController) delDepletedClients(c *gin.Context) {
 		// it (its quota is account-wide, so removing it from one and deleting its
 		// counter row would leave it live and unmetered on the rest), so reconciling
 		// only the inbound named in the route leaves the mirror stale on the others.
-		a.syncInboundAccountsAll(-1)
+		a.syncInboundAccountsAll(c, -1)
 		jsonMsg(c, I18nWeb(c, "pages.inbounds.toasts.delDepletedClientsSuccess"), nil)
 		return
 	}
 
-	err = a.inboundService.DelDepletedClients(id)
+	err = a.inboundService.DelDepletedClients(id, clientAuditOperation(c))
 	if err != nil {
 		jsonMsg(c, I18nWeb(c, "somethingWentWrong"), err)
 		return
 	}
 	// -1 for the same reason as the reseller branch above.
-	a.syncInboundAccountsAll(-1)
+	a.syncInboundAccountsAll(c, -1)
 	jsonMsg(c, I18nWeb(c, "pages.inbounds.toasts.delDepletedClientsSuccess"), nil)
 }
 
@@ -3005,9 +3005,9 @@ func (a *InboundController) delInboundClientByEmail(c *gin.Context) {
 	}
 
 	used, usedKnown := a.usageBeforeDelete(email)
-	needRestart, err := a.inboundService.DelInboundClientByEmail(inboundId, email)
+	needRestart, err := a.inboundService.DelInboundClientByEmail(inboundId, email, clientAuditOperation(c))
 	if err == nil {
-		a.syncInboundAccounts(inboundId)
+		a.syncInboundAccounts(c, inboundId)
 	}
 	if err != nil {
 		jsonMsg(c, "Failed to delete client by email", err)
@@ -3117,9 +3117,9 @@ func isTruthyForm(value string) bool {
 
 // syncInboundAccountsAll reconciles one inbound, or every inbound when the route
 // was given the -1 that both client sweeps use for "panel-wide".
-func (a *InboundController) syncInboundAccountsAll(inboundId int) {
+func (a *InboundController) syncInboundAccountsAll(c *gin.Context, inboundId int) {
 	if inboundId >= 0 {
-		a.syncInboundAccounts(inboundId)
+		a.syncInboundAccounts(c, inboundId)
 		return
 	}
 	inbounds, err := a.inboundService.GetAllInbounds()
@@ -3128,7 +3128,7 @@ func (a *InboundController) syncInboundAccountsAll(inboundId int) {
 		return
 	}
 	for _, inbound := range inbounds {
-		a.syncInboundAccounts(inbound.Id)
+		a.syncInboundAccounts(c, inbound.Id)
 	}
 }
 
@@ -3172,11 +3172,11 @@ func distinctInboundIds(targets []service.BulkClientTarget) []int {
 // no membership, so one call is correct for all of them, including the removal of
 // the inbound itself (where it drops every membership pointing at an id that is
 // gone).
-func (a *InboundController) syncInboundAccounts(inboundId int, creatorID ...int) {
-	a.syncInboundAccountsForOperation(inboundId, "", creatorID...)
+func (a *InboundController) syncInboundAccounts(c *gin.Context, inboundId int, creatorID ...int) {
+	a.syncInboundAccountsForOperation(inboundId, clientAuditOperation(c), creatorID...)
 }
 
-func (a *InboundController) syncInboundAccountsForOperation(inboundId int, operation string, creatorID ...int) {
+func (a *InboundController) syncInboundAccountsForOperation(inboundId int, operation database.AccountAudit, creatorID ...int) {
 	err := database.AccountAuditTransaction(database.GetDB(), func(tx *gorm.DB) error {
 		return accountService.SyncInboundAccounts(tx, inboundId, creatorID...)
 	}, operation)
@@ -3185,14 +3185,17 @@ func (a *InboundController) syncInboundAccountsForOperation(inboundId int, opera
 	}
 }
 
-func clientAuditOperation(c *gin.Context) string {
+func clientAuditOperation(c *gin.Context) database.AccountAudit {
 	const key = "clientAuditOperation"
-	if id := c.GetString(key); id != "" {
-		return id
+	if saved, ok := c.Get(key); ok {
+		return saved.(database.AccountAudit)
 	}
-	id := uuid.NewString()
-	c.Set(key, id)
-	return id
+	audit := database.AccountAudit{Operation: uuid.NewString()}
+	if user := session.GetLoginUser(c); user != nil {
+		audit.ActorID = user.Id
+	}
+	c.Set(key, audit)
+	return audit
 }
 
 // applyClientMemberships puts an account on exactly the given inbounds and
@@ -3546,7 +3549,7 @@ func (a *InboundController) renameUnservedAccount(c *gin.Context) {
 		jsonMsg(c, "", fmt.Errorf("Client name already exists"))
 		return
 	}
-	if _, err := accountService.RenameAccount(oldEmail, email); err != nil {
+	if _, err := accountService.RenameAccount(oldEmail, email, clientAuditOperation(c)); err != nil {
 		jsonMsg(c, "", err)
 		return
 	}

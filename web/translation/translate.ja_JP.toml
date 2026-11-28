@@ -2435,6 +2435,9 @@ theBuiltInWindowsSSTPClientRejectsSelf = "CA をマシンの信頼されたル�
 theNativeWindowsIOSAndroidIKEv2ClientsReject = "ネイティブ Windows/iOS/Android IKEv2 クライアントは、生成された CA をデバイスの信頼されたルートにインポートしない限り、自己署名証明書を拒否します。実際のユーザーのホスト名にバインドされた CA 署名証明書を優先します。とにかく自己署名 CA + サーバー証明書を生成しますか?"
 
 [pages.activity]
+changedBy = "変更したユーザー"
+initialQuota = "初期容量"
+remainingQuota = "残り容量"
 trash = "ごみ箱"
 trashClients = "自分のクライアント"
 trashManagers = "管理者と再販業者"

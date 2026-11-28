@@ -15,6 +15,8 @@ type PanelClientEvent struct {
 	AccountID      int                  `json:"-" gorm:"not null;index"`
 	OwnerID        int                  `json:"-" gorm:"not null;index"`
 	Owner          string               `json:"owner" gorm:"not null"`
+	ActorID        int                  `json:"-" gorm:"not null;default:0;index"`
+	Actor          string               `json:"actor,omitempty" gorm:"not null;default:''"`
 	Email          string               `json:"email" gorm:"not null"`
 	Kind           string               `json:"kind" gorm:"not null;index"`
 	Changes        string               `json:"changes" gorm:"not null;default:''"`
@@ -23,14 +25,23 @@ type PanelClientEvent struct {
 	At             int64                `json:"at" gorm:"not null;index"`
 }
 
-// ClientChangeDetails holds only the quota and period information safe to
-// retain in an audit log. Credentials and free-form account notes stay out.
+// ClientChangeDetails records quota, validity, usage and status for auditing.
 type ClientChangeDetails struct {
 	Created       *ClientCreation    `json:"created,omitempty"`
+	Deleted       *ClientDeletion    `json:"deleted,omitempty"`
 	Quota         *ClientValueChange `json:"quota,omitempty"`
 	Expiry        *ClientValueChange `json:"expiry,omitempty"`
 	RenewalPeriod *ClientValueChange `json:"renewalPeriod,omitempty"`
 	UsageReset    bool               `json:"usageReset,omitempty"`
+}
+
+type ClientDeletion struct {
+	ClientCreation
+	InitialQuota *int64 `json:"initialQuota,omitempty"`
+	Upload       *int64 `json:"upload,omitempty"`
+	Download     *int64 `json:"download,omitempty"`
+	Lifetime     *int64 `json:"lifetime,omitempty"`
+	Enabled      bool   `json:"enabled"`
 }
 
 type ClientCreation struct {

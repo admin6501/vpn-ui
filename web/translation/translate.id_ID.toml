@@ -2435,6 +2435,9 @@ theBuiltInWindowsSSTPClientRejectsSelf = "Klien SSTP Windows bawaan menolak sert
 theNativeWindowsIOSAndroidIKEv2ClientsReject = "Klien asli Windows/iOS/Android IKEv2 menolak sertifikat yang ditandatangani sendiri kecuali Anda mengimpor CA yang dihasilkan ke akar tepercaya perangkat. Lebih memilih sertifikat bertanda tangan CA yang terikat pada nama host untuk pengguna sebenarnya. Tetap hasilkan sertifikat server CA + yang ditandatangani sendiri?"
 
 [pages.activity]
+changedBy = "Diubah oleh"
+initialQuota = "Kuota awal"
+remainingQuota = "Sisa kuota"
 trash = "Tong sampah"
 trashClients = "Klien saya"
 trashManagers = "Administrator dan reseller"

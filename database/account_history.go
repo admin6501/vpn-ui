@@ -56,7 +56,7 @@ func initAccountHistory(db *gorm.DB) error {
 			'usageReset', json(CASE WHEN ` + renewal + ` THEN 'true' ELSE 'false' END)
 		) END`
 	triggers := []string{
-		`CREATE TABLE IF NOT EXISTS account_audit_context (id INTEGER PRIMARY KEY, operation TEXT NOT NULL)`,
+		`CREATE TABLE IF NOT EXISTS account_audit_context (id INTEGER PRIMARY KEY, operation TEXT NOT NULL, actor_id INTEGER NOT NULL DEFAULT 0)`,
 		`INSERT OR IGNORE INTO account_audit_context(id,operation) VALUES(1,'')`,
 		`CREATE INDEX IF NOT EXISTS idx_account_events_audit_operation ON account_events(audit_operation,account_id)
 			WHERE audit_operation<>''`,
@@ -79,6 +79,22 @@ func initAccountHistory(db *gorm.DB) error {
 			         WHEN NEW.last_renewal_automatic THEN 'autoRenewed' ELSE 'renewed' END,
 			    rtrim(` + strings.Join(changes, " || ") + `, ','), ` + details + `, ` + operation + `);
 		END`,
+		`CREATE TRIGGER client_history_remove BEFORE DELETE ON accounts BEGIN
+			INSERT INTO account_events(account_id,at,kind,details,audit_operation)
+			SELECT OLD.id,` + accountAuditAtSQL("OLD.id") + `,'deleted',
+				json_object('deleted',json_object(
+					'quota', COALESCE(t.total,OLD.total_gb,0),
+					'expiry', COALESCE(t.expiry_time,OLD.expiry_time,0),
+					'period', COALESCE(OLD.renewal_duration,0),
+					'enabled', json(CASE WHEN COALESCE(t.enable,OLD.enable) AND NOT OLD.representative_blocked THEN 'true' ELSE 'false' END),
+					'initialQuota', (SELECT CASE WHEN json_valid(e.details) THEN json_extract(e.details,'$.created.quota') END FROM account_events e
+						WHERE e.account_id=OLD.id AND e.kind='created' ORDER BY e.id LIMIT 1),
+					'upload', t.up, 'download', t.down, 'lifetime', t.all_time)),
+				` + operation + `
+			FROM (SELECT 1) LEFT JOIN client_traffics t ON t.id=(
+				SELECT id FROM client_traffics WHERE LOWER(TRIM(email))=LOWER(TRIM(OLD.email)) ORDER BY id LIMIT 1
+			);
+		END`,
 	}
 	for _, table := range []struct{ name, kind string }{{"account_inbounds", "inbounds"}, {"account_groups", "groups"}} {
 		for _, change := range []struct{ name, row string }{{"INSERT", "NEW"}, {"DELETE", "OLD"}} {
@@ -99,6 +115,11 @@ func initAccountHistory(db *gorm.DB) error {
 	return db.Transaction(func(tx *gorm.DB) error {
 		for _, trigger := range triggers {
 			if err := tx.Exec(trigger).Error; err != nil {
+				return err
+			}
+		}
+		if !tx.Migrator().HasColumn("account_audit_context", "actor_id") {
+			if err := tx.Exec("ALTER TABLE account_audit_context ADD COLUMN actor_id INTEGER NOT NULL DEFAULT 0").Error; err != nil {
 				return err
 			}
 		}

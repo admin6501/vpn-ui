@@ -5,17 +5,24 @@ import (
 	"gorm.io/gorm"
 )
 
+// AccountAudit carries the identity of the authenticated panel user and ties
+// the separate writes of a single request together.
+type AccountAudit struct {
+	Operation string
+	ActorID   int
+}
+
 // HoldAccountAudit is used only inside a write transaction. SQLite serializes
 // writers, so each operation marker is isolated and a rollback restores it.
-func HoldAccountAudit(tx *gorm.DB, operation ...string) (func() error, error) {
-	id := ""
+func HoldAccountAudit(tx *gorm.DB, operation ...AccountAudit) (func() error, error) {
+	audit := AccountAudit{}
 	if len(operation) > 0 {
-		id = operation[0]
+		audit = operation[0]
 	}
-	if id == "" {
-		id = uuid.NewString()
+	if audit.Operation == "" {
+		audit.Operation = uuid.NewString()
 	}
-	result := tx.Exec("UPDATE account_audit_context SET operation=? WHERE id=1 AND operation=''", id)
+	result := tx.Exec("UPDATE account_audit_context SET operation=?, actor_id=? WHERE id=1 AND operation=''", audit.Operation, audit.ActorID)
 	if result.Error != nil {
 		return nil, result.Error
 	}
@@ -23,11 +30,11 @@ func HoldAccountAudit(tx *gorm.DB, operation ...string) (func() error, error) {
 		if result.RowsAffected == 0 {
 			return nil
 		}
-		return tx.Exec("UPDATE account_audit_context SET operation='' WHERE id=1").Error
+		return tx.Exec("UPDATE account_audit_context SET operation='', actor_id=0 WHERE id=1").Error
 	}, nil
 }
 
-func AccountAuditTransaction(db *gorm.DB, work func(*gorm.DB) error, operation ...string) error {
+func AccountAuditTransaction(db *gorm.DB, work func(*gorm.DB) error, operation ...AccountAudit) error {
 	return SnapshotTransaction(db, func(tx *gorm.DB) error {
 		release, err := HoldAccountAudit(tx, operation...)
 		if err != nil {

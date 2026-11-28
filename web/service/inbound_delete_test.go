@@ -111,8 +111,8 @@ func TestDelInboundClientByEmailRemovesTheLastClient(t *testing.T) {
 	}
 }
 
-// D2: an account on two inbounds has ONE traffic row. The first delete takes it, and
-// the second membership must still be deletable with no row left to read.
+// An account on two inbounds keeps its counters when one membership is removed.
+// The last membership can also be removed when a legacy account has no counters.
 func TestDelInboundClientSecondMembershipHasNoTrafficRow(t *testing.T) {
 	svc := newInboundDB(t)
 	shared := testClient("multi@example.com")
@@ -123,8 +123,11 @@ func TestDelInboundClientSecondMembershipHasNoTrafficRow(t *testing.T) {
 	if _, err := svc.DelInboundClient(first.Id, shared["id"].(string)); err != nil {
 		t.Fatalf("deleting the first membership: %v", err)
 	}
-	if row := trafficRow(t, "multi@example.com"); row != nil {
-		t.Fatal("the first delete left the traffic row behind, so the rest of this test proves nothing")
+	if row := trafficRow(t, "multi@example.com"); row == nil || row.InboundId != second.Id || row.Total != 10*gb {
+		t.Fatalf("removing the first membership failed to preserve traffic: %+v", row)
+	}
+	if err := svc.DelClientStat(database.GetDB(), "multi@example.com"); err != nil {
+		t.Fatal(err)
 	}
 	if _, err := svc.DelInboundClient(second.Id, shared["id"].(string)); err != nil {
 		t.Fatalf("deleting the second membership with no traffic row: %v", err)

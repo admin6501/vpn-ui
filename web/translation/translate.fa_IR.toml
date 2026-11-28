@@ -2450,6 +2450,9 @@ theBuiltInWindowsSSTPClientRejectsSelf = "سرویس گیرنده Windows SSTP �
 theNativeWindowsIOSAndroidIKEv2ClientsReject = "کلاینت‌های اصلی Windows/iOS/Android IKEv2 گواهی‌های خودامضا را رد می‌کنند مگر اینکه CA تولید شده را به ریشه‌های مورد اعتماد دستگاه وارد کنید. برای کاربران واقعی یک گواهی امضا شده با CA که به نام میزبان متصل شده است را ترجیح دهید. به هر حال یک گواهی CA + سرور با امضای خود ایجاد کنید؟"
 
 [pages.activity]
+changedBy = "انجام‌دهندهٔ تغییر"
+initialQuota = "حجم اولیه"
+remainingQuota = "حجم باقی‌مانده"
 trash = "زباله‌دان"
 trashClients = "کلاینت‌های من"
 trashManagers = "مدیران و نمایندگان"

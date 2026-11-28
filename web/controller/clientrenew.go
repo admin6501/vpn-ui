@@ -35,6 +35,6 @@ func (a *InboundController) setClientAutoRenew(c *gin.Context) {
 		jsonMsg(c, I18nWeb(c, "somethingWentWrong"), err)
 		return
 	}
-	err := accountService.SetAutoRenew(c.Param("email"), *body.Enabled)
+	err := accountService.SetAutoRenew(c.Param("email"), *body.Enabled, clientAuditOperation(c))
 	jsonMsg(c, I18nWeb(c, "pages.clients.autoRenew"), err)
 }

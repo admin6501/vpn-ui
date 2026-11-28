@@ -17,7 +17,7 @@ func (TrashService) DeleteManager(actor *model.User, id int, representative bool
 	var touched []int
 	deleted := 0
 	keepClients := mode == DeleteModeKeep
-	err := database.SnapshotTransaction(database.GetDB(), func(tx *gorm.DB) error {
+	err := database.AccountAuditTransaction(database.GetDB(), func(tx *gorm.DB) error {
 		touched = nil
 		deleted = 0
 		var target model.User
@@ -70,7 +70,7 @@ func (TrashService) DeleteManager(actor *model.User, id int, representative bool
 		var err error
 		touched, deleted, err = archiveAndRemoveManager(tx, target, keepClients)
 		return err
-	})
+	}, database.AccountAudit{ActorID: actor.Id})
 	return touched, deleted, err
 }
 

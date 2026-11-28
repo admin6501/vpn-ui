@@ -248,6 +248,109 @@ func TestPanelClientChangeDetailsRecordQuotaExpiryAndTrafficReset(t *testing.T) 
 	}
 }
 
+func TestClientActivityRecordsEditorOfLegacyAccount(t *testing.T) {
+	accounts := newAccountsDB(t)
+	db := database.GetDB()
+	var owner model.User
+	if err := db.Where("is_panel_owner = ?", true).First(&owner).Error; err != nil {
+		t.Fatal(err)
+	}
+	editor := model.User{Username: "legacy-account-editor", Enable: true, IsSuperAdmin: true}
+	if err := db.Create(&editor).Error; err != nil {
+		t.Fatal(err)
+	}
+	account := model.Account{Email: "legacy-account", OwnerAdminID: owner.Id, TotalGB: gb}
+	if err := db.Create(&account).Error; err != nil {
+		t.Fatal(err)
+	}
+	input := map[string]any{"email": account.Email, "totalGB": float64(2 * gb)}
+	if _, err := accounts.SaveAccountWithoutInboundAudit(input, editor.Id, database.AccountAudit{ActorID: editor.Id}); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	month := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)
+	activity := ActivityService{}
+	for _, viewer := range []*model.User{&owner, &editor} {
+		rows, err := activity.ChangeEvents(month, editor.Username, 0, viewer)
+		if err != nil || len(rows) != 1 || rows[0].OwnerID != owner.Id || rows[0].ActorID != editor.Id ||
+			rows[0].Actor != editor.Username || rows[0].Kind != "updated" {
+			t.Fatalf("activity for %s: %+v, %v", viewer.Username, rows, err)
+		}
+	}
+	var saved model.Account
+	if err := db.First(&saved, account.Id).Error; err != nil || saved.OwnerAdminID != owner.Id {
+		t.Fatalf("edit changed account ownership: %+v, %v", saved, err)
+	}
+}
+
+func TestClientActivityDeletionCapturesOneEventAndTraffic(t *testing.T) {
+	accounts := newAccountsDB(t)
+	db := database.GetDB()
+	var owner model.User
+	if err := db.Where("is_panel_owner = ?", true).First(&owner).Error; err != nil {
+		t.Fatal(err)
+	}
+	editor := model.User{Username: "client-deleter", Enable: true, IsSuperAdmin: true}
+	if err := db.Create(&editor).Error; err != nil {
+		t.Fatal(err)
+	}
+	first := seedInboundWithClients(t, model.VLESS, 43331, []map[string]any{})
+	second := seedInboundWithClients(t, model.Trojan, 43332, []map[string]any{})
+	groups := &GroupService{}
+	group, _, err := groups.Save(&owner, 0, "Audit deletion", []int{first.Id, second.Id})
+	if err != nil {
+		t.Fatal(err)
+	}
+	expiry := time.Now().Add(10 * 24 * time.Hour).UnixMilli()
+	entry := map[string]any{"email": "deleted-audit-client", "totalGB": float64(10 * gb), "enable": true,
+		"expiryTime": float64(expiry), "renewalDuration": float64(10 * dayMillis)}
+	account, err := accounts.SaveAccountWithoutInboundAudit(entry, owner.Id, database.AccountAudit{ActorID: owner.Id})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := groups.Apply(&owner, account.Email, 0, []int{group.ID}); err != nil {
+		t.Fatal(err)
+	}
+	entry["totalGB"] = float64(12 * gb)
+	if _, err := accounts.SaveAccountWithoutInboundAudit(entry, owner.Id, database.AccountAudit{ActorID: owner.Id}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(&xray.ClientTraffic{}).Where("email = ?", account.Email).
+		Updates(map[string]any{"up": 2 * gb, "down": 3 * gb, "all_time": 8 * gb}).Error; err != nil {
+		t.Fatal(err)
+	}
+	var panelCursor, historyCursor int64
+	if err := db.Model(&model.PanelClientEvent{}).Select("MAX(id)").Scan(&panelCursor).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(&model.AccountEvent{}).Select("MAX(id)").Scan(&historyCursor).Error; err != nil {
+		t.Fatal(err)
+	}
+	if _, err := (TrashService{}).DeleteClient(&editor, account.Email); err != nil {
+		t.Fatal(err)
+	}
+	var rows []model.PanelClientEvent
+	if err := db.Where("account_id = ? AND id > ?", account.Id, panelCursor).Find(&rows).Error; err != nil ||
+		len(rows) != 1 || rows[0].Kind != "deleted" || rows[0].Actor != editor.Username || rows[0].Changes != "" {
+		t.Fatalf("expected one deletion event: %+v, %v", rows, err)
+	}
+	if rows[0].Details == nil || rows[0].Details.Deleted == nil {
+		t.Fatal("missing deletion snapshot")
+	}
+	details := rows[0].Details.Deleted
+	if details.Quota != 12*gb || details.Expiry != expiry || details.Period != 10*dayMillis || !details.Enabled ||
+		details.InitialQuota == nil || *details.InitialQuota != 10*gb ||
+		details.Upload == nil || *details.Upload != 2*gb || details.Download == nil || *details.Download != 3*gb ||
+		details.Lifetime == nil || *details.Lifetime != 8*gb {
+		t.Fatalf("deletion snapshot: %+v", details)
+	}
+	var history []model.AccountEvent
+	if err := db.Where("account_id = ? AND id > ?", account.Id, historyCursor).Find(&history).Error; err != nil ||
+		len(history) != 1 || history[0].Kind != "deleted" {
+		t.Fatalf("account history recorded association cleanup: %+v, %v", history, err)
+	}
+}
+
 func TestClientActivityGroupsARequestAndKeepsAccountHistory(t *testing.T) {
 	accounts := newAccountsDB(t)
 	db := database.GetDB()
@@ -280,18 +383,18 @@ func TestClientActivityGroupsARequestAndKeepsAccountHistory(t *testing.T) {
 	expiry := now.Add(10 * 24 * time.Hour).UnixMilli()
 	client := map[string]any{"email": email, "enable": true, "totalGB": float64(2 * gb),
 		"expiryTime": float64(expiry), "renewalDuration": float64(10 * dayMillis)}
-	if _, err := accounts.SaveAccountWithoutInboundAudit(client, admin.Id, "create-request"); err != nil {
+	if _, err := accounts.SaveAccountWithoutInboundAudit(client, admin.Id, database.AccountAudit{Operation: "create-request"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := groups.Apply(&owner, email, 0, []int{group.ID}, "create-request"); err != nil {
+	if _, err := groups.Apply(&owner, email, 0, []int{group.ID}, database.AccountAudit{Operation: "create-request"}); err != nil {
 		t.Fatal(err)
 	}
 	client["totalGB"] = float64(3 * gb)
 	client["expiryTime"] = float64(expiry + 5*dayMillis)
-	if _, err := accounts.SaveAccountWithoutInboundAudit(client, admin.Id, "edit-request"); err != nil {
+	if _, err := accounts.SaveAccountWithoutInboundAudit(client, admin.Id, database.AccountAudit{Operation: "edit-request"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := groups.Apply(&owner, email, 0, []int{group.ID}, "edit-request"); err != nil {
+	if _, err := groups.Apply(&owner, email, 0, []int{group.ID}, database.AccountAudit{Operation: "edit-request"}); err != nil {
 		t.Fatal(err)
 	}
 	month := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)

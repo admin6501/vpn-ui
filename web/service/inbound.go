@@ -1530,7 +1530,7 @@ func (s *InboundService) AddInbound(inbound *model.Inbound) (*model.Inbound, boo
 // DelInbound deletes an inbound configuration by ID.
 // It removes the inbound from the database and the running Xray instance if active.
 // Returns whether Xray needs restart and any error.
-func (s *InboundService) DelInbound(id int) (bool, error) {
+func (s *InboundService) DelInbound(id int, audit ...database.AccountAudit) (bool, error) {
 	// Drop every admin's grant for this inbound. Ids are AUTOINCREMENT so they are
 	// not reissued, but leaving the rows means a stale grant lingers forever and the
 	// Admins modal would tick a checkbox for an inbound that no longer exists.
@@ -1578,7 +1578,9 @@ func (s *InboundService) DelInbound(id int) (bool, error) {
 	// usage. SyncInboundAccounts drops them too when the controller reaches it, but
 	// not every caller of DelInbound does, and a membership left pointing at a
 	// deleted inbound keeps its bytes out of the Xray-native remainder for good.
-	if err := db.Where("inbound_id = ?", id).Delete(&model.AccountInbound{}).Error; err != nil {
+	if err := database.AccountAuditTransaction(db, func(tx *gorm.DB) error {
+		return tx.Where("inbound_id = ?", id).Delete(&model.AccountInbound{}).Error
+	}, audit...); err != nil {
 		return false, err
 	}
 	inbound, err := s.GetInbound(id)
@@ -2010,17 +2012,17 @@ func (s *InboundService) updateClientTraffics(tx *gorm.DB, oldInbound *model.Inb
 	return nil
 }
 
-func (s *InboundService) AddInboundClient(data *model.Inbound, operation ...string) (bool, error) {
+func (s *InboundService) AddInboundClient(data *model.Inbound, operation ...database.AccountAudit) (bool, error) {
 	return s.addInboundClient(data, 0, false, operation...)
 }
 
 // AddInboundClientForAdmin records the creating administrator together
 // with the account rows; representative ownership remains in the billing ledger.
-func (s *InboundService) AddInboundClientForAdmin(data *model.Inbound, ownerID int, operation ...string) (bool, error) {
+func (s *InboundService) AddInboundClientForAdmin(data *model.Inbound, ownerID int, operation ...database.AccountAudit) (bool, error) {
 	return s.addInboundClient(data, ownerID, ownerID > 0, operation...)
 }
 
-func (s *InboundService) addInboundClient(data *model.Inbound, ownerID int, syncAccount bool, operation ...string) (needRestart bool, err error) {
+func (s *InboundService) addInboundClient(data *model.Inbound, ownerID int, syncAccount bool, operation ...database.AccountAudit) (needRestart bool, err error) {
 	// Before anything parses the settings: interfaceClients below is spliced into the
 	// inbound's stored JSON verbatim, so an email left untrimmed here is persisted.
 	data.Settings = normalizeClientEmails(data.Settings)
@@ -2587,7 +2589,7 @@ func (s *InboundService) CopyInboundClientsScoped(targetInboundID int, sourceInb
 	return result, needRestart, nil
 }
 
-func (s *InboundService) DelInboundClient(inboundId int, clientId string) (bool, error) {
+func (s *InboundService) DelInboundClient(inboundId int, clientId string, audit ...database.AccountAudit) (bool, error) {
 	oldInbound, err := s.GetInbound(inboundId)
 	if err != nil {
 		logger.Error("Load Old Data Error")
@@ -2653,99 +2655,77 @@ func (s *InboundService) DelInboundClient(inboundId int, clientId string) (bool,
 		return false, err
 	}
 
-	oldInbound.Settings = string(newSettings)
-
-	db := database.GetDB()
-
-	err = s.DelClientIPs(db, email)
+	notDepleted, err := s.persistInboundClientRemoval(oldInbound, string(newSettings), email, audit...)
 	if err != nil {
-		logger.Error("Error in delete client IPs")
 		return false, err
 	}
-	needRestart := false
+	return s.removeLiveInboundClient(oldInbound, email, needApiDel && notDepleted), nil
+}
 
-	if len(email) > 0 {
-		// Read into a slice, not First. A missing row is not an error here, it is "no
-		// stats to delete", and it is the ordinary state of the SECOND membership of one
-		// account: email is unique panel-wide, so an account on N inbounds has ONE
-		// traffic row, the first delete takes it, and every remaining membership then
-		// failed outright with "Get stats error" and could never be removed. That left a
-		// deleted account still serving on every inbound but the first. Same trap and
-		// same fix as DelInboundClientByEmail below.
-		//
-		// notDepleted stays true when there is no row: it only decides whether to bother
-		// calling RemoveUser, and a user the core does not have answers "User %s not
-		// found." which the branch below already treats as done. Defaulting it false
-		// instead would skip the call and leave a deleted account connected until the
-		// next restart.
-		notDepleted := true
-		var stats []xray.ClientTraffic
-		err = db.Model(xray.ClientTraffic{}).Select("enable").Where("email = ?", email).Find(&stats).Error
+func (s *InboundService) removeLiveInboundClient(inbound *model.Inbound, email string, enabled bool) bool {
+	if !enabled || email == "" {
+		return false
+	}
+	s.xrayApi.Init(p.GetAPIPort())
+	defer s.xrayApi.Close()
+	if err := s.xrayApi.RemoveUser(inbound.Tag, email); err != nil && !strings.Contains(err.Error(), fmt.Sprintf("User %s not found.", email)) {
+		logger.Debug("Error in deleting client by api:", err)
+		return true
+	}
+	return false
+}
+
+func (s *InboundService) persistInboundClientRemoval(inbound *model.Inbound, settings, email string, audit ...database.AccountAudit) (bool, error) {
+	notDepleted := true
+	err := database.AccountAuditTransaction(database.GetDB(), func(tx *gorm.DB) error {
+		updateSettings := func() error {
+			result := tx.Model(&model.Inbound{}).Where("id = ? AND settings = ?", inbound.Id, inbound.Settings).
+				Update("settings", settings)
+			if result.Error != nil {
+				return result.Error
+			}
+			if result.RowsAffected == 0 {
+				return common.NewError("inbound changed during client removal; retry")
+			}
+			return nil
+		}
+		if email == "" {
+			return updateSettings()
+		}
+		serving, err := servingInboundIds(tx, email)
 		if err != nil {
-			logger.Error("Get stats error")
-			return false, err
+			return err
 		}
-		if len(stats) > 0 {
-			notDepleted = stats[0].Enable
-			err = s.DelClientStat(db, email)
-			if err != nil {
-				logger.Error("Delete stats Data Error")
-				return false, err
+		var stats []xray.ClientTraffic
+		key := accountKey(email)
+		if err := tx.Select("enable").Where("LOWER(TRIM(email)) = ?", key).Limit(1).Find(&stats).Error; err != nil {
+			return err
+		}
+		notDepleted = len(stats) == 0 || stats[0].Enable
+		if err := (&AccountService{}).DropMembership(tx, inbound.Id, email); err != nil {
+			return err
+		}
+		if err := updateSettings(); err != nil {
+			return err
+		}
+		for _, id := range serving {
+			if id != inbound.Id {
+				return tx.Model(&xray.ClientTraffic{}).Where("LOWER(TRIM(email)) = ?", key).Update("inbound_id", id).Error
 			}
 		}
-		if needApiDel && notDepleted {
-			s.xrayApi.Init(p.GetAPIPort())
-			err1 := s.xrayApi.RemoveUser(oldInbound.Tag, email)
-			if err1 == nil {
-				logger.Debug("Client deleted by api:", email)
-				needRestart = false
-			} else {
-				if strings.Contains(err1.Error(), fmt.Sprintf("User %s not found.", email)) {
-					logger.Debug("User is already deleted. Nothing to do more...")
-				} else {
-					logger.Debug("Error in deleting client by api:", err1)
-					needRestart = true
-				}
-			}
-			s.xrayApi.Close()
+		if err := tx.Where("LOWER(TRIM(client_email)) = ?", key).Delete(&model.InboundClientIps{}).Error; err != nil {
+			return err
 		}
-	}
-	if err := db.Save(oldInbound).Error; err != nil {
-		return needRestart, err
-	}
-	dropMembershipAfterDelete(db, inboundId, email)
-	return needRestart, nil
+		return tx.Where("LOWER(TRIM(email)) = ?", key).Delete(&xray.ClientTraffic{}).Error
+	}, audit...)
+	return notDepleted, err
 }
 
-// dropMembershipAfterDelete takes the account off this inbound in the accounts layer
-// once its settings entry is gone.
-//
-// In the delete itself and not left to the caller: a membership that outlives its
-// entry RESURRECTS the client on the next projection (see DropMembership), and the
-// callers are precisely where that kept being missed - the LDAP sync job and the
-// reseller cascade both delete clients and neither reconciles the mirror. Doing it
-// here makes every caller correct by construction, including ones not written yet.
-//
-// Never fails the delete. The settings write has already committed, so the client IS
-// gone from the data plane; a mirror that could not be updated is a stale row for the
-// startup cleanup to collect, not a reason to report a delete that happened as failed.
-func dropMembershipAfterDelete(db *gorm.DB, inboundId int, email string) {
-	if email == "" {
-		return
-	}
-	var accountService AccountService
-	if err := database.SnapshotTransaction(db, func(tx *gorm.DB) error {
-		return accountService.DropMembership(tx, inboundId, email)
-	}); err != nil {
-		logger.Warningf("dropping the accounts-layer membership of %q on inbound %d after deleting it: %v", email, inboundId, err)
-	}
-}
-
-func (s *InboundService) UpdateInboundClient(data *model.Inbound, clientId string, operation ...string) (bool, error) {
+func (s *InboundService) UpdateInboundClient(data *model.Inbound, clientId string, operation ...database.AccountAudit) (bool, error) {
 	return s.updateInboundClient(data, clientId, false, operation...)
 }
 
-func (s *InboundService) updateInboundClient(data *model.Inbound, clientId string, syncAccount bool, operation ...string) (needRestart bool, err error) {
+func (s *InboundService) updateInboundClient(data *model.Inbound, clientId string, syncAccount bool, operation ...database.AccountAudit) (needRestart bool, err error) {
 	// TODO: check if TrafficReset field is updating
 	// Before anything parses the settings: interfaceClients[0] below replaces the
 	// stored client verbatim, so an email left untrimmed here is persisted.
@@ -3145,7 +3125,7 @@ func bulkNumToInt64(v any) int64 {
 // skip toggles. It mutates each affected inbound's settings JSON in place and saves
 // it inside a single transaction. Returns the applied/skipped counts and the set of
 // protocols touched, so the caller can regenerate the right subsystems once.
-func (s *InboundService) BulkUpdateClients(req BulkClientUpdateRequest) (result BulkClientUpdateResult, touched map[string]bool, err error) {
+func (s *InboundService) BulkUpdateClients(req BulkClientUpdateRequest, audit ...database.AccountAudit) (result BulkClientUpdateResult, touched map[string]bool, err error) {
 	touched = map[string]bool{}
 
 	switch req.Op {
@@ -3179,6 +3159,10 @@ func (s *InboundService) BulkUpdateClients(req BulkClientUpdateRequest) (result 
 			err = tx.Commit().Error
 		}
 	}()
+	release, err := database.HoldAccountAudit(tx, audit...)
+	if err != nil {
+		return result, touched, err
+	}
 	removed := make(map[string][]int)
 
 	for inboundId, emails := range byInbound {
@@ -3288,7 +3272,10 @@ func (s *InboundService) BulkUpdateClients(req BulkClientUpdateRequest) (result 
 		}
 		touched[string(inbound.Protocol)] = true
 	}
-	return result, touched, s.finishTrashRemovals(tx, removed)
+	if err := s.finishTrashRemovals(tx, removed); err != nil {
+		return result, touched, err
+	}
+	return result, touched, release()
 }
 
 // bulkClientSkipped reports whether a client is excluded by the request's skip
@@ -4951,8 +4938,8 @@ func (s *InboundService) resetAccountTraffic(tx *gorm.DB, email string) error {
 	return nil
 }
 
-func (s *InboundService) ResetClientTrafficByEmail(clientEmail string) error {
-	err := database.GetDB().Transaction(func(tx *gorm.DB) error { return s.resetAccountTraffic(tx, clientEmail) })
+func (s *InboundService) ResetClientTrafficByEmail(clientEmail string, audit ...database.AccountAudit) error {
+	err := database.AccountAuditTransaction(database.GetDB(), func(tx *gorm.DB) error { return s.resetAccountTraffic(tx, clientEmail) }, audit...)
 	if err == nil {
 		MarkSpeedLimitsDirty()
 		RequestAdmissionRefresh()
@@ -4960,16 +4947,16 @@ func (s *InboundService) ResetClientTrafficByEmail(clientEmail string) error {
 	return err
 }
 
-func (s *InboundService) ResetClientTraffic(id int, clientEmail string) (bool, error) {
-	err := s.ResetClientTrafficByEmail(clientEmail)
+func (s *InboundService) ResetClientTraffic(id int, clientEmail string, audit ...database.AccountAudit) (bool, error) {
+	err := s.ResetClientTrafficByEmail(clientEmail, audit...)
 	return err == nil, err
 }
 
-func (s *InboundService) ResetAllClientTraffics(id int) error {
+func (s *InboundService) ResetAllClientTraffics(id int, audit ...database.AccountAudit) error {
 	db := database.GetDB()
 	now := time.Now().Unix() * 1000
 
-	err := db.Transaction(func(tx *gorm.DB) error {
+	err := database.AccountAuditTransaction(db, func(tx *gorm.DB) error {
 		whereText := "inbound_id "
 		if id == -1 {
 			whereText += " > ?"
@@ -5006,7 +4993,7 @@ func (s *InboundService) ResetAllClientTraffics(id int) error {
 			Update("last_traffic_reset_time", now)
 
 		return result.Error
-	})
+	}, audit...)
 	if err == nil {
 		MarkSpeedLimitsDirty()
 		RequestAdmissionRefresh()
@@ -5039,8 +5026,8 @@ func (s *InboundService) ResetInboundTraffic(id int) error {
 	return result.Error
 }
 
-func (s *InboundService) DelDepletedClients(id int) error {
-	_, err := s.DelDepletedClientsScoped(id, nil)
+func (s *InboundService) DelDepletedClients(id int, audit ...database.AccountAudit) error {
+	_, err := s.DelDepletedClientsScoped(id, nil, audit...)
 	return err
 }
 
@@ -5052,7 +5039,7 @@ func (s *InboundService) DelDepletedClients(id int) error {
 // and it has to exist because the route this serves is gated on PermDeleteClient plus
 // access to the INBOUND. A reseller holds both on an inbound it shares with an admin,
 // so unscoped, one click deletes that admin's depleted accounts as well.
-func (s *InboundService) DelDepletedClientsScoped(id int, onlyEmails map[string]bool) (deleted []string, err error) {
+func (s *InboundService) DelDepletedClientsScoped(id int, onlyEmails map[string]bool, audit ...database.AccountAudit) (deleted []string, err error) {
 	db := database.GetDB()
 	tx := db.Begin()
 	if tx.Error != nil {
@@ -5184,7 +5171,7 @@ func (s *InboundService) DelDepletedClientsScoped(id int, onlyEmails map[string]
 		// of inbound 3 could destroy inbound 5 - port, certificates, daemon config and
 		// all - because one expired customer happened to be its only client.
 		if len(newClients) == 0 && !restorable[inboundId] && onlyEmails == nil && (id < 0 || inboundId == id) {
-			if _, err := s.DelInbound(inboundId); err != nil {
+			if _, err := s.DelInbound(inboundId, audit...); err != nil {
 				return nil, err
 			}
 			continue
@@ -5208,11 +5195,15 @@ func (s *InboundService) DelDepletedClientsScoped(id int, onlyEmails map[string]
 	// Exactly the accounts just taken out of the settings, and no longer "everything
 	// the predicate matches": with the sweep scoped by membership rather than by
 	// inbound_id, the predicate on its own names accounts this call was never about.
+	release, err := database.HoldAccountAudit(tx, audit...)
+	if err != nil {
+		return nil, err
+	}
 	if err := s.finishTrashRemovals(tx, removed); err != nil {
 		return nil, err
 	}
 
-	return deleted, nil
+	return deleted, release()
 }
 
 // containsInt is the plain membership test the sweep needs; servingInboundIds
@@ -5981,7 +5972,7 @@ func (s *InboundService) FilterAndSortClientEmails(emails []string) ([]string, [
 
 	return validEmails, extraEmails, nil
 }
-func (s *InboundService) DelInboundClientByEmail(inboundId int, email string) (bool, error) {
+func (s *InboundService) DelInboundClientByEmail(inboundId int, email string, audit ...database.AccountAudit) (bool, error) {
 	oldInbound, err := s.GetInbound(inboundId)
 	if err != nil {
 		logger.Error("Load Old Data Error")
@@ -6049,79 +6040,8 @@ func (s *InboundService) DelInboundClientByEmail(inboundId int, email string) (b
 		return false, err
 	}
 
-	oldInbound.Settings = string(newSettings)
-
-	db := database.GetDB()
-
-	// Traffic and IP bindings belong to the account, not this membership. Preserve
-	// them until the final served inbound has been removed, including retries.
-	serving, err := servingInboundIds(db, storedEmail)
-	if err != nil {
+	if _, err := s.persistInboundClientRemoval(oldInbound, string(newSettings), storedEmail, audit...); err != nil {
 		return false, err
 	}
-	remainingID := 0
-	for _, id := range serving {
-		if id != inboundId {
-			remainingID = id
-			break
-		}
-	}
-	if remainingID != 0 {
-		if err := db.Model(&xray.ClientTraffic{}).Where("LOWER(TRIM(email)) = ?", accountKey(storedEmail)).Update("inbound_id", remainingID).Error; err != nil {
-			return false, err
-		}
-	}
-	if remainingID == 0 {
-		if err := s.DelClientIPs(db, storedEmail); err != nil {
-			logger.Error("Error in delete client IPs")
-			return false, err
-		}
-	}
-
-	needRestart := false
-
-	// remove stats too
-	if len(storedEmail) > 0 {
-		// Counted directly rather than read through GetClientTrafficByEmail. That one
-		// resolves the account's inbound (to attach a uuid this path never uses) and
-		// reports a MISSING row as a hard error, "Inbound Not Found For Email".
-		//
-		// A missing row is not an error here, it is "no stats to delete", and it is
-		// the ordinary state of the SECOND membership of one account: an account on
-		// N inbounds has ONE traffic row, the first delete takes it, and every
-		// remaining membership then failed outright and could never be removed. That
-		// left a deleted account still serving on every inbound but the first.
-		var stats int64
-		if err := db.Model(xray.ClientTraffic{}).Where("email = ?", storedEmail).Count(&stats).Error; err != nil {
-			return false, err
-		}
-		if stats > 0 && remainingID == 0 {
-			if err := s.DelClientStat(db, storedEmail); err != nil {
-				logger.Error("Delete stats Data Error")
-				return false, err
-			}
-		}
-
-		if needApiDel {
-			s.xrayApi.Init(p.GetAPIPort())
-			if err1 := s.xrayApi.RemoveUser(oldInbound.Tag, storedEmail); err1 == nil {
-				logger.Debug("Client deleted by api:", storedEmail)
-				needRestart = false
-			} else {
-				if strings.Contains(err1.Error(), fmt.Sprintf("User %s not found.", storedEmail)) {
-					logger.Debug("User is already deleted. Nothing to do more...")
-				} else {
-					logger.Debug("Error in deleting client by api:", err1)
-					needRestart = true
-				}
-			}
-			s.xrayApi.Close()
-		}
-	}
-
-	if err := db.Save(oldInbound).Error; err != nil {
-		return needRestart, err
-	}
-	dropMembershipAfterDelete(db, inboundId, storedEmail)
-	return needRestart, nil
+	return s.removeLiveInboundClient(oldInbound, storedEmail, needApiDel), nil
 }

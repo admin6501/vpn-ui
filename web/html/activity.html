@@ -26,7 +26,7 @@
           <option v-for="item in months" :key="item" :value="item" v-text="item"></option>
         </select>
       </label>
-      <label v-if="owner">{{ i18n "pages.activity.clientOwner" }}
+      <label v-if="owner">{{ i18n "pages.activity.changedBy" }}
         <select class="ant-input" v-model="clientOwner" @change="resetPage">
           <option value="">{{ i18n "all" }}</option>
           <option v-for="item in owners" :key="item" :value="item" v-text="item"></option>
@@ -105,7 +105,8 @@
             <th v-else>{{ i18n "pages.clients.email" }}</th>
             <th v-if="mode === 'logins'">IP</th>
             <th v-if="mode === 'logins'">{{ i18n "pages.activity.os" }}</th>
-            <th v-if="(mode === 'changes' || mode === 'renewals') && owner">{{ i18n "pages.activity.clientOwner" }}</th>
+            <th v-if="mode === 'changes'">{{ i18n "pages.activity.changedBy" }}</th>
+            <th v-if="mode === 'renewals' && owner">{{ i18n "pages.activity.clientOwner" }}</th>
             <th v-if="mode !== 'trash'">{{ i18n "pages.activity.event" }}</th>
             <th v-if="mode !== 'logins' && mode !== 'payments' && mode !== 'trash'">{{ i18n "pages.activity.fields" }}</th>
             <th v-if="mode === 'trash' && scope === 'manager'">{{ i18n "pages.clients.title" }}</th>
@@ -119,7 +120,9 @@
               <td dir="auto" v-text="mode === 'trash' ? row.name : (mode === 'logins' ? row.username : row.email)"></td>
               <td v-if="mode === 'logins'" dir="ltr" v-text="row.ip || '—'"></td>
               <td v-if="mode === 'logins'" v-text="row.os || '—'"></td>
-              <td v-if="(mode === 'changes' || mode === 'renewals') && owner" dir="auto" v-text="row.owner || '—'"></td>
+              <td v-if="mode === 'changes'" dir="auto" v-text="row.actor || row.owner || '—'"
+                :title="!row.actor && row.owner ? clientOwnerLabel : undefined"></td>
+              <td v-if="mode === 'renewals' && owner" dir="auto" v-text="row.owner || '—'"></td>
               <td v-if="mode !== 'trash'" v-text="mode === 'payments' && row.kind === 'updated' ? paymentExtension : (kinds[row.kind] || row.kind)"></td>
               <td v-if="mode !== 'logins' && mode !== 'payments' && mode !== 'trash'">
                 <details v-if="changeLines(row).length" class="panel-activity-detail-box">
@@ -205,6 +208,7 @@
       trashDaysPerGB: {{ .trashDaysPerGB }},
       trashRestore: { visible: false, id: 0, name: '', quota: '', unit: 'GB', days: '' },
       paymentExtension: '{{ i18n "pages.activity.paymentExtension" }}',
+      clientOwnerLabel: '{{ i18n "pages.activity.clientOwner" }}',
       noPendingPayments: '{{ i18n "pages.activity.noPendingPayments" }}',
       autoPurge: false, retentionDays: 90, month: '', months: [], clientOwner: '', owners: [], date: '', rows: [], apps: [], cursors: [0], more: false,
       kinds: {

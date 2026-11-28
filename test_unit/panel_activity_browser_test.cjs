@@ -79,11 +79,15 @@ const { chromium } = require('playwright');
                 }] };
             } else if (path === 'activity/changes') {
                 obj = { rows: [{
-                    ...renewal, kind: 'renewed', changes: 'quota,expiry',
+                    ...renewal, kind: 'renewed', changes: 'quota,expiry', actor: 'test-client-editor',
                     details: { quota: { before: 2 ** 30, after: 2 * 2 ** 30 },
                         expiry: { before: at, after: at + 864000000 }, renewalPeriod: { before: 86400000, after: 864000000 },
                         usageReset: true },
-                }], owners: ['test-representative'] };
+                }, {
+                    id: 17, at, kind: 'deleted', email: 'removed-client', owner: 'panel-owner', actor: 'test-client-editor',
+                    details: { deleted: { quota: 12 * 2 ** 30, initialQuota: 10 * 2 ** 30, upload: 2 * 2 ** 30,
+                        download: 3 * 2 ** 30, lifetime: 8 * 2 ** 30, expiry: at + 864000000, period: 864000000, enabled: true } },
+                }], owners: ['test-client-editor'] };
             } else if (path === 'activity/apps' && method === 'POST') {
                 assert.match(route.request().headers()['content-type'], /^application\/json/);
                 appChanges = route.request().postDataJSON().apps;
@@ -187,14 +191,23 @@ const { chromium } = require('playwright');
         await page.getByRole('cell', { name: 'test-renewed' }).waitFor();
         await page.getByRole('button', { name: 'Activity' }).click();
         await page.getByRole('link', { name: 'Client change history' }).click();
-        await page.getByRole('cell', { name: 'test-representative' }).waitFor();
-        const detailBox = page.locator('.panel-activity-detail-box');
+        await page.getByRole('columnheader', { name: 'Changed by' }).waitFor();
+        const editRow = page.getByRole('row').filter({ hasText: 'test-renewed' });
+        await editRow.getByRole('cell', { name: 'test-client-editor' }).waitFor();
+        const detailBox = editRow.locator('.panel-activity-detail-box');
         assert.equal(await detailBox.getAttribute('open'), null, 'details start collapsed');
         await detailBox.locator('summary').click();
-        const details = await page.locator('.panel-activity-details').innerText();
+        const details = await editRow.locator('.panel-activity-details').innerText();
         assert.match(details, /1(?:[.,]00)?\s*GB.*2(?:[.,]00)?\s*GB/);
         assert.match(details, /Renewal period.*10 days/);
         assert.match(details, /Current usage reset to zero/);
+        const deletedRow = page.getByRole('row').filter({ hasText: 'removed-client' });
+        await deletedRow.getByRole('cell', { name: 'test-client-editor' }).waitFor();
+        await deletedRow.locator('summary').click();
+        const deletedDetails = await deletedRow.locator('.panel-activity-details').innerText();
+        assert.match(deletedDetails, /Initial quota.*10(?:[.,]00)?\s*GB/);
+        assert.match(deletedDetails, /Remaining quota.*7(?:[.,]00)?\s*GB/);
+        assert.match(deletedDetails, /Usage.*5(?:[.,]00)?\s*GB/);
         await page.getByRole('switch').last().click();
         await page.getByRole('spinbutton', { name: 'Keep logs for this many days' }).fill('60');
         const retentionSaved = page.waitForResponse(response => response.url().endsWith('/activity/changes/retention'));

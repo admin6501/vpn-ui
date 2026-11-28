@@ -72,7 +72,10 @@ func renewalPeriod(account *model.Account, requested *int64) (int64, error) {
 // Ledger, account, membership breakdown and projection commit together. Cumulative
 // core/node cursors and lifetime usage remain monotonic for billing and deltas.
 func (s *AccountService) RenewAccount(user *model.User, email string, requested *int64) error {
-	err := database.GetDB().Transaction(func(tx *gorm.DB) error {
+	if user == nil {
+		return common.NewError("authentication required")
+	}
+	err := database.AccountAuditTransaction(database.GetDB(), func(tx *gorm.DB) error {
 		account, err := s.GetAccountByEmailTx(tx, email)
 		if err != nil {
 			return err
@@ -86,7 +89,7 @@ func (s *AccountService) RenewAccount(user *model.User, email string, requested 
 		}
 		_, err = s.renewAccountTx(tx, user, account, &traffic, requested, time.Now().UnixMilli(), false)
 		return err
-	})
+	}, database.AccountAudit{ActorID: user.Id})
 	if err == nil {
 		MarkSpeedLimitsDirty()
 		RequestAdmissionRefresh()

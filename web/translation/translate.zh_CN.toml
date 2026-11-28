@@ -2436,6 +2436,9 @@ theBuiltInWindowsSSTPClientRejectsSelf = "内置 Windows SSTP 客户端会拒绝
 theNativeWindowsIOSAndroidIKEv2ClientsReject = "本机 Windows/iOS/Android IKEv2 客户端拒绝自签名证书，除非您将生成的 CA 导入到设备的受信任根中。对于真实用户，首选将 CA 签名的证书绑定到主机名。无论如何生成自签名 CA + 服务器证书？"
 
 [pages.activity]
+changedBy = "操作人"
+initialQuota = "初始配额"
+remainingQuota = "剩余配额"
 trash = "回收站"
 trashClients = "我的客户端"
 trashManagers = "管理员和代理商"

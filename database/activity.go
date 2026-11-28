@@ -23,20 +23,15 @@ func initPanelActivity(db *gorm.DB) error {
 		WHEN NEW.at > 0 AND (NEW.kind='autoRenewed' OR COALESCE(
 			(SELECT value FROM settings WHERE key='` + ClientActivitySetting + `' ORDER BY id LIMIT 1), 'true')='true')
 		BEGIN
-			INSERT INTO panel_client_events(account_id,owner_id,owner,email,kind,changes,details,audit_operation,at)
+			INSERT INTO panel_client_events(account_id,owner_id,owner,actor_id,actor,email,kind,changes,details,audit_operation,at)
 			SELECT a.id,` + ActivityOwnerSQL + `,COALESCE((SELECT username FROM users WHERE id=` + ActivityOwnerSQL + `),''),
-				a.email,NEW.kind,COALESCE(NEW.changes,''),NEW.details,NEW.audit_operation,NEW.at
-			FROM accounts a WHERE a.id=NEW.account_id;
+				COALESCE(actor.id,0),COALESCE(actor.username,''),
+				a.email,NEW.kind,COALESCE(NEW.changes,''),NEW.details,
+				COALESCE(NULLIF(NEW.audit_operation,''),` + accountAuditOperationSQL + `,''),NEW.at
+			FROM accounts a LEFT JOIN users actor ON actor.id=(SELECT actor_id FROM account_audit_context WHERE id=1)
+			WHERE a.id=NEW.account_id;
 		END`,
 		`DROP TRIGGER IF EXISTS panel_client_activity_delete`,
-		`CREATE TRIGGER panel_client_activity_delete BEFORE DELETE ON accounts
-		WHEN COALESCE((SELECT value FROM settings WHERE key='` + ClientActivitySetting + `' ORDER BY id LIMIT 1), 'true')='true'
-		BEGIN
-			INSERT INTO panel_client_events(account_id,owner_id,owner,email,kind,changes,audit_operation,at)
-			SELECT a.id,` + ActivityOwnerSQL + `,COALESCE((SELECT username FROM users WHERE id=` + ActivityOwnerSQL + `),''),
-				a.email,'deleted','',` + accountAuditOperationSQL + `,` + accountAuditAtSQL("a.id") + `
-			FROM accounts a WHERE a.id=OLD.id;
-		END`,
 		`CREATE TRIGGER IF NOT EXISTS panel_client_activity_remove_hidden AFTER DELETE ON panel_client_events
 		BEGIN
 			DELETE FROM panel_client_hiddens WHERE event_id=OLD.id;

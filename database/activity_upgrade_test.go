@@ -22,8 +22,13 @@ func TestClientActivityDetailsUpgradePreservesExistingRows(t *testing.T) {
 	for _, statement := range []string{
 		"DROP TRIGGER client_history_updated",
 		"DROP TRIGGER client_history_created",
+		"DROP TRIGGER client_history_remove",
 		"DROP TRIGGER panel_client_activity",
 		"DROP TRIGGER panel_payment_reminder_changed",
+		"DROP INDEX idx_panel_client_events_actor_id",
+		"ALTER TABLE panel_client_events DROP COLUMN actor_id",
+		"ALTER TABLE panel_client_events DROP COLUMN actor",
+		"ALTER TABLE account_audit_context DROP COLUMN actor_id",
 		"ALTER TABLE account_events DROP COLUMN details",
 		"ALTER TABLE panel_client_events DROP COLUMN details",
 		`CREATE TRIGGER client_history_updated AFTER UPDATE ON accounts BEGIN
