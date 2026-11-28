@@ -102,6 +102,14 @@
 :is(.bo-shell,.login-app,.ant-modal,.ant-drawer,.ant-select-dropdown,.ant-dropdown,.ant-popover) .ant-table-thead > tr > th .anticon-filter,
 :is(.bo-shell,.login-app,.ant-modal,.ant-drawer,.ant-select-dropdown,.ant-dropdown,.ant-popover) .ant-table-thead > tr > th .ant-table-column-sorter { color:var(--text-3); }
 
+/* Keep Ant's light hover background off the dark Clients table. */
+body.dark #clients-table .ant-table-thead > tr > th.ant-table-column-has-sorters:hover {
+  background-color:var(--surface-2);
+}
+body.dark #clients-table .ant-table-thead > tr > th.ant-table-column-sort:hover {
+  background-color:var(--dark-color-table-column-sorted-bg);
+}
+
 :is(.bo-shell,.login-app,.ant-modal,.ant-drawer,.ant-select-dropdown,.ant-dropdown,.ant-popover) .ant-table-tbody > tr > td {
   border-bottom:1px solid var(--border);
   padding:12px 14px;

@@ -169,6 +169,31 @@ const { chromium } = require('playwright');
         }
         await page.evaluate(() => { document.documentElement.style.zoom = 1; });
         await page.setViewportSize({ width: 1440, height: 900 });
+        const emailHeader = page.getByRole('columnheader', { name: 'Email' });
+        const emailSorter = emailHeader.locator('.ant-table-column-sorters');
+        const headerColors = () => emailHeader.evaluate(async header => {
+            await Promise.all(header.getAnimations().map(animation => animation.finished));
+            return {
+                background: getComputedStyle(header).backgroundColor,
+                text: getComputedStyle(header.querySelector('.ant-table-column-title')).color,
+            };
+        });
+        for (const ultraDark of [false, true]) {
+            await page.evaluate(ultraDark => {
+                if (themeSwitcher.isUltra !== ultraDark) themeSwitcher.toggleUltra();
+            }, ultraDark);
+            for (const sorted of [false, true]) {
+                if (sorted) await emailSorter.click();
+                await page.mouse.move(0, 0);
+                assert.equal(await emailHeader.evaluate(header => header.classList.contains('ant-table-column-sort')), sorted);
+                const resting = await headerColors();
+                await emailSorter.hover();
+                assert.deepEqual(await headerColors(), resting,
+                    `client header keeps its colors on hover (ultra-dark: ${ultraDark}, sorted: ${sorted})`);
+            }
+            await page.evaluate(() => app.pickSort('newest'));
+        }
+        await page.evaluate(() => themeSwitcher.toggleUltra());
         await page.getByRole('button', { name: 'Account Info', exact: true }).click();
         await page.getByRole('button', { name: /Logs/ }).click();
         const history = page.locator('.account-client-history');
