@@ -2436,6 +2436,7 @@ theBuiltInWindowsSSTPClientRejectsSelf = "يرفض عميل Windows SSTP الم�
 theNativeWindowsIOSAndroidIKEv2ClientsReject = "يرفض عملاء Windows/iOS/Android IKEv2 الأصليون الشهادات الموقعة ذاتيًا ما لم تقم باستيراد المرجع المصدق (CA) الذي تم إنشاؤه إلى الجذور الموثوقة للجهاز. تفضل شهادة موقعة من CA مرتبطة باسم مضيف للمستخدمين الحقيقيين. هل تريد إنشاء شهادة خادم CA + موقعة ذاتيًا على أي حال؟"
 
 [pages.activity]
+unknownClientOwner = "مالك غير معروف"
 changedBy = "نفّذ التغيير"
 initialQuota = "الحصة الأصلية"
 remainingQuota = "الحصة المتبقية"

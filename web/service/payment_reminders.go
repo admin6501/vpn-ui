@@ -13,6 +13,7 @@ type PaymentReminder struct {
 	Email string `json:"email"`
 	Kind  string `json:"kind"`
 	At    int64  `json:"at"`
+	Owner string `json:"owner,omitempty"`
 }
 
 func pendingPayments(user *model.User) *gorm.DB {
@@ -26,7 +27,7 @@ func (ActivityService) PendingPayments(user *model.User, before int64) ([]Paymen
 	if !user.Can(model.PermAccessInbounds) || !user.PaymentReminders {
 		return rows, nil
 	}
-	query := pendingPayments(user).Select("p.revision AS id, a.email, p.kind, p.at")
+	query := pendingPayments(user).Select("p.revision AS id, a.email, p.kind, p.at, " + database.AccountOwnerNameSQL + " AS owner")
 	if before > 0 {
 		query = query.Where("p.revision < ?", before)
 	}

@@ -1,12 +1,14 @@
 package service
 
 import (
+	"errors"
 	"testing"
 	"time"
 
 	"github.com/mhsanaei/3x-ui/v2/database"
 	"github.com/mhsanaei/3x-ui/v2/database/model"
 	"github.com/mhsanaei/3x-ui/v2/xray"
+	"gorm.io/gorm"
 )
 
 func TestPanelLoginProtectionAndScope(t *testing.T) {
@@ -270,16 +272,152 @@ func TestClientActivityRecordsEditorOfLegacyAccount(t *testing.T) {
 	now := time.Now().UTC()
 	month := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)
 	activity := ActivityService{}
-	for _, viewer := range []*model.User{&owner, &editor} {
-		rows, err := activity.ChangeEvents(month, editor.Username, 0, viewer)
-		if err != nil || len(rows) != 1 || rows[0].OwnerID != owner.Id || rows[0].ActorID != editor.Id ||
-			rows[0].Actor != editor.Username || rows[0].Kind != "updated" {
-			t.Fatalf("activity for %s: %+v, %v", viewer.Username, rows, err)
-		}
+	rows, err := activity.ChangeEvents(month, "", 0, &owner)
+	if err != nil || len(rows) != 2 || rows[0].OwnerID != owner.Id || rows[0].Owner != "" || rows[0].ActorID != editor.Id ||
+		rows[0].Actor != editor.Username || rows[0].Kind != "updated" {
+		t.Fatalf("a later editor cannot establish ownership: %+v, %v", rows, err)
+	}
+	if visible, err := activity.ChangeEvents(month, "", 0, &editor); err != nil || len(visible) != 0 {
+		t.Fatalf("editing an unattributed client gave access to its owner history: %+v, %v", visible, err)
 	}
 	var saved model.Account
 	if err := db.First(&saved, account.Id).Error; err != nil || saved.OwnerAdminID != owner.Id {
 		t.Fatalf("edit changed account ownership: %+v, %v", saved, err)
+	}
+}
+
+func TestLegacyClientNoticesUseTheRecoveredOwner(t *testing.T) {
+	accounts := newAccountsDB(t)
+	db := database.GetDB()
+	var owner model.User
+	if err := db.Where("is_panel_owner", true).First(&owner).Error; err != nil {
+		t.Fatal(err)
+	}
+	manager := model.User{Username: "legacy-renewal-manager", Enable: true, Permissions: model.PermAccessInbounds, PaymentReminders: true}
+	other := model.User{Username: "shared-inbound-admin", Enable: true, Permissions: model.PermAccessInbounds, PaymentReminders: true}
+	inbound := seedInboundWithClients(t, model.VLESS, 43340, []map[string]any{})
+	for _, user := range []*model.User{&manager, &other} {
+		if err := db.Create(user).Error; err != nil {
+			t.Fatal(err)
+		}
+		if err := db.Create(&model.InboundAccess{UserId: user.Id, InboundId: inbound.Id}).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	owner.PaymentReminders = true
+	if err := db.Model(&owner).Update("payment_reminders", true).Error; err != nil {
+		t.Fatal(err)
+	}
+	account := model.Account{Email: "legacy-renewal-notice", OwnerAdminID: owner.Id, TotalGB: 5 * gb, Enable: true}
+	if err := database.AccountAuditTransaction(db, func(tx *gorm.DB) error {
+		return tx.Create(&account).Error
+	}, database.AccountAudit{ActorID: manager.Id}); err != nil {
+		t.Fatal(err)
+	}
+	var path string
+	if err := db.Raw("SELECT file FROM pragma_database_list WHERE name='main'").Scan(&path).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := database.CloseDB(); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.InitDB(path); err != nil {
+		t.Fatal(err)
+	}
+	db = database.GetDB()
+	if err := db.First(&account, account.Id).Error; err != nil || account.OwnerAdminID != manager.Id || !account.OwnerConfirmed {
+		t.Fatalf("recover canonical owner: %+v %v", account, err)
+	}
+	if err := db.Create(&model.AccountInbound{AccountId: account.Id, InboundId: inbound.Id}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&xray.ClientTraffic{Email: account.Email, InboundId: inbound.Id, Total: account.TotalGB, Up: account.TotalGB}).Error; err != nil {
+		t.Fatal(err)
+	}
+	activity := ActivityService{}
+	if err := activity.SetChangeLogging(false); err != nil {
+		t.Fatal(err)
+	}
+	if err := accounts.SetAutoRenew(account.Email, true, database.AccountAudit{ActorID: other.Id}); err != nil {
+		t.Fatal(err)
+	}
+	if touched, err := accounts.RenewDueAccounts(); err != nil || len(touched) != 1 {
+		t.Fatalf("renew the legacy client's depleted package: %v %v", touched, err)
+	}
+	for _, recipient := range []*model.User{&manager, &owner, &other} {
+		want := int64(1)
+		if recipient.Id == other.Id {
+			want = 0
+		}
+		notice, err := activity.Notifications(recipient, "renewals")
+		if err != nil || notice.Count != want {
+			t.Fatalf("renewal notice to %s: %+v %v", recipient.Username, notice, err)
+		}
+		if recipient.Id == owner.Id {
+			if err := activity.DismissNotice(&owner, "renewals", notice.Through); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	if notice, err := activity.Notifications(&manager, "renewals"); err != nil || notice.Count != 1 {
+		t.Fatalf("panel owner's dismissal hid the manager's notice: %+v %v", notice, err)
+	}
+	rows, err := activity.PendingPayments(&manager, 0)
+	if err != nil || len(rows) != 1 || rows[0].Owner != manager.Username || rows[0].Kind != "autoRenewed" {
+		t.Fatalf("pending payment for legacy manager: %+v %v", rows, err)
+	}
+	for _, unrelated := range []*model.User{&other, &owner} {
+		if notice, err := activity.PaymentNotice(unrelated); err != nil || notice.Count != 0 {
+			t.Fatalf("payment notice to %s: %+v %v", unrelated.Username, notice, err)
+		}
+		if err := activity.ConfirmPayment(unrelated, rows[0].ID); !errors.Is(err, gorm.ErrRecordNotFound) {
+			t.Fatalf("%s was allowed to confirm an unrelated payment: %v", unrelated.Username, err)
+		}
+	}
+	if err := activity.ConfirmPayment(&manager, rows[0].ID); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestClientActivityDetailsTrackInboundAssignments(t *testing.T) {
+	accounts := newAccountsDB(t)
+	db := database.GetDB()
+	var owner model.User
+	if err := db.Where("is_panel_owner", true).First(&owner).Error; err != nil {
+		t.Fatal(err)
+	}
+	first := seedInboundWithClients(t, model.VLESS, 43341, []map[string]any{})
+	second := seedInboundWithClients(t, model.Trojan, 43342, []map[string]any{})
+	for inbound, name := range map[*model.Inbound]string{first: "Primary Inbound", second: "Replacement Inbound"} {
+		if err := db.Model(inbound).Update("remark", name).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	create := database.AccountAudit{ActorID: owner.Id, Operation: "create-with-inbound"}
+	account, err := accounts.SaveAccountWithoutInboundAudit(map[string]any{"email": "membership-audit", "enable": true}, owner.Id, create)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := accounts.ApplyMembershipsFrom(account.Email, 0, []int{first.Id}, nil, true, create); err != nil {
+		t.Fatal(err)
+	}
+	replace := database.AccountAudit{ActorID: owner.Id, Operation: "replace-inbound"}
+	if _, err := accounts.ApplyMembershipsFrom(account.Email, 0, []int{second.Id}, []int{first.Id}, true, replace); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := accounts.SetMembershipEnable(account.Email, second.Id, false, database.AccountAudit{ActorID: owner.Id}); err != nil {
+		t.Fatal(err)
+	}
+	history, err := accounts.AccountHistory(&owner, account.Email, 0)
+	if err != nil || len(history.Events) != 3 {
+		t.Fatalf("history must group each operation: %+v %v", history, err)
+	}
+	enable, swap, initial := history.Events[0].Details.Inbounds, history.Events[1].Details.Inbounds, history.Events[2].Details.Inbounds
+	if len(initial) != 1 || initial[0].Name != "Primary Inbound" || initial[0].Protocol != string(model.VLESS) ||
+		initial[0].Before != nil || initial[0].After == nil || !*initial[0].After ||
+		len(swap) != 2 || swap[0].ID != first.Id || swap[0].After != nil || swap[1].ID != second.Id || swap[1].Before != nil ||
+		len(enable) != 1 || enable[0].Name != "Replacement Inbound" || enable[0].After == nil || *enable[0].After {
+		t.Fatalf("unexpected inbound changes: initial=%+v swap=%+v enable=%+v", initial, swap, enable)
 	}
 }
 

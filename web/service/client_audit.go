@@ -71,6 +71,22 @@ func mergeClientAuditEvent(event *model.PanelClientEvent, row model.PanelClientE
 	event.Details.Quota = mergeClientAuditValue(event.Details.Quota, row.Details.Quota)
 	event.Details.Expiry = mergeClientAuditValue(event.Details.Expiry, row.Details.Expiry)
 	event.Details.RenewalPeriod = mergeClientAuditValue(event.Details.RenewalPeriod, row.Details.RenewalPeriod)
+	if row.Details.AutoRenewEnabled != nil {
+		event.Details.AutoRenewEnabled = row.Details.AutoRenewEnabled
+	}
+	for _, change := range row.Details.Inbounds {
+		merged := false
+		for i := range event.Details.Inbounds {
+			if event.Details.Inbounds[i].ID == change.ID {
+				event.Details.Inbounds[i].After = change.After
+				merged = true
+				break
+			}
+		}
+		if !merged {
+			event.Details.Inbounds = append(event.Details.Inbounds, change)
+		}
+	}
 	event.Details.UsageReset = event.Details.UsageReset || row.Details.UsageReset
 }
 

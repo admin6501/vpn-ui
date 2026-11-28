@@ -2436,6 +2436,7 @@ theBuiltInWindowsSSTPClientRejectsSelf = "Ứng dụng khách SSTP Windows tích
 theNativeWindowsIOSAndroidIKEv2ClientsReject = "Máy khách IKEv2 Windows/iOS/Android gốc từ chối chứng chỉ tự ký trừ khi bạn nhập CA được tạo vào nguồn gốc đáng tin cậy của thiết bị. Ưu tiên chứng chỉ do CA ký được liên kết với tên máy chủ cho người dùng thực. Vẫn tạo chứng chỉ máy chủ CA + tự ký?"
 
 [pages.activity]
+unknownClientOwner = "Chưa rõ chủ sở hữu"
 changedBy = "Người thay đổi"
 initialQuota = "Hạn mức ban đầu"
 remainingQuota = "Hạn mức còn lại"

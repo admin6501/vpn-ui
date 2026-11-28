@@ -25,7 +25,7 @@ const { chromium } = require('playwright');
         const deletedManager = { id: 40, name: 'recover-representative', deletedAt: at, clientCount: 4 };
         const login = { id: 2, kind: 'login', at, username: 'panel-owner', os: 'Windows', ip: '203.0.113.19' };
         const renewal = { id: 3, kind: 'autoRenewed', at, email: 'test-renewed', owner: 'test-representative' };
-        pendingPayment = { id: 15, kind: 'created', at, email: 'payment-client' };
+        pendingPayment = { id: 15, kind: 'created', at, email: 'payment-client', owner: 'payment-owner' };
         await page.route('**/test/panel/api/**', async route => {
             const url = new URL(route.request().url());
             const method = route.request().method();
@@ -79,9 +79,13 @@ const { chromium } = require('playwright');
                 }] };
             } else if (path === 'activity/changes') {
                 obj = { rows: [{
-                    ...renewal, kind: 'renewed', changes: 'quota,expiry', actor: 'test-client-editor',
+                    ...renewal, kind: 'renewed', changes: 'quota,expiry,inbounds', actor: 'test-client-editor',
                     details: { quota: { before: 2 ** 30, after: 2 * 2 ** 30 },
                         expiry: { before: at, after: at + 864000000 }, renewalPeriod: { before: 86400000, after: 864000000 },
+                        inbounds: [
+                            { id: 1, name: 'Original inbound', protocol: 'vless', port: 443, before: true, after: null },
+                            { id: 2, name: 'Replacement inbound', protocol: 'trojan', port: 8443, before: null, after: true },
+                        ],
                         usageReset: true },
                 }, {
                     id: 17, at, kind: 'deleted', email: 'removed-client', owner: 'panel-owner', actor: 'test-client-editor',
@@ -184,6 +188,8 @@ const { chromium } = require('playwright');
         assert.equal(menuColor.actual, menuColor.gray, 'Activity uses the same gray as other panel labels');
         await renewalLink.click();
         await page.getByRole('cell', { name: 'test-renewed' }).waitFor();
+        await page.getByRole('columnheader', { name: 'Client owner' }).waitFor();
+        await page.getByRole('cell', { name: 'test-representative' }).waitFor();
         const renewalPreference = page.getByRole('switch', { name: 'Show automatic renewal notifications', checked: true });
         await renewalPreference.click();
         await page.getByRole('switch', { name: 'Show automatic renewal notifications', checked: false }).waitFor();
@@ -191,9 +197,9 @@ const { chromium } = require('playwright');
         await page.getByRole('cell', { name: 'test-renewed' }).waitFor();
         await page.getByRole('button', { name: 'Activity' }).click();
         await page.getByRole('link', { name: 'Client change history' }).click();
-        await page.getByRole('columnheader', { name: 'Changed by' }).waitFor();
+        await page.getByRole('columnheader', { name: 'Client owner' }).waitFor();
         const editRow = page.getByRole('row').filter({ hasText: 'test-renewed' });
-        await editRow.getByRole('cell', { name: 'test-client-editor' }).waitFor();
+        await editRow.getByRole('cell', { name: 'test-representative' }).waitFor();
         const detailBox = editRow.locator('.panel-activity-detail-box');
         assert.equal(await detailBox.getAttribute('open'), null, 'details start collapsed');
         await detailBox.locator('summary').click();
@@ -201,8 +207,10 @@ const { chromium } = require('playwright');
         assert.match(details, /1(?:[.,]00)?\s*GB.*2(?:[.,]00)?\s*GB/);
         assert.match(details, /Renewal period.*10 days/);
         assert.match(details, /Current usage reset to zero/);
+        assert.match(details, /− Original inbound .*443/);
+        assert.match(details, /[+] Replacement inbound .*8443/);
         const deletedRow = page.getByRole('row').filter({ hasText: 'removed-client' });
-        await deletedRow.getByRole('cell', { name: 'test-client-editor' }).waitFor();
+        await deletedRow.getByRole('cell', { name: 'panel-owner' }).waitFor();
         await deletedRow.locator('summary').click();
         const deletedDetails = await deletedRow.locator('.panel-activity-details').innerText();
         assert.match(deletedDetails, /Initial quota.*10(?:[.,]00)?\s*GB/);
@@ -232,6 +240,8 @@ const { chromium } = require('playwright');
         await payments.waitFor({ state: 'hidden' });
         await preference.click();
         await customer.waitFor();
+        await page.getByRole('columnheader', { name: 'Client owner' }).waitFor();
+        await page.getByRole('cell', { name: 'payment-owner' }).waitFor();
         await payments.waitFor();
         assert.equal(await payments.getAttribute('title'), 'payment-client');
         await page.getByRole('link', { name: 'Close', exact: true }).click();

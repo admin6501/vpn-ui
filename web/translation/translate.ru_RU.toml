@@ -2436,6 +2436,7 @@ theBuiltInWindowsSSTPClientRejectsSelf = "Встроенный клиент Wind
 theNativeWindowsIOSAndroidIKEv2ClientsReject = "Собственные клиенты IKEv2 для Windows/iOS/Android отклоняют самозаверяющие сертификаты, если вы не импортируете сгенерированный центр сертификации в доверенные корни устройства. Предпочитайте сертификат, подписанный центром сертификации, привязанный к имени хоста для реальных пользователей. Все равно создать самозаверяющий сертификат сервера CA +?"
 
 [pages.activity]
+unknownClientOwner = "Владелец неизвестен"
 changedBy = "Кто изменил"
 initialQuota = "Начальный лимит"
 remainingQuota = "Остаток трафика"

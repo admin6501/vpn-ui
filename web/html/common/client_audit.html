@@ -79,7 +79,31 @@
         lines.push(this.auditLabels.usageCleared);
         fields.delete('trafficUsage');
       }
+      if (details.inbounds?.length) {
+        lines.push(...this.inboundLines(row.kind, details.inbounds));
+        fields.delete('inbounds');
+      }
+      if (details.autoRenewEnabled != null) {
+        lines.push(`${this.fields.autoRenew} · ${details.autoRenewEnabled ? this.auditLabels.enabled : this.auditLabels.disabled}`);
+        fields.delete('autoRenew');
+      }
       if (fields.size) lines.push([...fields].map(field => this.fields[field] || field).join(' · '));
+      return lines;
+    },
+
+    inboundLines(kind, changes) {
+      const label = this.auditLabels;
+      const lines = [];
+      for (const { id, name, protocol, port, before, after } of changes) {
+        const inbound = [name || '#' + id, protocol, port || ''].filter(Boolean).join(' · ');
+        if (kind === 'created' && after != null) {
+          lines.push(`${this.fields.inbounds} · ${inbound}${after ? '' : ' · ' + label.disabled}`);
+        } else if (kind !== 'created' && before !== after) {
+          const change = before == null ? '+ ' + inbound : after == null ? '− ' + inbound
+            : inbound + ' · ' + (after ? label.enabled : label.disabled);
+          lines.push(`${this.fields.inbounds} · ${change}`);
+        }
+      }
       return lines;
     },
 

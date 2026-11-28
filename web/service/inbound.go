@@ -3987,7 +3987,7 @@ func (s *InboundService) autoRenewClients(tx *gorm.DB) (bool, int64, error) {
 	}
 	for email, expiry := range renewedByEmail {
 		if err := tx.Model(&model.Account{}).Where("LOWER(TRIM(email)) = ?", email).Updates(map[string]any{
-			"expiry_time": expiry, "last_renewed_at": time.Now().UnixMilli(), "last_renewal_automatic": true,
+			"expiry_time": expiry, "last_renewed_at": gorm.Expr("MAX(?,last_renewed_at+1)", time.Now().UnixMilli()), "last_renewal_automatic": true,
 		}).Error; err != nil {
 			return false, 0, err
 		}

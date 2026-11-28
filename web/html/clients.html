@@ -168,7 +168,8 @@
                        of twelve identical ones. -->
                   <template slot="ownerCol" slot-scope="text, row">
                     <div class="bo-lg-owner">
-                      <span>[[ row.ownerUsername || '—' ]]</span>
+                      <span v-if="row.ownerUsername" v-text="row.ownerUsername"></span>
+                      <span v-else>{{ i18n "pages.activity.unknownClientOwner" }}</span>
                       <a-button v-if="canTransferOwnership" size="small" @click="openOwnerTransfer(row)">{{ i18n "pages.client.changeOwner" }}</a-button>
                     </div>
                   </template>
@@ -932,7 +933,7 @@
       async openOwnerTransfer(row) {
         const msg = await HttpUtil.get('/panel/api/clients/owners');
         if (!msg || !msg.success) return;
-        this.ownerTransfer = { visible: true, loading: false, row, ownerId: row.ownerId, choices: msg.obj || [] };
+        this.ownerTransfer = { visible: true, loading: false, row, ownerId: row.ownerUsername ? row.ownerId : null, choices: msg.obj || [] };
       },
       async saveOwnerTransfer() {
         if (!this.ownerTransfer.ownerId) return;

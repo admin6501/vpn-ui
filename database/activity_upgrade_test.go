@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/mhsanaei/3x-ui/v2/database/model"
+	"gorm.io/gorm"
 )
 
 func TestClientActivityDetailsUpgradePreservesExistingRows(t *testing.T) {
@@ -23,12 +24,19 @@ func TestClientActivityDetailsUpgradePreservesExistingRows(t *testing.T) {
 		"DROP TRIGGER client_history_updated",
 		"DROP TRIGGER client_history_created",
 		"DROP TRIGGER client_history_remove",
+		"DROP TRIGGER client_history_account_inbounds_insert",
+		"DROP TRIGGER client_history_account_inbounds_delete",
+		"DROP TRIGGER client_history_account_groups_insert",
+		"DROP TRIGGER client_history_account_groups_delete",
+		"DROP TRIGGER client_history_membership_status",
 		"DROP TRIGGER panel_client_activity",
 		"DROP TRIGGER panel_payment_reminder_changed",
 		"DROP INDEX idx_panel_client_events_actor_id",
+		"DROP INDEX idx_account_event_actor_history",
 		"ALTER TABLE panel_client_events DROP COLUMN actor_id",
 		"ALTER TABLE panel_client_events DROP COLUMN actor",
 		"ALTER TABLE account_audit_context DROP COLUMN actor_id",
+		"ALTER TABLE account_events DROP COLUMN actor_id",
 		"ALTER TABLE account_events DROP COLUMN details",
 		"ALTER TABLE panel_client_events DROP COLUMN details",
 		`CREATE TRIGGER client_history_updated AFTER UPDATE ON accounts BEGIN
@@ -65,5 +73,50 @@ func TestClientActivityDetailsUpgradePreservesExistingRows(t *testing.T) {
 	if details := rows[1].Details; details == nil || details.Quota == nil ||
 		*details.Quota != (model.ClientValueChange{Before: 20, After: 30}) {
 		t.Fatalf("trigger was not upgraded: %+v", details)
+	}
+}
+
+func TestLegacyRenewalNoticesRecoverRecordedActorOnUpgrade(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "panel.db")
+	if err := InitDB(path); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { CloseDB() })
+	var owner model.User
+	if err := db.Where("is_panel_owner").First(&owner).Error; err != nil {
+		t.Fatal(err)
+	}
+	manager := model.User{Username: "original-creator", Enable: true, IsSuperAdmin: true}
+	if err := db.Create(&manager).Error; err != nil {
+		t.Fatal(err)
+	}
+	account := model.Account{Email: "old-renewal", OwnerAdminID: owner.Id, CreatedAt: time.Now().UnixMilli()}
+	if err := AccountAuditTransaction(db, func(tx *gorm.DB) error {
+		return tx.Create(&account).Error
+	}, AccountAudit{Operation: "recorded-creation", ActorID: manager.Id}); err != nil {
+		t.Fatal(err)
+	}
+	// The previous version put the actor in Activity and left account history
+	// without that field. Its automatic renewals went to the stored panel owner.
+	if err := db.Model(&model.AccountEvent{}).Where("account_id=?", account.Id).Update("actor_id", 0).Error; err != nil {
+		t.Fatal(err)
+	}
+	old := model.PanelClientEvent{AccountID: account.Id, OwnerID: owner.Id, Owner: owner.Username,
+		Email: account.Email, Kind: "autoRenewed", At: time.Now().UnixMilli()}
+	if err := db.Create(&old).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := CloseDB(); err != nil {
+		t.Fatal(err)
+	}
+	if err := InitDB(path); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.First(&old, old.Id).Error; err != nil || old.OwnerID != manager.Id || old.Owner != manager.Username {
+		t.Fatalf("historical renewal was not attributed to its manager: %+v %v", old, err)
+	}
+	var creation model.AccountEvent
+	if err := db.Where("account_id=? AND kind='created'", account.Id).First(&creation).Error; err != nil || creation.ActorID != manager.Id {
+		t.Fatalf("creation provenance wasn't retained with history: %+v %v", creation, err)
 	}
 }

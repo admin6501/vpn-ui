@@ -2436,6 +2436,7 @@ theBuiltInWindowsSSTPClientRejectsSelf = "El cliente SSTP de Windows integrado r
 theNativeWindowsIOSAndroidIKEv2ClientsReject = "Los clientes IKEv2 nativos de Windows/iOS/Android rechazan los certificados autofirmados a menos que importe la CA generada a las raíces confiables del dispositivo. Prefiera un certificado firmado por una CA vinculado a un nombre de host para usuarios reales. ¿Generar un certificado de servidor CA + autofirmado de todos modos?"
 
 [pages.activity]
+unknownClientOwner = "Propietario desconocido"
 changedBy = "Modificado por"
 initialQuota = "Cuota inicial"
 remainingQuota = "Cuota restante"

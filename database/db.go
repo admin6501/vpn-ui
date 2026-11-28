@@ -491,6 +491,9 @@ func InitDB(dbPath string) error {
 	migrateGlobalTwoFactor()
 	migrateInboundOwners()
 	migrateInboundAccess()
+	if err := repairLegacyClientOwners(db); err != nil {
+		return err
+	}
 	return runSeeders(isUsersEmpty)
 }
 

@@ -27,12 +27,24 @@ type PanelClientEvent struct {
 
 // ClientChangeDetails records quota, validity, usage and status for auditing.
 type ClientChangeDetails struct {
-	Created       *ClientCreation    `json:"created,omitempty"`
-	Deleted       *ClientDeletion    `json:"deleted,omitempty"`
-	Quota         *ClientValueChange `json:"quota,omitempty"`
-	Expiry        *ClientValueChange `json:"expiry,omitempty"`
-	RenewalPeriod *ClientValueChange `json:"renewalPeriod,omitempty"`
-	UsageReset    bool               `json:"usageReset,omitempty"`
+	Created          *ClientCreation       `json:"created,omitempty"`
+	Deleted          *ClientDeletion       `json:"deleted,omitempty"`
+	Quota            *ClientValueChange    `json:"quota,omitempty"`
+	Expiry           *ClientValueChange    `json:"expiry,omitempty"`
+	RenewalPeriod    *ClientValueChange    `json:"renewalPeriod,omitempty"`
+	Inbounds         []ClientInboundChange `json:"inbounds,omitempty"`
+	AutoRenewEnabled *bool                 `json:"autoRenewEnabled,omitempty"`
+	UsageReset       bool                  `json:"usageReset,omitempty"`
+}
+
+// A nil state means that the inbound was not assigned.
+type ClientInboundChange struct {
+	ID       int    `json:"id"`
+	Name     string `json:"name"`
+	Protocol string `json:"protocol"`
+	Port     int    `json:"port"`
+	Before   *bool  `json:"before"`
+	After    *bool  `json:"after"`
 }
 
 type ClientDeletion struct {

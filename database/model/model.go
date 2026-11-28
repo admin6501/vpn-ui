@@ -649,7 +649,8 @@ type Account struct {
 
 	// Administrative ownership is separate from reseller billing. Zero marks a
 	// legacy account whose original creator was not recorded.
-	OwnerAdminID int `json:"-" gorm:"not null;default:0;index"`
+	OwnerAdminID   int  `json:"-" gorm:"not null;default:0;index"`
+	OwnerConfirmed bool `json:"-" gorm:"not null;default:false"`
 
 	// Email is the identity, and is matched case-insensitively after trimming (see
 	// AccountKey). uniqueIndex here mirrors xray.ClientTraffic.Email's own unique
@@ -767,6 +768,7 @@ type AccountEvent struct {
 	Kind           string               `json:"kind" gorm:"not null"`
 	Changes        string               `json:"changes" gorm:"not null;default:''"`
 	AuditOperation string               `json:"-" gorm:"not null;default:''"`
+	ActorID        int                  `json:"-" gorm:"not null;default:0"`
 	Details        *ClientChangeDetails `json:"details,omitempty" gorm:"serializer:json;type:text"`
 }
 

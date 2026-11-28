@@ -565,6 +565,7 @@ func (s *AccountService) upsertAccountFromEntry(tx *gorm.DB, entry map[string]an
 	case err == gorm.ErrRecordNotFound:
 		fresh := newAccountFromEntry(entry)
 		fresh.OwnerAdminID = creatorID
+		fresh.OwnerConfirmed = creatorID > 0
 		if err := captureRenewalDuration(fresh, nil, entry); err != nil {
 			return nil, err
 		}
@@ -594,6 +595,7 @@ func (s *AccountService) upsertAccountFromEntry(tx *gorm.DB, entry map[string]an
 	}
 	updated.Id = account.Id
 	updated.OwnerAdminID = account.OwnerAdminID
+	updated.OwnerConfirmed = account.OwnerConfirmed
 	updated.ProtocolCredentials = account.ProtocolCredentials
 	updated.RepresentativeBlocked = account.RepresentativeBlocked
 	updated.ImportedResetDays = account.ImportedResetDays
