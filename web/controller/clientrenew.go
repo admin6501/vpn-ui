@@ -30,11 +30,12 @@ func (a *InboundController) renewClient(c *gin.Context) {
 func (a *InboundController) setClientAutoRenew(c *gin.Context) {
 	var body struct {
 		Enabled *bool `form:"enabled" json:"enabled" binding:"required"`
+		Limit   *int  `form:"limit" json:"limit"`
 	}
 	if err := c.ShouldBind(&body); err != nil {
 		jsonMsg(c, I18nWeb(c, "somethingWentWrong"), err)
 		return
 	}
-	err := accountService.SetAutoRenew(c.Param("email"), *body.Enabled, clientAuditOperation(c))
+	err := accountService.ConfigureAutoRenew(c.Param("email"), *body.Enabled, body.Limit, clientAuditOperation(c))
 	jsonMsg(c, I18nWeb(c, "pages.clients.autoRenew"), err)
 }

@@ -19,14 +19,23 @@ Vue.component('panel-activity', {
     data: () => ({ basePath, notices: {} }),
     methods: {
         async refresh() {
-            if (document.hidden || this.pending) return;
+            if (document.hidden) return;
+            if (this.pending) {
+                this.refreshQueued = true;
+                return;
+            }
             this.pending = true;
             try {
-                // A background poll should not turn a network outage into repeated toasts.
-                const { data } = await axios.get('/panel/api/activity/notices');
-                if (data.success) this.notices = data.obj;
-            } catch (error) {
-                if (error.response?.status === 404) clearInterval(this.timer);
+                do {
+                    this.refreshQueued = false;
+                    try {
+                        // A background poll should not turn a network outage into repeated toasts.
+                        const { data } = await axios.get('/panel/api/activity/notices');
+                        if (data.success && !this.refreshQueued) this.notices = data.obj;
+                    } catch (error) {
+                        if (error.response?.status === 404) clearInterval(this.timer);
+                    }
+                } while (this.refreshQueued && !document.hidden);
             } finally {
                 this.pending = false;
             }

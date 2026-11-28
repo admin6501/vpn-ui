@@ -210,13 +210,24 @@
           <a-input-number v-model="clientMembershipModal.client.reset" :min="0"
             :style="{ width: '96px' }"></a-input-number>
         </div>
-        <div class="bo-cf-switch" v-if="clientMembershipModal.isEdit && clientMembershipModal.row">
+        <div class="bo-cf-switch bo-cf-auto-renew" v-if="clientMembershipModal.isEdit && clientMembershipModal.row">
           <div>
             <div class="bo-cf-t">{{ i18n "pages.clients.autoRenew" }}</div>
             <div class="bo-cf-d">{{ i18n "pages.clients.autoRenewHelp" }}</div>
           </div>
-          <a-switch :checked="!!clientMembershipModal.row.autoRenew" :loading="clientMembershipModal.autoRenewBusy"
-            @change="v => clientMembershipModal.toggleAutoRenew(v)"></a-switch>
+          <a-space>
+            <a-switch :checked="!!clientMembershipModal.row.autoRenew" :loading="clientMembershipModal.autoRenewBusy"
+              @change="v => clientMembershipModal.toggleAutoRenew(v)"></a-switch>
+            <a-input-number v-model="clientMembershipModal.autoRenewLimit" :min="0" :max="10000"
+              aria-label='{{ i18n "pages.clients.autoRenewLimit" }}'></a-input-number>
+            <a-button :disabled="clientMembershipModal.autoRenewBusy || !Number.isInteger(clientMembershipModal.autoRenewLimit) || clientMembershipModal.autoRenewLimit === (clientMembershipModal.row.autoRenewLimit || 0)"
+              @click="clientMembershipModal.toggleAutoRenew(!!clientMembershipModal.row.autoRenew)">{{ i18n "save" }}</a-button>
+          </a-space>
+          <div class="bo-cf-d">{{ i18n "pages.clients.autoRenewLimit" }} · {{ i18n "pages.clients.autoRenewLimitHelp" }}
+            <span v-if="clientMembershipModal.row.autoRenewLimit > 0">
+              · {{ i18n "pages.clients.autoRenewUsed" }} <span v-text="clientMembershipModal.row.autoRenewCount || 0"></span>
+            </span>
+          </div>
         </div>
         <div class="bo-cf-switch">
           <div>
@@ -505,6 +516,7 @@
     storedBy: {},
     onDone: null,
     autoRenewBusy: false,
+    autoRenewLimit: 0,
 
     // Only these three cannot tell two of their own inbounds apart (bare
     // NAS-Identifier), which is exactly the set the server refuses.
@@ -569,12 +581,17 @@
     },
 
     async toggleAutoRenew(enabled) {
-      if (!this.row || this.autoRenewBusy) return;
+      if (!this.row || this.autoRenewBusy || !Number.isInteger(this.autoRenewLimit)) return;
       const current = this.row;
       this.autoRenewBusy = true;
       try {
-        const msg = await HttpUtil.post('/panel/api/inbounds/autoRenewClient/' + encodeURIComponent(current.email), { enabled });
-        if (msg && msg.success) current.autoRenew = enabled;
+        const limit = this.autoRenewLimit;
+        const msg = await HttpUtil.post('/panel/api/inbounds/autoRenewClient/' + encodeURIComponent(current.email), { enabled, limit });
+        if (msg && msg.success) {
+          if ((current.autoRenewLimit || 0) !== limit || (!current.autoRenew && enabled)) current.autoRenewCount = 0;
+          current.autoRenew = enabled;
+          current.autoRenewLimit = limit;
+        }
       } finally { this.autoRenewBusy = false; }
     },
 
@@ -587,6 +604,7 @@
       this.onDone = onDone;
       this.isEdit = !!row;
       this.row = row;
+      this.autoRenewLimit = row?.autoRenewLimit || 0;
       this.storedBy = storedBy || {};
       this.title = row ? '{{ i18n "pages.clients.editTitle" }}' : '{{ i18n "pages.clients.addTitle" }}';
       this.okText = row ? '{{ i18n "sure" }}' : '{{ i18n "pages.clients.add" }}';

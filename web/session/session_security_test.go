@@ -44,6 +44,13 @@ func TestSecuritySessionsRevokeCopiedCookies(t *testing.T) {
 			c.Status(200)
 		}
 	})
+	r.POST("/read-low-quota", func(c *gin.Context) {
+		if err := MarkLowQuotaNoticeRead(c); err != nil {
+			t.Fatal(err)
+		}
+		c.Status(204)
+	})
+	r.GET("/low-quota", func(c *gin.Context) { c.JSON(200, LowQuotaNoticeRead(c)) })
 	r.POST("/logout", func(c *gin.Context) { ClearSession(c); _ = sessions.Default(c).Save(); c.Status(200) })
 	request := func(method, path string, cookie *http.Cookie) *httptest.ResponseRecorder {
 		req := httptest.NewRequest(method, path, nil)
@@ -72,6 +79,13 @@ func TestSecuritySessionsRevokeCopiedCookies(t *testing.T) {
 	}
 	if request("GET", "/private", old).Code != 200 {
 		t.Fatal("fresh session rejected")
+	}
+	dismissed := request("POST", "/read-low-quota", old).Result().Cookies()
+	if len(dismissed) != 1 || request("GET", "/low-quota", dismissed[0]).Body.String() != "true" {
+		t.Fatal("reading a low-quota notice did not persist in the session")
+	}
+	if request("GET", "/low-quota", login()).Body.String() != "false" {
+		t.Fatal("a new login inherited a dismissed low-quota notice")
 	}
 	for _, updates := range []map[string]any{
 		{"password": "new-password-hash"},

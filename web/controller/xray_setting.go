@@ -8,6 +8,7 @@ import (
 	"github.com/mhsanaei/3x-ui/v2/database/model"
 	"github.com/mhsanaei/3x-ui/v2/util/common"
 	"github.com/mhsanaei/3x-ui/v2/web/service"
+	"github.com/mhsanaei/3x-ui/v2/web/session"
 
 	"github.com/gin-gonic/gin"
 )
@@ -100,6 +101,22 @@ func (a *XraySettingController) getXraySetting(c *gin.Context) {
 // updateSetting updates the Xray configuration settings.
 func (a *XraySettingController) updateSetting(c *gin.Context) {
 	xraySetting := c.PostForm("xraySetting")
+	if !session.GetLoginUser(c).IsPanelOwner {
+		previous, err := a.SettingService.GetXrayConfigTemplate()
+		if err != nil {
+			jsonMsg(c, I18nWeb(c, "pages.settings.toasts.modifySettings"), err)
+			return
+		}
+		changed, err := service.GatewayConfigurationChanged(previous, xraySetting)
+		if err != nil {
+			jsonMsg(c, I18nWeb(c, "pages.settings.toasts.modifySettings"), err)
+			return
+		}
+		if changed {
+			jsonMsg(c, I18nWeb(c, "pages.admins.ownerOnly"), common.NewError("only the panel owner can modify gateway settings"))
+			return
+		}
+	}
 	if err := a.XraySettingService.SaveXraySetting(xraySetting); err != nil {
 		jsonMsg(c, I18nWeb(c, "pages.settings.toasts.modifySettings"), err)
 		return

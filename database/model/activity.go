@@ -18,6 +18,7 @@ type PanelClientEvent struct {
 	ActorID        int                  `json:"-" gorm:"not null;default:0;index"`
 	Actor          string               `json:"actor,omitempty" gorm:"not null;default:''"`
 	Email          string               `json:"email" gorm:"not null"`
+	Comment        string               `json:"comment,omitempty"`
 	Kind           string               `json:"kind" gorm:"not null;index"`
 	Changes        string               `json:"changes" gorm:"not null;default:''"`
 	AuditOperation string               `json:"-" gorm:"not null;default:''"`
@@ -34,7 +35,13 @@ type ClientChangeDetails struct {
 	RenewalPeriod    *ClientValueChange    `json:"renewalPeriod,omitempty"`
 	Inbounds         []ClientInboundChange `json:"inbounds,omitempty"`
 	AutoRenewEnabled *bool                 `json:"autoRenewEnabled,omitempty"`
+	Comment          *ClientTextChange     `json:"comment,omitempty"`
 	UsageReset       bool                  `json:"usageReset,omitempty"`
+}
+
+type ClientTextChange struct {
+	Before string `json:"before"`
+	After  string `json:"after"`
 }
 
 // A nil state means that the inbound was not assigned.

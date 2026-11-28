@@ -24,11 +24,17 @@
                 <a-select-option value="leastLoad">{{ i18n "pages.interface.leastLoad" }}</a-select-option>
                 <a-select-option value="leastPing">{{ i18n "pages.interface.leastPing" }}</a-select-option>
                 <a-select-option value="failover">{{ i18n "pages.xray.balancer.failover" }}</a-select-option>
+                {{ if .perms.panelOwner }}
+                <a-select-option value="gateway">{{ i18n "pages.xray.balancer.gateway" }}</a-select-option>
+                {{ end }}
             </a-select>
         </a-form-item>
-        <a-form-item v-if="balancerModal.balancer.strategy === 'failover'"
-            label='{{ i18n "pages.xray.balancer.failoverPrimary" }}'
-            extra='{{ i18n "pages.xray.balancer.failoverDesc" }}'>
+        <a-form-item v-if="balancerModal.exactStrategy">
+            <template slot="label">
+                <span v-if="balancerModal.isGateway">{{ i18n "pages.xray.balancer.gatewayMaster" }}</span>
+                <span v-else>{{ i18n "pages.xray.balancer.failoverPrimary" }}</span>
+            </template>
+            <template v-if="!balancerModal.isGateway" slot="extra">{{ i18n "pages.xray.balancer.failoverDesc" }}</template>
             <a-select v-model="balancerModal.balancer.primaryTag" @change="balancerModal.primaryChanged"
                 :dropdown-class-name="themeSwitcher.currentTheme">
                 <a-select-option v-for="tag in balancerModal.failoverTags" :key="tag" :value="tag">[[ tag ]]</a-select-option>
@@ -36,15 +42,53 @@
         </a-form-item>
         <a-form-item has-feedback :validate-status="balancerModal.emptySelector? 'warning' : 'success'">
             <template slot="label">
-                <span v-if="balancerModal.balancer.strategy === 'failover'">{{ i18n "pages.xray.balancer.failoverBackups" }}</span>
+                <span v-if="balancerModal.isGateway">{{ i18n "pages.xray.balancer.gatewaySlaves" }}</span>
+                <span v-else-if="balancerModal.exactStrategy">{{ i18n "pages.xray.balancer.failoverBackups" }}</span>
                 <span v-else>{{ i18n "pages.xray.balancer.balancerSelectors" }}</span>
             </template>
-            <a-select v-model="balancerModal.balancer.selector" :mode="balancerModal.balancer.strategy === 'failover' ? 'multiple' : 'tags'" @change="balancerModal.check()"
+            <a-select v-model="balancerModal.balancer.selector" :mode="balancerModal.exactStrategy ? 'multiple' : 'tags'" @change="balancerModal.backupsChanged"
                 :dropdown-class-name="themeSwitcher.currentTheme">
                 <a-select-option v-for="tag in balancerModal.selectorTags" :key="tag" :value="tag">[[ tag ]]</a-select-option>
             </a-select>
         </a-form-item>
-        <a-form-item v-if="balancerModal.balancer.strategy !== 'failover'" label="{{ i18n "pages.interface.fallback" }}">
+        <template v-if="balancerModal.isGateway">
+            <a-form-item label='{{ i18n "pages.xray.balancer.gatewayLatency" }}'>
+                <a-input-number v-model="balancerModal.gateway.latencyMs" :min="1" :max="60000" @change="balancerModal.check()"></a-input-number>
+            </a-form-item>
+            <a-form-item label='{{ i18n "pages.xray.balancer.gatewayInterval" }}'>
+                <a-space>
+                    <a-input-number v-model="balancerModal.gateway.interval" :min="1" :max="balancerModal.gateway.unit === 60 ? 60 : 3600" @change="balancerModal.check()"></a-input-number>
+                    <a-select v-model="balancerModal.gateway.unit" @change="balancerModal.check()">
+                        <a-select-option :value="1">{{ i18n "pages.xray.balancer.gatewaySeconds" }}</a-select-option>
+                        <a-select-option :value="60">{{ i18n "pages.xray.balancer.gatewayMinutes" }}</a-select-option>
+                    </a-select>
+                </a-space>
+            </a-form-item>
+            <a-form-item label='{{ i18n "pages.xray.balancer.gatewayAttempts" }}'>
+                <a-input-number v-model="balancerModal.gateway.attempts" :min="1" :max="10" @change="balancerModal.check()"></a-input-number>
+            </a-form-item>
+            <a-form-item label='{{ i18n "pages.xray.balancer.gatewayEmergency" }}'>
+                <a-select v-model="balancerModal.gateway.emergencyTags" mode="multiple" @change="balancerModal.check()">
+                    <a-select-option v-for="tag in balancerModal.emergencyChoices" :key="tag" :value="tag">[[ tag ]]</a-select-option>
+                </a-select>
+            </a-form-item>
+            <a-form-item v-if="balancerModal.gateway.emergencyTags.length" label='{{ i18n "pages.xray.balancer.gatewayEmergencyInterval" }}'>
+                <a-space>
+                    <a-input-number v-model="balancerModal.gateway.emergencyInterval" :min="1" :max="balancerModal.gateway.emergencyUnit === 60 ? 60 : 3600" @change="balancerModal.check()"></a-input-number>
+                    <a-select v-model="balancerModal.gateway.emergencyUnit" @change="balancerModal.check()">
+                        <a-select-option :value="1">{{ i18n "pages.xray.balancer.gatewaySeconds" }}</a-select-option>
+                        <a-select-option :value="60">{{ i18n "pages.xray.balancer.gatewayMinutes" }}</a-select-option>
+                    </a-select>
+                </a-space>
+            </a-form-item>
+            <a-form-item v-if="balancerModal.gateway.emergencyTags.length" label='{{ i18n "pages.xray.balancer.gatewayEmergencyAttempts" }}'>
+                <a-input-number v-model="balancerModal.gateway.emergencyAttempts" :min="1" :max="10" @change="balancerModal.check()"></a-input-number>
+            </a-form-item>
+            <a-form-item label='{{ i18n "pages.xray.balancer.gatewayProbeURL" }}'>
+                <a-input v-model.trim="balancerModal.gateway.probeUrl" dir="ltr" @change="balancerModal.check()"></a-input>
+            </a-form-item>
+        </template>
+        <a-form-item v-if="!balancerModal.exactStrategy" label="{{ i18n "pages.interface.fallback" }}">
             <a-select v-model="balancerModal.balancer.fallbackTag" clearable
                 :dropdown-class-name="themeSwitcher.currentTheme">
                 <a-select-option v-for="tag in [ '', ...balancerModal.outboundTags]" :value="tag">[[ tag ]]</a-select-option>
@@ -72,21 +116,46 @@
         },
         outboundTags: [],
         failoverTags: [],
+        gateway: {},
+        get isGateway() { return this.balancer.strategy === 'gateway'; },
+        get exactStrategy() { return this.isGateway || this.balancer.strategy === 'failover'; },
         get selectorTags() {
-            if (this.balancer.strategy !== 'failover') return this.outboundTags;
+            if (!this.exactStrategy) return this.outboundTags;
             return this.failoverTags.filter(tag => tag !== this.balancer.primaryTag);
+        },
+        get emergencyChoices() {
+            return this.selectorTags.filter(tag => !this.balancer.selector.includes(tag));
         },
         balancerTags:[],
         ok() {
             balancerModal.check();
             if (!balancerModal.isValid) return;
-            ObjectUtil.execute(balancerModal.confirm, balancerModal.balancer);
+            const options = balancerModal.gateway;
+            const gatewaySettings = {
+                latencyMs: options.latencyMs, attempts: options.attempts,
+                intervalSeconds: options.interval * options.unit,
+                emergencyIntervalSeconds: options.emergencyInterval * options.emergencyUnit,
+                emergencyAttempts: options.emergencyAttempts, emergencyTags: options.emergencyTags,
+                probeUrl: options.probeUrl,
+            };
+            ObjectUtil.execute(balancerModal.confirm, { ...balancerModal.balancer, gatewaySettings });
         },
         show({ title = '', okText = '{{ i18n "sure" }}', balancerTags = [], balancer, confirm = (balancer) => { }, isEdit = false }) {
             this.title = title;
             this.okText = okText;
             this.confirm = confirm;
             this.visible = true;
+            const saved = balancer.gatewaySettings || {};
+            const interval = saved.intervalSeconds ?? 10;
+            const emergencyInterval = saved.emergencyIntervalSeconds ?? 10;
+            const unit = interval % 60 === 0 ? 60 : 1;
+            const emergencyUnit = emergencyInterval % 60 === 0 ? 60 : 1;
+            this.gateway = {
+                latencyMs: saved.latencyMs ?? 500, attempts: saved.attempts ?? 3,
+                interval: interval / unit, unit, emergencyInterval: emergencyInterval / emergencyUnit, emergencyUnit,
+                emergencyAttempts: saved.emergencyAttempts ?? 3, emergencyTags: [...(saved.emergencyTags || [])],
+                probeUrl: saved.probeUrl ?? 'https://www.google.com/generate_204',
+            };
             if (isEdit) {
                 balancerModal.balancer = { ...balancer, selector: [...balancer.selector] };
             } else {
@@ -114,21 +183,33 @@
             this.confirmLoading = loading;
         },
         check() {
-            const { tag, strategy, primaryTag, selector } = this.balancer;
+            const { tag, primaryTag, selector } = this.balancer;
             this.duplicateTag = !tag || this.balancerTags.includes(tag);
             this.emptySelector = selector.length === 0;
             const validFailover = this.failoverTags.includes(primaryTag) &&
                 selector.every(tag => this.selectorTags.includes(tag));
+            const options = this.gateway;
+            const within = (value, max) => Number.isInteger(value) && value >= 1 && value <= max;
+            const validGateway = !this.isGateway || (
+                within(options.latencyMs, 60000) && within(options.attempts, 10) &&
+                within(options.interval * options.unit, 3600) && within(options.emergencyInterval * options.emergencyUnit, 3600) &&
+                within(options.emergencyAttempts, 10) && selector.length + options.emergencyTags.length < 32 &&
+                options.emergencyTags.every(outbound => this.emergencyChoices.includes(outbound)) && /^https?:\/\//i.test(options.probeUrl)
+            );
             this.isValid = !this.duplicateTag && !this.emptySelector &&
-                (strategy !== 'failover' || validFailover);
+                (!this.exactStrategy || validFailover) && validGateway;
         },
         strategyChanged(strategy) {
-            if (strategy === 'failover') this.primaryChanged(this.balancer.primaryTag);
+            if (strategy === 'failover' || strategy === 'gateway') this.primaryChanged(this.balancer.primaryTag);
             else this.check();
         },
         primaryChanged(tag) {
             this.balancer.selector = this.balancer.selector.filter(
                 backup => backup !== tag && this.failoverTags.includes(backup));
+            this.backupsChanged();
+        },
+        backupsChanged() {
+            if (this.isGateway) this.gateway.emergencyTags = this.gateway.emergencyTags.filter(tag => this.emergencyChoices.includes(tag));
             this.check();
         }
     };

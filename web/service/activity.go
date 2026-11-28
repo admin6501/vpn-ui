@@ -14,9 +14,45 @@ const ActivityPageSize = 30
 type ActivityService struct{}
 
 func (ActivityService) RecordLogin(user *model.User, ip, os, kind string) error {
+	if !user.IsPanelOwner {
+		admins, representatives, err := (ActivityService{}).LoginLogging()
+		if err != nil {
+			return err
+		}
+		if user.IsRepresentativeAccount() && !representatives || !user.IsRepresentativeAccount() && !admins {
+			return nil
+		}
+	}
 	return database.GetDB().Create(&model.PanelLoginEvent{
 		UserID: user.Id, Username: user.Username, IP: ip, OS: os, Kind: kind, At: time.Now().UnixMilli(),
 	}).Error
+}
+
+const (
+	adminLoginLogging          = "activityAdminLoginLogging"
+	representativeLoginLogging = "activityRepresentativeLoginLogging"
+)
+
+func (ActivityService) LoginLogging() (admins, representatives bool, err error) {
+	var settings []model.Setting
+	err = database.GetDB().Where("key IN ?", []string{adminLoginLogging, representativeLoginLogging}).Find(&settings).Error
+	admins, representatives = true, true
+	for _, setting := range settings {
+		if setting.Key == adminLoginLogging {
+			admins = setting.Value != "false"
+		} else {
+			representatives = setting.Value != "false"
+		}
+	}
+	return
+}
+
+func (ActivityService) SetLoginLogging(representative, enabled bool) error {
+	key := adminLoginLogging
+	if representative {
+		key = representativeLoginLogging
+	}
+	return (&SettingService{}).setBool(key, enabled)
 }
 
 func (ActivityService) LoginEvents(user *model.User, own bool, before int64) ([]model.PanelLoginEvent, error) {
@@ -189,6 +225,15 @@ type ActivityNotice struct {
 	Names   []string `json:"names" gorm:"-"`
 }
 
+const noticeReadThroughSQL = "COALESCE((SELECT through FROM panel_activity_reads WHERE user_id=? AND kind=?),0)"
+
+func activityReadKind(user *model.User, kind string) string {
+	if kind == "expired" && user.IsPanelOwner {
+		return "expiredAll"
+	}
+	return kind
+}
+
 func noticeEvents(user *model.User, kind string) *gorm.DB {
 	switch kind {
 	case "renewals":
@@ -196,8 +241,16 @@ func noticeEvents(user *model.User, kind string) *gorm.DB {
 	case "changes":
 		return database.GetDB().Model(&model.PanelClientEvent{}).
 			Where("kind <> 'autoRenewed' AND (actor_id>0 OR audit_operation<>'') AND ?", user.IsPanelOwner)
+	case "payments":
+		return database.GetDB().Table("(?) AS payment_notices",
+			pendingPayments(user).Select("p.revision AS id, a.email").
+				Where("?", user.Can(model.PermAccessInbounds) && user.PaymentReminders))
 	default:
-		return database.GetDB().Model(&model.PanelExpiry{}).Where("owner_id = ?", user.Id)
+		query := database.GetDB().Model(&model.PanelExpiry{})
+		if !user.IsPanelOwner {
+			query = query.Where("owner_id = ?", user.Id)
+		}
+		return query
 	}
 }
 
@@ -206,10 +259,15 @@ func (ActivityService) Notifications(user *model.User, kind string) (ActivityNot
 	if kind == "renewals" && user.RenewalNoticesDisabled {
 		return result, nil
 	}
-	db := noticeEvents(user, kind).Where("id > COALESCE((SELECT through FROM panel_activity_reads WHERE user_id=? AND kind=?),0)", user.Id, kind)
+	db := noticeEvents(user, kind).Where("id > "+noticeReadThroughSQL, user.Id, activityReadKind(user, kind))
 	count := "COUNT(*)"
 	if kind == "changes" {
 		count = "COUNT(DISTINCT " + clientAuditKeySQL + ")"
+		// A request can write another detail after its first audit row was seen.
+		db = db.Where(`(audit_operation='' OR NOT EXISTS (
+			SELECT 1 FROM panel_client_events seen WHERE seen.audit_operation<>'' AND
+			seen.audit_operation=panel_client_events.audit_operation AND seen.account_id=panel_client_events.account_id
+			AND seen.id<=`+noticeReadThroughSQL+`))`, user.Id, kind)
 	}
 	err := db.Session(&gorm.Session{}).Select(count + " AS count, COALESCE(MAX(id),0) AS through").Scan(&result).Error
 	if err != nil || result.Count == 0 {
@@ -237,5 +295,6 @@ func (ActivityService) DismissNotice(user *model.User, kind string, through int6
 		return err
 	}
 	return database.GetDB().Exec(`INSERT INTO panel_activity_reads(user_id,kind,through) VALUES(?,?,?)
-		ON CONFLICT(user_id,kind) DO UPDATE SET through=MAX(panel_activity_reads.through,excluded.through)`, user.Id, kind, valid).Error
+		ON CONFLICT(user_id,kind) DO UPDATE SET through=MAX(panel_activity_reads.through,excluded.through)`,
+		user.Id, activityReadKind(user, kind), valid).Error
 }

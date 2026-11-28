@@ -12,13 +12,16 @@ const { chromium } = require('playwright');
         page.on('pageerror', error => errors.push(error.message));
         page.on('console', entry => { if (entry.type() === 'error') errors.push(entry.text()); });
         let expiryUnread = true;
-        let changesUnread = true;
+        let changesReadThrough = 0;
+        let paymentReadThrough = 0;
         let expiryScoped = false;
         let appChanges;
         let retention;
         let paymentReminders = false;
         let renewalNotices = true;
         let pendingPayment;
+        let lowQuotaUnread = false;
+        let gatewayTarget = 'emergency';
         const at = Date.now();
         let deletedClients = ['recover-client', 'purge-client', 'empty-client'].map((name, index) => ({
             id: index + 30, name, deletedAt: at,
@@ -26,6 +29,20 @@ const { chromium } = require('playwright');
         const deletedManager = { id: 40, name: 'recover-representative', deletedAt: at, clientCount: 4 };
         const login = { id: 2, kind: 'login', at, username: 'panel-owner', os: 'Windows', ip: '203.0.113.19' };
         const renewal = { id: 3, kind: 'autoRenewed', at, email: 'test-renewed', owner: 'test-representative', actor: 'renewal-operator' };
+        const changeRows = [{
+            id: 17, at, kind: 'deleted', email: 'removed-client', owner: 'panel-owner', actor: 'test-client-editor',
+            details: { deleted: { quota: 12 * 2 ** 30, initialQuota: 10 * 2 ** 30, upload: 2 * 2 ** 30,
+                download: 3 * 2 ** 30, lifetime: 8 * 2 ** 30, expiry: at + 864000000, period: 864000000, enabled: true } },
+        }, {
+            ...renewal, kind: 'renewed', changes: 'quota,expiry,inbounds,comment', actor: 'test-client-editor', comment: 'New client note',
+            details: { quota: { before: 2 ** 30, after: 2 * 2 ** 30 },
+                expiry: { before: at, after: at + 864000000 }, renewalPeriod: { before: 86400000, after: 864000000 },
+                inbounds: [
+                    { id: 1, name: 'Original inbound', protocol: 'vless', port: 443, before: true, after: null },
+                    { id: 2, name: 'Replacement inbound', protocol: 'trojan', port: 8443, before: null, after: true },
+                ],
+                comment: { before: 'Old client note', after: 'New client note' }, usageReset: true },
+        }];
         pendingPayment = { id: 15, kind: 'created', at, email: 'payment-client', owner: 'payment-owner', actor: 'payment-operator' };
         await page.route('**/test/panel/api/**', async route => {
             const url = new URL(route.request().url());
@@ -33,12 +50,20 @@ const { chromium } = require('playwright');
             const path = url.pathname.split('/api/')[1];
             let obj = [];
             if (path === 'activity/notices') {
+                const unreadChanges = changeRows.filter(row => row.id > changesReadThrough);
+                const paymentUnread = paymentReminders && pendingPayment && pendingPayment.id > paymentReadThrough;
                 obj = {
                     expired: expiryUnread ? { count: 1, through: 7, names: ['test-expired'] } : {},
-                    changes: changesUnread ? { count: 2, through: 17, names: ['test-renewed', 'removed-client'] } : {},
+                    changes: { count: unreadChanges.length, through: unreadChanges[0]?.id, names: unreadChanges.map(row => row.email) },
                     renewals: {},
-                    payments: paymentReminders && pendingPayment ? { count: 1, names: [pendingPayment.email] } : {},
+                    payments: paymentUnread ? { count: 1, through: pendingPayment.id, names: [pendingPayment.email] } : {},
+                    lowQuota: lowQuotaUnread ? { count: 1, through: 1, names: ['low-client'] } : {},
                 };
+            } else if (path === 'activity/lowQuota') {
+                obj = { enabled: true, rows: [{ id: 1, email: 'low-client', remaining: 8388608 }] };
+            } else if (path === 'activity/gateway') {
+                obj = { outbounds: ['master', 'emergency', 'backup', 'other'],
+                    balancers: [{ tag: 'tunnel', normal: ['master', 'backup'], emergency: ['emergency'], active: gatewayTarget, available: true }] };
             } else if (path === 'activity/payments') {
                 obj = { enabled: paymentReminders, rows: paymentReminders && pendingPayment ? [pendingPayment] : [], more: false };
             } else if (path === 'activity/payments/settings') {
@@ -80,27 +105,16 @@ const { chromium } = require('playwright');
                     details: { created: { quota: 5 * 2 ** 30, expiry: at + 864000000, period: 864000000 } }
                 }] };
             } else if (path === 'activity/changes') {
-                obj = { rows: [{
-                    ...renewal, kind: 'renewed', changes: 'quota,expiry,inbounds', actor: 'test-client-editor',
-                    details: { quota: { before: 2 ** 30, after: 2 * 2 ** 30 },
-                        expiry: { before: at, after: at + 864000000 }, renewalPeriod: { before: 86400000, after: 864000000 },
-                        inbounds: [
-                            { id: 1, name: 'Original inbound', protocol: 'vless', port: 443, before: true, after: null },
-                            { id: 2, name: 'Replacement inbound', protocol: 'trojan', port: 8443, before: null, after: true },
-                        ],
-                        usageReset: true },
-                }, {
-                    id: 17, at, kind: 'deleted', email: 'removed-client', owner: 'panel-owner', actor: 'test-client-editor',
-                    details: { deleted: { quota: 12 * 2 ** 30, initialQuota: 10 * 2 ** 30, upload: 2 * 2 ** 30,
-                        download: 3 * 2 ** 30, lifetime: 8 * 2 ** 30, expiry: at + 864000000, period: 864000000, enabled: true } },
-                }], owners: ['test-client-editor'] };
+                obj = { rows: changeRows, owners: ['test-client-editor'] };
             } else if (path === 'activity/apps' && method === 'POST') {
                 assert.match(route.request().headers()['content-type'], /^application\/json/);
                 appChanges = route.request().postDataJSON().apps;
             } else if (path === 'activity/notices/dismiss') {
                 const payload = route.request().postDataJSON();
                 if (payload.kind === 'expired' && payload.through === 7) expiryUnread = false;
-                if (payload.kind === 'changes' && payload.through === 17) changesUnread = false;
+                if (payload.kind === 'changes') changesReadThrough = Math.max(changesReadThrough, payload.through);
+                if (payload.kind === 'payments') paymentReadThrough = Math.max(paymentReadThrough, payload.through);
+                if (payload.kind === 'lowQuota') lowQuotaUnread = false;
             } else if (path === 'inbounds/onlines') {
                 obj = ['test-expired'];
             } else if (path === 'clients/list') {
@@ -116,9 +130,7 @@ const { chromium } = require('playwright');
         const badge = page.getByRole('link', { name: 'Expired clients 1' });
         assert.equal(await badge.getAttribute('title'), 'test-expired');
         const changesBadge = page.getByRole('link', { name: 'Client change history 2' });
-        assert.equal(await changesBadge.getAttribute('title'), 'test-renewed\nremoved-client');
-        await page.locator('.panel-activity-badge').filter({ has: changesBadge }).getByRole('button', { name: 'Close' }).click();
-        await changesBadge.waitFor({ state: 'hidden' });
+        assert.equal(await changesBadge.getAttribute('title'), 'removed-client\ntest-renewed');
         await page.getByRole('cell', { name: '203.0.113.19' }).waitFor();
         await page.getByRole('cell', { name: 'Windows' }).waitFor();
         await page.getByRole('button', { name: 'Next' }).click();
@@ -230,9 +242,12 @@ const { chromium } = require('playwright');
         await page.getByRole('switch', { name: 'Show automatic renewal notifications', checked: false }).waitFor();
         assert.equal(renewalNotices, false);
         await page.getByRole('cell', { name: 'test-renewed' }).waitFor();
-        await page.getByRole('button', { name: 'Activity' }).click();
-        await page.getByRole('link', { name: 'Client change history' }).click();
+        const firstHistoryRead = page.waitForResponse(response => response.url().endsWith('/activity/notices/dismiss'));
+        await changesBadge.click();
         await page.getByRole('columnheader', { name: 'Client owner' }).waitFor();
+        await firstHistoryRead;
+        await changesBadge.waitFor({ state: 'hidden' });
+        assert.equal(changesReadThrough, 17, 'opening the latest client history acknowledges those changes');
         const editRow = page.getByRole('row').filter({ hasText: 'test-renewed' });
         await editRow.getByRole('cell', { name: 'test-representative' }).waitFor();
         await editRow.getByRole('cell', { name: 'test-client-editor' }).waitFor();
@@ -245,6 +260,8 @@ const { chromium } = require('playwright');
         assert.match(details, /Current usage reset to zero/);
         assert.match(details, /− Original inbound .*443/);
         assert.match(details, /[+] Replacement inbound .*8443/);
+        assert.match(details, /Old client note → New client note/);
+        assert.equal(await editRow.locator('.panel-activity-client-comment').textContent(), 'New client note');
         const deletedRow = page.getByRole('row').filter({ hasText: 'removed-client' });
         await deletedRow.getByRole('cell', { name: 'panel-owner' }).waitFor();
         await deletedRow.locator('summary').click();
@@ -252,6 +269,17 @@ const { chromium } = require('playwright');
         assert.match(deletedDetails, /Initial quota.*10(?:[.,]00)?\s*GB/);
         assert.match(deletedDetails, /Remaining quota.*7(?:[.,]00)?\s*GB/);
         assert.match(deletedDetails, /Usage.*5(?:[.,]00)?\s*GB/);
+        changeRows.unshift({ id: 18, kind: 'created', at, email: 'new-client', owner: 'panel-owner', actor: 'test-client-editor' });
+        await page.evaluate(() => window.dispatchEvent(new Event('panel-activity-refresh')));
+        const newChanges = page.getByRole('link', { name: 'Client change history 1' });
+        await newChanges.waitFor();
+        assert.equal(await newChanges.getAttribute('title'), 'new-client');
+        const nextHistoryRead = page.waitForResponse(response => response.url().endsWith('/activity/notices/dismiss'));
+        await page.reload();
+        await page.getByRole('cell', { name: 'new-client' }).waitFor();
+        await nextHistoryRead;
+        await newChanges.waitFor({ state: 'hidden' });
+        assert.equal(changesReadThrough, 18);
         await page.getByRole('switch').last().click();
         await page.getByRole('spinbutton', { name: 'Keep logs for this many days' }).fill('60');
         const retentionSaved = page.waitForResponse(response => response.url().endsWith('/activity/changes/retention'));
@@ -280,10 +308,18 @@ const { chromium } = require('playwright');
         await page.getByRole('cell', { name: 'payment-owner' }).waitFor();
         await payments.waitFor();
         assert.equal(await payments.getAttribute('title'), 'payment-client');
+        await page.locator('.panel-activity-badge').filter({ has: payments }).getByRole('button', { name: 'Close' }).click();
+        await payments.waitFor({ state: 'hidden' });
+        await customer.waitFor();
+        assert.equal(paymentReadThrough, 15);
         await page.getByRole('link', { name: 'Close', exact: true }).click();
         await page.waitForURL('**/panel/clients');
-        assert.equal(pendingPayment.id, 15, 'leaving the page never approves a payment');
+        assert.equal(pendingPayment.id, 15, 'dismissing the badge never approves a payment');
         await page.goto(base + 'panel/activity/logins');
+        await page.getByRole('cell', { name: 'panel-owner' }).waitFor();
+        await payments.waitFor({ state: 'hidden' });
+        pendingPayment = { ...pendingPayment, id: 16, kind: 'renewed' };
+        await page.evaluate(() => window.dispatchEvent(new Event('panel-activity-refresh')));
         await payments.click();
         await customer.waitFor();
         const confirm = page.getByRole('button', { name: 'Confirm payment', exact: true });
@@ -291,7 +327,7 @@ const { chromium } = require('playwright');
         const prompt = page.locator('.ant-popover:visible').filter({ hasText: 'Has the client paid for the latest change?' });
         await prompt.getByRole('button', { name: 'Cancel' }).click();
         await prompt.waitFor({ state: 'hidden' });
-        assert.equal(pendingPayment.id, 15);
+        assert.equal(pendingPayment.id, 16);
         await confirm.click();
         await prompt.getByRole('button', { name: 'Confirm payment', exact: true }).click();
         await page.getByText('No payments awaiting confirmation').waitFor();
@@ -362,6 +398,23 @@ const { chromium } = require('playwright');
         await page.getByRole('button', { name: 'Administrators and representatives', pressed: false }).click();
         await page.getByRole('cell', { name: deletedManager.name }).waitFor();
         await page.getByRole('button', { name: 'Administrators and representatives', pressed: true }).waitFor();
+        lowQuotaUnread = true;
+        await page.evaluate(() => window.dispatchEvent(new Event('panel-activity-refresh')));
+        const lowQuotaBadge = page.getByRole('link', { name: 'Clients below 1 GB 1' });
+        const lowQuotaRead = page.waitForResponse(response => response.url().endsWith('/activity/notices/dismiss'));
+        await lowQuotaBadge.click();
+        await page.getByRole('cell', { name: 'low-client' }).waitFor();
+        await lowQuotaRead;
+        await lowQuotaBadge.waitFor({ state: 'hidden' });
+        assert.equal(lowQuotaUnread, false);
+        await page.getByRole('button', { name: 'Activity' }).click();
+        await page.getByRole('link', { name: 'Gateway', exact: true }).click();
+        const active = page.locator('.panel-gateway-route').filter({ hasText: 'Active' });
+        assert.match(await active.innerText(), /emergency/i);
+        assert.deepEqual(await page.locator('.panel-gateway-route bdi').allTextContents(), ['master', 'backup', 'other', 'emergency']);
+        gatewayTarget = 'backup';
+        await page.getByRole('button', { name: 'Refresh' }).click();
+        await active.filter({ hasText: 'backup' }).waitFor();
         assert.deepEqual(errors, []);
     } finally {
         await browser.close();

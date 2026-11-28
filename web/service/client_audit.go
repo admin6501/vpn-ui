@@ -39,6 +39,7 @@ func clientAuditEvents(scope *gorm.DB, before int64, limit int) ([]model.PanelCl
 
 func mergeClientAuditEvent(event *model.PanelClientEvent, row model.PanelClientEvent) {
 	event.Id, event.Email = row.Id, row.Email
+	event.Comment = row.Comment
 	if row.ActorID != 0 {
 		event.ActorID, event.Actor = row.ActorID, row.Actor
 	}
@@ -74,6 +75,13 @@ func mergeClientAuditEvent(event *model.PanelClientEvent, row model.PanelClientE
 	event.Details.RenewalPeriod = mergeClientAuditValue(event.Details.RenewalPeriod, row.Details.RenewalPeriod)
 	if row.Details.AutoRenewEnabled != nil {
 		event.Details.AutoRenewEnabled = row.Details.AutoRenewEnabled
+	}
+	if row.Details.Comment != nil {
+		if event.Details.Comment == nil {
+			event.Details.Comment = row.Details.Comment
+		} else {
+			event.Details.Comment.After = row.Details.Comment.After
+		}
 	}
 	for _, change := range row.Details.Inbounds {
 		merged := false

@@ -16,6 +16,12 @@
         <a-button type="danger" :disabled="!date || busy">{{ i18n "delete" }}</a-button>
       </a-popconfirm>
       <p class="panel-activity-note">{{ i18n "pages.activity.loginProtection" }}</p>
+      <label class="panel-activity-inline">{{ i18n "pages.activity.logAdmins" }}
+        <a-switch :checked="logAdmins" :disabled="busy" @change="setLoginLogging(false, $event)"></a-switch>
+      </label>
+      <label class="panel-activity-inline">{{ i18n "pages.activity.logRepresentatives" }}
+        <a-switch :checked="logRepresentatives" :disabled="busy" @change="setLoginLogging(true, $event)"></a-switch>
+      </label>
     </div>
     <div class="panel-activity-controls" v-if="mode === 'changes'">
       <label v-if="owner" class="panel-activity-inline">{{ i18n "pages.activity.recordChanges" }}
@@ -79,6 +85,11 @@
         <p class="panel-activity-note">{{ i18n "pages.activity.paymentReminderHelp" }}</p>
       </div>
     </template>
+    <div class="panel-activity-controls" v-if="mode === 'lowQuota'">
+      <label class="panel-activity-inline">{{ i18n "pages.activity.lowQuotaNotices" }}
+        <a-switch :checked="lowQuotaNotices" :disabled="busy" @change="setLowQuotaNotices"></a-switch>
+      </label>
+    </div>
     <template v-if="mode === 'apps'">
       <div class="panel-activity-controls">
         <a-button icon="plus" @click="apps.push({ platform: 'android', name: '', url: '' })" :disabled="apps.length >= 60 || busy">{{ i18n "create" }}</a-button>
@@ -97,6 +108,36 @@
         <a-button icon="delete" @click="apps.splice(index, 1)">{{ i18n "delete" }}</a-button>
       </div>
     </template>
+    <template v-else-if="mode === 'gateway'">
+      <a-button icon="reload" :loading="busy" @click="load()">{{ i18n "pages.activity.gatewayRefresh" }}</a-button>
+      <a-spin :spinning="busy">
+        <a-empty v-if="!gateway.outbounds.length && !busy"></a-empty>
+        <ul v-else-if="!gateway.balancers.length" class="panel-gateway-routes">
+          <li v-for="tag in gateway.outbounds" :key="tag" dir="auto" v-text="tag"></li>
+        </ul>
+        <a-card v-for="balancer in gateway.balancers" :key="balancer.tag" :title="balancer.tag">
+          <p v-if="!balancer.available">{{ i18n "pages.activity.gatewayUnavailable" }}</p>
+          <p v-else-if="!balancer.active">{{ i18n "pages.activity.gatewayNoRoute" }}</p>
+          <ul class="panel-gateway-routes">
+            <li v-for="tag in gatewayRoutes(balancer)" :key="tag" class="panel-gateway-route">
+              <bdi v-text="tag"></bdi>
+              <a-tag v-if="tag === balancer.normal[0]">{{ i18n "pages.xray.balancer.gatewayMaster" }}</a-tag>
+              <a-tag v-else-if="balancer.normal.includes(tag)">{{ i18n "pages.xray.balancer.gatewaySlaves" }}</a-tag>
+              <a-tag v-if="tag === balancer.active" color="green"><a-icon type="check"></a-icon> {{ i18n "pages.activity.gatewayActive" }}</a-tag>
+            </li>
+          </ul>
+          <template v-if="balancer.emergency && balancer.emergency.length">
+            <h3>{{ i18n "pages.xray.balancer.gatewayEmergency" }}</h3>
+            <ul class="panel-gateway-routes">
+              <li v-for="tag in balancer.emergency" :key="tag" class="panel-gateway-route">
+                <bdi v-text="tag"></bdi>
+                <a-tag v-if="tag === balancer.active" color="green"><a-icon type="check"></a-icon> {{ i18n "pages.activity.gatewayActive" }}</a-tag>
+              </li>
+            </ul>
+          </template>
+        </a-card>
+      </a-spin>
+    </template>
     <a-spin v-else-if="mode !== 'payments' || paymentsEnabled" :spinning="busy">
       <div class="panel-activity-table" :class="{ 'panel-trash-table': mode === 'trash' }" tabindex="0">
         <table v-if="rows.length">
@@ -107,23 +148,28 @@
             <th v-if="mode === 'logins'">{{ i18n "pages.activity.os" }}</th>
             <th v-if="['changes', 'renewals', 'payments'].includes(mode)">{{ i18n "pages.activity.clientOwner" }}</th>
             <th v-if="['changes', 'renewals', 'payments'].includes(mode)">{{ i18n "pages.activity.changedBy" }}</th>
-            <th v-if="mode !== 'trash'">{{ i18n "pages.activity.event" }}</th>
-            <th v-if="mode !== 'logins' && mode !== 'payments' && mode !== 'trash'">{{ i18n "pages.activity.fields" }}</th>
+            <th v-if="mode === 'lowQuota'">{{ i18n "pages.activity.remainingQuota" }}</th>
+            <th v-else-if="mode !== 'trash'">{{ i18n "pages.activity.event" }}</th>
+            <th v-if="mode === 'changes' || mode === 'renewals'">{{ i18n "pages.activity.fields" }}</th>
             <th v-if="mode === 'trash' && scope === 'manager'">{{ i18n "pages.clients.title" }}</th>
-            <th>{{ i18n "pages.activity.date" }}</th>
+            <th v-if="mode !== 'lowQuota'">{{ i18n "pages.activity.date" }}</th>
             <th v-if="mode === 'changes' && !owner">{{ i18n "pages.activity.hideEvent" }}</th>
             <th v-if="mode === 'payments'">{{ i18n "pages.activity.confirmPayment" }}</th>
             <th v-if="mode === 'trash'"></th>
           </tr></thead>
           <tbody>
             <tr v-for="row in rows" :key="row.id">
-              <td dir="auto" v-text="mode === 'trash' ? row.name : (mode === 'logins' ? row.username : row.email)"></td>
+              <td dir="auto">
+                <span v-text="mode === 'trash' ? row.name : (mode === 'logins' ? row.username : row.email)"></span>
+                <small v-if="row.comment" class="panel-activity-client-comment" v-text="row.comment"></small>
+              </td>
               <td v-if="mode === 'logins'" dir="ltr" v-text="row.ip || '—'"></td>
               <td v-if="mode === 'logins'" v-text="row.os || '—'"></td>
               <td v-if="['changes', 'renewals', 'payments'].includes(mode)" dir="auto" v-text="row.owner || unknownClientOwner"></td>
               <td v-if="['changes', 'renewals', 'payments'].includes(mode)" dir="auto" v-text="row.actor || '—'"></td>
-              <td v-if="mode !== 'trash'" v-text="mode === 'payments' && row.kind === 'updated' ? paymentExtension : (kinds[row.kind] || row.kind)"></td>
-              <td v-if="mode !== 'logins' && mode !== 'payments' && mode !== 'trash'">
+              <td v-if="mode === 'lowQuota'" v-text="quotaValue(row.remaining)"></td>
+              <td v-else-if="mode !== 'trash'" v-text="mode === 'payments' && row.kind === 'updated' ? paymentExtension : (kinds[row.kind] || row.kind)"></td>
+              <td v-if="mode === 'changes' || mode === 'renewals'">
                 <details v-if="changeLines(row).length" class="panel-activity-detail-box">
                   <summary v-text="summary(row)"></summary>
                   <ul class="panel-activity-details">
@@ -133,7 +179,7 @@
                 <span v-else>—</span>
               </td>
               <td v-if="mode === 'trash' && scope === 'manager'" v-text="row.clientCount"></td>
-              <td class="panel-activity-date" v-text="formatTime(mode === 'trash' ? row.deletedAt : row.at)"></td>
+              <td v-if="mode !== 'lowQuota'" class="panel-activity-date" v-text="formatTime(mode === 'trash' ? row.deletedAt : row.at)"></td>
               <td v-if="mode === 'changes' && !owner">
                 <a-button size="small" :disabled="busy" @click="hideEvent(row.id)">{{ i18n "pages.activity.hideEvent" }}</a-button>
               </td>
@@ -202,6 +248,8 @@
     data: {
       basePath, themeSwitcher, pageClass: 'activity-page', pageTitle: '{{ i18n .title }}',
       mode: {{ .activityMode }}, owner: {{ .perms.panelOwner }}, busy: false,
+      logAdmins: true, logRepresentatives: true, lowQuotaNotices: true, lowQuotaRead: false,
+      gateway: { outbounds: [], balancers: [] },
       scope: {{ if eq .activityMode "trash" }}'client'{{ else }}'all'{{ end }},
       canRestoreClient: {{ .perms.createClient }}, enabled: true, renewalNotices: true, paymentsEnabled: false,
       trashDaysPerGB: {{ .trashDaysPerGB }},
@@ -235,6 +283,11 @@
     },
     methods: {
       formatTime: clientAudit.formatTime,
+      quotaValue(value) { return clientAudit.quotaValue(value); },
+      gatewayRoutes(balancer) {
+        const tags = new Set([...balancer.normal, ...this.gateway.outbounds]);
+        return [...tags].filter(tag => !(balancer.emergency || []).includes(tag));
+      },
       summary(row) { return clientAudit.summary(row); },
       changeLines(row) { return clientAudit.changeLines(row); },
       async get(path, params) {
@@ -260,6 +313,11 @@
             this.apps = await this.get('apps') || [];
             return;
           }
+          if (this.mode === 'gateway') {
+            const gateway = await this.get('gateway');
+            if (gateway) this.gateway = { outbounds: gateway.outbounds || [], balancers: gateway.balancers || [] };
+            return;
+          }
           if (this.mode === 'changes' && !this.month) {
             this.rows = [];
             this.owners = [];
@@ -267,8 +325,10 @@
             return;
           }
           const path = this.mode === 'trash' ? 'trash/' + this.scope : this.mode;
+          const before = this.cursors[this.cursors.length - 1];
+          const latestHistory = this.mode === 'changes' && this.owner && this.month === this.months[0] && !this.clientOwner;
           const result = await this.get(path, {
-            before: this.cursors[this.cursors.length - 1], scope: this.scope, month: this.month, owner: this.clientOwner,
+            before, scope: this.scope, month: this.month, owner: this.clientOwner,
           });
           if (!result) return;
           this.rows = result.rows || [];
@@ -276,8 +336,19 @@
           if (this.mode === 'payments') this.paymentsEnabled = result.enabled;
           if (this.mode === 'renewals') this.renewalNotices = result.enabled;
           if (this.mode === 'changes') this.owners = (result.owners || []).filter(Boolean);
-          if (this.mode === 'renewals' && this.renewalNotices && this.cursors.length === 1 && this.rows.length) {
-            if (await panelActivityWrite('notices/dismiss', { kind: 'renewals', through: this.rows[0].id })) {
+          if (this.mode === 'logins' && this.owner) {
+            this.logAdmins = result.logAdmins !== false;
+            this.logRepresentatives = result.logRepresentatives !== false;
+          }
+          if (this.mode === 'lowQuota') {
+            this.lowQuotaNotices = result.enabled;
+            if (!this.lowQuotaRead && result.enabled && this.rows.length) {
+              this.lowQuotaRead = await panelActivityWrite('notices/dismiss', { kind: 'lowQuota', through: 1 });
+              if (this.lowQuotaRead) window.dispatchEvent(new Event('panel-activity-refresh'));
+            }
+          }
+          if (!before && this.rows.length && (latestHistory || this.mode === 'renewals' && this.renewalNotices)) {
+            if (await panelActivityWrite('notices/dismiss', { kind: this.mode, through: this.rows[0].id })) {
               window.dispatchEvent(new Event('panel-activity-refresh'));
             }
           }
@@ -288,6 +359,18 @@
       async selectMonth() {
         this.clientOwner = '';
         await this.resetPage();
+      },
+      async setLoginLogging(representative, enabled) {
+        if (await panelActivityWrite('logins/settings', { representative, enabled })) {
+          if (representative) this.logRepresentatives = enabled;
+          else this.logAdmins = enabled;
+        }
+      },
+      async setLowQuotaNotices(enabled) {
+        if (await panelActivityWrite('lowQuota/settings', { enabled })) {
+          this.lowQuotaNotices = enabled;
+          window.dispatchEvent(new Event('panel-activity-refresh'));
+        }
       },
       async resetPage() {
         this.cursors = [0];
@@ -412,6 +495,12 @@
     async mounted() {
       if (this.mode === 'changes') await this.loadSettings();
       await this.load();
+      if (this.mode === 'gateway') {
+        this.gatewayPoll = setInterval(() => { if (!document.hidden && !this.busy) this.load(); }, 5000);
+      }
+    },
+    beforeDestroy() {
+      clearInterval(this.gatewayPoll);
     },
   });
 </script>

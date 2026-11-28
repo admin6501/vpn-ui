@@ -89,6 +89,32 @@ const assert=require('node:assert/strict');
      await ping.scrollIntoViewIfNeeded();
      assert.ok(await ping.isVisible(),'ping control is reachable inside the mobile scroller');
     }
+    if (lang === 'en-US' && width === 1440) {
+     await page.evaluate(() => {
+      app.templateSettings.outbounds.push({ tag: 'emergency', protocol: 'freedom', settings: {} });
+      app.addBalancer();
+      Object.assign(balancerModal.balancer, {
+       tag: 'test-gateway', strategy: 'gateway', primaryTag: 'direct', selector: ['long-outbound-name'],
+      });
+      balancerModal.strategyChanged('gateway');
+      Object.assign(balancerModal.gateway, { interval: 2, unit: 60, attempts: 3, emergencyTags: ['emergency'], emergencyAttempts: 2 });
+      balancerModal.check();
+     });
+     const dialog = page.locator('#balancer-modal .ant-modal');
+     await dialog.getByText('Master outbound', { exact: true }).waitFor();
+     await dialog.getByText('Emergency probe interval', { exact: true }).waitFor();
+     await dialog.locator('.ant-modal-footer .ant-btn-primary').click();
+     const gateway = await page.evaluate(() => app.templateSettings.routing.balancers[0]);
+     assert.equal(gateway.primaryTag, 'direct');
+     assert.deepEqual(gateway.selector, ['long-outbound-name']);
+     assert.equal(gateway.strategy.settings.intervalSeconds, 120);
+     assert.equal(gateway.strategy.settings.emergencyAttempts, 2);
+     assert.deepEqual(gateway.strategy.settings.emergencyTags, ['emergency']);
+     await page.evaluate(() => app.editBalancer(0));
+     await dialog.getByText('Master outbound', { exact: true }).waitFor();
+     assert.equal(await page.evaluate(() => balancerModal.gateway.unit), 60);
+     assert.equal(await page.evaluate(() => balancerModal.gateway.interval), 2);
+    }
     assert.deepEqual(errors,[]);
     console.log(`${lang} ${width}px: large/zero/unmeasured traffic, success/failure, IPv4/IPv6 and scroll boundaries passed`);
    }finally{await context.close()}

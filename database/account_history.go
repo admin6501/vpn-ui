@@ -20,14 +20,14 @@ func accountAuditAtSQL(accountID string) string {
 }
 
 // Trigger-based history follows writes from the UI, bot, bulk jobs and imports.
-// Actual credential values and free-form comments are never copied to history.
+// Credential values are never copied to history.
 // A legacy account can be imported with its current terms; only a tracked
 // creation can attest to the terms at the point of sale.
 func initAccountHistory(db *gorm.DB) error {
 	const operation = accountAuditOperationSQL
 	fields := []struct{ label, columns string }{
 		{"email", "email"}, {"quota", "total_gb"}, {"expiry", "expiry_time renewal_duration"},
-		{"enable", "enable representative_blocked"}, {"autoRenew", "auto_renew"},
+		{"enable", "enable representative_blocked"}, {"autoRenew", "auto_renew auto_renew_limit"},
 		{"limits", "limit_ip speed_limit_up speed_limit_down user_limit_override"},
 		{"reset", "reset"}, {"comment", "comment"}, {"owner", "owner_admin_id"},
 		{"credentials", "uuid protocol_credentials password vpn_username auth secret security naive_username sub_id tg_id"},
@@ -47,16 +47,18 @@ func initAccountHistory(db *gorm.DB) error {
 	const expiryChanged = "OLD.expiry_time IS NOT NEW.expiry_time"
 	const periodChanged = "OLD.renewal_duration IS NOT NEW.renewal_duration"
 	const autoRenewChanged = "OLD.auto_renew IS NOT NEW.auto_renew"
+	const commentChanged = "COALESCE(OLD.comment,'')<>COALESCE(NEW.comment,'')"
 	const renewalActor = `COALESCE(NULLIF(NEW.auto_renew_actor_id,0),
 		(SELECT ` + knownAccountOwnerSQL + ` FROM accounts a WHERE id=NEW.id),0)`
-	details := `CASE WHEN ` + quotaChanged + ` OR ` + expiryChanged + ` OR ` + periodChanged + ` OR ` + renewal + ` OR ` + autoRenewChanged + `
+	details := `CASE WHEN ` + quotaChanged + ` OR ` + expiryChanged + ` OR ` + periodChanged + ` OR ` + renewal + ` OR ` + autoRenewChanged + ` OR ` + commentChanged + `
 		THEN json_object(
 			'quota', CASE WHEN ` + quotaChanged + ` THEN json_object('before', OLD.total_gb, 'after', NEW.total_gb) END,
 			'expiry', CASE WHEN ` + expiryChanged + ` THEN json_object('before', OLD.expiry_time, 'after', NEW.expiry_time) END,
 			'renewalPeriod', CASE WHEN ` + periodChanged + ` OR ` + renewal + `
 				THEN json_object('before', OLD.renewal_duration, 'after', NEW.renewal_duration) END,
 			'usageReset', json(CASE WHEN ` + renewal + ` THEN 'true' ELSE 'false' END),
-			'autoRenewEnabled', CASE WHEN ` + autoRenewChanged + ` THEN json(CASE WHEN NEW.auto_renew THEN 'true' ELSE 'false' END) END
+			'autoRenewEnabled', CASE WHEN ` + autoRenewChanged + ` THEN json(CASE WHEN NEW.auto_renew THEN 'true' ELSE 'false' END) END,
+			'comment', CASE WHEN ` + commentChanged + ` THEN json_object('before',COALESCE(OLD.comment,''),'after',COALESCE(NEW.comment,'')) END
 		) END`
 	triggers := []string{
 		`CREATE TABLE IF NOT EXISTS account_audit_context (id INTEGER PRIMARY KEY, operation TEXT NOT NULL, actor_id INTEGER NOT NULL DEFAULT 0)`,

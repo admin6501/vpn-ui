@@ -30,14 +30,52 @@ index 02dbaf1..5b75799 100644
  		o.status = append(o.status, status)
  	}
  
+diff --git a/app/router/balancing.go b/app/router/balancing.go
+index 5f8cb1c..0f07854 100644
+--- a/app/router/balancing.go
++++ b/app/router/balancing.go
+@@ -136,6 +136,8 @@ func (b *Balancer) SelectOutbounds() ([]string, error) {
+ 
+ // GetPrincipleTarget implements routing.BalancerPrincipleTarget
+ func (r *Router) GetPrincipleTarget(tag string) ([]string, error) {
++	r.mu.Lock()
++	defer r.mu.Unlock()
+ 	if b, ok := r.balancers[tag]; ok {
+ 		if s, ok := b.strategy.(BalancingPrincipleTarget); ok {
+ 			candidates, err := b.SelectOutbounds()
+@@ -151,6 +153,8 @@ func (r *Router) GetPrincipleTarget(tag string) ([]string, error) {
+ 
+ // SetOverrideTarget implements routing.BalancerOverrider
+ func (r *Router) SetOverrideTarget(tag, target string) error {
++	r.mu.Lock()
++	defer r.mu.Unlock()
+ 	if b, ok := r.balancers[tag]; ok {
+ 		b.override.Put(target)
+ 		return nil
+@@ -160,6 +164,8 @@ func (r *Router) SetOverrideTarget(tag, target string) error {
+ 
+ // GetOverrideTarget implements routing.BalancerOverrider
+ func (r *Router) GetOverrideTarget(tag string) (string, error) {
++	r.mu.Lock()
++	defer r.mu.Unlock()
+ 	if b, ok := r.balancers[tag]; ok {
+ 		return b.override.Get(), nil
+ 	}
 diff --git a/app/router/config.go b/app/router/config.go
-index 0a76905..18efb5f 100644
+index 0a76905..69be1d7 100644
 --- a/app/router/config.go
 +++ b/app/router/config.go
-@@ -120,6 +120,16 @@ func (rr *RoutingRule) BuildCondition() (Condition, error) {
+@@ -120,6 +120,23 @@ func (rr *RoutingRule) BuildCondition() (Condition, error) {
  // Build builds the balancing rule
  func (br *BalancingRule) Build(ohm outbound.Manager, dispatcher routing.Dispatcher) (*Balancer, error) {
  	switch strings.ToLower(br.Strategy) {
++	case "gateway":
++		strategy, err := newGatewayStrategy(br, ohm, dispatcher)
++		if err != nil {
++			return nil, err
++		}
++		selectors := append(append([]string(nil), strategy.normal...), strategy.emergency...)
++		return &Balancer{selectors: selectors, strategy: strategy, fallbackTag: br.FallbackTag, ohm: ohm}, nil
 +	case "failover":
 +		if len(br.OutboundSelector) < 2 {
 +			return nil, errors.New("failover requires a primary and at least one backup")
@@ -51,6 +89,309 @@ index 0a76905..18efb5f 100644
  	case "leastping":
  		return &Balancer{
  			selectors:   br.OutboundSelector,
+diff --git a/app/router/router.go b/app/router/router.go
+index df770a3..7fa1c82 100644
+--- a/app/router/router.go
++++ b/app/router/router.go
+@@ -126,6 +126,7 @@ func (r *Router) ReloadRules(config *Config, shouldAppend bool) error {
+ 	defer r.mu.Unlock()
+ 
+ 	if !shouldAppend {
++		r.closeGateways()
+ 		for _, rule := range r.rules {
+ 			if rule.Webhook != nil {
+ 				rule.Webhook.Close()
+@@ -194,7 +195,7 @@ func (r *Router) ReloadRules(config *Config, shouldAppend bool) error {
+ 		}
+ 		r.rules = append(r.rules, rr)
+ 	}
+-
++	r.startGateways()
+ 	return nil
+ }
+ 
+@@ -278,9 +279,28 @@ func (r *Router) pickRouteInternal(ctx routing.Context) (*Rule, routing.Context,
+ 
+ // Start implements common.Runnable.
+ func (r *Router) Start() error {
++	r.mu.Lock()
++	defer r.mu.Unlock()
++	r.startGateways()
+ 	return nil
+ }
+ 
++func (r *Router) startGateways() {
++	for _, b := range r.balancers {
++		if gateway, ok := b.strategy.(*gatewayStrategy); ok {
++			gateway.start(r.ctx)
++		}
++	}
++}
++
++func (r *Router) closeGateways() {
++	for _, b := range r.balancers {
++		if gateway, ok := b.strategy.(*gatewayStrategy); ok {
++			gateway.close()
++		}
++	}
++}
++
+ // closeWebhooks closes all webhook notifiers in the current rule set.
+ func (r *Router) closeWebhooks() {
+ 	for _, rule := range r.rules {
+@@ -294,6 +314,7 @@ func (r *Router) closeWebhooks() {
+ func (r *Router) Close() error {
+ 	r.mu.Lock()
+ 	defer r.mu.Unlock()
++	r.closeGateways()
+ 	r.closeWebhooks()
+ 	return nil
+ }
+diff --git a/app/router/strategy_gateway.go b/app/router/strategy_gateway.go
+new file mode 100644
+index 0000000..43072ca
+--- /dev/null
++++ b/app/router/strategy_gateway.go
+@@ -0,0 +1,239 @@
++package router
++
++import (
++	"context"
++	"errors"
++	"net/http"
++	"net/url"
++	"slices"
++	"sync"
++	"sync/atomic"
++	"time"
++
++	"github.com/xtls/xray-core/common/net"
++	"github.com/xtls/xray-core/features/outbound"
++	"github.com/xtls/xray-core/features/routing"
++	"github.com/xtls/xray-core/transport/internet/tagged"
++	"google.golang.org/protobuf/types/known/structpb"
++)
++
++type gatewayProbeConfig struct {
++	interval time.Duration
++	attempts int
++}
++
++type gatewayStrategy struct {
++	normal, emergency           []string
++	normalProbe, emergencyProbe gatewayProbeConfig
++	threshold                   time.Duration
++	probeURL                    string
++	ohm                         outbound.Manager
++	dispatcher                  routing.Dispatcher
++
++	active atomic.Pointer[string]
++	cancel context.CancelFunc
++	probe  func(context.Context, string, int) time.Duration
++}
++
++func newGatewayStrategy(rule *BalancingRule, ohm outbound.Manager, dispatcher routing.Dispatcher) (*gatewayStrategy, error) {
++	if rule.StrategySettings == nil {
++		return nil, errors.New("gateway settings are required")
++	}
++	instance, err := rule.StrategySettings.GetInstance()
++	if err != nil {
++		return nil, err
++	}
++	settings, ok := instance.(*structpb.Struct)
++	if !ok {
++		return nil, errors.New("invalid gateway settings")
++	}
++	fields := settings.GetFields()
++	g := &gatewayStrategy{
++		normal: slices.Clone(rule.OutboundSelector), ohm: ohm, dispatcher: dispatcher,
++		threshold: time.Duration(fields["latencyMs"].GetNumberValue()) * time.Millisecond,
++		probeURL:  fields["probeUrl"].GetStringValue(),
++	}
++	g.normalProbe = gatewayProbeConfig{time.Duration(fields["intervalSeconds"].GetNumberValue()) * time.Second, int(fields["attempts"].GetNumberValue())}
++	g.emergencyProbe = gatewayProbeConfig{time.Duration(fields["emergencyIntervalSeconds"].GetNumberValue()) * time.Second, int(fields["emergencyAttempts"].GetNumberValue())}
++	seen := map[string]bool{}
++	for _, tag := range g.normal {
++		if tag == "" || seen[tag] {
++			return nil, errors.New("invalid or duplicate gateway outbound")
++		}
++		seen[tag] = true
++	}
++	for _, value := range fields["emergencyTags"].GetListValue().GetValues() {
++		tag := value.GetStringValue()
++		if tag == "" || seen[tag] {
++			return nil, errors.New("invalid or duplicate emergency gateway outbound")
++		}
++		g.emergency = append(g.emergency, tag)
++		seen[tag] = true
++	}
++	target, err := url.Parse(g.probeURL)
++	if err != nil || target.Host == "" || target.User != nil || (target.Scheme != "http" && target.Scheme != "https") {
++		return nil, errors.New("invalid gateway probe URL")
++	}
++	if len(g.normal) < 2 || len(seen) > 32 || g.threshold < time.Millisecond || g.threshold > time.Minute {
++		return nil, errors.New("invalid gateway member count or latency threshold")
++	}
++	for _, p := range []gatewayProbeConfig{g.normalProbe, g.emergencyProbe} {
++		if p.interval < time.Second || p.interval > time.Hour || p.attempts < 1 || p.attempts > 10 {
++			return nil, errors.New("invalid gateway probe interval or attempt count")
++		}
++	}
++	g.probe = g.measure
++	return g, nil
++}
++
++func (g *gatewayStrategy) start(parent context.Context) {
++	if g.cancel != nil {
++		return
++	}
++	ctx, cancel := context.WithCancel(parent)
++	g.cancel = cancel
++	go g.run(ctx)
++}
++
++func (g *gatewayStrategy) close() {
++	if g.cancel != nil {
++		g.cancel()
++		g.cancel = nil
++	}
++}
++
++func (g *gatewayStrategy) PickOutbound(_ []string) string {
++	if active := g.active.Load(); active != nil && g.ohm.GetHandler(*active) != nil {
++		return *active
++	}
++	return ""
++}
++
++func (g *gatewayStrategy) GetPrincipleTarget(candidates []string) []string {
++	if active := g.PickOutbound(candidates); active != "" {
++		return []string{active}
++	}
++	return nil
++}
++
++func (g *gatewayStrategy) run(ctx context.Context) {
++	active := g.normal[0]
++	for ctx.Err() == nil {
++		var wait time.Duration
++		active, wait = g.next(ctx, active)
++		if ctx.Err() != nil {
++			return
++		}
++		value := active
++		g.active.Store(&value)
++		timer := time.NewTimer(wait)
++		select {
++		case <-ctx.Done():
++			timer.Stop()
++		case <-timer.C:
++		}
++	}
++}
++
++// next retains a healthy active normal route. An emergency round schedules both
++// pools together, and returns to the normal pool as soon as any normal route works.
++func (g *gatewayStrategy) next(ctx context.Context, active string) (string, time.Duration) {
++	if len(g.emergency) > 0 && (active == "" || slices.Contains(g.emergency, active)) {
++		var emergency string
++		var probes sync.WaitGroup
++		probes.Go(func() { emergency = g.fastest(ctx, g.emergency, "", 0, g.emergencyProbe.attempts) })
++		normal := g.fastest(ctx, g.normal, "", 0, g.normalProbe.attempts)
++		probes.Wait()
++		if normal != "" {
++			return normal, g.normalProbe.interval
++		}
++		return emergency, g.emergencyProbe.interval
++	}
++	var delay time.Duration
++	if active != "" {
++		delay = g.probe(ctx, active, g.normalProbe.attempts)
++		if delay > 0 && delay <= g.threshold {
++			return active, g.normalProbe.interval
++		}
++	}
++	if normal := g.fastest(ctx, g.normal, active, delay, g.normalProbe.attempts); normal != "" {
++		return normal, g.normalProbe.interval
++	}
++	if len(g.emergency) > 0 {
++		return g.fastest(ctx, g.emergency, "", 0, g.emergencyProbe.attempts), g.emergencyProbe.interval
++	}
++	return "", g.normalProbe.interval
++}
++
++func (g *gatewayStrategy) fastest(ctx context.Context, tags []string, tested string, testedDelay time.Duration, attempts int) string {
++	delays := make([]time.Duration, len(tags))
++	var probes sync.WaitGroup
++	parallel := make(chan struct{}, 4)
++	for i, tag := range tags {
++		if tag == tested {
++			delays[i] = testedDelay
++			continue
++		}
++		select {
++		case <-ctx.Done():
++			probes.Wait()
++			return ""
++		case parallel <- struct{}{}:
++			probes.Go(func() {
++				defer func() { <-parallel }()
++				delays[i] = g.probe(ctx, tag, attempts)
++			})
++		}
++	}
++	probes.Wait()
++	var best time.Duration
++	var selected string
++	for i, delay := range delays {
++		if delay > 0 && (best == 0 || delay < best) {
++			selected, best = tags[i], delay
++		}
++	}
++	return selected
++}
++
++func (g *gatewayStrategy) measure(ctx context.Context, tag string, attempts int) time.Duration {
++	if g.ohm.GetHandler(tag) == nil {
++		return 0
++	}
++	client := &http.Client{
++		Timeout:       5 * time.Second,
++		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
++		Transport: &http.Transport{
++			DisableKeepAlives: true,
++			DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
++				dest, err := net.ParseDestination(network + ":" + addr)
++				if err != nil {
++					return nil, err
++				}
++				return tagged.Dialer(ctx, g.dispatcher, dest, tag)
++			},
++		},
++	}
++	var total time.Duration
++	var successful int
++	for i := 0; i < attempts && ctx.Err() == nil; i++ {
++		request, err := http.NewRequestWithContext(ctx, http.MethodGet, g.probeURL, nil)
++		if err != nil {
++			return 0
++		}
++		start := time.Now()
++		response, err := client.Do(request)
++		if err != nil {
++			continue
++		}
++		response.Body.Close()
++		if response.StatusCode >= 200 && response.StatusCode < 400 {
++			total += time.Since(start)
++			successful++
++		}
++	}
++	if successful == 0 {
++		return 0
++	}
++	return max(1, total/time.Duration(successful))
++}
 diff --git a/app/router/strategy_leastping.go b/app/router/strategy_leastping.go
 index ada3492..5fd48c5 100644
 --- a/app/router/strategy_leastping.go
@@ -130,7 +471,7 @@ index ada3492..5fd48c5 100644
 +	return slices.Contains(o, name)
  }
 diff --git a/infra/conf/router.go b/infra/conf/router.go
-index af83c74..6b3637b 100644
+index af83c74..789b3c9 100644
 --- a/infra/conf/router.go
 +++ b/infra/conf/router.go
 @@ -38,7 +38,7 @@ func (r *BalancingRule) Build() (*router.BalancingRule, error) {
@@ -138,27 +479,49 @@ index af83c74..6b3637b 100644
  	case "":
  		r.Strategy.Type = strategyRandom
 -	case strategyRandom, strategyLeastLoad, strategyLeastPing, strategyRoundRobin:
-+	case strategyRandom, strategyLeastLoad, strategyLeastPing, strategyRoundRobin, strategyFailover:
++	case strategyRandom, strategyLeastLoad, strategyLeastPing, strategyRoundRobin, strategyFailover, strategyGateway:
  	default:
  		return nil, errors.New("unknown balancing strategy: " + r.Strategy.Type)
  	}
 diff --git a/infra/conf/router_strategy.go b/infra/conf/router_strategy.go
-index 464cbcf..f990e02 100644
+index 464cbcf..0a95064 100644
 --- a/infra/conf/router_strategy.go
 +++ b/infra/conf/router_strategy.go
-@@ -11,6 +11,7 @@ import (
+@@ -2,6 +2,7 @@ package conf
+ 
+ import (
+ 	"google.golang.org/protobuf/proto"
++	"google.golang.org/protobuf/types/known/structpb"
+ 	"strings"
+ 
+ 	"github.com/xtls/xray-core/app/observatory/burst"
+@@ -11,6 +12,8 @@ import (
  
  const (
  	strategyRandom     string = "random"
++	strategyGateway    string = "gateway"
 +	strategyFailover   string = "failover"
  	strategyLeastPing  string = "leastping"
  	strategyRoundRobin string = "roundrobin"
  	strategyLeastLoad  string = "leastload"
-@@ -19,6 +20,7 @@ const (
+@@ -19,12 +22,20 @@ const (
  var (
  	strategyConfigLoader = NewJSONConfigLoader(ConfigCreatorCache{
  		strategyRandom:     func() interface{} { return new(strategyEmptyConfig) },
++		strategyGateway:    func() interface{} { return new(strategyGatewayConfig) },
 +		strategyFailover:   func() interface{} { return new(strategyEmptyConfig) },
  		strategyLeastPing:  func() interface{} { return new(strategyEmptyConfig) },
  		strategyRoundRobin: func() interface{} { return new(strategyEmptyConfig) },
  		strategyLeastLoad:  func() interface{} { return new(strategyLeastLoadConfig) },
+ 	}, "type", "settings")
+ )
+ 
++type strategyGatewayConfig map[string]any
++
++func (v *strategyGatewayConfig) Build() (proto.Message, error) {
++	return structpb.NewStruct(map[string]any(*v))
++}
++
+ type strategyEmptyConfig struct {
+ }
+ 

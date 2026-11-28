@@ -55,6 +55,15 @@ func TestCompileFailoverBalancer(t *testing.T) {
 }
 
 func TestFailoverRoutesWithPatchedXray(t *testing.T) {
+	exerciseBalancerRoutes(t, false)
+}
+
+func TestGatewayRoutesWithPatchedXray(t *testing.T) {
+	exerciseBalancerRoutes(t, true)
+}
+
+func exerciseBalancerRoutes(t *testing.T, gateway bool) {
+	t.Helper()
 	binary := os.Getenv("VPNUI_TEST_FAILOVER_XRAY")
 	if binary == "" {
 		t.Skip("VPNUI_TEST_FAILOVER_XRAY is not set")
@@ -66,7 +75,7 @@ func TestFailoverRoutesWithPatchedXray(t *testing.T) {
 	}
 	outbounds := []map[string]any{{"tag": "default", "protocol": "blackhole"}}
 	paths := make(map[string]*path)
-	for _, tag := range []string{"primary", "primary-extra", "backup-a", "backup-b"} {
+	for _, tag := range []string{"primary", "primary-extra", "backup-a", "backup-b", "emergency-b"} {
 		p := &path{}
 		p.server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if r.URL.Path == "/probe" {
@@ -93,6 +102,8 @@ func TestFailoverRoutesWithPatchedXray(t *testing.T) {
 	paths["primary"].delay.Store(90)
 	paths["backup-a"].delay.Store(20)
 	paths["backup-b"].delay.Store(60)
+	paths["primary-extra"].delay.Store(200)
+	paths["emergency-b"].delay.Store(75)
 
 	listener, err := net.Listen("tcp4", "127.0.0.1:0")
 	if err != nil {
@@ -114,6 +125,34 @@ func TestFailoverRoutesWithPatchedXray(t *testing.T) {
 			"rules":[{"type":"field","inboundTag":["client"],"balancerTag":"edge"}],
 			"balancers":[{"tag":"edge","primaryTag":"primary","selector":["backup-a","backup-b"],"strategy":{"type":"failover"}}]}`),
 		Observatory: []byte(`{"probeURL":"http://probe.invalid/probe","probeInterval":"100ms","enableConcurrency":true}`),
+	}
+	if gateway {
+		apiListener, err := net.Listen("tcp4", "127.0.0.1:0")
+		if err != nil {
+			t.Fatal(err)
+		}
+		apiAddress := apiListener.Addr().(*net.TCPAddr)
+		_ = apiListener.Close()
+		cfg.API = []byte(fmt.Sprintf(`{"tag":"api","listen":%q,"services":["StatsService"]}`, apiAddress.String()))
+		cfg.RouterConfig = []byte(`{
+			"rules":[{"type":"field","inboundTag":["client"],"balancerTag":"edge"}],
+			"balancers":[{"tag":"edge","primaryTag":"primary","selector":["backup-a","backup-b"],
+			"strategy":{"type":"gateway","settings":{"latencyMs":150,"intervalSeconds":1,"attempts":2,
+			"emergencyIntervalSeconds":1,"emergencyAttempts":2,"emergencyTags":["primary-extra","emergency-b"],
+			"probeUrl":"http://probe.invalid/probe"}}}]}`)
+		if err := compileGatewayBalancers(cfg); err != nil {
+			t.Fatal(err)
+		}
+		var api xray.XrayAPI
+		if err := api.Init(apiAddress.Port); err != nil {
+			t.Fatal(err)
+		}
+		defer api.Close()
+		exerciseGatewayTraffic(t, binary, cfg, address.String(), &api, func(tag string, delay int64, down bool) {
+			paths[tag].delay.Store(delay)
+			paths[tag].down.Store(down)
+		})
+		return
 	}
 	if err := compileFailoverBalancers(cfg); err != nil {
 		t.Fatal(err)
@@ -171,4 +210,67 @@ func TestFailoverRoutesWithPatchedXray(t *testing.T) {
 	paths["backup-a"].down.Store(true)
 	paths["backup-b"].down.Store(true)
 	expect("")
+}
+
+func exerciseGatewayTraffic(t *testing.T, binary string, cfg *xray.Config, address string, api *xray.XrayAPI, setPath func(string, int64, bool)) {
+	t.Helper()
+	data, err := json.Marshal(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	filename := filepath.Join(t.TempDir(), "xray.json")
+	if err := os.WriteFile(filename, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	process := exec.CommandContext(ctx, binary, "-c", filename)
+	if err := process.Start(); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { cancel(); _ = process.Wait() }()
+	client := &http.Client{Timeout: 500 * time.Millisecond, Transport: &http.Transport{
+		DisableKeepAlives: true, Proxy: http.ProxyURL(&url.URL{Scheme: "socks5", Host: address}),
+	}}
+	expect := func(want string) {
+		t.Helper()
+		deadline := time.Now().Add(7 * time.Second)
+		var actual, reported string
+		var err error
+		for time.Now().Before(deadline) {
+			actual = ""
+			if response, err := client.Get("http://target.invalid/traffic"); err == nil {
+				body, _ := io.ReadAll(response.Body)
+				response.Body.Close()
+				actual = string(body)
+			}
+			call, stop := context.WithTimeout(ctx, 200*time.Millisecond)
+			reported, err = api.BalancerTarget(call, "edge")
+			stop()
+			if err == nil && actual == want && reported == want {
+				return
+			}
+			time.Sleep(50 * time.Millisecond)
+		}
+		t.Fatalf("expected %q, traffic used %q, API reported %q (%v)", want, actual, reported, err)
+	}
+	expect("primary")
+	setPath("primary", 260, false)
+	expect("backup-a")
+	setPath("backup-a", 300, false)
+	expect("backup-b")
+	for _, tag := range []string{"primary", "backup-a", "backup-b"} {
+		setPath(tag, 0, true)
+	}
+	expect("emergency-b")
+	setPath("emergency-b", 270, false)
+	expect("primary-extra")
+	setPath("backup-a", 30, false)
+	expect("backup-a")
+	for _, tag := range []string{"backup-a", "primary-extra", "emergency-b"} {
+		setPath(tag, 0, true)
+	}
+	expect("")
+	setPath("primary", 90, false)
+	expect("primary")
 }

@@ -19,6 +19,8 @@ const (
 
 func initPanelActivity(db *gorm.DB) error {
 	statements := []string{
+		`UPDATE panel_client_events SET comment=COALESCE((SELECT comment FROM accounts WHERE id=panel_client_events.account_id),'')
+			WHERE comment IS NULL`,
 		`CREATE INDEX IF NOT EXISTS idx_reseller_clients_email_key ON reseller_clients(LOWER(TRIM(email)))`,
 		`CREATE INDEX IF NOT EXISTS idx_panel_client_event_operation ON panel_client_events(account_id,audit_operation) WHERE audit_operation<>''`,
 		`CREATE INDEX IF NOT EXISTS idx_account_event_actor_history ON account_events(account_id,id) WHERE actor_id>0`,
@@ -47,10 +49,10 @@ func initPanelActivity(db *gorm.DB) error {
 		WHEN NEW.at > 0 AND (NEW.kind='autoRenewed' OR COALESCE(
 			(SELECT value FROM settings WHERE key='` + ClientActivitySetting + `' ORDER BY id LIMIT 1), 'true')='true')
 		BEGIN
-			INSERT INTO panel_client_events(account_id,owner_id,owner,actor_id,actor,email,kind,changes,details,audit_operation,at)
+			INSERT INTO panel_client_events(account_id,owner_id,owner,actor_id,actor,email,comment,kind,changes,details,audit_operation,at)
 			SELECT a.id,` + ActivityOwnerSQL + `,` + AccountOwnerNameSQL + `,
 				COALESCE(actor.id,0),COALESCE(actor.username,''),
-				a.email,NEW.kind,COALESCE(NEW.changes,''),NEW.details,
+				a.email,COALESCE(a.comment,''),NEW.kind,COALESCE(NEW.changes,''),NEW.details,
 				COALESCE(NULLIF(NEW.audit_operation,''),` + accountAuditOperationSQL + `,''),NEW.at
 			FROM accounts a LEFT JOIN users actor ON actor.id=` + eventActorSQL + `
 			WHERE a.id=NEW.account_id;

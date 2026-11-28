@@ -228,9 +228,15 @@
       <button type="button" @click="dismiss('changes')" aria-label='{{ i18n "close" }}'><a-icon type="close"></a-icon></button>
     </div>
     {{ if .perms.accessInbounds }}
+    <div class="panel-activity-badge panel-activity-badge--low-quota" v-if="notices.lowQuota && notices.lowQuota.count">
+      <a :href="basePath + 'panel/activity/lowQuota'"
+        :title="(notices.lowQuota.names || []).join('\n')">{{ i18n "pages.activity.lowQuota" }} <b v-text="notices.lowQuota.count"></b></a>
+      <button type="button" @click="dismiss('lowQuota')" aria-label='{{ i18n "close" }}'><a-icon type="close"></a-icon></button>
+    </div>
     <div class="panel-activity-badge" v-if="notices.payments && notices.payments.count">
       <a :href="basePath + 'panel/activity/payments'"
         :title="(notices.payments.names || []).join('\n')">{{ i18n "pages.activity.payments" }} <b v-text="notices.payments.count"></b></a>
+      <button type="button" @click="dismiss('payments')" aria-label='{{ i18n "close" }}'><a-icon type="close"></a-icon></button>
     </div>
     {{ end }}
     <a-dropdown :trigger="['click']" overlay-class-name="panel-activity-dropdown">
@@ -240,12 +246,14 @@
         {{ if .perms.accessInbounds }}
         <a-menu-item key="expired"><a :href="basePath + 'panel/activity/expired'">{{ i18n "pages.activity.expired" }}</a></a-menu-item>
         <a-menu-item key="payments"><a :href="basePath + 'panel/activity/payments'">{{ i18n "pages.activity.payments" }}</a></a-menu-item>
+        <a-menu-item key="lowQuota"><a :href="basePath + 'panel/activity/lowQuota'">{{ i18n "pages.activity.lowQuota" }}</a></a-menu-item>
         {{ end }}
         <a-menu-item key="renewals"><a :href="basePath + 'panel/activity/renewals'">{{ i18n "pages.activity.renewals" }}</a></a-menu-item>
         <a-menu-item key="trash"><a :href="basePath + 'panel/activity/trash'">{{ i18n "pages.activity.trash" }}</a></a-menu-item>
         <a-menu-item key="changes"><a :href="basePath + 'panel/activity/changes'">{{ i18n "pages.activity.changes" }}</a></a-menu-item>
         {{ if .perms.panelOwner }}
         <a-menu-item key="apps"><a :href="basePath + 'panel/activity/apps'">{{ i18n "pages.activity.apps" }}</a></a-menu-item>
+        <a-menu-item key="gateway"><a :href="basePath + 'panel/activity/gateway'">{{ i18n "pages.activity.gateway" }}</a></a-menu-item>
         {{ end }}
       </a-menu>
     </a-dropdown>

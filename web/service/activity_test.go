@@ -112,7 +112,12 @@ func TestExpiryAndRenewalNoticesFollowOwnership(t *testing.T) {
 	}
 	scan()
 	badge := check(&rep, "expired", repAccount.Email)
-	check(&owner, "expired", rootAccount.Email)
+	if err := db.Create(&model.PanelActivityRead{UserID: owner.Id, Kind: "expired", Through: badge.Through}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if notice, err := activity.Notifications(&owner, "expired"); err != nil || notice.Count != 2 {
+		t.Fatalf("panel owner must see own and delegated expiries: %+v, %v", notice, err)
+	}
 	check(&admin, "expired", "")
 	if err := activity.DismissNotice(&rep, "expired", badge.Through); err != nil {
 		t.Fatal(err)
@@ -120,8 +125,15 @@ func TestExpiryAndRenewalNoticesFollowOwnership(t *testing.T) {
 	scan()
 	check(&rep, "expired", "")
 	expired, err := accounts.ListExpiredOwnedAccounts(&owner, 1, 30, "", "")
-	if err != nil || len(expired.Rows) != 1 || expired.Rows[0].Email != rootAccount.Email {
+	if err != nil || len(expired.Rows) != 2 {
 		t.Fatalf("owner's expired page: %+v, %v", expired, err)
+	}
+	seen := map[string]bool{}
+	for _, account := range expired.Rows {
+		seen[account.Email] = true
+	}
+	if !seen[rootAccount.Email] || !seen[repAccount.Email] {
+		t.Fatalf("owner's expired list lacked a time or quota expiry: %+v", expired.Rows)
 	}
 
 	// Disable the optional change log and exercise a true renew event through
@@ -397,7 +409,7 @@ func TestLegacyClientRenewalNoticesUseTheConfiguratorAndPanelOwner(t *testing.T)
 		t.Fatalf("pending payment for automatic renewal configurator: %+v %v", rows, err)
 	}
 	for _, unrelated := range []*model.User{&manager, &owner} {
-		if notice, err := activity.PaymentNotice(unrelated); err != nil || notice.Count != 0 {
+		if notice, err := activity.Notifications(unrelated, "payments"); err != nil || notice.Count != 0 {
 			t.Fatalf("payment notice to %s: %+v %v", unrelated.Username, notice, err)
 		}
 		if err := activity.ConfirmPayment(unrelated, rows[0].ID); !errors.Is(err, gorm.ErrRecordNotFound) {
@@ -406,6 +418,46 @@ func TestLegacyClientRenewalNoticesUseTheConfiguratorAndPanelOwner(t *testing.T)
 	}
 	if err := activity.ConfirmPayment(&other, rows[0].ID); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestChangeNoticesCountOnlyNewOperationsAfterViewingHistory(t *testing.T) {
+	newAccountsDB(t)
+	db := database.GetDB()
+	var owner model.User
+	if err := db.Where("is_panel_owner").First(&owner).Error; err != nil {
+		t.Fatal(err)
+	}
+	activity := ActivityService{}
+	now := time.Now().UTC()
+	month := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)
+	add := func(email, operation string) int64 {
+		t.Helper()
+		event := model.PanelClientEvent{AccountID: 1, Email: email, Kind: "updated", ActorID: owner.Id,
+			AuditOperation: operation, At: now.UnixMilli()}
+		if err := db.Create(&event).Error; err != nil {
+			t.Fatal(err)
+		}
+		return event.Id
+	}
+	add("seen-client", "first-edit")
+	first, err := activity.ChangeEvents(month, "", 0, &owner)
+	if err != nil || len(first) != 1 {
+		t.Fatalf("initial history: %+v, %v", first, err)
+	}
+	// The first edit can add audit details later. A separate edit arrived while
+	// the page was open and must stay unread after acknowledging the first view.
+	add("seen-client", "first-edit")
+	freshID := add("new-client", "next-edit")
+	if err := activity.DismissNotice(&owner, "changes", first[0].Id); err != nil {
+		t.Fatal(err)
+	}
+	fresh, err := activity.Notifications(&owner, "changes")
+	if err != nil || fresh.Count != 1 || fresh.Through != freshID || len(fresh.Names) != 1 || fresh.Names[0] != "new-client" {
+		t.Fatalf("only the new operation should be counted: %+v, %v", fresh, err)
+	}
+	if rows, err := activity.ChangeEvents(month, "", 0, &owner); err != nil || len(rows) != 2 {
+		t.Fatalf("dismissal changed the available history: %+v, %v", rows, err)
 	}
 }
 
@@ -645,4 +697,50 @@ func TestClientActivityGroupsARequestAndKeepsAccountHistory(t *testing.T) {
 		t.Fatalf("retention affected a recent operation: %+v, %v", rows, err)
 	}
 	checkHistory()
+}
+
+func TestActivityRecordsCommentChangesAndRoleLoginPreferences(t *testing.T) {
+	accounts := newAccountsDB(t)
+	db := database.GetDB()
+	var owner model.User
+	if err := db.Where("is_panel_owner").First(&owner).Error; err != nil {
+		t.Fatal(err)
+	}
+	activity := ActivityService{}
+	entry := map[string]any{"email": "comment-client", "comment": "initial note"}
+	if _, err := accounts.SaveAccountWithoutInbound(entry, owner.Id); err != nil {
+		t.Fatal(err)
+	}
+	entry["comment"] = "changed note"
+	if _, err := accounts.SaveAccountWithoutInbound(entry, owner.Id); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	month := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)
+	rows, err := activity.ChangeEvents(month, "", 0, &owner)
+	if err != nil || len(rows) != 2 || rows[0].Comment != "changed note" || rows[1].Comment != "initial note" ||
+		rows[0].Details == nil || rows[0].Details.Comment == nil ||
+		*rows[0].Details.Comment != (model.ClientTextChange{Before: "initial note", After: "changed note"}) {
+		t.Fatalf("comment audit details: %+v, %v", rows, err)
+	}
+	admin := &model.User{Id: 71, Username: "delegated-admin"}
+	representative := &model.User{Id: 72, Username: "delegated-rep", IsReseller: true}
+	if err := activity.SetLoginLogging(false, false); err != nil {
+		t.Fatal(err)
+	}
+	for _, user := range []*model.User{&owner, admin, representative} {
+		if err := activity.RecordLogin(user, "", "", "login"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := activity.SetLoginLogging(true, false); err != nil {
+		t.Fatal(err)
+	}
+	if err := activity.RecordLogin(representative, "", "", "logout"); err != nil {
+		t.Fatal(err)
+	}
+	logins, err := activity.LoginEvents(&owner, false, 0)
+	if err != nil || len(logins) != 2 || logins[0].Username != representative.Username || logins[1].Username != owner.Username {
+		t.Fatalf("role login settings: %+v, %v", logins, err)
+	}
 }

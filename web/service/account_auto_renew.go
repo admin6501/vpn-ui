@@ -14,6 +14,17 @@ import (
 )
 
 func (s *AccountService) SetAutoRenew(email string, enabled bool, audit ...database.AccountAudit) error {
+	return s.ConfigureAutoRenew(email, enabled, nil, audit...)
+}
+
+const MaxAutoRenewLimit = 10000
+
+var ErrInvalidAutoRenewLimit = errors.New("invalid automatic renewal limit")
+
+func (s *AccountService) ConfigureAutoRenew(email string, enabled bool, limit *int, audit ...database.AccountAudit) error {
+	if limit != nil && (*limit < 0 || *limit > MaxAutoRenewLimit) {
+		return ErrInvalidAutoRenewLimit
+	}
 	actorID := 0
 	if len(audit) > 0 {
 		actorID = audit[0].ActorID
@@ -34,9 +45,16 @@ func (s *AccountService) SetAutoRenew(email string, enabled bool, audit ...datab
 				return common.NewError("automatic renewal requires a quota or expiration")
 			}
 		}
-		return tx.Exec(`UPDATE accounts SET auto_renew=?,auto_renew_actor_id=
-			CASE WHEN ? THEN ? ELSE 0 END WHERE id=? AND auto_renew<>?`,
-			enabled, enabled, actorID, account.Id, enabled).Error
+		newLimit := account.AutoRenewLimit
+		if limit != nil {
+			newLimit = *limit
+		}
+		return tx.Exec(`UPDATE accounts SET auto_renew=?,auto_renew_limit=?,
+			auto_renew_count=CASE WHEN auto_renew_limit<>? OR (NOT auto_renew AND ?) THEN 0 ELSE auto_renew_count END,
+			auto_renew_actor_id=
+			CASE WHEN ? THEN COALESCE(NULLIF(?,0), auto_renew_actor_id) ELSE 0 END
+			WHERE id=? AND (auto_renew<>? OR auto_renew_limit<>?)`,
+			enabled, newLimit, newLimit, enabled, enabled, actorID, account.Id, enabled, newLimit).Error
 	}, audit...)
 }
 
@@ -55,6 +73,7 @@ func (s *AccountService) RenewDueAccounts() ([]int, error) {
 	err := db.Model(&model.Account{}).
 		Joins("JOIN client_traffics t ON LOWER(TRIM(t.email)) = LOWER(TRIM(accounts.email))").
 		Where("accounts.auto_renew = ? AND accounts.enable = ? AND accounts.representative_blocked = ?", true, true, false).
+		Where("(accounts.auto_renew_limit = 0 OR accounts.auto_renew_count < accounts.auto_renew_limit)").
 		Where("(t.expiry_time > 0 AND t.expiry_time <= ?) OR (t.total > 0 AND t.up >= t.total-t.down)", now).
 		Order("accounts.id").Pluck("accounts.id", &ids).Error
 	if err != nil {
@@ -68,7 +87,8 @@ func (s *AccountService) RenewDueAccounts() ([]int, error) {
 			if err := tx.First(&account, id).Error; err != nil {
 				return err
 			}
-			if !account.AutoRenew || !account.Enable || account.RepresentativeBlocked {
+			if !account.AutoRenew || !account.Enable || account.RepresentativeBlocked ||
+				(account.AutoRenewLimit > 0 && account.AutoRenewCount >= account.AutoRenewLimit) {
 				return nil
 			}
 			var traffic xray.ClientTraffic

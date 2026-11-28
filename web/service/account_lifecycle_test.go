@@ -156,3 +156,91 @@ func TestAccountAutoRenewDoesNotBypassManualBilling(t *testing.T) {
 		t.Fatalf("unfunded renewal modified state: %+v, %v", got, err)
 	}
 }
+
+func TestAutomaticRenewalLimitCountsQuotaAndTimeOnce(t *testing.T) {
+	accounts := newAccountsDB(t)
+	db := database.GetDB()
+	account := renewFixture(t, accounts, 10*gb, time.Now().Add(time.Hour).UnixMilli(), dayMillis, true)
+	limit := 2
+	if err := accounts.ConfigureAutoRenew(account.Email, true, &limit); err != nil {
+		t.Fatal(err)
+	}
+	traffic := db.Model(&xray.ClientTraffic{}).Where("email=?", account.Email)
+	for i, depleted := range []map[string]any{
+		{"up": 10 * gb, "down": 0},
+		{"expiry_time": 1},
+		{"expiry_time": 1, "up": 10 * gb},
+	} {
+		if err := traffic.Updates(depleted).Error; err != nil {
+			t.Fatal(err)
+		}
+		if _, err := accounts.RenewDueAccounts(); err != nil {
+			t.Fatal(err)
+		}
+		var current model.Account
+		if err := db.First(&current, account.Id).Error; err != nil {
+			t.Fatal(err)
+		}
+		if current.AutoRenewCount != min(i+1, 2) {
+			t.Fatalf("renewal round %d used %d renewals", i, current.AutoRenewCount)
+		}
+		var stored xray.ClientTraffic
+		if err := db.Where("email=?", account.Email).First(&stored).Error; err != nil {
+			t.Fatal(err)
+		}
+		if renewalDepleted(&stored, time.Now().UnixMilli()) != (i == 2) {
+			t.Fatalf("unexpected depletion after round %d: %+v", i, stored)
+		}
+	}
+}
+
+func TestLowQuotaNoticeUsesClientOwnerAndPositiveBalance(t *testing.T) {
+	accounts := newAccountsDB(t)
+	db := database.GetDB()
+	var owner model.User
+	if err := db.Where("is_panel_owner").First(&owner).Error; err != nil {
+		t.Fatal(err)
+	}
+	admin := model.User{Username: "low-quota-admin", Enable: true, Permissions: model.PermAccessInbounds}
+	if err := db.Create(&admin).Error; err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range []struct {
+		email       string
+		owner       int
+		total, used int64
+	}{
+		{"only-low", admin.Id, 2 * gb, 2*gb - 1234},
+		{"full-gigabyte", admin.Id, 2 * gb, gb},
+		{"used-up", admin.Id, gb, gb},
+		{"unlimited", admin.Id, 0, 0},
+		{"owners-low", owner.Id, gb, 1234},
+	} {
+		if _, err := accounts.SaveAccountWithoutInbound(map[string]any{"email": entry.email, "enable": true, "totalGB": float64(entry.total)}, entry.owner); err != nil {
+			t.Fatal(err)
+		}
+		if err := db.Model(&xray.ClientTraffic{}).Where("email=?", entry.email).Update("up", entry.used).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	activity := ActivityService{}
+	for user, want := range map[*model.User]string{&admin: "only-low", &owner: "owners-low"} {
+		notice, err := activity.LowQuotaNotice(user)
+		if err != nil || notice.Count != 1 || len(notice.Names) != 1 || notice.Names[0] != want {
+			t.Fatalf("unexpected low quota notice for %s: %+v, %v", user.Username, notice, err)
+		}
+		rows, err := activity.LowQuotaClients(user, 0)
+		if err != nil || len(rows) != 1 || rows[0].Email != want || rows[0].Remaining <= 0 {
+			t.Fatalf("unexpected low quota rows for %s: %+v, %v", user.Username, rows, err)
+		}
+	}
+	if err := activity.SetLowQuotaNotices(&admin, false); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.First(&admin, admin.Id).Error; err != nil {
+		t.Fatal(err)
+	}
+	if notice, err := activity.LowQuotaNotice(&admin); err != nil || notice.Count != 0 {
+		t.Fatalf("disabled low quota notice: %+v, %v", notice, err)
+	}
+}

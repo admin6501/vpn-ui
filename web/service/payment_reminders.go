@@ -37,20 +37,6 @@ func (ActivityService) PendingPayments(user *model.User, before int64) ([]Paymen
 	return rows, err
 }
 
-func (ActivityService) PaymentNotice(user *model.User) (ActivityNotice, error) {
-	notice := ActivityNotice{Names: []string{}}
-	if !user.Can(model.PermAccessInbounds) || !user.PaymentReminders {
-		return notice, nil
-	}
-	query := pendingPayments(user)
-	err := query.Session(&gorm.Session{}).Count(&notice.Count).Error
-	if err != nil || notice.Count == 0 {
-		return notice, err
-	}
-	err = query.Order("p.revision DESC").Limit(8).Pluck("a.email", &notice.Names).Error
-	return notice, err
-}
-
 func (ActivityService) SetPaymentReminders(user *model.User, enabled bool) error {
 	if !user.Can(model.PermAccessInbounds) {
 		return gorm.ErrRecordNotFound

@@ -34,7 +34,7 @@ func TestPaymentReminderLifecycle(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		notice, err := activity.PaymentNotice(&owner)
+		notice, err := activity.Notifications(&owner, "payments")
 		if err != nil || notice.Count != int64(len(rows)) {
 			t.Fatalf("notice does not match pending rows: %+v, %v", notice, err)
 		}
@@ -131,6 +131,50 @@ func TestPaymentReminderLifecycle(t *testing.T) {
 	var reminders int64
 	if err := db.Model(&model.PanelPaymentReminder{}).Where("account_id=?", account.Id).Count(&reminders).Error; err != nil || reminders != 0 {
 		t.Fatalf("deleting the client left reminder state: %d, %v", reminders, err)
+	}
+}
+
+func TestDismissedPaymentNoticeKeepsUnconfirmedPayments(t *testing.T) {
+	accounts := newAccountsDB(t)
+	db := database.GetDB()
+	activity := ActivityService{}
+	var owner model.User
+	if err := db.Where("is_panel_owner").First(&owner).Error; err != nil {
+		t.Fatal(err)
+	}
+	owner.PaymentReminders = true
+	oldPayment := map[string]any{"email": "older-payment", "totalGB": float64(gb)}
+	for _, entry := range []map[string]any{oldPayment, {"email": "another-pending-payment"}} {
+		if _, err := accounts.SaveAccountWithoutInbound(entry, owner.Id); err != nil {
+			t.Fatal(err)
+		}
+	}
+	initial, err := activity.Notifications(&owner, "payments")
+	if err != nil || initial.Count != 2 || initial.Through == 0 {
+		t.Fatalf("initial payment notice: %+v, %v", initial, err)
+	}
+	if err := activity.DismissNotice(&owner, "payments", initial.Through); err != nil {
+		t.Fatal(err)
+	}
+	if dismissed, err := activity.Notifications(&owner, "payments"); err != nil || dismissed.Count != 0 {
+		t.Fatalf("dismissed payments still counted: %+v, %v", dismissed, err)
+	}
+	if rows, err := activity.PendingPayments(&owner, 0); err != nil || len(rows) != 2 {
+		t.Fatalf("dismissing the notice modified unconfirmed payments: %+v, %v", rows, err)
+	}
+	oldPayment["totalGB"] = float64(2 * gb)
+	if _, err := accounts.SaveAccountWithoutInbound(oldPayment, owner.Id); err != nil {
+		t.Fatal(err)
+	}
+	if err := activity.DismissNotice(&owner, "payments", initial.Through); err != nil {
+		t.Fatal(err)
+	}
+	if fresh, err := activity.Notifications(&owner, "payments"); err != nil || fresh.Count != 1 ||
+		fresh.Through <= initial.Through || len(fresh.Names) != 1 || fresh.Names[0] != "older-payment" {
+		t.Fatalf("only the new payment revision should be counted: %+v, %v", fresh, err)
+	}
+	if rows, err := activity.PendingPayments(&owner, 0); err != nil || len(rows) != 2 {
+		t.Fatalf("expected both unpaid clients: %+v, %v", rows, err)
 	}
 }
 

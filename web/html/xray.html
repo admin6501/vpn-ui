@@ -1188,6 +1188,11 @@ if (window.nodeXrayId) axios.interceptors.request.use(config => {
       async deleteOutbound(index) {
         const outbounds = this.templateSettings.outbounds;
         const gone = outbounds[index];
+        if (gone && this.balancersData.some(b => b.strategy === 'gateway' &&
+            [b.primaryTag, ...b.selector, ...(b.gatewaySettings?.emergencyTags || [])].includes(gone.tag))) {
+          this.$message.warning('{{ i18n "pages.xray.balancer.gatewayInUse" }}');
+          return;
+        }
         outbounds.splice(index, 1);
         this.outboundSettings = JSON.stringify(outbounds);
         if (gone && gone.tag && this.sshOutboundTags.includes(gone.tag)) {
@@ -1400,6 +1405,15 @@ if (window.nodeXrayId) axios.interceptors.request.use(config => {
           await this.refreshOutboundTraffic();
         }
       },
+      balancerTemplate(balancer) {
+        const { tag, selector, strategy, primaryTag, fallbackTag, gatewaySettings } = balancer;
+        const exact = strategy === 'failover' || strategy === 'gateway';
+        const configured = { tag, selector, fallbackTag: exact ? '' : fallbackTag };
+        if (exact) configured.primaryTag = primaryTag;
+        if (strategy && strategy !== 'random') configured.strategy = { type: strategy };
+        if (strategy === 'gateway') configured.strategy.settings = gatewaySettings;
+        return configured;
+      },
       addBalancer() {
         balancerModal.show({
           title: '{{ i18n "pages.xray.balancer.addBalancer"}}',
@@ -1417,18 +1431,7 @@ if (window.nodeXrayId) axios.interceptors.request.use(config => {
             if (newTemplateSettings.routing.balancers == undefined) {
               newTemplateSettings.routing.balancers = [];
             }
-            let tmpBalancer = {
-              'tag': balancer.tag,
-              'selector': balancer.selector,
-              'fallbackTag': balancer.strategy === 'failover' ? '' : balancer.fallbackTag
-            };
-            if (balancer.strategy === 'failover') tmpBalancer.primaryTag = balancer.primaryTag;
-            if (balancer.strategy && balancer.strategy != 'random') {
-              tmpBalancer.strategy = {
-                'type': balancer.strategy
-              };
-            }
-            newTemplateSettings.routing.balancers.push(tmpBalancer);
+            newTemplateSettings.routing.balancers.push(this.balancerTemplate(balancer));
             this.templateSettings = newTemplateSettings;
             this.updateObservatorySelectors();
             balancerModal.close();
@@ -1448,12 +1451,6 @@ if (window.nodeXrayId) axios.interceptors.request.use(config => {
             balancerModal.loading();
             newTemplateSettings = this.templateSettings;
 
-            let tmpBalancer = {
-              'tag': balancer.tag,
-              'selector': balancer.selector,
-              'fallbackTag': balancer.strategy === 'failover' ? '' : balancer.fallbackTag
-            };
-
             // Remove old tag
             if (newTemplateSettings.observatory) {
               newTemplateSettings.observatory.subjectSelector = newTemplateSettings.observatory.subjectSelector.filter(s => s != oldTag);
@@ -1462,14 +1459,7 @@ if (window.nodeXrayId) axios.interceptors.request.use(config => {
               newTemplateSettings.burstObservatory.subjectSelector = newTemplateSettings.burstObservatory.subjectSelector.filter(s => s != oldTag);
             }
 
-            if (balancer.strategy === 'failover') tmpBalancer.primaryTag = balancer.primaryTag;
-            if (balancer.strategy && balancer.strategy != 'random') {
-              tmpBalancer.strategy = {
-                'type': balancer.strategy
-              };
-            }
-
-            newTemplateSettings.routing.balancers[index] = tmpBalancer;
+            newTemplateSettings.routing.balancers[index] = this.balancerTemplate(balancer);
             // change edited tag if used in rule section
             if (oldTag != balancer.tag) {
               newTemplateSettings.routing.rules.forEach((rule) => {
@@ -1853,6 +1843,7 @@ if (window.nodeXrayId) axios.interceptors.request.use(config => {
                 'selector': o.selector ? o.selector : [],
                 'fallbackTag': o.fallbackTag ?? '',
                 'primaryTag': o.primaryTag ?? '',
+                'gatewaySettings': o.strategy?.type === 'gateway' ? o.strategy.settings : undefined,
               });
             });
           }

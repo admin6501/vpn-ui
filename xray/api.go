@@ -17,6 +17,7 @@ import (
 	"github.com/mhsanaei/3x-ui/v2/util/common"
 
 	"github.com/xtls/xray-core/app/proxyman/command"
+	routingService "github.com/xtls/xray-core/app/router/command"
 	statsService "github.com/xtls/xray-core/app/stats/command"
 	"github.com/xtls/xray-core/common/protocol"
 	"github.com/xtls/xray-core/common/serial"
@@ -37,6 +38,24 @@ type XrayAPI struct {
 	StatsServiceClient   *statsService.StatsServiceClient
 	grpcClient           *grpc.ClientConn
 	isConnected          bool
+}
+
+func (x *XrayAPI) BalancerTarget(ctx context.Context, tag string) (string, error) {
+	if x.grpcClient == nil {
+		return "", fmt.Errorf("Xray API is not connected")
+	}
+	info, err := routingService.NewRoutingServiceClient(x.grpcClient).GetBalancerInfo(ctx, &routingService.GetBalancerInfoRequest{Tag: tag})
+	if err != nil {
+		return "", err
+	}
+	balancer := info.GetBalancer()
+	if target := balancer.GetOverride().GetTarget(); target != "" {
+		return target, nil
+	}
+	if tags := balancer.GetPrincipleTarget().GetTag(); len(tags) > 0 {
+		return tags[0], nil
+	}
+	return "", nil
 }
 
 func getRequiredUserString(user map[string]any, key string) (string, error) {

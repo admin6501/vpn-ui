@@ -109,8 +109,9 @@ type User struct {
 	// Enable gates login without deleting the account (and its owned inbounds).
 	Enable bool `json:"enable" form:"enable" gorm:"default:1"`
 
-	PaymentReminders       bool `json:"-" gorm:"not null;default:false"`
-	RenewalNoticesDisabled bool `json:"-" gorm:"not null;default:false"`
+	PaymentReminders        bool `json:"-" gorm:"not null;default:false"`
+	LowQuotaNoticesDisabled bool `json:"-" gorm:"not null;default:false"`
+	RenewalNoticesDisabled  bool `json:"-" gorm:"not null;default:false"`
 
 	// Per-account TOTP. Replaces the panel-global twoFactorEnable/twoFactorToken
 	// settings pair, which leaked the shared secret to every logged-in user
@@ -695,6 +696,8 @@ type Account struct {
 	LastRenewalAutomatic bool  `json:"-" gorm:"not null;default:false"`
 	AutoRenew            bool  `json:"autoRenew" gorm:"not null;default:false;index"`
 	AutoRenewActorID     int   `json:"-" gorm:"->;not null;default:0"`
+	AutoRenewLimit       int   `json:"autoRenewLimit" gorm:"->;not null;default:0"`
+	AutoRenewCount       int   `json:"autoRenewCount" gorm:"->;not null;default:0"`
 	// NO gorm default, deliberately. `default:1` makes GORM treat Go's false as
 	// "unset" and write 1 instead, so a DISABLED client migrated to an ENABLED
 	// account. The projection then rendered enable:true over the stored false, the

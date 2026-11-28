@@ -41,7 +41,7 @@ func TestPanelActivityBrowserRuntime(t *testing.T) {
 		t.Fatal(err)
 	}
 	pages := map[string][]byte{}
-	for _, mode := range []string{"logins", "renewals", "changes", "apps", "expired", "payments", "trash"} {
+	for _, mode := range []string{"logins", "renewals", "changes", "apps", "expired", "payments", "trash", "lowQuota", "gateway"} {
 		var out bytes.Buffer
 		name := "activity.html"
 		if mode == "expired" {

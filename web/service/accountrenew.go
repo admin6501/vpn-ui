@@ -110,11 +110,17 @@ func (s *AccountService) renewAccountTx(tx *gorm.DB, user *model.User, account *
 		return nil, err
 	}
 
-	if err := tx.Model(account).Updates(map[string]any{
+	updates := map[string]any{
 		"enable": true, "expiry_time": expiry, "renewal_duration": period,
 		"last_renewed_at": max(now, account.LastRenewedAt+1), "last_renewal_automatic": automatic,
 		"imported_reset_disabled": false, "imported_last_reset_at": now,
-	}).Error; err != nil {
+	}
+	if automatic && account.AutoRenewLimit > 0 {
+		if err := tx.Exec("UPDATE accounts SET auto_renew_count=auto_renew_count+1 WHERE id=?", account.Id).Error; err != nil {
+			return nil, err
+		}
+	}
+	if err := tx.Model(account).Updates(updates).Error; err != nil {
 		return nil, err
 	}
 	if err := tx.Model(traffic).Updates(map[string]any{

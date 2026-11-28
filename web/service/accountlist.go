@@ -100,6 +100,8 @@ type AccountRow struct {
 	CreatedAt       int64        `json:"createdAt"`
 	LastRenewedAt   int64        `json:"lastRenewedAt"`
 	AutoRenew       bool         `json:"autoRenew"`
+	AutoRenewLimit  int          `json:"autoRenewLimit"`
+	AutoRenewCount  int          `json:"autoRenewCount"`
 	LastOnline      int64        `json:"lastOnline"`
 	OnlineSince     int64        `json:"onlineSince"`
 	LiveRate        *AccountRate `json:"liveRate,omitempty"`
@@ -273,7 +275,7 @@ func (s *AccountService) listAccounts(user *model.User, page, size int, search, 
 		account := &accounts[i]
 		key := accountKey(account.Email)
 		mine := memberships[account.Id]
-		if !visible(account, mine) {
+		if !(expiredOwned && user.IsPanelOwner) && !visible(account, mine) {
 			continue
 		}
 		if needle != "" && !accountMatches(account, mine, needle) {
@@ -285,6 +287,7 @@ func (s *AccountService) listAccounts(user *model.User, page, size int, search, 
 			TotalGB: account.TotalGB, ExpiryTime: account.ExpiryTime,
 			RenewalDuration: account.RenewalDuration, CreatedAt: account.CreatedAt,
 			LastRenewedAt: account.LastRenewedAt, AutoRenew: account.AutoRenew,
+			AutoRenewLimit: account.AutoRenewLimit, AutoRenewCount: account.AutoRenewCount,
 			Reset: account.Reset, LimitIP: account.LimitIP, TgID: account.TgID,
 			SpeedLimitDown: account.SpeedLimitDown, SpeedLimitUp: account.SpeedLimitUp,
 			UserLimitOverride: account.UserLimitOverride,
@@ -327,7 +330,7 @@ func (s *AccountService) listAccounts(user *model.User, page, size int, search, 
 			row.TotalGB = t.Total
 			row.ExpiryTime = t.ExpiryTime
 		}
-		if expiredOwned && (row.OwnerID != user.Id || !renewalDepleted(&xray.ClientTraffic{
+		if expiredOwned && ((!user.IsPanelOwner && row.OwnerID != user.Id) || !renewalDepleted(&xray.ClientTraffic{
 			ExpiryTime: row.ExpiryTime, Total: row.TotalGB, Up: row.Up, Down: row.Down,
 		}, now)) {
 			continue

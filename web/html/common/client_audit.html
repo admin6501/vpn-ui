@@ -87,6 +87,11 @@
         lines.push(`${this.fields.autoRenew} · ${details.autoRenewEnabled ? this.auditLabels.enabled : this.auditLabels.disabled}`);
         fields.delete('autoRenew');
       }
+      if (details.comment) {
+        const { before, after } = details.comment;
+        lines.push(`${this.fields.comment} · ${before || '—'} → ${after || '—'}`);
+        fields.delete('comment');
+      }
       if (fields.size) lines.push([...fields].map(field => this.fields[field] || field).join(' · '));
       return lines;
     },

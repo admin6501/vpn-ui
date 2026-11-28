@@ -8,7 +8,7 @@
             :scroll="isMobile ? {} : { x: 200 }" :pagination="false" :indent-size="0" :locale='{ filterConfirm: `{{ i18n "confirm" }}`, filterReset: `{{ i18n "reset" }}` }'>
             <template slot="action" slot-scope="text, balancer, index">
                 <span>[[ index+1 ]]</span>
-                <a-dropdown :trigger="['click']">
+                <a-dropdown v-if="balancer.strategy !== 'gateway' || {{ .perms.panelOwner }}" :trigger="['click']">
                     <a-icon @click="e => e.preventDefault()" type="more"
                         :style="{ fontSize: '16px', textDecoration: 'bold' }"></a-icon>
                     <a-menu slot="overlay" :theme="themeSwitcher.currentTheme">
@@ -31,6 +31,7 @@
                 <a-tag :style="{ margin: '0' }" v-if="balancer.strategy=='leastLoad'" color="green">{{ i18n "pages.interface.leastLoad" }}</a-tag>
                 <a-tag :style="{ margin: '0' }" v-if="balancer.strategy=='leastPing'" color="green">{{ i18n "pages.interface.leastPing" }}</a-tag>
                 <a-tag :style="{ margin: '0' }" v-if="balancer.strategy === 'failover'" color="blue">{{ i18n "pages.xray.balancer.failover" }}</a-tag>
+                <a-tag :style="{ margin: '0' }" v-if="balancer.strategy === 'gateway'" color="blue">{{ i18n "pages.xray.balancer.gateway" }}</a-tag>
             </template>
             <template slot="selector" slot-scope="text, balancer, index">
                 <a-tag class="info-large-tag" :style="{ margin: '1' }" v-for="sel in balancer.selector">[[ sel ]]</a-tag>

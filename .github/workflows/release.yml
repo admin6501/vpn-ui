@@ -95,8 +95,8 @@ jobs:
         run: go test -p 2 ./... -count=1 -timeout 10m
       - name: Verify exact account usage over concurrent VMess and Shadowsocks TCP and UDP
         run: RUN_CORE_TRAFFIC_INTEGRATION=1 XRAY_TRAFFIC_BINARY="$PWD/corebundle/core/${{ matrix.arch }}/xray" go test -race ./web/service -run '^TestCoreTrafficRealConcurrentProtocols$' -count=1 -timeout 90s
-      - name: Verify failover against the bundled Xray binary
-        run: VPNUI_TEST_FAILOVER_XRAY="$PWD/corebundle/core/${{ matrix.arch }}/xray" go test ./web/service -run '^TestFailoverRoutesWithPatchedXray$' -count=1 -timeout 30s
+      - name: Verify failover and gateway against the bundled Xray binary
+        run: VPNUI_TEST_FAILOVER_XRAY="$PWD/corebundle/core/${{ matrix.arch }}/xray" go test ./web/service -run '^Test(Failover|Gateway)RoutesWithPatchedXray$' -count=1 -timeout 90s
       - name: Verify dedicated node authentication, billing, subscriptions and real data plane
         run: |
           go test -race ./nodeagent ./web/service -run 'TestNodeProvision|TestNodeTag|TestNodeDuplicateIncoming|TestNodeSnapshotHistory|TestNodeLegacyZero|TestNodeReportConflict|TestNodeSnapshotRefresh|TestNodeReportAvoids|TestNodeUnchanged|TestNodeBatch|TestNodeIPsec|TestIpsecIsShared|TestDerivedCores' -count=1

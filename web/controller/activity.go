@@ -66,8 +66,33 @@ func registerActivityRoutes(api *gin.RouterGroup) {
 		c.Next()
 	})
 	g.GET("/logins", func(c *gin.Context) {
-		rows, err := activityService.LoginEvents(session.GetLoginUser(c), c.Query("scope") == "own", activityBefore(c))
-		activityRows(c, rows, err)
+		user := session.GetLoginUser(c)
+		rows, err := activityService.LoginEvents(user, c.Query("scope") == "own", activityBefore(c))
+		more := len(rows) > service.ActivityPageSize
+		if more {
+			rows = rows[:service.ActivityPageSize]
+		}
+		result := gin.H{"rows": rows, "more": more}
+		if err == nil && user.IsPanelOwner {
+			admins, representatives, loadErr := activityService.LoginLogging()
+			result["logAdmins"], result["logRepresentatives"] = admins, representatives
+			err = loadErr
+		}
+		jsonObj(c, result, err)
+	})
+	g.POST("/logins/settings", requirePanelOwner(), func(c *gin.Context) {
+		var input struct {
+			Representative bool
+			Enabled        *bool
+		}
+		if !bindActivity(c, &input) {
+			return
+		}
+		if input.Enabled == nil {
+			jsonMsg(c, I18nWeb(c, "somethingWentWrong"), errors.New("missing login logging preference"))
+			return
+		}
+		jsonMsg(c, "", activityService.SetLoginLogging(input.Representative, *input.Enabled))
 	})
 	g.POST("/logins/purge", requirePanelOwner(), func(c *gin.Context) {
 		var input struct{ Date string }
@@ -104,7 +129,7 @@ func registerActivityRoutes(api *gin.RouterGroup) {
 	g.GET("/notices", func(c *gin.Context) {
 		user := session.GetLoginUser(c)
 		expired := service.ActivityNotice{}
-		if user.Can(model.PermAccessInbounds) {
+		if user.IsPanelOwner || user.Can(model.PermAccessInbounds) {
 			var err error
 			expired, err = activityService.Notifications(user, "expired")
 			if err != nil {
@@ -122,8 +147,12 @@ func registerActivityRoutes(api *gin.RouterGroup) {
 			jsonObj(c, nil, err)
 			return
 		}
-		payments, err := activityService.PaymentNotice(user)
-		jsonObj(c, gin.H{"expired": expired, "renewals": renewals, "payments": payments, "changes": changes}, err)
+		payments, err := activityService.Notifications(user, "payments")
+		var lowQuota service.ActivityNotice
+		if err == nil && user.Can(model.PermAccessInbounds) && !session.LowQuotaNoticeRead(c) {
+			lowQuota, err = activityService.LowQuotaNotice(user)
+		}
+		jsonObj(c, gin.H{"expired": expired, "renewals": renewals, "payments": payments, "changes": changes, "lowQuota": lowQuota}, err)
 	})
 	g.POST("/notices/dismiss", func(c *gin.Context) {
 		var input struct {
@@ -135,16 +164,45 @@ func registerActivityRoutes(api *gin.RouterGroup) {
 		}
 		user := session.GetLoginUser(c)
 		valid := input.Kind == "renewals" || input.Kind == "changes" && user.IsPanelOwner ||
-			input.Kind == "expired" && user.Can(model.PermAccessInbounds)
+			input.Kind == "expired" && (user.IsPanelOwner || user.Can(model.PermAccessInbounds)) ||
+			(input.Kind == "payments" || input.Kind == "lowQuota") && user.Can(model.PermAccessInbounds)
 		if input.Through <= 0 || !valid {
 			jsonMsg(c, I18nWeb(c, "somethingWentWrong"), errors.New("invalid notice"))
 			return
 		}
+		if input.Kind == "lowQuota" {
+			jsonMsg(c, "", session.MarkLowQuotaNoticeRead(c))
+			return
+		}
 		jsonMsg(c, "", activityService.DismissNotice(user, input.Kind, input.Through))
+	})
+	g.GET("/lowQuota", requirePerm(model.PermAccessInbounds), func(c *gin.Context) {
+		user := session.GetLoginUser(c)
+		rows, err := activityService.LowQuotaClients(user, activityBefore(c))
+		more := len(rows) > service.ActivityPageSize
+		if more {
+			rows = rows[:service.ActivityPageSize]
+		}
+		jsonObj(c, gin.H{"rows": rows, "more": more, "enabled": !user.LowQuotaNoticesDisabled}, err)
+	})
+	g.POST("/lowQuota/settings", requirePerm(model.PermAccessInbounds), func(c *gin.Context) {
+		var input struct{ Enabled *bool }
+		if !bindActivity(c, &input) {
+			return
+		}
+		if input.Enabled == nil {
+			jsonMsg(c, I18nWeb(c, "somethingWentWrong"), errors.New("missing low quota preference"))
+			return
+		}
+		jsonMsg(c, "", activityService.SetLowQuotaNotices(session.GetLoginUser(c), *input.Enabled))
 	})
 	registerPaymentReminderRoutes(g.Group("/payments", requirePerm(model.PermAccessInbounds)))
 	registerTrashRoutes(g.Group("/trash"))
 	owner := g.Group("", requirePanelOwner())
+	owner.GET("/gateway", func(c *gin.Context) {
+		status, err := (&service.XrayService{}).GatewayStatus(c.Request.Context())
+		jsonObj(c, status, err)
+	})
 	g.GET("/changes/settings", func(c *gin.Context) {
 		enabled, err := activityService.ChangeLogging()
 		if err != nil {

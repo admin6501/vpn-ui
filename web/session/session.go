@@ -28,6 +28,18 @@ const (
 	loginUserCtxKey = "LOGIN_USER_ROW"
 )
 
+// LowQuotaNoticeRead is scoped to one login cookie.
+func LowQuotaNoticeRead(c *gin.Context) bool {
+	read, _ := sessions.Default(c).Get("LOW_QUOTA_NOTICE_READ").(bool)
+	return read
+}
+
+func MarkLowQuotaNoticeRead(c *gin.Context) error {
+	s := sessions.Default(c)
+	s.Set("LOW_QUOTA_NOTICE_READ", true)
+	return s.Save()
+}
+
 // The session cookie holds the user ID and a credential binding, never the user row.
 //
 // The store is signed but not encrypted (cookie.NewStore -> securecookie with a
